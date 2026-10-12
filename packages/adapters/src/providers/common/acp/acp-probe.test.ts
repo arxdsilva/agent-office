@@ -23,9 +23,19 @@ const base: AcpProfile = {
   authMethodPrefer: [],
   loginHint: 'agent login',
 }
-const copilot: AcpProfile = { ...base, provider: 'copilot', helpArgs: undefined, acpFlag: /--acp\b/ }
+const copilot: AcpProfile = {
+  ...base,
+  provider: 'copilot',
+  helpArgs: undefined,
+  acpFlag: /--acp\b/,
+}
 
-const fake = (p: AcpProfile, fakeProfile: string, env: Record<string, string> = {}, timeoutMs?: number) =>
+const fake = (
+  p: AcpProfile,
+  fakeProfile: string,
+  env: Record<string, string> = {},
+  timeoutMs?: number,
+) =>
   new AcpProbe(p, {
     bin: process.execPath,
     argsPrefix: [FAKE, '--profile', fakeProfile],
@@ -86,4 +96,7 @@ describe('AcpProbe', () => {
 })
 
 providerProbeContract('AcpProbe (fake cursor)', () => fake(base, 'cursor'))
-providerProbeContract('AcpProbe (missing CLI)', () => new AcpProbe(base, { bin: join(dir, 'none') }))
+providerProbeContract(
+  'AcpProbe (missing CLI)',
+  () => new AcpProbe(base, { bin: join(dir, 'none') }),
+)

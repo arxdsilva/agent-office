@@ -6,6 +6,7 @@ import {
   modelChoice,
   permissionRequest,
   replySnippet,
+  shortModeId,
   stopReasonOutcome,
   toolName,
   updateEvent,
@@ -67,34 +68,50 @@ describe('updateEvent', () => {
   })
 
   it('a think tool call is thinking', () => {
-    expect(updateEvent({ sessionUpdate: 'tool_call', toolCallId: 't', title: 'x', kind: 'think' })).toEqual({
+    expect(
+      updateEvent({ sessionUpdate: 'tool_call', toolCallId: 't', title: 'x', kind: 'think' }),
+    ).toEqual({
       status: 'thinking',
     })
   })
 
   it('tool updates: completed/failed are thinking, in-progress is nothing', () => {
-    expect(updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'completed' })).toEqual({
+    expect(
+      updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'completed' }),
+    ).toEqual({
       status: 'thinking',
     })
-    expect(updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'failed' })).toEqual({
+    expect(
+      updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'failed' }),
+    ).toEqual({
       status: 'thinking',
     })
-    expect(updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'in_progress' })).toBeUndefined()
+    expect(
+      updateEvent({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'in_progress' }),
+    ).toBeUndefined()
   })
 
-  it('a mode update reports the short mode id', () => {
-    const modes = [{ id: 'agent', label: 'Agent', native: 'https://x/session-modes#agent' }]
+  it('a mode update is not a status patch (the runner reports modeId)', () => {
     expect(
-      updateEvent({ sessionUpdate: 'current_mode_update', currentModeId: 'https://x/session-modes#agent' }, { modes }),
-    ).toEqual({ modeId: 'agent' })
-    expect(updateEvent({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' })).toEqual({ modeId: 'plan' })
-    // A mode the profile does not know is not reported (it could be anything).
-    expect(updateEvent({ sessionUpdate: 'current_mode_update', currentModeId: 'zzz' }, { modes })).toBeUndefined()
+      updateEvent({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' }),
+    ).toBeUndefined()
+  })
+
+  it('shortModeId maps native ids back to profile ids', () => {
+    const modes = [{ id: 'agent', label: 'Agent', native: 'https://x/session-modes#agent' }]
+    expect(shortModeId('https://x/session-modes#agent', modes)).toBe('agent')
+    expect(shortModeId('zzz', modes)).toBeUndefined()
+    expect(shortModeId('plan', undefined)).toBe('plan')
+    expect(shortModeId('x'.repeat(61), undefined)).toBeUndefined()
   })
 
   it('message chunks, unknown kinds and garbage map to nothing', () => {
-    expect(updateEvent({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } })).toBeUndefined()
-    expect(updateEvent({ sessionUpdate: 'available_commands_update', availableCommands: [] })).toBeUndefined()
+    expect(
+      updateEvent({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } }),
+    ).toBeUndefined()
+    expect(
+      updateEvent({ sessionUpdate: 'available_commands_update', availableCommands: [] }),
+    ).toBeUndefined()
     expect(updateEvent({ sessionUpdate: 'usage_update' })).toBeUndefined()
     expect(updateEvent(null)).toBeUndefined()
     expect(updateEvent('x')).toBeUndefined()
@@ -104,13 +121,23 @@ describe('updateEvent', () => {
 describe('messageChunk', () => {
   it('returns text and message id of agent message chunks only', () => {
     expect(
-      messageChunk({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' }, messageId: 'm1' }),
+      messageChunk({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'hi' },
+        messageId: 'm1',
+      }),
     ).toEqual({ text: 'hi', messageId: 'm1' })
-    expect(messageChunk({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } })).toEqual({
+    expect(
+      messageChunk({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } }),
+    ).toEqual({
       text: 'hi',
     })
-    expect(messageChunk({ sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'x' } })).toBeUndefined()
-    expect(messageChunk({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'me' } })).toBeUndefined()
+    expect(
+      messageChunk({ sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'x' } }),
+    ).toBeUndefined()
+    expect(
+      messageChunk({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'me' } }),
+    ).toBeUndefined()
     expect(messageChunk(undefined)).toBeUndefined()
   })
 })
@@ -164,7 +191,12 @@ describe('permissionRequest', () => {
     const p = permissionRequest(
       {
         sessionId: 's',
-        toolCall: { toolCallId: 't', kind: 'execute', title: `run ${SECRET}`, rawInput: { command: 'ls -la' } },
+        toolCall: {
+          toolCallId: 't',
+          kind: 'execute',
+          title: `run ${SECRET}`,
+          rawInput: { command: 'ls -la' },
+        },
         options: [],
       },
       cwd,
@@ -174,17 +206,30 @@ describe('permissionRequest', () => {
 
   it('Bash: an argv array is joined; no command at all gives an empty one', () => {
     const argv = permissionRequest(
-      { toolCall: { toolCallId: 't', kind: 'execute', rawInput: { command: ['git', 'status'] } }, options: [] },
+      {
+        toolCall: { toolCallId: 't', kind: 'execute', rawInput: { command: ['git', 'status'] } },
+        options: [],
+      },
       cwd,
     )
     expect(argv.input).toEqual({ command: 'git status' })
-    const none = permissionRequest({ toolCall: { toolCallId: 't', kind: 'execute', title: SECRET }, options: [] }, cwd)
+    const none = permissionRequest(
+      { toolCall: { toolCallId: 't', kind: 'execute', title: SECRET }, options: [] },
+      cwd,
+    )
     expect(none.input).toEqual({ command: '' })
   })
 
   it('Edit/Read: file_path from the first location', () => {
     const e = permissionRequest(
-      { toolCall: { toolCallId: 't', kind: 'edit', locations: [{ path: '/work/app/a.ts' }, { path: '/b' }] }, options: [] },
+      {
+        toolCall: {
+          toolCallId: 't',
+          kind: 'edit',
+          locations: [{ path: '/work/app/a.ts' }, { path: '/b' }],
+        },
+        options: [],
+      },
       cwd,
     )
     expect(e).toEqual({ tool: 'Edit', input: { file_path: '/work/app/a.ts' }, cwd })
@@ -195,18 +240,35 @@ describe('permissionRequest', () => {
   it('Grep/WebFetch keep only the field the summary shows; other tools get no input', () => {
     expect(
       permissionRequest(
-        { toolCall: { toolCallId: 't', kind: 'search', rawInput: { pattern: 'TODO', path: SECRET } }, options: [] },
+        {
+          toolCall: {
+            toolCallId: 't',
+            kind: 'search',
+            rawInput: { pattern: 'TODO', path: SECRET },
+          },
+          options: [],
+        },
         cwd,
       ).input,
     ).toEqual({ pattern: 'TODO' })
     expect(
       permissionRequest(
-        { toolCall: { toolCallId: 't', kind: 'fetch', rawInput: { url: 'https://example.com/a?b' } }, options: [] },
+        {
+          toolCall: {
+            toolCallId: 't',
+            kind: 'fetch',
+            rawInput: { url: 'https://example.com/a?b' },
+          },
+          options: [],
+        },
         cwd,
       ).input,
     ).toEqual({ url: 'https://example.com/a?b' })
     expect(
-      permissionRequest({ toolCall: { toolCallId: 't', kind: 'other', rawInput: { x: SECRET } }, options: [] }, cwd),
+      permissionRequest(
+        { toolCall: { toolCallId: 't', kind: 'other', rawInput: { x: SECRET } }, options: [] },
+        cwd,
+      ),
     ).toEqual({ tool: 'Tool', input: {}, cwd })
   })
 
@@ -220,7 +282,9 @@ describe('permissionRequest', () => {
   })
 
   it('a think request is a generic Tool, and garbage gives a safe Tool', () => {
-    expect(permissionRequest({ toolCall: { toolCallId: 't', kind: 'think' }, options: [] }, cwd).tool).toBe('Tool')
+    expect(
+      permissionRequest({ toolCall: { toolCallId: 't', kind: 'think' }, options: [] }, cwd).tool,
+    ).toBe('Tool')
     expect(permissionRequest(null, cwd)).toEqual({ tool: 'Tool', input: {}, cwd })
   })
 })
@@ -271,7 +335,11 @@ describe('modelChoice', () => {
           type: 'select',
           currentValue: 'auto',
           options: [
-            { group: 'g', name: 'G', options: [{ value: 'auto', name: 'Auto', description: 'Pick one' }] },
+            {
+              group: 'g',
+              name: 'G',
+              options: [{ value: 'auto', name: 'Auto', description: 'Pick one' }],
+            },
             { group: 'h', name: 'H', options: [{ value: 'big', name: 'Big' }] },
           ],
         },
@@ -290,7 +358,12 @@ describe('modelChoice', () => {
 
   it('falls back to the session models (session/set_model), else none', () => {
     expect(
-      modelChoice({ models: { currentModelId: 'x', availableModels: [{ modelId: 'x', name: 'X', description: 'd' }] } }),
+      modelChoice({
+        models: {
+          currentModelId: 'x',
+          availableModels: [{ modelId: 'x', name: 'X', description: 'd' }],
+        },
+      }),
     ).toEqual({ via: 'set_model', models: [{ id: 'x', label: 'X', description: 'd' }] })
     expect(modelChoice({ sessionId: 's' })).toBeUndefined()
     expect(modelChoice({ models: { availableModels: [] } })).toBeUndefined()

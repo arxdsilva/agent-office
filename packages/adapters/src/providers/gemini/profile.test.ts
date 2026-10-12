@@ -39,7 +39,10 @@ describe('GEMINI_PROFILE', () => {
   })
 
   it('starts a session against the fake gemini agent and stops cleanly', async () => {
-    const runner = new GeminiAcpRunner({ bin: process.execPath, args: [FAKE, '--profile', 'gemini'] })
+    const runner = new GeminiAcpRunner({
+      bin: process.execPath,
+      args: [FAKE, '--profile', 'gemini'],
+    })
     const s = runner.start({
       cwd: dir,
       mode: 'default',

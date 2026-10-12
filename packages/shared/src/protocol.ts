@@ -55,6 +55,8 @@ export const AgentEventSchema = z.object({
   capability: z.string().max(120).optional(),
   /** Current permission mode (Claude Code: from the hook or transcript; others may send it too). */
   permissionMode: PermissionModeSchema.optional(),
+  /** Provider-specific mode id the session reports (Codex presets, ACP modes); display only. */
+  modeId: z.string().min(1).max(60).optional(),
 })
 export type AgentEvent = z.infer<typeof AgentEventSchema>
 

@@ -70,6 +70,21 @@ Render API-provided text with `textContent` and elements built with `document.cr
 | Expose a typed bridge (`window.agentOffice`) from a preload that imports only `electron` + `shared/ipc`                                                                                         | Expose `ipcRenderer`, `require` or Node APIs                  |
 | Write the hook wrapper with mode 0755 into the app's own `userData`                                                                                                                             | Write executables anywhere else                               |
 
+## Providers (managed runtimes and observation hooks; `docs/provider-integrations.md`)
+
+| Do                                                                                                                                                            | Don't                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Emit metadata only: tool name, project basename, status, model, snippets ≤80 chars. Agent text goes only to that managed session's own chat (≤4000 chars)     | Put prompts, commands, tool input or output, plans, raw tool titles or stderr in events, IPC or logs              |
+| Drop `transcript_path`, `user_email`, paths and env values in the hook map; prove it with sentinel fixtures for every hook map and runtime map                | Forward `transcript_path`, emails, absolute paths or any field the map does not name                              |
+| Answer permission requests with `allow_once` / `reject_once` (ACP) or `accept` / `decline` (Codex); "Always allow" is agent-office's own per-session set      | Send `allow_always` or `acceptForSession`: they persist in the provider's own store                               |
+| Gate dangerous modes (`ModeOption.dangerous`: Codex Full access, Gemini `autoEdit`/`yolo`, Copilot Autopilot) behind `allowBypassPermissions`                 | Default to, or remember per folder, a mode that skips approvals                                                   |
+| Spawn runtimes with `shell:false`, fixed arguments, `AGENT_OFFICE_MANAGED=1`, and `cwd` only from `ctx_` refs                                                 | Pass user-controlled arguments or build a command line from renderer input                                        |
+| Reuse each CLI's own login; use only the auth methods listed in the profile's `authMethodPrefer`                                                              | Store, read or forward credentials, API keys or the agent-office token to a runtime                               |
+| Initialize ACP with client `fs` and `terminal` capabilities off and `mcpServers: []`; decline every other server request with `-32601`                        | Offer file or terminal access to an agent, or inject MCP servers                                                  |
+| Subscribe hooks only to non-blocking events; exit 0 with empty stdout on every path; 1.5 s network timeout; do nothing when `AGENT_OFFICE_MANAGED=1`          | Subscribe to `preToolUse`, `before*`, `Before*`, `permissionRequest` or any event that can veto or rewrite        |
+| Install hooks only from an explicit user action, with a one-time `.agent-office.bak`, merging only entries marked `agent-office-observe`; refuse invalid JSON | Install from tests or automatic paths (only `heal()` refreshes already-installed hooks), or touch foreign entries |
+| Read provider files only to edit the one hook file we own                                                                                                     | Scan other provider directories or read their sessions, history or settings                                       |
+
 ## Hook
 
 - Must **fail open**: short timeout (≤1.5s), no output and exit 0 on any error — it must never break or slow a Claude session.

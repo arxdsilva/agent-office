@@ -308,7 +308,7 @@ describe('connectVM: Providers tab', () => {
     expect(hint('codex')).toBe('Run `codex login` in a terminal, then Check again')
     expect(hint('cursor')).toContain('`agent login`')
     expect(hint('gemini')).toContain('`gemini`')
-    expect(hint('copilot')).toContain('/login')
+    expect(hint('copilot')).toContain('copilot login')
     for (const h of [
       'install-cli',
       'update-cli',

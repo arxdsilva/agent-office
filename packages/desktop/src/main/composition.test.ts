@@ -17,13 +17,14 @@ import {
   IPC,
   type ConnectionInfo,
   type ContextRef,
+  type ProviderId,
   type SendResult,
   type ServerMessage,
   type StartResult,
 } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRunner, ProviderProbe, RunnerDecl, StartSession } from '@agent-office/core'
-import { compose, type Shell } from './composition.ts'
+import { compose, type ComposeOptions, type Shell } from './composition.ts'
 
 class FakeShellWindow extends FakeWindow {
   shown = 0
@@ -105,6 +106,11 @@ afterEach(async () => {
   for (const a of apps.splice(0)) await a.stop()
 })
 
+const notInstalled = (provider: ProviderId): ProviderProbe => ({
+  provider,
+  detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
+})
+
 function setup(
   envVars: Record<string, string | undefined> = {},
   opts: {
@@ -114,6 +120,7 @@ function setup(
     claudeProbe?: ProviderProbe
     codexProbe?: ProviderProbe
     codexRunner?: AgentRunner
+    providerOverrides?: ComposeOptions['providerOverrides']
     fakesDir?: string
     processEnv?: Record<string, string | undefined>
   } = {},
@@ -149,6 +156,12 @@ function setup(
     codexProbe: {
       provider: 'codex',
       detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
+    },
+    // …nor the real Cursor, Gemini or Copilot CLIs.
+    providerOverrides: {
+      cursor: { probe: notInstalled('cursor') },
+      gemini: { probe: notInstalled('gemini') },
+      copilot: { probe: notInstalled('copilot') },
     },
     ...opts,
   })
@@ -713,5 +726,92 @@ describe('compose: codex', () => {
     })
     apps.push(app)
     expect(warnings.join()).toContain('AGENT_OFFICE_FAKE_PROVIDERS')
+  })
+})
+
+// Multi-provider plan §5: Cursor, Gemini CLI and Copilot CLI join through ACP runtimes and
+// observation hooks; every hook path points at temp files (never the user's real configs).
+describe('compose: acp providers and observation hooks', () => {
+  const START: StartSession = {
+    provider: 'cursor',
+    modeId: 'agent',
+    cwd: tmpdir(),
+    name: 'cu',
+    mode: 'default',
+    extraDirs: [],
+    chrome: false,
+    first: { text: 'hi', context: [], use: [] },
+  }
+
+  it('lists all six providers, the new ones disabled by default', async () => {
+    const { app } = setup()
+    await app.start()
+    const ids = (await app.office.providers.list()).map((p) => p.id)
+    expect(ids).toEqual(['claude-code', 'codex', 'cursor', 'gemini', 'copilot', 'chatgpt'])
+    const cursor = (await app.office.providers.list()).find((p) => p.id === 'cursor')
+    expect(cursor).toMatchObject({ enabled: false })
+  })
+
+  it('routes a cursor session to the cursor runtime', async () => {
+    const cursorRunner = new FakeAgentRunner({
+      provider: 'cursor',
+      prefix: 'cu:',
+      caps: ['send-message'],
+    })
+    const { app } = setup(
+      {},
+      {
+        providerOverrides: {
+          cursor: { probe: notInstalled('cursor'), runner: cursorRunner },
+          gemini: { probe: notInstalled('gemini') },
+          copilot: { probe: notInstalled('copilot') },
+        },
+      },
+    )
+    await app.start()
+    await app.office.providers.setEnabled('cursor', true)
+    expect(await app.office.sessions!.start({ ...START })).toMatch(/^cu:/)
+    expect(cursorRunner.sessions).toHaveLength(1)
+    await app.stopAll()
+  })
+
+  it('AGENT_OFFICE_FAKE_PROVIDERS=1 runs the fake ACP agent as cursor', async () => {
+    const fakesDir = join(import.meta.dirname, '..', '..', '..', 'adapters', 'test', 'fakes')
+    const { app } = setup(
+      {},
+      {
+        fakesDir,
+        providerOverrides: {},
+        processEnv: { AGENT_OFFICE_FAKE_PROVIDERS: '1' },
+      },
+    )
+    await app.start()
+    await app.office.providers.setEnabled('cursor', true)
+    expect((await app.office.providers.list()).find((p) => p.id === 'cursor')).toMatchObject({
+      state: 'managed-available',
+    })
+    expect(await app.office.sessions!.start({ ...START })).toMatch(/^cu:/)
+    await app.stopAll()
+  })
+
+  it('installs cursor observation hooks into the configured file, keeping foreign hooks', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ao-hooks-'))
+    const file = join(tmp, 'hooks.json')
+    writeFileSync(
+      file,
+      JSON.stringify({ version: 1, hooks: { stop: [{ command: 'my-own-hook' }] } }),
+    )
+    const { app, call } = setup({}, { processEnv: { CURSOR_HOOKS_FILE: file } })
+    await app.start()
+    expect(await call(IPC.provHooksInstall, { provider: 'cursor' })).toBe('installed')
+    const json = JSON.parse(readFileSync(file, 'utf8')) as {
+      hooks: Record<string, { command: string }[]>
+    }
+    expect(json.hooks.stop!.map((h) => h.command)).toContain('my-own-hook')
+    expect(json.hooks.stop!.some((h) => h.command.includes('agent-office-observe'))).toBe(true)
+    expect(json.hooks.preToolUse).toBeUndefined()
+    expect(await call(IPC.provHooksRemove, { provider: 'cursor' })).toBe('not-installed')
+    const after = JSON.parse(readFileSync(file, 'utf8')) as typeof json
+    expect(after.hooks.stop!.map((h) => h.command)).toEqual(['my-own-hook'])
   })
 })

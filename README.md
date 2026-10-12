@@ -457,6 +457,33 @@ Get the latest installer from [Releases](https://github.com/arxdsilva/agent-offi
 | Windows                         | `.exe` (NSIS)        | SmartScreen may warn on first run because the build is unsigned. Auto-updates.                                                                                                                                                                                                         |
 | Linux                           | `.AppImage` / `.deb` | AppImage auto-updates. `.deb` notifies you instead.                                                                                                                                                                                                                                    |
 
+## AI providers
+
+agent-office can **manage** sessions it starts and **observe** sessions you start elsewhere, for several AI coding tools. Each provider gets its own wing.
+
+![Connect → Providers: one card per AI provider with its version, state, capabilities and setup actions](docs/screenshots/providers.png)
+
+| Provider           | Managed via                           | Observed via                    | Status                                                              |
+| ------------------ | ------------------------------------- | ------------------------------- | ------------------------------------------------------------------- |
+| Claude Code        | Claude Agent SDK                      | Transcripts + opt-in inbox hook | Verified (2.1.270)                                                  |
+| OpenAI Codex       | `codex app-server`                    | Not observable                  | Verified (0.162.1)                                                  |
+| Cursor             | `agent acp` (ACP)                     | Cursor hooks (read-only)        | Verified (agent 2026.10.01); hooks pending a real-CLI check         |
+| GitHub Copilot CLI | `copilot --acp` (ACP, public preview) | Copilot hooks (read-only)       | Verified (1.0.96); hooks pending a real-CLI check                   |
+| Gemini CLI         | `gemini --acp` (ACP)                  | Gemini hooks (read-only)        | Protocol verified against a fake agent; real sessions need a login  |
+| ChatGPT            | Disabled                              | Disabled                        | Needs a public HTTPS endpoint or OpenAI's MCP tunnel; not supported |
+
+**To enable one:** install its CLI and log in with the CLI's own command, then open **🔌 Connect → Providers**, turn the provider on and press **Check again**. A **Ready** card means you can start a session with **⊕ New session**. For Cursor, Gemini and Copilot you can also click **Install hooks** to see sessions you start in their own terminal or IDE. Detection never starts a session, and agent-office never logs in or handles credentials for you.
+
+Limitations:
+
+- **Codex sessions started outside agent-office are not visible.** Codex has no documented way to observe them. Start Codex sessions from the app.
+- **ChatGPT is disabled.**
+- **Observed Cursor, Gemini and Copilot sessions are read-only.** You can't message, interrupt or approve them from the app; the panel says where to reply. Cursor subagents aren't shown.
+- Managed sessions don't resume after an app restart, and extra folders aren't sent to ACP agents (none of the tested CLIs accepts them).
+- Modes that skip approvals (Codex Full access, Gemini Auto-approve, Copilot Autopilot) need Settings → "Allow Bypass permissions mode".
+
+Setup per provider, the capability matrix, troubleshooting and how to add a provider: [docs/provider-integrations.md](docs/provider-integrations.md). `make verify-providers` re-checks the real CLIs on your machine (it uses your accounts).
+
 ## Using it with Claude Code
 
 1. Open agent-office. Any Claude Code session active in the last 10 minutes appears in the `claude-code` wing, at a desk pod named after the session title. Its subagents sit next to it, and join it in a meeting room while they work.
@@ -644,6 +671,8 @@ make package         # unpacked app for this OS → packages/desktop/dist
 make package-dist    # installers for this OS
 make screenshots     # README stills and clips → docs/screenshots (after make build)
 make screenshots-macos  # macOS only: the real tray menu and a notification
+make verify-providers   # start real sessions on your installed, logged-in provider CLIs (uses your accounts)
+make codex-schema-check # check our Codex protocol subset against the installed codex
 ```
 
 - **TDD:** every behavior change starts with a failing test.

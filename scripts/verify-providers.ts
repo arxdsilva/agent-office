@@ -10,7 +10,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import type { AgentRunner, ProviderProbe, RunnerSession } from '@agent-office/core'
-import { CodexProbe, CodexRunner } from '../packages/adapters/src/providers/index.ts'
+import {
+  CodexProbe,
+  CodexRunner,
+  CopilotAcpRunner,
+  CopilotProbe,
+  CursorAcpRunner,
+  CursorProbe,
+  GeminiAcpRunner,
+  GeminiProbe,
+} from '../packages/adapters/src/providers/index.ts'
 
 type Result = 'pass' | 'fail' | 'n/a'
 const CHECKS = [
@@ -47,6 +56,31 @@ const TARGETS: Target[] = [
     processPattern: 'codex app-server',
     askMode: 'ask',
     otherMode: 'read-only',
+  },
+  // ACP agents: their default modes ask before shell commands; plan mode is the read-only switch.
+  {
+    id: 'cursor',
+    probe: new CursorProbe({}),
+    runner: new CursorAcpRunner({}),
+    processPattern: 'agent acp',
+    askMode: 'agent',
+    otherMode: 'plan',
+  },
+  {
+    id: 'gemini',
+    probe: new GeminiProbe({}),
+    runner: new GeminiAcpRunner({}),
+    processPattern: 'gemini --acp',
+    askMode: 'default',
+    otherMode: 'plan',
+  },
+  {
+    id: 'copilot',
+    probe: new CopilotProbe({}),
+    runner: new CopilotAcpRunner({}),
+    processPattern: 'copilot --acp',
+    askMode: 'agent',
+    otherMode: 'plan',
   },
 ]
 

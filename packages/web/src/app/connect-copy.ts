@@ -129,7 +129,7 @@ export const COPY = {
       codex: 'Run `codex login` in a terminal, then Check again',
       cursor: 'Run `agent login` in a terminal, then Check again',
       gemini: 'Run `gemini` once and sign in, then Check again',
-      copilot: 'Run `copilot` and use /login, then Check again',
+      copilot: 'Run `copilot login` in a terminal, then Check again',
       chatgpt: 'Not available',
     } as Record<ProviderId, string>,
     hint: {

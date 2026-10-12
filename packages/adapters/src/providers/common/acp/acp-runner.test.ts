@@ -11,7 +11,7 @@ import type {
 } from '@agent-office/core'
 import { MemoryLogger } from '@agent-office/core/testing'
 import type { AgentEvent } from '@agent-office/shared'
-import { afterAll, afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import type { AcpProfile } from './acp-profile.ts'
 import { AcpRunner } from './acp-runner.ts'
 
@@ -64,7 +64,11 @@ const GEMINIISH: AcpProfile = {
   ],
   defaultModeId: 'default',
 }
-const FAKE_PROFILE: Record<string, string> = { cursor: 'cursor', copilot: 'copilot', gemini: 'gemini' }
+const FAKE_PROFILE: Record<string, string> = {
+  cursor: 'cursor',
+  copilot: 'copilot',
+  gemini: 'gemini',
+}
 
 const START: RunnerStart = {
   cwd: dir,
@@ -234,7 +238,9 @@ describe('AcpRunner (fake agent process)', () => {
     const cs = c.start({ modeId: 'plan' })
     await cs.s.sessionId
     expect(c.call('session/set_mode')!.params.modeId).toBe(`${URL_MODE}plan`)
-    await until(() => cs.events.some((e) => e.modeId === 'plan'))
+    // The agent confirms with current_mode_update: reported as the short profile id, never the URL.
+    await vi.waitFor(() => expect(cs.events.some((e) => e.modeId === 'plan')).toBe(true))
+    expect(JSON.stringify(cs.events)).not.toContain(URL_MODE)
     await expect(cs.s.setModeId!('autopilot')).rejects.toThrow(/not available/)
 
     const d = real({}, COPILOTISH)
@@ -277,7 +283,11 @@ describe('AcpRunner (fake agent process)', () => {
   // ACP-7: each decision maps to the right option; never allow_always.
   it.each([
     [{ behavior: 'allow' } as RunnerDecision, 'allow', 'Here are the files.'],
-    [{ behavior: 'deny', message: 'no' } as RunnerDecision, 'reject', 'I was not allowed to run it.'],
+    [
+      { behavior: 'deny', message: 'no' } as RunnerDecision,
+      'reject',
+      'I was not allowed to run it.',
+    ],
   ])('ACP-7 permission round-trip %#', async (d, optionId, text) => {
     const f = real()
     const { s, results, decide } = f.start()
@@ -343,11 +353,10 @@ describe('AcpRunner (fake agent process)', () => {
   // ACP-10: setModeId → session/set_mode; the agent's mode update comes back as modeId.
   it('ACP-10 changes mode', async () => {
     const f = real()
-    const { s, events } = f.start()
+    const { s } = f.start()
     await s.sessionId
     await s.setModeId!('ask')
     expect(f.call('session/set_mode')!.params).toEqual({ sessionId: 'sess_fake1', modeId: 'ask' })
-    await until(() => events.some((e) => e.modeId === 'ask'))
     await expect(s.setModeId!('nope')).rejects.toThrow(/not available/)
     // Claude permission modes do not apply to ACP agents.
     await expect(s.setMode('plan')).resolves.toBeUndefined()
@@ -417,7 +426,10 @@ describe('AcpRunner (fake agent process)', () => {
     const gs = g.start()
     await gs.s.sessionId
     await gs.s.setModel('fast-1')
-    expect(g.call('session/set_model')!.params).toEqual({ sessionId: 'sess_fake1', modelId: 'fast-1' })
+    expect(g.call('session/set_model')!.params).toEqual({
+      sessionId: 'sess_fake1',
+      modelId: 'fast-1',
+    })
     await expect(gs.s.supportedModels()).resolves.toEqual([
       { id: 'auto', label: 'Auto' },
       { id: 'fast-1', label: 'Fast One', description: 'A quick model' },

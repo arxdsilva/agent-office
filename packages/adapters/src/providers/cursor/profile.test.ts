@@ -23,7 +23,9 @@ describe('CURSOR_PROFILE', () => {
     expect(p.caps).toEqual(PROVIDER_DECLS.cursor.managedCaps)
     expect(p.authMethodPrefer).toEqual(['cursor_login'])
     expect(p.loginHint).toBe('agent login')
-    expect(p.acpFlag.test('Start the Cursor Agent as an ACP (Agent Client Protocol) server')).toBe(true)
+    expect(p.acpFlag.test('Start the Cursor Agent as an ACP (Agent Client Protocol) server')).toBe(
+      true,
+    )
   })
 
   it('offers the agent modes, the default first, dangerous ones flagged', () => {
@@ -39,7 +41,10 @@ describe('CURSOR_PROFILE', () => {
   })
 
   it('starts a session against the fake cursor agent and stops cleanly', async () => {
-    const runner = new CursorAcpRunner({ bin: process.execPath, args: [FAKE, '--profile', 'cursor'] })
+    const runner = new CursorAcpRunner({
+      bin: process.execPath,
+      args: [FAKE, '--profile', 'cursor'],
+    })
     const s = runner.start({
       cwd: dir,
       mode: 'default',

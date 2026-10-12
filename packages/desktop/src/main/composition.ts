@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import {
   buildHttpApi,
   ClaudeCapabilityDiscovery,
@@ -15,6 +15,19 @@ import {
   ClaudeSettingsFile,
   CodexProbe,
   CodexRunner,
+  COPILOT_HOOK_FORMAT,
+  CopilotAcpRunner,
+  CopilotProbe,
+  copilotHooksPath,
+  CURSOR_HOOK_FORMAT,
+  CursorAcpRunner,
+  CursorProbe,
+  cursorHooksPath,
+  GEMINI_HOOK_FORMAT,
+  GeminiAcpRunner,
+  GeminiProbe,
+  geminiSettingsPath,
+  JsonConfigFile,
   createAuth,
   FsHookRunner,
   InMemoryAgentRepository,
@@ -44,6 +57,7 @@ import {
   type Logger,
   type Notifier,
   type ProviderBinding,
+  type ProviderHookTargets,
   type ProviderProbe,
   type PlatformInfo,
   type Scheduler,
@@ -117,6 +131,10 @@ export interface ComposeOptions {
   /** Tests inject Codex's probe and runtime so the real CLI never runs. */
   codexProbe?: ProviderProbe
   codexRunner?: AgentRunner
+  /** Tests inject probes/runtimes for the ACP providers so their real CLIs never run. */
+  providerOverrides?: Partial<
+    Record<'cursor' | 'gemini' | 'copilot', { probe?: ProviderProbe; runner?: AgentRunner }>
+  >
   /**
    * Dev-only directory holding fake provider CLIs (packages/adapters/test/fakes). Given only for
    * unpackaged builds; AGENT_OFFICE_FAKE_PROVIDERS=1 without it falls back to the real CLI.
@@ -227,6 +245,77 @@ function buildCodex(
   return { probe: probe ?? new CodexProbe({}), runner: runner ?? new CodexRunner({}) }
 }
 
+type AcpId = 'cursor' | 'gemini' | 'copilot'
+const ACP = {
+  cursor: { Runner: CursorAcpRunner, Probe: CursorProbe },
+  gemini: { Runner: GeminiAcpRunner, Probe: GeminiProbe },
+  copilot: { Runner: CopilotAcpRunner, Probe: CopilotProbe },
+} as const
+
+/** An ACP provider's probe + runtime: injected (tests), the fake ACP agent (dev, flag), or the real CLI. */
+function buildAcp(
+  id: AcpId,
+  o: ComposeOptions,
+  processEnv: Record<string, string | undefined>,
+): { probe: ProviderProbe; runner: AgentRunner } {
+  const given = o.providerOverrides?.[id] ?? {}
+  const { Runner, Probe } = ACP[id]
+  if (processEnv.AGENT_OFFICE_FAKE_PROVIDERS === '1' && o.fakesDir) {
+    return {
+      probe: given.probe ?? {
+        provider: id,
+        detect: async () => ({ installed: true, version: 'fake', flagsOk: true, auth: 'ok' }),
+      },
+      runner:
+        given.runner ??
+        new Runner({
+          bin: process.execPath,
+          args: [join(o.fakesDir, 'fake-acp-agent.mjs'), '--profile', id],
+          env: { ELECTRON_RUN_AS_NODE: '1' },
+        }),
+    }
+  }
+  return { probe: given.probe ?? new Probe({}), runner: given.runner ?? new Runner({}) }
+}
+
+/** Observation hooks: each provider's own config file + a wrapper running agent-office-observe.mjs. */
+function buildHookTargets(
+  o: ComposeOptions,
+  processEnv: Record<string, string | undefined>,
+  home: string,
+  url: () => string,
+): ProviderHookTargets {
+  const script = join(dirname(o.hookScript), 'agent-office-observe.mjs')
+  const runner = (provider: AcpId) =>
+    new FsHookRunner({
+      dir: join(o.userDataDir, 'hook'),
+      execPath: o.execPath,
+      script,
+      platform: o.shell.platform.platform,
+      runAsNode: o.runAsNode,
+      url,
+      name: `agent-office-observe-${provider}`,
+      args: { provider },
+    })
+  return {
+    cursor: {
+      format: CURSOR_HOOK_FORMAT,
+      store: new JsonConfigFile(cursorHooksPath(processEnv, home)),
+      runner: runner('cursor'),
+    },
+    gemini: {
+      format: GEMINI_HOOK_FORMAT,
+      store: new JsonConfigFile(geminiSettingsPath(processEnv, home)),
+      runner: runner('gemini'),
+    },
+    copilot: {
+      format: COPILOT_HOOK_FORMAT,
+      store: new JsonConfigFile(copilotHooksPath(processEnv, home)),
+      runner: runner('copilot'),
+    },
+  }
+}
+
 export function compose(o: ComposeOptions) {
   const { shell, env, logger } = o
   const scheduler = o.scheduler ?? new TimerScheduler()
@@ -266,10 +355,19 @@ export function compose(o: ComposeOptions) {
         }),
     })
   const codex = buildCodex(o, processEnv)
-  // One binding per provider; the others join as their probes and runtimes land.
+  const acp = {
+    cursor: buildAcp('cursor', o, processEnv),
+    gemini: buildAcp('gemini', o, processEnv),
+    copilot: buildAcp('copilot', o, processEnv),
+  }
+  const hookUrl = () => `http://${hookHost(env.host)}:${backend?.server?.port ?? lastPort}`
+  // One binding per provider (ChatGPT has none: its card is informational only).
   const providers: ProviderBinding[] = [
     { provider: 'claude-code', probe: claudeProbe, runner },
     { provider: 'codex', probe: codex.probe, runner: codex.runner },
+    { provider: 'cursor', ...acp.cursor },
+    { provider: 'gemini', ...acp.gemini },
+    { provider: 'copilot', ...acp.copilot },
   ]
   const context = createContextRegistry({ dialog: shell.dialog, home })
   const office = createOffice({
@@ -289,7 +387,7 @@ export function compose(o: ComposeOptions) {
       script: o.hookScript,
       platform: shell.platform.platform,
       runAsNode: o.runAsNode,
-      url: () => `http://${hookHost(env.host)}:${backend?.server?.port ?? lastPort}`,
+      url: hookUrl,
     }),
     notifier: shell.notifier,
     tray: shell.tray,
@@ -303,7 +401,11 @@ export function compose(o: ComposeOptions) {
     runtimes: new Map<ProviderId, AgentRunner>([
       ['claude-code', runner],
       ['codex', codex.runner],
+      ['cursor', acp.cursor.runner],
+      ['gemini', acp.gemini.runner],
+      ['copilot', acp.copilot.runner],
     ]),
+    providerHookTargets: buildHookTargets(o, processEnv, home, hookUrl),
     displayPath: (p) => abbreviate(p, home),
   })
   const sessions = office.sessions!
@@ -520,6 +622,10 @@ export function compose(o: ComposeOptions) {
       await office.hooks
         .heal()
         .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
+      // Observation hooks (Cursor, Gemini, Copilot) carry the same URL: refresh installed ones only.
+      await office.providerHooks
+        ?.heal()
+        .catch((err: Error) => logger.warn(`provider hook heal failed: ${err.message}`))
       await refreshHookStatus()
     }
   }
@@ -586,6 +692,10 @@ export function compose(o: ComposeOptions) {
       await office.hooks
         .heal()
         .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
+      // Observation hooks (Cursor, Gemini, Copilot) carry the same URL: refresh installed ones only.
+      await office.providerHooks
+        ?.heal()
+        .catch((err: Error) => logger.warn(`provider hook heal failed: ${err.message}`))
       await refreshHookStatus()
       office.attention.start()
       void office.updates.start()

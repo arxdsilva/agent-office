@@ -35,6 +35,7 @@ const ACP_CAPS: readonly SessionCap[] = [
   'interrupt',
   'stop',
   'approve-tools',
+  'select-model',
   'change-mode',
   'attach-context',
 ]
@@ -114,7 +115,7 @@ export const PROVIDER_DECLS: Readonly<Record<ProviderId, ProviderDecl>> = {
     integration: { managed: 'acp', observe: 'hooks' },
     docsUrl: 'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli',
     testedVersion: '1.0.96',
-    loginHint: 'copilot /login',
+    loginHint: 'copilot login',
   },
   chatgpt: {
     id: 'chatgpt',

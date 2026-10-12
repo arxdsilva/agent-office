@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { CopilotProbe } from './probe.ts'
 
 const FAKE = fileURLToPath(new URL('../../../test/fakes/fake-acp-agent.mjs', import.meta.url))
-const fake = () => new CopilotProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'copilot'] })
+const fake = () =>
+  new CopilotProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'copilot'] })
 
 describe('CopilotProbe', () => {
   it('detects the fake copilot CLI and its ACP surface', async () => {
@@ -17,4 +18,7 @@ describe('CopilotProbe', () => {
 })
 
 providerProbeContract('CopilotProbe (fake)', fake)
-providerProbeContract('CopilotProbe (missing CLI)', () => new CopilotProbe({ bin: join(tmpdir(), 'no-such-copilot') }))
+providerProbeContract(
+  'CopilotProbe (missing CLI)',
+  () => new CopilotProbe({ bin: join(tmpdir(), 'no-such-copilot') }),
+)

@@ -27,7 +27,10 @@ const obj = (v: unknown): Obj | undefined =>
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
 
 /** A tool kind → tool name; undefined for `think` (report thinking instead). */
-export function toolName(kind: unknown, map: Partial<Record<string, string>> = {}): string | undefined {
+export function toolName(
+  kind: unknown,
+  map: Partial<Record<string, string>> = {},
+): string | undefined {
   const k = str(kind)
   if (k && map[k]) return map[k]
   if (k === 'think') return undefined
@@ -36,16 +39,21 @@ export function toolName(kind: unknown, map: Partial<Record<string, string>> = {
 
 export interface MapOptions {
   toolKindMap?: Partial<Record<string, string>>
-  modes?: AcpMode[]
 }
 
-/** The short (profile) id of a native mode id; without profile modes the id is used as is. */
+/**
+ * The short (profile) id of a native mode id; without profile modes the id is used as is. For a
+ * future `modeId` event field (agent-initiated mode changes).
+ */
 export function shortModeId(native: string, modes: AcpMode[] | undefined): string | undefined {
   if (!modes) return native.length <= 60 ? native : undefined
   return modes.find((m) => (m.native ?? m.id) === native)?.id
 }
 
-/** A `session/update` payload's `update` → event patch (undefined = nothing to report). */
+/**
+ * A `session/update` payload's `update` → event patch (undefined = nothing to report).
+ * `current_mode_update` is handled by the runner (it emits `{modeId}` with the profile's short id).
+ */
 export function updateEvent(update: unknown, o: MapOptions = {}): EventPatch | undefined {
   const u = obj(update)
   if (!u) return undefined
@@ -59,11 +67,6 @@ export function updateEvent(update: unknown, o: MapOptions = {}): EventPatch | u
     }
     case 'tool_call_update':
       return u.status === 'completed' || u.status === 'failed' ? { status: 'thinking' } : undefined
-    case 'current_mode_update': {
-      const native = str(u.currentModeId)
-      const id = native ? shortModeId(native, o.modes) : undefined
-      return id ? { modeId: id } : undefined
-    }
     default:
       return undefined
   }
@@ -129,7 +132,9 @@ export function permissionRequest(
   switch (tool) {
     case 'Bash': {
       const c = raw.command
-      const command = Array.isArray(c) ? c.filter((x) => typeof x === 'string').join(' ') : (str(c) ?? '')
+      const command = Array.isArray(c)
+        ? c.filter((x) => typeof x === 'string').join(' ')
+        : (str(c) ?? '')
       input = { command }
       break
     }

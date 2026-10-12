@@ -59,6 +59,8 @@ const FAILED: ProbeResult = { installed: true, flagsOk: false, auth: 'unknown', 
  */
 export class ProviderService implements ProviderCatalog {
   private cache = new Map<ProviderId, { at: number; result: Promise<ProbeResult> }>()
+  /** Probes still running: a refresh never starts a second copy of the same CLI. */
+  private inFlight = new Map<ProviderId, Promise<ProbeResult>>()
   private bindings: Map<ProviderId, ProviderBinding>
 
   constructor(private d: ProviderServiceDeps) {
@@ -153,9 +155,13 @@ export class ProviderService implements ProviderCatalog {
   }
 
   private probe(p: ProviderProbe): Promise<ProbeResult> {
+    const running = this.inFlight.get(p.provider)
+    if (running) return running
     const c = this.cache.get(p.provider)
     if (c && this.fresh(c.at)) return c.result
     const result = this.isolated(p)
+    this.inFlight.set(p.provider, result)
+    void result.finally(() => this.inFlight.delete(p.provider))
     this.cache.set(p.provider, { at: this.d.clock.now(), result })
     return result
   }

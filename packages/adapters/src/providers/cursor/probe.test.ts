@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { CursorProbe } from './probe.ts'
 
 const FAKE = fileURLToPath(new URL('../../../test/fakes/fake-acp-agent.mjs', import.meta.url))
-const fake = () => new CursorProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'cursor'] })
+const fake = () =>
+  new CursorProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'cursor'] })
 
 describe('CursorProbe', () => {
   it('detects the fake cursor CLI and its ACP surface', async () => {
@@ -17,4 +18,7 @@ describe('CursorProbe', () => {
 })
 
 providerProbeContract('CursorProbe (fake)', fake)
-providerProbeContract('CursorProbe (missing CLI)', () => new CursorProbe({ bin: join(tmpdir(), 'no-such-cursor') }))
+providerProbeContract(
+  'CursorProbe (missing CLI)',
+  () => new CursorProbe({ bin: join(tmpdir(), 'no-such-cursor') }),
+)

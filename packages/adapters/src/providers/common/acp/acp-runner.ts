@@ -14,8 +14,19 @@ import type {
   RunnerStart,
 } from '@agent-office/core'
 import type { AgentEvent, ModelOption, PermissionMode } from '@agent-office/shared'
-import { type ByteSink, type ByteSource, JsonRpcPeer, PeerClosedError, RpcError } from '../jsonrpc.ts'
-import { classifyExit, type RuntimeExit, spawnRuntime, type SpawnRuntimeOptions } from '../process.ts'
+import {
+  type ByteSink,
+  type ByteSource,
+  JsonRpcPeer,
+  PeerClosedError,
+  RpcError,
+} from '../jsonrpc.ts'
+import {
+  classifyExit,
+  type RuntimeExit,
+  spawnRuntime,
+  type SpawnRuntimeOptions,
+} from '../process.ts'
 import {
   chooseOption,
   type EventPatch,
@@ -23,6 +34,7 @@ import {
   type ModelChoice,
   modelChoice,
   permissionRequest,
+  shortModeId,
   stopReasonOutcome,
   updateEvent,
 } from './acp-map.ts'
@@ -181,7 +193,10 @@ class AcpSession implements RunnerSession {
       const init = obj(
         await this.peer.request(M.initialize, {
           protocolVersion: ACP_PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+          clientCapabilities: {
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
+          },
           clientInfo: CLIENT_INFO,
         }),
       )
@@ -291,12 +306,13 @@ class AcpSession implements RunnerSession {
         this.toolKinds.set(u.toolCallId, u.kind)
       }
     }
-    if (u?.sessionUpdate === 'current_mode_update' && typeof u.currentModeId === 'string')
+    if (u?.sessionUpdate === 'current_mode_update' && typeof u.currentModeId === 'string') {
       this.currentMode = u.currentModeId
-    const e = updateEvent(u, {
-      ...(this.p.toolKindMap ? { toolKindMap: this.p.toolKindMap } : {}),
-      ...(this.p.modes ? { modes: this.p.modes } : {}),
-    })
+      // Report the profile's short id (never a native URL id) so the mode menu follows the agent.
+      const modeId = shortModeId(u.currentModeId, this.p.modes)
+      if (modeId) this.emit({ modeId })
+    }
+    const e = updateEvent(u, this.p.toolKindMap ? { toolKindMap: this.p.toolKindMap } : {})
     if (e) this.emit(e)
   }
 

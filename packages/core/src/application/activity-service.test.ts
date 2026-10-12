@@ -101,3 +101,30 @@ describe('ActivityService.owned (de-duplicating managed sessions)', () => {
     expect(agents.get('cu:other')?.source).toBe('hook')
   })
 })
+
+// Observed sessions of a declared provider (docs/provider-integrations.md §3): read-only by caps.
+describe('ActivityService observed caps', () => {
+  const make = () => {
+    const deps = {
+      agents: new FakeAgentRepository(),
+      messages: new FakeMessageRepository(),
+      bus: new FakeEventBus(),
+      clock: new FakeClock(0),
+      policy,
+    }
+    return { ...deps, svc: new ActivityService(deps) }
+  }
+  it('AS-C1 gives a hook-observed Cursor/Gemini/Copilot agent its observed caps (observe only)', () => {
+    const { svc, agents } = make()
+    svc.report([{ agentId: 'gm:obs', provider: 'gemini', source: 'hook', status: 'idle' }])
+    expect(agents.get('gm:obs')?.caps).toEqual(['observe'])
+  })
+
+  it('AS-C2 leaves Claude Code and unknown HTTP providers on the legacy rules (no caps)', () => {
+    const { svc, agents } = make()
+    svc.report([{ agentId: 'cc:1', provider: 'claude-code', status: 'thinking' }])
+    svc.report([{ agentId: 'lg:1', provider: 'langgraph', status: 'thinking' }])
+    expect(agents.get('cc:1')?.caps).toBeUndefined()
+    expect(agents.get('lg:1')?.caps).toBeUndefined()
+  })
+})

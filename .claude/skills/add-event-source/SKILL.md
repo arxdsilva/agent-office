@@ -20,3 +20,5 @@ First ask: can the producer just `POST /api/events`? If yes, document it in the 
 5. **Docs** — README "Sources" section: what is read, what is ignored, privacy notes.
 6. **Privacy check** — only status, tool, title, model and ≤80-char snippets leave the source; nothing is logged raw.
 7. `make check` (including `make arch`), then `/run-office` to see the new zone.
+
+**Runtime-based providers** (a CLI agent-office can also start and manage, such as Codex or an ACP agent): this skill is not enough. Follow the checklist in `docs/provider-integrations.md` §8 (declaration, profile or runner, probe, optional observation hooks, composition, contract suites).

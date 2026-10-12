@@ -79,7 +79,8 @@ const PROFILES = {
       {
         id: 'cursor_login',
         name: 'Cursor Login',
-        description: "Authenticate using existing Cursor login credentials. Run 'agent login' first.",
+        description:
+          "Authenticate using existing Cursor login credentials. Run 'agent login' first.",
       },
     ],
     modes: [
@@ -93,7 +94,11 @@ const PROFILES = {
   gemini: {
     authMethods: [
       { id: 'oauth-personal', name: 'Log in with Google' },
-      { id: 'gemini-api-key', name: 'Gemini API key', _meta: { 'api-key': { provider: 'google' } } },
+      {
+        id: 'gemini-api-key',
+        name: 'Gemini API key',
+        _meta: { 'api-key': { provider: 'google' } },
+      },
     ],
     modes: [
       { id: 'default', name: 'Default' },
@@ -179,7 +184,11 @@ async function prompt(m) {
   const say = (chunks) => {
     const messageId = `msg_${m.id}`
     for (const c of chunks)
-      update({ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text: c } })
+      update({
+        sessionUpdate: 'agent_message_chunk',
+        messageId,
+        content: { type: 'text', text: c },
+      })
   }
 
   if (text.startsWith('/crash')) process.exit(1)
@@ -229,7 +238,10 @@ async function prompt(m) {
   }
 
   // Default: think → run a command (with approval) → answer.
-  update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'secret thought' } })
+  update({
+    sessionUpdate: 'agent_thought_chunk',
+    content: { type: 'text', text: 'secret thought' },
+  })
   update({
     sessionUpdate: 'plan',
     entries: [{ content: 'secret plan step', priority: 'high', status: 'pending' }],
@@ -267,7 +279,11 @@ async function prompt(m) {
   const outcome = r.result?.outcome
   if (outcome?.outcome === 'cancelled' || cancelled) return endTurn(m.id, 'cancelled')
   const allowed = outcome?.optionId === 'allow' || outcome?.optionId === 'allow-always'
-  update({ sessionUpdate: 'tool_call_update', toolCallId, status: allowed ? 'completed' : 'failed' })
+  update({
+    sessionUpdate: 'tool_call_update',
+    toolCallId,
+    status: allowed ? 'completed' : 'failed',
+  })
   say(allowed ? ['Here are ', 'the files.'] : ['I was not allowed ', 'to run it.'])
   return endTurn(m.id, 'end_turn')
 }

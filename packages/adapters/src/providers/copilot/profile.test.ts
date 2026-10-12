@@ -23,7 +23,9 @@ describe('COPILOT_PROFILE', () => {
     expect(p.caps).toEqual(PROVIDER_DECLS.copilot.managedCaps)
     expect(p.authMethodPrefer).toEqual([])
     expect(p.loginHint).toBe('copilot login')
-    expect(p.acpFlag.test('      --acp\n          Start as Agent Client Protocol server')).toBe(true)
+    expect(p.acpFlag.test('      --acp\n          Start as Agent Client Protocol server')).toBe(
+      true,
+    )
   })
 
   it('offers the agent modes, the default first, dangerous ones flagged', () => {
@@ -39,7 +41,10 @@ describe('COPILOT_PROFILE', () => {
   })
 
   it('starts a session against the fake copilot agent and stops cleanly', async () => {
-    const runner = new CopilotAcpRunner({ bin: process.execPath, args: [FAKE, '--profile', 'copilot'] })
+    const runner = new CopilotAcpRunner({
+      bin: process.execPath,
+      args: [FAKE, '--profile', 'copilot'],
+    })
     const s = runner.start({
       cwd: dir,
       mode: 'default',

@@ -6,8 +6,29 @@ each provider's **official, documented** interface. This page is the contract fo
 integration. Code: `packages/shared/src/providers.ts` (types), `packages/core/src/domain/providers.ts`
 (declarations, state, capabilities), `packages/adapters/src/providers/**` (runtimes, probes, hooks).
 
-> Status: being implemented (plan "multi-provider platform"). Sections marked _(filled in P5)_ get
-> real verification results.
+## Architecture
+
+```
+ PROVIDER_DECLS (core/domain/providers.ts: id, prefix, caps, integration)   <- the registry
+        |
+        |  composition.ts binds each provider to:
+        v
+ +--------------------+   +----------------------------+   +--------------------------------+
+ | ProviderProbe      |   | AgentRunner (managed)      |   | Observation hooks (optional)   |
+ | --version/--help,  |   | Codex: app-server (JSONL)  |   | provider config file +         |
+ | auth check (3 s)   |   | Cursor/Gemini/Copilot: ACP |   | wrapper -> agent-office-       |
+ | never starts a     |   | Claude: Agent SDK          |   | observe.mjs -> POST /api/events|
+ | session            |   | spawn shell:false          |   | (metadata only, fails open)    |
+ +---------+----------+   +--------------+-------------+   +----------------+---------------+
+           |                             |                                  |
+           +-------------+---------------+----------------------------------+
+                         v
+        CORE: providerState() - ManagedSessionService - AgentEvent -> Agent (+ caps)
+                         |  IPC (ProviderStatus, agents with caps)
+                         v
+        RENDERER: Connect -> Providers tab, New session, chat panel (controls gated on caps),
+                  one office wing per provider
+```
 
 ## 1. Two modes, never confused
 
@@ -43,9 +64,9 @@ ids a managed session owns.
 
 | Provider | Managed session caps | Observed session caps |
 | --- | --- | --- |
-| claude-code | `launch send-message interrupt stop approve-tools select-model change-mode attach-context chrome` | legacy rules (`caps` absent): read-only mode pill; Send via the inbox hook when interactive |
+| claude-code | `launch send-message interrupt stop approve-tools select-model change-mode attach-context chrome` | declared `observe send-message`; the UI keeps the legacy rules: read-only mode pill, Send via the inbox hook when interactive |
 | codex | `launch send-message interrupt stop approve-tools select-model change-mode attach-context` | — |
-| cursor | `launch send-message interrupt stop approve-tools change-mode attach-context` (+ `select-model` when the session reports models) | `observe` |
+| cursor | `launch send-message interrupt stop approve-tools select-model change-mode attach-context` | `observe` |
 | gemini | as cursor | `observe` |
 | copilot | as cursor | `observe` |
 | chatgpt | — | — |
@@ -108,10 +129,12 @@ Transport: stdio JSONL; JSON-RPC **without** the `"jsonrpc"` field. Schemas for 
 3. `thread/start {cwd, model?, approvalPolicy, sandbox}` → `thread.id`; agent id `cx:<threadId>`.
 4. Each message → `turn/start {threadId, input:[{type:'text', text}]}` (queued while a turn runs).
 5. `turn/interrupt {threadId, turnId}`; mode/model changes apply on the next `turn/start` (per-turn
-   overrides). Note: `thread/start` takes `sandbox` as a string, but `turn/start` overrides take
-   `sandboxPolicy` as an object (`{type:'readOnly'|'workspaceWrite'|'dangerFullAccess'}`). Extra
-   folders have no `thread/start` field: they go out as `sandboxPolicy.workspaceWrite.writableRoots` on
-   the first turn (ignored in read-only and full-access). An interrupted turn ends with an empty result.
+   overrides: `approvalPolicy`, `sandboxPolicy`, `model`). Note: `thread/start` takes `sandbox` as a
+   string (`read-only` | `workspace-write` | `danger-full-access`), but `turn/start` takes
+   `sandboxPolicy` as an object (`{type:'readOnly'}`, `{type:'workspaceWrite'}` or
+   `{type:'dangerFullAccess'}`). Extra folders have no `thread/start` field: they go out as
+   `sandboxPolicy.writableRoots` on `workspaceWrite` (so only when the mode is `ask` or `auto`;
+   read-only and full-access send none). An interrupted turn ends with an empty result.
 6. Server→client requests we answer: `item/commandExecution/requestApproval` and
    `item/fileChange/requestApproval` → `{decision}`. Any other server request
    (`item/tool/requestUserInput`, `mcpServer/elicitation/request`, `item/tool/call`, …) is declined
@@ -130,22 +153,47 @@ Mode presets (`ModeOption`; `AskForApproval` = `untrusted | on-request | never`,
 | `auto` | Auto in workspace | on-request | workspace-write |
 | `full-access` | Full access (dangerous) | never | danger-full-access |
 
+`full-access` is marked `dangerous`: it is offered and accepted only when Settings → "Allow Bypass
+permissions mode" is on.
+
 ### 5.2 ACP agents (Cursor `agent acp`, Gemini `gemini --acp`, Copilot `copilot --acp`)
 
 Official docs: https://agentclientprotocol.com · Cursor https://cursor.com/docs/cli/acp · Gemini
 https://geminicli.com/docs/cli/acp-mode/ · Copilot https://docs.github.com/en/copilot (ACP server).
 Transport: JSON-RPC 2.0, newline-delimited, over stdio. One shared `AcpRunner`, configured per
-provider by an `AcpProfile` (binary, args, preferred auth method, mode labels, tool-kind map).
+provider by an `AcpProfile` (binary, args, preferred auth methods, modes, tool-kind map).
 
 1. `initialize {protocolVersion:1, clientCapabilities:{fs:{readTextFile:false, writeTextFile:false}, terminal:false}, clientInfo}` — disconnect if the agent answers another protocol version.
-2. `session/new {cwd, mcpServers:[]}` → `{sessionId, modes?}`. On an auth error, `authenticate` once with
-   a method that reuses the CLI's existing login (e.g. Cursor `cursor_login`); if that fails, exit `auth`.
-   API keys are never passed.
+2. `session/new {cwd, mcpServers:[]}` → `{sessionId, modes?, models?, configOptions?}`. On an auth error, `authenticate` once with
+   a method listed in the profile's `authMethodPrefer` **and** advertised by the agent (only Cursor
+   lists one: `cursor_login`, which reuses `agent login`); if none applies or it fails, exit `auth`.
+   Gemini and Copilot list none: their methods start a browser login, take a key or rewrite the
+   user's settings, so a logged-in CLI simply opens the session and an unauthenticated one exits
+   `auth` ("log in with the CLI"). API keys are never passed.
 3. Each message → `session/prompt {sessionId, prompt:[{type:'text', text}]}` (one at a time; queued).
 4. `session/cancel` (notification) on interrupt; every open permission request is answered `cancelled`.
-5. `session/set_mode {sessionId, modeId}` for mode changes.
-6. Unknown `session/update` kinds and provider extensions (`cursor/*`) are ignored; blocking extension
+5. `session/set_mode {sessionId, modeId}` for mode changes. Start options (mode, model) that the agent
+   rejects keep the agent's defaults and are logged without detail.
+6. **Models** (`select-model`): taken from the agent's own `session/new` answer: a `configOptions`
+   entry with `category: 'model'` (changed with `session/set_config_option`) or else
+   `models.availableModels` (changed with `session/set_model`). If it offers neither, the model
+   menu is empty.
+7. **Extra folders:** `additionalDirectories` is sent to `session/new` only when the agent advertises
+   `sessionCapabilities.additionalDirectories`. No tested CLI does, so extra folders are not sent to
+   Cursor, Gemini or Copilot sessions.
+8. Unknown `session/update` kinds and provider extensions (`cursor/*`) are ignored; blocking extension
    requests get the documented "method not found" error.
+
+Modes per profile (`id` is what agent-office stores; `native` is the agent's id when it differs).
+`dangerous` modes need "Allow Bypass permissions mode":
+
+| Provider | Mode ids (default first) | Dangerous |
+| --- | --- | --- |
+| Cursor | `agent` Agent · `plan` Plan (read-only) · `ask` Ask (no edits) | — |
+| Gemini CLI | `default` Ask before tools · `autoEdit` Auto-approve edits · `yolo` Auto-approve everything · `plan` Plan (read-only; used only if the user enabled it, i.e. the agent advertises it) | `autoEdit`, `yolo` |
+| Copilot CLI | `agent` · `plan` · `autopilot` Autopilot (allow all). Short ids map to the agent's URL ids `https://agentclientprotocol.com/protocol/session-modes#agent` / `#plan` / `#autopilot` | `autopilot` |
+
+A mode must be in the profile **and** advertised by the agent; otherwise it is not applied.
 
 ### 5.3 Permission decisions
 
@@ -188,25 +236,26 @@ hook (`hooks/agent-office-hook.mjs`) is unchanged.
 
 **Only non-blocking events are subscribed.** Events that can veto or rewrite an action
 (`preToolUse`, `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `beforeSubmitPrompt`,
-`subagentStart` (Cursor), `BeforeTool`, `BeforeAgent`, `BeforeModel`, `BeforeToolSelection`, `permissionRequest`,
-`userPromptTransformed`) are never used — Copilot's `preToolUse` even fails closed when a hook crashes.
+`beforeTabFileRead`, `subagentStart` (Cursor), `BeforeTool`, `BeforeAgent`, `BeforeModel`,
+`BeforeToolSelection`, `permissionRequest`, `userPromptTransformed`) are never used — Copilot's `preToolUse` even fails closed when a hook crashes.
 
 | Provider | Config (ours only) | Event → status |
 | --- | --- | --- |
-| Cursor | `~/.cursor/hooks.json` (merged) | `sessionStart`→idle · `afterAgentThought`→thinking · `postToolUse`→tool · `afterShellExecution`→Bash · `afterFileEdit`→Edit · `afterMCPExecution`→mcp · `stop`→waiting · `sessionEnd`→done. Subagents aren't shown: `subagentStart` can allow/deny (not used) and `subagentStop` carries no subagent or parent id |
+| Cursor | `~/.cursor/hooks.json` (merged) | `sessionStart`→idle · `afterAgentThought`→thinking · `postToolUse`→tool · `afterShellExecution`→Bash · `afterFileEdit`→Edit · `afterMCPExecution`→mcp · `stop`→waiting · `sessionEnd`→done. **Subagents are not shown**: `subagentStart` can allow/deny (not subscribed) and `subagentStop` (subscribed, but the script ignores it) carries no subagent or parent id |
 | Gemini CLI | `hooks` in `~/.gemini/settings.json` (merged) | `SessionStart`→idle · `AfterModel`→thinking · `AfterTool`→tool · `AfterAgent`→waiting · `Notification`→waiting · `SessionEnd`→done |
-| Copilot CLI | `~/.copilot/hooks/agent-office.json` (own file) | `sessionStart`→idle · `userPromptSubmitted`→thinking (if non-blocking) · `postToolUse`/`postToolUseFailure`→tool · `errorOccurred`→error · `agentStop`→waiting · `subagentStart`/`subagentStop`→child · `sessionEnd`→done |
+| Copilot CLI | `~/.copilot/hooks/agent-office.json` (own file) | `sessionStart`→idle · `userPromptSubmitted`→thinking · `postToolUse`/`postToolUseFailure`→tool · `errorOccurred`→error · `agentStop`→waiting · `subagentStart`/`subagentStop`→child · `sessionEnd`→done |
 
-Copilot's camelCase payloads carry no event name, so each Copilot entry sets `env: {AGENT_OFFICE_HOOK_EVENT: <event>}` (a documented hook field). Copilot subagents are keyed by `agentName` (`gh:<sessionId>.<agentName>`).
+Copilot's camelCase payloads carry no event name, so each Copilot entry sets `env: {AGENT_OFFICE_HOOK_EVENT: <event>}` (a documented hook field); the script falls back to inferring the event from the payload's shape. Entry shapes: Cursor `{command, timeout: 5, failClosed: false}`; Gemini a group `{hooks:[{type:'command', name:'agent-office-observe', command, timeout: 5000}]}`; Copilot `{type:'command', command, timeoutSec: 5, env}`. Copilot subagents are keyed by `agentName` (`gh:<sessionId>.<agentName>`).
 
-Ids: Cursor `cu:<conversation_id>`, Gemini `gm:<session_id>`, Copilot `gh:<sessionId>`
+Model comes from the payload where it exists (Cursor `model`, Gemini `AfterModel` request model); Copilot sends none. Ids: Cursor `cu:<conversation_id>`, Gemini `gm:<session_id>`, Copilot `gh:<sessionId>`
 (`^[A-Za-z0-9._-]{1,160}$`, else dropped). Name and topic: the project basename. Never forwarded:
 prompts, tool input, commands, paths, `transcript_path`, `user_email`.
 
 **Installing** is an explicit action (Connect → provider → Install hooks). The installer backs the
 file up once (`<file>.agent-office.bak`), merges only entries marked `agent-office-observe`, refuses
 invalid JSON (state `needs-setup`), is idempotent, and **Remove** deletes only our entries (or our own
-file). `heal()` at startup refreshes hooks that are already installed (e.g. after a port change).
+file). Wrappers live in `<app userData>/hook/agent-office-observe-<provider>.sh` (`.cmd` on
+Windows) and are removed with the hooks. `heal()` at startup refreshes hooks that are already installed (e.g. after a port change).
 
 ## 7. Privacy and security
 
@@ -245,14 +294,115 @@ automatically (grouping by provider).
 - **Resume across app restarts** (`session/load`, `thread/resume`), ACP client fs/terminal methods,
   injecting MCP servers, automated login or approvals, Copilot inside VS Code.
 
-## 10. Capability matrix (verified) _(filled in P5)_
+## 10. Capability matrix (verified)
 
-| Provider | Detect | Auth check | Start | Stream | Approve | Deny | Interrupt | Stop | Modes | Models | Observe |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | | | | | | | | | | | |
-| Codex | | | | | | | | | | | |
-| Cursor | | | | | | | | | | | |
-| Gemini CLI | | | | | | | | | | | |
-| Copilot CLI | | | | | | | | | | | |
+Run on macOS, 2026-10-12, with `make verify-providers` against the real, logged-in CLIs (section 11).
 
-## 11. Setup and troubleshooting _(filled in P5)_
+| Provider | Version | Detect | Auth | Start | Stream | Approve | Reply | Deny | Interrupt | Models | Modes | Stop | Observe hooks |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | 2.1.270 | covered by existing session and E2E suites (unchanged) | | | | | | | | | | | n/a (transcripts + inbox hook) |
+| Codex | 0.162.1 | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass | n/a (no surface) |
+| Cursor | 2026.10.01-e373342 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
+| Copilot CLI | 1.0.96 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
+| Gemini CLI | 0.63.0 | pass | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pending |
+
+Legend:
+
+- **pass**: checked against the real CLI by `scripts/verify-providers.ts` (a temp folder, harmless prompts).
+- **n/a**: not applicable. For Cursor and Copilot, authentication is not checkable up front; it is
+  checked when the session starts (`session/new`), so a missing login shows up as the `start` check.
+- **needs login / not verified**: the CLI was installed but not logged in on the test machine. Gemini's
+  protocol is verified against the fake ACP agent, and a real `initialize` plus `session/new` reached
+  the CLI's auth error (`-32000 Gemini API key is missing`), but the session checks need a login.
+- **pending**: observation hooks are verified against fixtures and the real hook script end to end with
+  the local API (`e2e.observe-hooks`); verification with the real provider firing the hooks is pending.
+- Codex protocol subset: `make codex-schema-check` found 52/52 expectations against 0.162.1.
+
+Handshakes observed on the real CLIs:
+
+- Cursor advertises auth method `cursor_login` and 44 models.
+- Copilot advertises `copilot-login` (a terminal login) and 19 models, plus the config options
+  `reasoning_effort` and `allow_all`.
+- No tested CLI advertises `additionalDirectories`, so extra folders are not sent to ACP agents.
+
+## 11. Setup and troubleshooting
+
+Every provider follows the same path:
+
+1. **Install** the CLI and **log in** with its own command (agent-office never logs in for you).
+2. Open **Connect → Providers**, switch the provider **Enabled** (new providers start off), press
+   **Check again**. The card should read **Ready** (or **Observing**).
+3. **Start a managed session**: ⊕ New session → pick the provider, a folder, a mode and a model.
+   (Codex and managed ACP sessions need nothing else.)
+4. Optionally **Install hooks** on the card (Cursor, Gemini, Copilot) so sessions you start in their own
+   terminal or IDE appear in the office, read-only. **Remove hooks** undoes it.
+
+| Provider | Install | Log in |
+| --- | --- | --- |
+| Codex | `npm i -g @openai/codex` (or `brew install codex`); needs `codex app-server` | `codex login` |
+| Cursor | Cursor CLI: `curl https://cursor.com/install -fsS \| bash`; the binary is `agent` | `agent login` |
+| Gemini CLI | `npm i -g @google/gemini-cli`; needs `gemini --acp` | run `gemini` once and sign in |
+| Copilot CLI | `npm i -g @github/copilot`; needs `copilot --acp` (public preview) | `copilot login` |
+| Claude Code | `npm i -g @anthropic-ai/claude-code` | run `claude`, then `/login` |
+
+Check the vendor's own install page if a command above has changed; agent-office only needs the
+binary on the `PATH` of the app. ⚠️ verify: install commands are the vendors' public ones, not tested here.
+
+### Card states and hints
+
+| Card shows | State | What it means and what to do |
+| --- | --- | --- |
+| ○ Off | `disabled` | You turned it off. Switch **Enabled** on. |
+| ○ Not installed | `not-installed` (hint `install-cli`) | No CLI on the `PATH` and no hooks. Install it, then **Check again**. |
+| ✗ Error | `error` (`probe-timeout` / `probe-failed`) | The CLI did not answer within 3 s, or the check failed. **Check again**; run `<cli> --version` in a terminal. |
+| ⚠ Update the CLI | `unsupported-version` (`update-cli`) | The CLI lacks `--acp` / `app-server`. Update it. |
+| ○ Needs login | `needs-auth` (`login-required`) | Run the login command from the table, then **Check again**. |
+| ⚠ Needs setup | `needs-setup` (`hooks-invalid-config`, `hooks-outdated`, `hooks-need-enable`) | The hooks file is not valid JSON (fix it by hand; agent-office never overwrites invalid JSON), or the hooks are out of date (app moved, updated, port changed): **Repair hooks**. |
+| ● Connected | `connected` | Live sessions of this provider are in the office. |
+| ● Observing | `observe-only` | Hooks installed, no managed runtime available. |
+| ● Ready | `managed-available` | The runtime can start sessions. |
+| ◌ Installed | `installed` | Detected, nothing set up. |
+| ⚠ Disconnected | `disconnected` | Had sessions and the runtime exited unexpectedly. |
+
+Codex always shows the hint "Sessions started elsewhere can't be observed: start them here"
+(`no-observation-surface`); ChatGPT shows "Opt-in: needs a public HTTPS endpoint or the OpenAI MCP
+tunnel" (`opt-in-tunnel`) and cannot be enabled.
+
+A managed session that ends with a login or crash message: log in again with the CLI and start a new
+session. A session never stores or shows credentials, and stderr is never logged raw.
+
+### Verify against the real CLIs
+
+```sh
+make verify-providers              # all installed, logged-in providers; uses your accounts
+pnpm exec tsx scripts/verify-providers.ts --only codex,cursor --json
+make codex-schema-check            # our Codex protocol subset vs. the installed codex's schema
+```
+
+`verify-providers` starts a real session in a temp folder per provider, asks it to run a harmless
+command (`node -e "console.log(6*7)"`), approves, denies, interrupts, switches mode and model, stops, and
+checks no process is left behind. It prints a pass / fail / n/a matrix. Nothing outside the temp
+folder is touched.
+
+### Hook files and removing them by hand
+
+**Remove hooks** on the card is the normal way. By hand, delete only the entries whose command contains
+`agent-office-observe`:
+
+| Provider | File | By hand |
+| --- | --- | --- |
+| Cursor | `~/.cursor/hooks.json` (or `$CURSOR_HOOKS_FILE`) | Delete the entries marked `agent-office-observe`. Backup: `hooks.json.agent-office.bak` |
+| Gemini CLI | `hooks` in `~/.gemini/settings.json` (or `$GEMINI_SETTINGS_FILE`) | Delete the `agent-office-observe` hooks (the file is otherwise yours). Backup: `settings.json.agent-office.bak` |
+| Copilot CLI | `~/.copilot/hooks/agent-office.json` (or under `$COPILOT_HOOKS_DIR`) | Delete the whole file: it is ours alone. |
+
+The wrapper scripts are in `<app userData>/hook/` (`agent-office-observe-<provider>.sh`); delete them
+with the hooks. Claude Code's own hook is separate (`~/.claude/settings.json`, Settings → hook).
+
+### Gemini CLI login
+
+Run `gemini` once in a terminal and sign in; agent-office never calls Gemini's `authenticate`
+methods (they open a browser, take an API key or rewrite your Gemini settings). If the card says
+**Needs login** or a session ends with "Gemini API key is missing", the CLI is not signed in.
+Note: Google replaced Gemini CLI with Antigravity for unpaid users on 2026-06-18, so a free account may
+no longer be able to use `gemini` at all; paid accounts, API-key and Vertex setups are what remains.
+⚠️ verify: confirm the current eligibility on Google's announcement before relying on it.

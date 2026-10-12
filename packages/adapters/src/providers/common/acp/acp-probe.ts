@@ -26,7 +26,12 @@ interface CliOut {
   timedOut: boolean
 }
 
-function run(bin: string, args: string[], ms: number, env: Record<string, string>): Promise<CliOut> {
+function run(
+  bin: string,
+  args: string[],
+  ms: number,
+  env: Record<string, string>,
+): Promise<CliOut> {
   return new Promise((resolve, reject) => {
     execFile(
       bin,

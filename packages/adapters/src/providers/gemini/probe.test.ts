@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { GeminiProbe } from './probe.ts'
 
 const FAKE = fileURLToPath(new URL('../../../test/fakes/fake-acp-agent.mjs', import.meta.url))
-const fake = () => new GeminiProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'gemini'] })
+const fake = () =>
+  new GeminiProbe({ bin: process.execPath, argsPrefix: [FAKE, '--profile', 'gemini'] })
 
 describe('GeminiProbe', () => {
   it('detects the fake gemini CLI and its ACP surface', async () => {
@@ -17,4 +18,7 @@ describe('GeminiProbe', () => {
 })
 
 providerProbeContract('GeminiProbe (fake)', fake)
-providerProbeContract('GeminiProbe (missing CLI)', () => new GeminiProbe({ bin: join(tmpdir(), 'no-such-gemini') }))
+providerProbeContract(
+  'GeminiProbe (missing CLI)',
+  () => new GeminiProbe({ bin: join(tmpdir(), 'no-such-gemini') }),
+)

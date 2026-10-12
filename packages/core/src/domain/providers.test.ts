@@ -51,7 +51,8 @@ describe('PROVIDER_DECLS', () => {
     expect(PROVIDER_DECLS.gemini).toMatchObject({ prefix: 'gm:', testedVersion: '0.63.0' })
     expect(PROVIDER_DECLS.copilot).toMatchObject({ prefix: 'gh:', testedVersion: '1.0.96' })
     for (const id of ['cursor', 'gemini', 'copilot'] as const) {
-      expect(PROVIDER_DECLS[id].managedCaps).not.toContain('select-model')
+      // Verified on the real CLIs: Cursor, Gemini and Copilot sessions all report their models.
+      expect(PROVIDER_DECLS[id].managedCaps).toContain('select-model')
       expect(PROVIDER_DECLS[id].managedCaps).not.toContain('chrome')
       expect(PROVIDER_DECLS[id].observedCaps).toEqual(['observe'])
       expect(PROVIDER_DECLS[id].integration).toEqual({ managed: 'acp', observe: 'hooks' })

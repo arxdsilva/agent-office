@@ -41,6 +41,14 @@ describe('applyEvent', () => {
     expect(applyEvent(a, { agentId: 'a', status: 'thinking', ts: 100 }, 300)).toBeNull()
   })
 
+  it('merges a provider modeId like permissionMode (agent-initiated ACP mode changes)', () => {
+    const a = applyEvent(undefined, { agentId: 'cu:1', modeId: 'plan', ts: 100 }, 100)!
+    expect(a.modeId).toBe('plan')
+    expect(applyEvent(a, { agentId: 'cu:1', status: 'thinking', ts: 200 }, 200)!.modeId).toBe(
+      'plan',
+    )
+  })
+
   it('merges permissionMode; a later ts wins and an older one is dropped (AG-1)', () => {
     const a = applyEvent(undefined, { agentId: 'a', permissionMode: 'default', ts: 100 }, 100)!
     expect(a.permissionMode).toBe('default')

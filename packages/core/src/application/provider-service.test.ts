@@ -1,4 +1,5 @@
 import type { ProviderStatus } from '@agent-office/shared'
+import type { ProbeResult, ProviderProbe } from '../ports/driven.ts'
 import { describe, expect, it } from 'vitest'
 import {
   FakeAgentRepository,
@@ -116,6 +117,38 @@ describe('ProviderService', () => {
     await t.svc.refresh()
     expect([probe.calls, other.calls]).toEqual([4, 3])
     expect(t.changes()).toBe(2)
+  })
+
+  // PS-6: enabling a provider while "Check all" runs used to start two probes of the same CLI at
+  // once (two Codex app-servers); one failed and the card showed an error. In-flight probes are shared.
+  it('PS-6 shares an in-flight probe: overlapping list/refresh calls never run the same CLI twice', async () => {
+    let calls = 0
+    let release!: (r: ProbeResult) => void
+    const slow: ProviderProbe = {
+      provider: 'codex',
+      detect: () => {
+        calls++
+        return new Promise((ok) => (release = ok))
+      },
+    }
+    const t = await setup([{ provider: 'codex', probe: slow }], ['codex'])
+    // The first probe is already running when the next refresh and list arrive.
+    const a = t.svc.refresh('codex')
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    expect(calls).toBe(1)
+    const b = t.svc.refresh()
+    const c = t.svc.list()
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    expect(calls).toBe(1)
+    release({ installed: true, version: '1.2.3', flagsOk: true, auth: 'ok' })
+    for (const list of await Promise.all([a, b, c]))
+      expect(list.find((p) => p.id === 'codex')?.version).toBe('1.2.3')
+    // Once settled, a new refresh probes again.
+    const d = t.svc.refresh('codex')
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    expect(calls).toBe(2)
+    release({ installed: true, version: '1.2.4', flagsOk: true, auth: 'ok' })
+    expect((await d).find((p) => p.id === 'codex')?.version).toBe('1.2.4')
   })
 
   it('PS-3 defaults: Claude follows claudeAdapter, others are off and not probed until enabled', async () => {
