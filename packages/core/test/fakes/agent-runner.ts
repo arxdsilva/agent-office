@@ -2,6 +2,7 @@ import type { AgentEvent, ModelOption, PermissionMode } from '@agent-office/shar
 import type {
   AgentRunner,
   RunnerDecision,
+  RunnerDecl,
   RunnerExit,
   RunnerPermission,
   RunnerSession,
@@ -21,6 +22,9 @@ export class FakeAgentRunner implements AgentRunner {
   failNext: RunnerExit | undefined
   /** When false, the test calls `session.init()` itself (default: init right away). */
   autoInit = true
+
+  /** With a decl it behaves like a provider runtime (Codex, ACP); without, like Claude Code. */
+  constructor(readonly decl?: RunnerDecl) {}
 
   start(o: RunnerStart): FakeRunnerSession {
     const s = new FakeRunnerSession(o, `sess-${++this.n}`)
@@ -45,6 +49,7 @@ export class FakeRunnerSession implements RunnerSession {
   readonly calls: string[] = []
   mode: PermissionMode
   model: string | undefined
+  modeId: string | undefined
   closed = false
   models: ModelOption[] = [
     { id: 'default', label: 'Default' },
@@ -64,6 +69,7 @@ export class FakeRunnerSession implements RunnerSession {
   ) {
     this.mode = options.mode
     this.model = options.model
+    this.modeId = options.modeId
     this.sessionId = new Promise((res, rej) => {
       this.resolveId = res
       this.rejectId = rej
@@ -82,6 +88,10 @@ export class FakeRunnerSession implements RunnerSession {
   async setModel(model: string): Promise<void> {
     this.calls.push(`model:${model}`)
     this.model = model
+  }
+  async setModeId(modeId: string): Promise<void> {
+    this.calls.push(`modeId:${modeId}`)
+    this.modeId = modeId
   }
   async supportedModels(): Promise<ModelOption[]> {
     return this.models

@@ -8,6 +8,13 @@ import {
   type ChatMessage,
   type ServerMessage,
 } from './protocol.ts'
+import {
+  ModeIdSchema,
+  ProviderIdSchema,
+  type HookStatus,
+  type ProviderId,
+  type ProviderStatus,
+} from './providers.ts'
 
 /**
  * IPC contract between the Electron main process and the renderer (exposed by the preload as
@@ -77,6 +84,11 @@ export const SettingsSchema = z.object({
   /** Optional extra view: '3d' (the office, default) or 'pixel' (the 2D RPG mode). Applied live. */
   viewMode: z.enum(VIEW_MODES).default('3d'),
   windowBounds: WindowBoundsSchema.optional(),
+  /**
+   * Per-provider integration switches (docs/provider-integrations.md). Missing = the provider's
+   * default: Claude Code follows `claudeAdapter`; every other provider is off until enabled.
+   */
+  providers: z.partialRecord(ProviderIdSchema, z.object({ enabled: z.boolean() })).default({}),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({})
@@ -119,11 +131,15 @@ export interface ContextRef {
 }
 
 export const NewSessionArgsSchema = z.object({
+  /** Which runtime starts the session (needs the provider's `launch` capability). */
+  provider: ProviderIdSchema.default('claude-code'),
   /** Must resolve to a picked folder. */
   folder: ContextRefIdSchema,
   name: z.string().trim().min(1).max(40).optional(),
   model: z.string().min(1).max(80).optional(),
   mode: PermissionModeSchema.default('default'),
+  /** Provider-specific mode (Codex presets, ACP modes); Claude Code uses `mode`. */
+  modeId: ModeIdSchema.optional(),
   extraFolders: z.array(ContextRefIdSchema).max(5).default([]),
   chrome: z.boolean().default(false),
   text: z.string().min(1).max(MAX_MESSAGE_CHARS),
@@ -134,6 +150,9 @@ export type NewSessionArgs = z.input<typeof NewSessionArgsSchema>
 export const SessionCallSchema = z.object({ agentId: z.string().min(1).max(200) })
 export const SetModeArgsSchema = SessionCallSchema.extend({ mode: PermissionModeSchema })
 export const SetModelArgsSchema = SessionCallSchema.extend({ model: z.string().min(1).max(80) })
+export const SetModeIdArgsSchema = SessionCallSchema.extend({ modeId: ModeIdSchema })
+export const ProviderCallSchema = z.object({ provider: ProviderIdSchema })
+export const ProviderEnableArgsSchema = ProviderCallSchema.extend({ enabled: z.boolean() })
 export const PERMISSION_DECISIONS = ['allow', 'allow-session', 'deny'] as const
 export type PermissionDecision = (typeof PERMISSION_DECISIONS)[number]
 export const AnswerArgsSchema = SessionCallSchema.extend({
@@ -151,7 +170,7 @@ export type StartResult =
   | { ok: false; error: string; code: 'auth' | 'runtime' | 'folder' | 'limit' | 'other' }
 export type SendResult = { ok: true; message: ChatMessage } | { ok: false; error: string }
 
-export type HookStatus = 'installed' | 'outdated' | 'not-installed'
+export type { HookStatus }
 
 export type UpdatePolicy = 'auto' | 'notify-only' | 'off'
 export interface UpdateState {
@@ -199,6 +218,8 @@ export interface ConnectionInfo {
   }
   hook: HookStatus
   mock: { enabled: boolean; override?: 'on' | 'off' }
+  /** Every provider integration's status (docs/provider-integrations.md). Optional for older mains. */
+  providers?: ProviderStatus[]
 }
 
 export interface PowerState {
@@ -227,9 +248,11 @@ export interface AgentOfficeApi {
   context: {
     pick(kind: 'files' | 'folder'): Promise<ContextRef[]>
   }
-  /** Claude Code sessions started and owned by agent-office (Agent SDK). */
+  /** Sessions started and owned by agent-office, for every provider with a managed runtime. */
   sessions: {
     start(args: NewSessionArgs): Promise<StartResult>
+    /** Provider-specific mode (Codex presets, ACP modes). Needs the session's `change-mode` cap. */
+    setModeId(agentId: string, modeId: string): Promise<void>
     setMode(agentId: string, mode: PermissionMode): Promise<void>
     setModel(agentId: string, model: string): Promise<void>
     /** Models of a running session, or the cached/fallback list without an id. */
@@ -261,6 +284,18 @@ export interface AgentOfficeApi {
     power(): Promise<PowerState>
     /** Main reports the window hidden/minimized (false) or shown/restored (true): the power saver. */
     onWindowVisibility(cb: (visible: boolean) => void): () => void
+  }
+  /** Provider integrations: status, enable/disable, models, observation hooks. */
+  providers: {
+    list(): Promise<ProviderStatus[]>
+    /** Re-runs detection (`--version`/`--help` only; never starts a session). */
+    refresh(provider?: ProviderId): Promise<ProviderStatus[]>
+    setEnabled(provider: ProviderId, enabled: boolean): Promise<ProviderStatus[]>
+    /** Models a new session of this provider can use (live list, else the provider's fallback). */
+    models(provider: ProviderId): Promise<ModelOption[]>
+    /** Installs the provider's observation hooks (explicit user action; backup first). */
+    installHooks(provider: ProviderId): Promise<HookStatus>
+    removeHooks(provider: ProviderId): Promise<HookStatus>
   }
   connections: {
     info(): Promise<ConnectionInfo>

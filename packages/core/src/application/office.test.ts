@@ -7,7 +7,9 @@ import {
   FakeClock,
   FakeEventBus,
   FakeHookRunner,
+  FakeJsonConfigStore,
   FakeMessageRepository,
+  FakeProviderProbe,
   FakeSettingsRepository,
   FakeWindow,
   fakePlatform,
@@ -117,5 +119,74 @@ describe('createOffice', () => {
         .sort(),
     ).toEqual(['shell', 'skill:x'])
     expect(bus.events.some((e) => e.type === 'capabilities.changed')).toBe(true)
+  })
+})
+
+describe('createOffice: providers', () => {
+  const first = { text: 'go', context: [], use: [] }
+  const start = {
+    cwd: '/w/shop',
+    name: 'shop',
+    mode: 'default' as const,
+    extraDirs: [],
+    chrome: false,
+    first,
+  }
+  const codex = () =>
+    new FakeAgentRunner({ provider: 'codex', prefix: 'cx:', caps: ['launch', 'send-message'] })
+
+  it('always exposes a provider catalog (Claude-only binding by default)', async () => {
+    const office = createOffice(deps({ runner: new FakeAgentRunner() }))
+    const list = await office.providers.list()
+    expect(list).toHaveLength(6)
+    expect(list.find((p) => p.id === 'claude-code')).toMatchObject({
+      state: 'managed-available',
+      managedCaps: expect.arrayContaining(['chrome']),
+    })
+    expect(office.providerHooks).toBeUndefined()
+    expect(await office.providers.models('claude-code')).toHaveLength(4)
+  })
+
+  it('runtimes start sessions per provider, attach to bindings, and own their ids', async () => {
+    const runner = codex()
+    const changes: number[] = []
+    const settingsRepo = new FakeSettingsRepository()
+    settingsRepo.saved = { ...(await settingsRepo.load()), providers: { codex: { enabled: true } } }
+    const office = createOffice(
+      deps({
+        settingsRepo,
+        runtimes: new Map([['codex', runner]]),
+        providers: [{ provider: 'codex', probe: new FakeProviderProbe('codex') }],
+        onProvidersChange: () => changes.push(1),
+      }),
+    )
+    expect(office.sessions).toBeDefined()
+    await expect(office.sessions!.start(start)).rejects.toMatchObject({ code: 'runtime' })
+    const id = await office.sessions!.start({ ...start, provider: 'codex' })
+    expect(id).toBe('cx:sess-1')
+    // an observer event for the same id is dropped
+    expect(office.activity.report([{ agentId: id, source: 'hook', status: 'idle' }])).toBe(0)
+    const codexStatus = (await office.providers.refresh('codex')).find((p) => p.id === 'codex')
+    expect(codexStatus).toMatchObject({ state: 'connected', activeSessions: 1 })
+    expect(changes).toEqual([1])
+  })
+
+  it('wires provider hooks when hook targets are given', async () => {
+    const store = new FakeJsonConfigStore()
+    const office = createOffice(
+      deps({
+        providerHookTargets: {
+          cursor: {
+            format: 'cursor-json',
+            store,
+            runner: new FakeHookRunner('"/u/agent-office-observe-cursor.sh"'),
+          },
+        },
+      }),
+    )
+    expect(await office.providerHooks!.install('cursor')).toBe('installed')
+    await office.providers.setEnabled('cursor', true)
+    const cursor = (await office.providers.list()).find((p) => p.id === 'cursor')
+    expect(cursor).toMatchObject({ hooks: 'installed', state: 'observe-only' })
   })
 })

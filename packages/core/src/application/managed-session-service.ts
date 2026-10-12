@@ -5,6 +5,7 @@ import type {
   PermissionDecision,
   PermissionMode,
   PermissionRequestVM,
+  ProviderId,
 } from '@agent-office/shared'
 import type { AgentState } from '../domain/agent.ts'
 import {
@@ -12,9 +13,11 @@ import {
   RateLimitedError,
   SessionStartError,
   UnknownAgentError,
+  ValidationError,
   type SessionStartCode,
 } from '../domain/errors.ts'
 import { newUserMessage } from '../domain/message.ts'
+import { ENDED_CAPS } from '../domain/providers.ts'
 import { RateWindow } from '../domain/rate-limit.ts'
 import {
   allowKey,
@@ -31,6 +34,7 @@ import type {
   IdGenerator,
   MessageRepository,
   RunnerDecision,
+  RunnerDecl,
   RunnerExit,
   RunnerPermission,
   RunnerSession,
@@ -72,7 +76,10 @@ const SYSTEM = {
 }
 
 export interface ManagedSessionDeps {
-  runner: AgentRunner
+  /** Claude Code's runtime (the 'claude-code' entry when `runtimes` has none). */
+  runner?: AgentRunner
+  /** Every managed runtime by provider (Codex, ACP agents, …). */
+  runtimes?: ReadonlyMap<ProviderId, AgentRunner>
   activity: ReportActivity
   agents: AgentRepository
   messages: MessageRepository
@@ -98,6 +105,10 @@ interface Pending {
 }
 
 interface Session {
+  provider: ProviderId
+  prefix: string
+  /** Absent for Claude Code: legacy UI rules, no provider modes. */
+  decl?: RunnerDecl
   agentId: string
   sessionId: string
   runner: RunnerSession
@@ -130,14 +141,15 @@ function toStartError(err: unknown): SessionStartError {
 }
 
 /**
- * Claude Code sessions agent-office starts and owns (through the AgentRunner port). Turns runner
+ * Sessions agent-office starts and owns, for every provider runtime (AgentRunner port). Turns runner
  * activity into office events, permission prompts into approvable requests, and results into replies.
  */
 export class ManagedSessionService implements ManagedSessions {
   private sessions = new Map<string, Session>()
   private starting = 0
   private rate: RateWindow
-  private lastModels: ModelOption[] | undefined
+  /** The last model list each provider's sessions reported. */
+  private lastModels = new Map<ProviderId, ModelOption[]>()
   private cancelHeartbeat: (() => void) | undefined
 
   constructor(private d: ManagedSessionDeps) {
@@ -146,23 +158,36 @@ export class ManagedSessionService implements ManagedSessions {
 
   async start(o: StartSession): Promise<string> {
     if (this.count() >= (this.d.maxSessions ?? MAX_MANAGED)) throw new SessionStartError('limit')
+    const provider = o.provider ?? 'claude-code'
+    const runtime = this.runtime(provider)
+    if (!runtime) throw new SessionStartError('runtime')
+    const decl = runtime.decl
+    if (o.chrome && decl && !decl.caps.includes('chrome'))
+      throw new NotAllowedError('This provider cannot use Chrome')
     const settings = await this.d.settings.get()
     const bypass = o.mode === 'bypassPermissions'
     if (bypass && !settings.allowBypassPermissions)
       throw new NotAllowedError('Bypass permissions is turned off in Settings')
+    const mode = decl?.modes ? this.modeOption(decl, o.modeId ?? decl.defaultModeId) : undefined
+    if (mode?.dangerous && !settings.allowBypassPermissions)
+      throw new NotAllowedError('Dangerous modes are turned off in Settings')
     this.starting++
     let s: Session
     let sessionId: string
     try {
-      const runner = this.d.runner.start({
+      const runner = runtime.start({
         cwd: o.cwd,
         ...(o.model ? { model: o.model } : {}),
         mode: o.mode,
         extraDirs: o.extraDirs,
         chrome: o.chrome,
-        allowBypass: bypass,
+        allowBypass: bypass || !!mode?.dangerous,
+        ...(mode ? { modeId: mode.id } : {}),
       })
       s = {
+        provider: decl?.provider ?? 'claude-code',
+        prefix: decl?.prefix ?? 'cc:',
+        ...(decl ? { decl } : {}),
         agentId: '',
         sessionId: '',
         runner,
@@ -188,14 +213,14 @@ export class ManagedSessionService implements ManagedSessions {
       this.starting--
     }
 
-    const agentId = `cc:${sessionId}`
+    const agentId = `${s.prefix}${sessionId}`
     s.agentId = agentId
     s.sessionId = sessionId
     this.sessions.set(agentId, s)
-    this.d.activity.report([
+    this.report([
       {
         agentId,
-        provider: 'claude-code',
+        provider: s.provider,
         source: 'managed',
         name: o.name,
         topic: o.name,
@@ -207,11 +232,14 @@ export class ManagedSessionService implements ManagedSessions {
     this.patch(agentId, (a) => ({
       ...a,
       permissionMode: o.mode,
+      ...(decl ? { caps: [...decl.caps] } : {}),
+      ...(mode ? { modeId: mode.id } : {}),
       managed: {
         chrome: o.chrome,
         pending: 0,
         phase: 'running',
         ...(o.model ? { modelId: o.model } : {}),
+        ...(decl?.modes ? { modes: decl.modes.map((m) => ({ ...m })) } : {}),
       },
     }))
     this.cancelHeartbeat ??= this.d.scheduler.every(HEARTBEAT_MS, () => this.heartbeat())
@@ -240,9 +268,7 @@ export class ManagedSessionService implements ManagedSessions {
     const s = this.require(agentId)
     this.limit(agentId)
     await s.runner.setModel(model)
-    const label = (s.models ?? this.lastModels ?? FALLBACK_MODELS).find(
-      (x) => x.id === model,
-    )?.label
+    const label = this.modelsOf(s).find((x) => x.id === model)?.label
     this.patch(agentId, (a) => ({
       ...a,
       model: (label ?? model).slice(0, 100),
@@ -252,19 +278,41 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   async models(agentId?: string): Promise<ModelOption[]> {
-    if (agentId === undefined) return this.lastModels ?? FALLBACK_MODELS
+    if (agentId === undefined) return this.lastModels.get('claude-code') ?? FALLBACK_MODELS
     const s = this.require(agentId)
     try {
       const list = await s.runner.supportedModels()
       if (list.length) {
         s.models = list
-        this.lastModels = list
+        this.lastModels.set(s.provider, list)
         return list
       }
     } catch {
       /* fall back below */
     }
-    return s.models ?? this.lastModels ?? FALLBACK_MODELS
+    return this.modelsOf(s)
+  }
+
+  /** The last model list a session of this provider reported (none yet: undefined). */
+  knownModels(provider: ProviderId): ModelOption[] | undefined {
+    return this.lastModels.get(provider)
+  }
+
+  async setModeId(agentId: string, modeId: string): Promise<void> {
+    const s = this.require(agentId)
+    this.limit(agentId)
+    if (!s.decl?.modes || !s.runner.setModeId)
+      throw new ValidationError('this session has no provider modes')
+    const mode = this.modeOption(s.decl, modeId)
+    if (mode?.dangerous && !(await this.d.settings.get()).allowBypassPermissions)
+      throw new NotAllowedError('Dangerous modes are turned off in Settings')
+    await s.runner.setModeId(modeId)
+    this.patch(agentId, (a) => ({ ...a, modeId }))
+    this.systemLine(agentId, SYSTEM.mode(mode?.label ?? modeId))
+  }
+
+  owns(agentId: string): boolean {
+    return this.sessions.has(agentId)
   }
 
   async interrupt(agentId: string): Promise<void> {
@@ -273,7 +321,7 @@ export class ManagedSessionService implements ManagedSessions {
     this.cancelPending(s, SYSTEM.interrupted)
     s.interrupted = true
     await s.runner.interrupt()
-    this.d.activity.report([{ agentId, status: 'idle', text: '' }])
+    this.report([{ agentId, status: 'idle', text: '' }])
     this.systemLine(agentId, SYSTEM.interrupted)
   }
 
@@ -282,7 +330,7 @@ export class ManagedSessionService implements ManagedSessions {
     if (!s) {
       // An ended (crashed) session still shown in the office: Stop lets it leave.
       if (this.d.agents.get(agentId)?.managed?.phase === 'ended') {
-        this.d.activity.report([{ agentId, status: 'done', text: '' }])
+        this.report([{ agentId, status: 'done', text: '' }])
         return
       }
       throw new UnknownAgentError(agentId)
@@ -319,7 +367,7 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   isManagedSession(sessionId: string): boolean {
-    return this.sessions.has(`cc:${sessionId}`)
+    return this.sessions.get(`cc:${sessionId}`)?.provider === 'claude-code'
   }
 
   count(): number {
@@ -335,9 +383,7 @@ export class ManagedSessionService implements ManagedSessions {
   private onRunnerEvent(s: Session, e: Omit<AgentEvent, 'agentId'>): void {
     if (!this.isLive(s)) return
     const { name: _name, ...rest } = e
-    this.d.activity.report([
-      { ...rest, agentId: s.agentId, source: 'managed', provider: 'claude-code' },
-    ])
+    this.report([{ ...rest, agentId: s.agentId, source: 'managed', provider: s.provider }])
   }
 
   private onRunnerResult(s: Session, r: { text: string; isError: boolean }): void {
@@ -348,7 +394,7 @@ export class ManagedSessionService implements ManagedSessions {
       s.interrupted = false
       return
     }
-    this.d.activity.report([
+    this.report([
       { agentId: s.agentId, status: r.isError && !text ? 'error' : 'waiting', text: '' },
     ])
   }
@@ -372,6 +418,29 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   // ── helpers ──
+
+  private runtime(provider: ProviderId): AgentRunner | undefined {
+    const r = this.d.runtimes?.get(provider)
+    return r ?? (provider === 'claude-code' ? this.d.runner : undefined)
+  }
+
+  /** Throws for an id the declaration doesn't offer. */
+  private modeOption(decl: RunnerDecl, modeId: string | undefined) {
+    if (modeId === undefined) return undefined
+    const m = decl.modes?.find((x) => x.id === modeId)
+    if (!m) throw new ValidationError(`unknown mode: ${modeId.slice(0, 60)}`)
+    return m
+  }
+
+  private modelsOf(s: Session): ModelOption[] {
+    const fallback = s.decl ? (s.decl.fallbackModels ?? []) : FALLBACK_MODELS
+    return s.models ?? this.lastModels.get(s.provider) ?? fallback
+  }
+
+  /** Everything this service reports is the managed session's own activity (see ActivityService.owned). */
+  private report(events: AgentEvent[]): void {
+    this.d.activity.report(events.map((e) => (e.source ? e : { ...e, source: 'managed' })))
+  }
 
   private isLive(s: Session): boolean {
     return !!s.agentId && this.sessions.get(s.agentId) === s
@@ -416,7 +485,7 @@ export class ManagedSessionService implements ManagedSessions {
     this.d.bus.publish({ type: 'message.changed', message: msg })
     s.interrupted = false
     s.runner.push(composePrompt(m))
-    this.d.activity.report([{ agentId: s.agentId, status: 'thinking', text: '' }])
+    this.report([{ agentId: s.agentId, status: 'thinking', text: '' }])
     return msg
   }
 
@@ -431,10 +500,16 @@ export class ManagedSessionService implements ManagedSessions {
     this.cancelPending(s, SYSTEM.ended)
     if (how === 'stopped') await s.runner.close().catch(() => {})
     this.patch(s.agentId, (a) =>
-      a.managed ? { ...a, managed: { ...a.managed, phase: 'ended', pending: 0 } } : a,
+      a.managed
+        ? {
+            ...a,
+            ...(s.decl ? { caps: [...ENDED_CAPS] } : {}),
+            managed: { ...a.managed, phase: 'ended', pending: 0 },
+          }
+        : a,
     )
     const crashed = how === 'crashed'
-    this.d.activity.report([
+    this.report([
       {
         agentId: s.agentId,
         status: crashed ? 'error' : 'done',
@@ -455,7 +530,7 @@ export class ManagedSessionService implements ManagedSessions {
 
   private pendingChanged(s: Session): void {
     const n = s.pending.size
-    this.d.activity.report([
+    this.report([
       {
         agentId: s.agentId,
         status: n ? 'waiting' : 'thinking',
@@ -467,7 +542,7 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   private heartbeat(): void {
-    this.d.activity.report([...this.sessions.keys()].map((agentId) => ({ agentId })))
+    this.report([...this.sessions.keys()].map((agentId) => ({ agentId })))
   }
 
   /** `managed` and `permissionMode` are written only here, never through events. */

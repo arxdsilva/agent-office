@@ -51,6 +51,9 @@ export default defineConfig({
         // Canvas2D drawing for the optional 2D RPG mode; its logic is pure in app/pixel/** (covered).
         'packages/web/src/adapters/pixel/**',
         'scripts/arch.mjs',
+        'scripts/codex-schema-check.mjs',
+        // Drives the real, logged-in provider CLIs (make verify-providers); can't run in CI.
+        'scripts/verify-providers.ts',
         'scripts/render-icons.mjs',
         'scripts/screenshots.mjs',
         'scripts/perf.mjs',

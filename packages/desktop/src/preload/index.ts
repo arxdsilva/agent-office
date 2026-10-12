@@ -37,6 +37,15 @@ const api: AgentOfficeApi = {
     stop: (agentId) => ipcRenderer.invoke(IPC.sessStop, { agentId }),
     answer: (agentId, requestId, decision) =>
       ipcRenderer.invoke(IPC.sessAnswer, { agentId, requestId, decision }),
+    setModeId: (agentId, modeId) => ipcRenderer.invoke(IPC.sessModeId, { agentId, modeId }),
+  },
+  providers: {
+    list: () => ipcRenderer.invoke(IPC.provList),
+    refresh: (provider) => ipcRenderer.invoke(IPC.provRefresh, provider ? { provider } : {}),
+    setEnabled: (provider, enabled) => ipcRenderer.invoke(IPC.provEnable, { provider, enabled }),
+    models: (provider) => ipcRenderer.invoke(IPC.provModels, { provider }),
+    installHooks: (provider) => ipcRenderer.invoke(IPC.provHooksInstall, { provider }),
+    removeHooks: (provider) => ipcRenderer.invoke(IPC.provHooksRemove, { provider }),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),

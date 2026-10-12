@@ -1,13 +1,33 @@
 import { COPY } from '../../app/connect-copy.ts'
-import type { ConnectTab, ConnectVM, Pill, SnippetLang } from '../../app/connect-types.ts'
-import type { ConnectView } from '../../ports.ts'
+import type {
+  ConnectTab,
+  ConnectVM,
+  Pill,
+  ProviderCardVM,
+  SnippetLang,
+} from '../../app/connect-types.ts'
+import type { ConnectView, ProviderAction } from '../../ports.ts'
 import { byId, el } from './el.ts'
 
-const TABS: ConnectTab[] = ['claude', 'http', 'demo', 'connected']
+const TABS: ConnectTab[] = ['claude', 'providers', 'http', 'demo', 'connected']
 const LANGS: SnippetLang[] = ['curl', 'python', 'js']
 /** Remembers the last snippet language (per viewer; read back in main.ts). */
 export const SNIPPET_LANG_KEY = 'agent-office.snippetLang'
 const FLASH_MS = 1_500
+const STATE_WORD: Record<Pill['tone'], string> = {
+  ok: 'connected',
+  warn: 'attention',
+  off: 'off',
+  error: 'error',
+  pending: 'pending',
+}
+const isHttps = (u: string) => {
+  try {
+    return new URL(u).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 type CopyTarget = 'endpoint' | 'snippet'
 
@@ -61,6 +81,7 @@ export class DomConnectPanel implements ConnectView {
     copy: (_text: string, _t: CopyTarget): void | Promise<void> => {},
     test: (): void | Promise<void> => {},
     goTo: (_p: string) => {},
+    provider: (_a: ProviderAction): void | Promise<void> => {},
   }
 
   // Claude Code
@@ -84,6 +105,9 @@ export class DomConnectPanel implements ConnectView {
   private code = el('code')
   private snippetNote = el('p', undefined, 'muted small')
   private live = el('span')
+  // Providers
+  private provList = el('div', undefined, 'prov-cards')
+  private provKey = ''
   // Demo
   private demoPill = el('span')
   private demoToggle = toggle('c-demo-toggle', COPY.demo.toggle)
@@ -103,6 +127,7 @@ export class DomConnectPanel implements ConnectView {
     this.dialog.addEventListener('keydown', (e) => e.stopPropagation())
     this.buildTabs()
     this.panels.set('claude', this.buildClaude())
+    this.panels.set('providers', this.buildProviders())
     this.panels.set('http', this.buildHttp())
     this.panels.set('demo', this.buildDemo())
     this.panels.set('connected', this.buildConnected())
@@ -135,6 +160,10 @@ export class DomConnectPanel implements ConnectView {
   }
   onGoToWing(fn: (provider: string) => void) {
     this.fns.goTo = fn
+  }
+
+  onProviderAction(fn: (a: ProviderAction) => void | Promise<void>) {
+    this.fns.provider = fn
   }
 
   isOpen(): boolean {
@@ -177,6 +206,7 @@ export class DomConnectPanel implements ConnectView {
       this.panels.get(t.id)!.hidden = !active
     }
     this.renderClaude(vm.claude)
+    this.renderProviders(vm.providers.cards)
     this.renderHttp(vm.http)
     this.renderDemo(vm.demo)
     this.renderConnected(vm.connected)
@@ -275,6 +305,97 @@ export class DomConnectPanel implements ConnectView {
     if (c.verified) setPill(this.verified, c.verified)
     this.idle.hidden = !c.idleNote
     this.idle.textContent = c.idleNote ?? ''
+  }
+
+  private buildProviders(): HTMLElement {
+    const s = this.section('providers', COPY.providers.heading, el('span'))
+    const all = button(COPY.providers.checkAll, 'btn', 'c-prov-refresh-all')
+    all.dataset.action = 'refresh'
+    all.addEventListener('click', () => void this.fns.provider({ kind: 'refresh' }))
+    this.provList.id = 'c-prov-list'
+    s.querySelector('.connect-head')!.replaceChildren(el('h3', COPY.providers.heading), all)
+    s.append(this.provList)
+    return s
+  }
+
+  private renderProviders(cards: ProviderCardVM[]): void {
+    const key = JSON.stringify(cards)
+    if (key === this.provKey) return
+    this.provKey = key
+    // Keep keyboard focus on the same control across a rebuild.
+    const a = document.activeElement as HTMLElement | null
+    const focusKey =
+      a && this.provList.contains(a) ? `${a.closest('article')?.id}|${a.dataset.action}` : ''
+    this.provList.replaceChildren(...cards.map((c) => this.providerCard(c)))
+    if (focusKey) {
+      const [id, act] = focusKey.split('|')
+      this.provList.querySelector<HTMLElement>(`[id="${id}"] [data-action="${act}"]`)?.focus()
+    }
+  }
+
+  private providerCard(c: ProviderCardVM): HTMLElement {
+    const card = el('article', undefined, 'prov-card')
+    card.id = `c-prov-${c.id}`
+    card.dataset.state = STATE_WORD[c.pill.tone]
+    const act = (a: ProviderAction) => () => void this.fns.provider(a)
+    const head = el('div', undefined, 'prov-head')
+    head.append(el('strong', c.label), el('span', c.pill.text, `pill ${c.pill.tone}`))
+    card.append(head)
+    if (c.version) card.append(el('p', c.version, 'muted small prov-version'))
+    card.append(el('p', c.integration, 'small prov-integration'))
+    if (c.sessions) card.append(el('p', c.sessions, 'small prov-sessions'))
+    for (const [label, caps, cls] of [
+      ['Managed:', c.managedCaps, 'managed'],
+      ['Observed:', c.observedCaps, 'observed'],
+    ] as const) {
+      if (!caps.length) continue
+      const row = el('ul', undefined, `prov-chips ${cls}`)
+      row.setAttribute('aria-label', label)
+      row.append(el('li', label, 'prov-chips-l muted'))
+      for (const cap of caps) row.append(el('li', cap, 'chip'))
+      card.append(row)
+    }
+    if (c.hint) card.append(el('p', c.hint, 'muted small prov-hint'))
+    if (c.toggle) {
+      const input = el('input')
+      input.type = 'checkbox'
+      input.checked = c.toggle.on
+      input.dataset.action = 'toggle'
+      input.setAttribute('aria-label', `Enable ${c.label}`)
+      input.addEventListener('change', () =>
+        this.fns.provider({ kind: 'toggle', id: c.id, on: input.checked }),
+      )
+      const row = el('label', undefined, 'row')
+      row.append(input, ` ${COPY.providers.enable}`)
+      card.append(row)
+    }
+    if (c.hooks) {
+      const h = c.hooks
+      const b = button(h.button)
+      b.dataset.action = 'hooks'
+      b.addEventListener('click', act({ kind: 'hooks', id: c.id, action: h.action }))
+      const row = el('p', undefined, 'row prov-hooks')
+      row.append(
+        el('span', 'Hooks', 'muted'),
+        el('span', h.status.text, `pill ${h.status.tone}`),
+        b,
+      )
+      card.append(row)
+    }
+    const actions = el('div', undefined, 'row prov-actions')
+    const refresh = button(COPY.providers.check)
+    refresh.dataset.action = 'refresh'
+    refresh.addEventListener('click', act({ kind: 'refresh', id: c.id }))
+    actions.append(refresh)
+    if (c.canStart) {
+      const start = button(COPY.providers.start, 'btn primary')
+      start.dataset.action = 'start'
+      start.addEventListener('click', act({ kind: 'start', id: c.id }))
+      actions.append(start)
+    }
+    if (isHttps(c.docsUrl)) actions.append(extLink(COPY.providers.docs, c.docsUrl))
+    card.append(actions)
+    return card
   }
 
   private buildHttp(): HTMLElement {

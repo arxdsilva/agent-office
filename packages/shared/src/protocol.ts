@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ModeOption, SessionCap } from './providers.ts'
 
 export const AGENT_STATUSES = ['idle', 'thinking', 'tool', 'waiting', 'error', 'done'] as const
 export type AgentStatus = (typeof AGENT_STATUSES)[number]
@@ -92,6 +93,13 @@ export interface Agent {
   permissionMode?: PermissionMode
   /** Set only for managed sessions (started by agent-office). */
   managed?: ManagedInfo
+  /**
+   * What this session can do (docs/provider-integrations.md). Set only by core for provider
+   * sessions; absent = the legacy rules (Claude Code transcripts, HTTP agents). Never from HTTP.
+   */
+  caps?: SessionCap[]
+  /** Current provider-specific mode id (Codex presets, ACP modes); Claude uses `permissionMode`. */
+  modeId?: string
 }
 
 export type MessageState = 'queued' | 'delivered' | 'replied'
@@ -129,7 +137,7 @@ export interface PermissionRequestVM {
   where?: string
 }
 
-/** Present only on agents whose Claude Code session agent-office started (Agent SDK). */
+/** Present only on agents whose session agent-office started (any provider with a managed runtime). */
 export interface ManagedInfo {
   /** Model id the session reports (checks the picker); `Agent.model` keeps the display string. */
   modelId?: string
@@ -137,6 +145,8 @@ export interface ManagedInfo {
   /** Pending permission requests. */
   pending: number
   phase: 'starting' | 'running' | 'ended'
+  /** Provider-specific modes the session offers (absent for Claude Code: `PERMISSION_MODES`). */
+  modes?: ModeOption[]
 }
 
 /** Messages pushed from server to browser over the WebSocket. */

@@ -10,6 +10,8 @@ import type {
   PermissionDecision,
   PermissionMode,
   PermissionRequestVM,
+  ProviderId,
+  ProviderStatus,
   ServerMessage,
   Settings,
   SettingsPatch,
@@ -112,6 +114,10 @@ export interface ComposeMessage {
 }
 
 export interface StartSession {
+  /** Defaults to 'claude-code'. */
+  provider?: ProviderId
+  /** Provider-specific mode (Codex presets, ACP modes); Claude Code uses `mode`. */
+  modeId?: string
   cwd: string
   name: string
   model?: string
@@ -141,4 +147,27 @@ export interface ManagedSessions {
   isManagedSession(sessionId: string): boolean
   count(): number
   stopAll(): Promise<void>
+  /** Provider-specific mode change; needs the session's `change-mode` cap. */
+  setModeId?(agentId: string, modeId: string): Promise<void>
+  /** True for any agent id a managed session owns (all providers), for de-duplicating observers. */
+  owns?(agentId: string): boolean
+}
+
+/** The provider registry as the UI sees it (docs/provider-integrations.md). */
+export interface ProviderCatalog {
+  list(): Promise<ProviderStatus[]>
+  /** Re-runs detection for one provider or all; one failing probe never affects the others. */
+  refresh(provider?: ProviderId): Promise<ProviderStatus[]>
+  setEnabled(provider: ProviderId, enabled: boolean): Promise<ProviderStatus[]>
+  models(provider: ProviderId): Promise<ModelOption[]>
+}
+
+/** Observation hooks for hook-based providers (Cursor, Gemini CLI, Copilot CLI). */
+export interface ProviderHooks {
+  status(provider: ProviderId): Promise<HookStatus>
+  /** Explicit user action only; backs up first; never touches foreign hooks. */
+  install(provider: ProviderId): Promise<HookStatus>
+  uninstall(provider: ProviderId): Promise<HookStatus>
+  /** Refreshes hooks that are already installed (e.g. after a port change). Never installs new ones. */
+  heal(): Promise<void>
 }

@@ -1,5 +1,6 @@
 // The fakes are held to the same contracts as the real adapters.
-import { agentRunnerContract } from './contracts/agent-runner.ts'
+import { agentRunnerContract, managedRuntimeContract } from './contracts/agent-runner.ts'
+import { jsonConfigStoreContract, providerProbeContract } from './contracts/providers.ts'
 import { capabilityRepositoryContract } from './contracts/capabilities.ts'
 import {
   FakeAgentRunner,
@@ -8,7 +9,9 @@ import {
   FakeClaudeSettingsStore,
   FakeEventBus,
   FakeHookRunner,
+  FakeJsonConfigStore,
   FakeMessageRepository,
+  FakeProviderProbe,
   FakeSettingsRepository,
 } from './fakes/index.ts'
 import {
@@ -51,5 +54,38 @@ agentRunnerContract('FakeAgentRunner', () => {
     ask: (tool, input) => s().ask(tool, input),
     prompts: () => s().prompts,
     controls: () => s().calls,
+  }
+})
+
+providerProbeContract('FakeProviderProbe', () => new FakeProviderProbe('cursor'))
+jsonConfigStoreContract('FakeJsonConfigStore', async (initial) => ({
+  store: new FakeJsonConfigStore(initial),
+}))
+
+managedRuntimeContract('FakeAgentRunner (with decl)', () => {
+  const runner = new FakeAgentRunner({
+    provider: 'codex',
+    prefix: 'cx:',
+    caps: ['launch', 'send-message', 'stop', 'change-mode'],
+    modes: [
+      { id: 'ask', label: 'Ask before changes' },
+      { id: 'full-access', label: 'Full access', dangerous: true },
+    ],
+    defaultModeId: 'ask',
+  })
+  runner.autoInit = false
+  const s = () => runner.last()
+  return {
+    runner,
+    init: (id) => {
+      Object.assign(s(), { id })
+      s().init()
+    },
+    toolUse: (name) => s().emit({ status: 'tool', tool: name }),
+    result: (text) => s().result(text),
+    ask: (tool, input) => s().ask(tool, input),
+    prompts: () => s().prompts,
+    controls: () => s().calls,
+    alive: () => !s().closed,
   }
 })

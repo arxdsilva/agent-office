@@ -70,3 +70,34 @@ describe('ActivityService.sweep', () => {
     expect(bus.events).toHaveLength(1)
   })
 })
+
+describe('ActivityService.owned (de-duplicating managed sessions)', () => {
+  const make = (owned: (id: string) => boolean) => {
+    const deps = {
+      agents: new FakeAgentRepository(),
+      messages: new FakeMessageRepository(),
+      bus: new FakeEventBus(),
+      clock: new FakeClock(0),
+      policy,
+      owned,
+    }
+    return { ...deps, svc: new ActivityService(deps) }
+  }
+
+  it('AS-O1 drops hook/HTTP events for an id a managed session owns, keeps the managed ones', () => {
+    const { svc, agents } = make((id) => id === 'cu:abc')
+    expect(svc.report([{ agentId: 'cu:abc', source: 'hook', status: 'tool', tool: 'Bash' }])).toBe(
+      0,
+    )
+    expect(svc.report([{ agentId: 'cu:abc', status: 'tool', tool: 'Bash' }])).toBe(0)
+    expect(agents.get('cu:abc')).toBeUndefined()
+    expect(svc.report([{ agentId: 'cu:abc', source: 'managed', status: 'thinking' }])).toBe(1)
+    expect(agents.get('cu:abc')?.status).toBe('thinking')
+  })
+
+  it('AS-O2 a different id is not affected', () => {
+    const { svc, agents } = make((id) => id === 'cu:abc')
+    expect(svc.report([{ agentId: 'cu:other', source: 'hook', status: 'idle' }])).toBe(1)
+    expect(agents.get('cu:other')?.source).toBe('hook')
+  })
+})

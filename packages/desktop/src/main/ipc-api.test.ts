@@ -420,3 +420,137 @@ describe('managed sessions and context over IPC', () => {
     expect(h[IPC.ctxPick]).toBeUndefined()
   })
 })
+
+describe('providers over IPC', () => {
+  const STATUS = [{ id: 'claude-code', label: 'Claude Code', state: 'installed' }]
+  function withProviders(over: Partial<IpcPorts> = {}) {
+    const providers = {
+      list: vi.fn(async () => STATUS as never),
+      refresh: vi.fn(async () => STATUS as never),
+      setEnabled: vi.fn(async () => STATUS as never),
+      models: vi.fn(async () => [{ id: 'm', label: 'M' }]),
+    }
+    const providerHooks = {
+      status: vi.fn(async () => 'not-installed' as const),
+      install: vi.fn(async () => 'installed' as const),
+      uninstall: vi.fn(async () => 'not-installed' as const),
+      heal: vi.fn(async () => {}),
+    }
+    const onProvidersChanged = vi.fn()
+    const h = createIpcHandlers(
+      ports({ providers, providerHooks, onProvidersChanged, ...over } as Partial<IpcPorts>),
+    )
+    return { h, providers, providerHooks, onProvidersChanged }
+  }
+
+  it('prov:list and prov:refresh forward and validate', async () => {
+    const { h, providers, onProvidersChanged } = withProviders()
+    expect(await h[IPC.provList]!()).toEqual(STATUS)
+    await h[IPC.provRefresh]!({})
+    await h[IPC.provRefresh]!({ provider: 'codex' })
+    await h[IPC.provRefresh]!(undefined)
+    expect(providers.refresh).toHaveBeenNthCalledWith(1, undefined)
+    expect(providers.refresh).toHaveBeenNthCalledWith(2, 'codex')
+    expect(providers.refresh).toHaveBeenNthCalledWith(3, undefined)
+    await expect(h[IPC.provRefresh]!({ provider: 'nope' })).rejects.toThrow('invalid')
+    expect(onProvidersChanged).toHaveBeenCalledTimes(3)
+  })
+
+  it('prov:enable and prov:models validate payloads', async () => {
+    const { h, providers, onProvidersChanged } = withProviders()
+    await h[IPC.provEnable]!({ provider: 'cursor', enabled: true })
+    expect(providers.setEnabled).toHaveBeenCalledWith('cursor', true)
+    expect(onProvidersChanged).toHaveBeenCalledTimes(1)
+    await expect(h[IPC.provEnable]!({ provider: 'cursor' })).rejects.toThrow('invalid')
+    expect(await h[IPC.provModels]!({ provider: 'codex' })).toEqual([{ id: 'm', label: 'M' }])
+    await expect(h[IPC.provModels]!({})).rejects.toThrow('invalid')
+  })
+
+  it('prov:hooks-install/remove call the hooks port, or report not-installed without one', async () => {
+    const { h, providerHooks, onProvidersChanged } = withProviders()
+    expect(await h[IPC.provHooksInstall]!({ provider: 'gemini' })).toBe('installed')
+    expect(await h[IPC.provHooksRemove]!({ provider: 'gemini' })).toBe('not-installed')
+    expect(providerHooks.install).toHaveBeenCalledWith('gemini')
+    expect(providerHooks.uninstall).toHaveBeenCalledWith('gemini')
+    expect(onProvidersChanged).toHaveBeenCalledTimes(2)
+    await expect(h[IPC.provHooksInstall]!('gemini')).rejects.toThrow('invalid')
+
+    const bare = withProviders({ providerHooks: undefined })
+    expect(await bare.h[IPC.provHooksInstall]!({ provider: 'gemini' })).toBe('not-installed')
+    expect(await bare.h[IPC.provHooksRemove]!({ provider: 'gemini' })).toBe('not-installed')
+  })
+
+  it('provider channels are absent without a catalog', () => {
+    const h = createIpcHandlers(ports())
+    expect(h[IPC.provList]).toBeUndefined()
+  })
+})
+
+describe('provider-aware sessions over IPC', () => {
+  const FOLDER = 'ctx_aaaaaaaaaaaa'
+  function setup() {
+    const sessions = {
+      start: vi.fn(async () => 'cx:t1'),
+      setModeId: vi.fn(async () => {}),
+      setMode: vi.fn(),
+      setModel: vi.fn(),
+      models: vi.fn(),
+      interrupt: vi.fn(),
+      stop: vi.fn(),
+      answer: vi.fn(),
+      pending: () => [],
+      isManaged: () => true,
+      isManagedSession: () => true,
+      count: () => 1,
+      stopAll: vi.fn(),
+    }
+    const context = {
+      pick: vi.fn(),
+      resolve: () => ({
+        path: '/Users/me/code',
+        kind: 'folder' as const,
+        label: 'code',
+        hint: '~/code',
+      }),
+      exists: () => true,
+    }
+    const h = createIpcHandlers(ports({ sessions: sessions as never, context: context as never }))
+    return { h, sessions }
+  }
+
+  it('sess:start passes provider and modeId through', async () => {
+    const { h, sessions } = setup()
+    expect(
+      await h[IPC.sessStart]!({ provider: 'codex', modeId: 'auto', folder: FOLDER, text: 'go' }),
+    ).toEqual({ ok: true, agentId: 'cx:t1' })
+    expect(sessions.start).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'codex', modeId: 'auto' }),
+    )
+  })
+
+  it('sess:start rejects chrome for a provider other than claude-code', async () => {
+    const { h, sessions } = setup()
+    expect(
+      await h[IPC.sessStart]!({ provider: 'codex', chrome: true, folder: FOLDER, text: 'go' }),
+    ).toMatchObject({ ok: false, code: 'other' })
+    expect(sessions.start).not.toHaveBeenCalled()
+  })
+
+  it('sess:mode-id validates and forwards', async () => {
+    const { h, sessions } = setup()
+    await h[IPC.sessModeId]!({ agentId: 'cx:t1', modeId: 'auto' })
+    expect(sessions.setModeId).toHaveBeenCalledWith('cx:t1', 'auto')
+    await expect(h[IPC.sessModeId]!({ agentId: 'cx:t1', modeId: '' })).rejects.toThrow('invalid')
+  })
+
+  it('sess:mode-id fails clearly when the manager has no setModeId', async () => {
+    const { sessions } = setup()
+    const h = createIpcHandlers(
+      ports({
+        sessions: { ...sessions, setModeId: undefined } as never,
+        context: { pick: vi.fn(), resolve: () => undefined, exists: () => true } as never,
+      }),
+    )
+    await expect(h[IPC.sessModeId]!({ agentId: 'a', modeId: 'x' })).rejects.toThrow('unsupported')
+  })
+})

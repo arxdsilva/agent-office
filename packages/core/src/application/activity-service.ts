@@ -9,6 +9,8 @@ export interface ActivityDeps {
   bus: EventPublisher
   clock: Clock
   policy: SweepPolicy
+  /** Ids a managed session owns: only its own (source 'managed') events may update them. */
+  owned?: (agentId: string) => boolean
 }
 
 /** Applies agent activity from any producer and keeps the office tidy. */
@@ -19,6 +21,7 @@ export class ActivityService implements ReportActivity, Housekeeping {
     const now = this.d.clock.now()
     let accepted = 0
     for (const e of events) {
+      if (e.source !== 'managed' && this.d.owned?.(e.agentId)) continue
       const prev = this.d.agents.get(e.agentId)
       const next = applyEvent(prev, e, now)
       if (!next) continue

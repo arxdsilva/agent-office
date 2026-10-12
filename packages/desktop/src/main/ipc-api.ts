@@ -6,6 +6,8 @@ import {
   type HookManagement,
   type ManagedSessions,
   type OfficeQuery,
+  type ProviderCatalog,
+  type ProviderHooks,
   type Scheduler,
   type SettingsManagement,
   type UpdateManagement,
@@ -17,13 +19,17 @@ import {
   IPC,
   NewSessionArgsSchema,
   PickKindSchema,
+  ProviderCallSchema,
+  ProviderEnableArgsSchema,
   SendMessageArgsSchema,
   SessionCallSchema,
   SetModeArgsSchema,
+  SetModeIdArgsSchema,
   SetModelArgsSchema,
   SettingsPatchSchema,
   type ConnectionInfo,
   type ContextRef,
+  type HookStatus,
   type PowerState,
   type StartResult,
   type SendResult,
@@ -80,6 +86,12 @@ export interface IpcPorts {
   context?: ContextRegistry
   /** The power source (Electron powerMonitor via power.ts); absent reads as on AC. */
   power?: { state(): PowerState }
+  /** Provider registry; the `prov:*` channels exist only with it. */
+  providers?: ProviderCatalog
+  /** Observation hooks for hook-based providers; absent reads as 'not-installed'. */
+  providerHooks?: ProviderHooks
+  /** Called after a provider action so connection info is pushed again. */
+  onProvidersChanged?: () => void
 }
 
 export type IpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -162,6 +174,34 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     },
     [IPC.appPowerGet]: (): PowerState => p.power?.state() ?? { onBattery: false },
   }
+  const { providers } = p
+  if (providers) {
+    const changed = <T>(v: T): T => {
+      p.onProvidersChanged?.()
+      return v
+    }
+    const optionalProvider = (x: unknown) =>
+      x === undefined ? undefined : call(ProviderCallSchema.partial(), x).provider
+    Object.assign(handlers, {
+      [IPC.provList]: () => providers.list(),
+      [IPC.provRefresh]: async (args: unknown) =>
+        changed(await providers.refresh(optionalProvider(args))),
+      [IPC.provEnable]: async (args: unknown) => {
+        const a = call(ProviderEnableArgsSchema, args)
+        return changed(await providers.setEnabled(a.provider, a.enabled))
+      },
+      [IPC.provModels]: async (args: unknown) =>
+        providers.models(call(ProviderCallSchema, args).provider),
+      [IPC.provHooksInstall]: async (args: unknown): Promise<HookStatus> => {
+        const a = call(ProviderCallSchema, args)
+        return changed((await p.providerHooks?.install(a.provider)) ?? 'not-installed')
+      },
+      [IPC.provHooksRemove]: async (args: unknown): Promise<HookStatus> => {
+        const a = call(ProviderCallSchema, args)
+        return changed((await p.providerHooks?.uninstall(a.provider)) ?? 'not-installed')
+      },
+    })
+  }
   const { sessions, context } = p
   if (!sessions || !context) return handlers
 
@@ -172,6 +212,8 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
       const parsed = NewSessionArgsSchema.safeParse(args)
       if (!parsed.success) return { ok: false, code: 'other', error: 'invalid session' }
       const a = parsed.data
+      if (a.chrome && a.provider !== 'claude-code')
+        return { ok: false, code: 'other', error: 'Chrome is only available for Claude Code' }
       let start
       try {
         const folder = entry(a.folder, 'folder')
@@ -179,6 +221,8 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
         const missing = [folder, ...extra].some((f) => !context.exists(f.path))
         if (missing) return { ok: false, code: 'folder', error: 'folder not found' }
         start = {
+          ...(a.provider !== 'claude-code' ? { provider: a.provider } : {}),
+          ...(a.modeId ? { modeId: a.modeId } : {}),
           cwd: folder.path,
           name: a.name ?? folder.label,
           ...(a.model ? { model: a.model } : {}),
@@ -204,6 +248,11 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     [IPC.sessMode]: async (args: unknown) => {
       const a = call(SetModeArgsSchema, args)
       return sessions.setMode(a.agentId, a.mode)
+    },
+    [IPC.sessModeId]: async (args: unknown) => {
+      const a = call(SetModeIdArgsSchema, args)
+      if (!sessions.setModeId) throw new Error('unsupported')
+      return sessions.setModeId(a.agentId, a.modeId)
     },
     [IPC.sessModel]: async (args: unknown) => {
       const a = call(SetModelArgsSchema, args)

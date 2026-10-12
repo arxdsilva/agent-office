@@ -6,11 +6,17 @@ import type {
   ModelOption,
   PermissionMode,
   PermissionRequestVM,
+  ProviderId,
 } from '@agent-office/shared'
 import type { Pill } from './connect-types.ts'
 
 export interface ModeOptionVM {
-  id: PermissionMode
+  /** A Claude `PermissionMode`, or a provider mode id (`ModeOption.id`) for other providers. */
+  id: PermissionMode | (string & {})
+  /** Provider modes that widen what the agent may do (needs `allowBypassPermissions`). */
+  dangerous?: boolean
+  /** Shown but not selectable (dangerous modes while `allowBypassPermissions` is off). */
+  disabled?: boolean
   icon: string
   label: string
   desc: string
@@ -77,6 +83,10 @@ export interface Draft {
 }
 
 export interface NewSessionForm {
+  /** Which runtime starts the session (default 'claude-code'). */
+  provider: ProviderId
+  /** Provider-specific mode (non-Claude providers); Claude uses `mode`. */
+  modeId?: string
   folder?: ContextRef
   name: string
   model?: string
@@ -89,6 +99,12 @@ export interface NewSessionForm {
 }
 
 export interface NewSessionVM {
+  /** Dialog heading, e.g. "New Codex session". */
+  title: string
+  /** Providers that can start a session now (enabled, `launch` cap, ready); the form's is selected. */
+  providers: { id: ProviderId; label: string; selected: boolean }[]
+  /** Attach files/folders (the provider's `attach-context` cap). */
+  attachAvailable: boolean
   folder?: { label: string; hint: string }
   name: string
   namePlaceholder: string

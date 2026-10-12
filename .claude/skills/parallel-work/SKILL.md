@@ -6,6 +6,7 @@ description: Split a multi-area agent-office task across parallel subagents per 
 # Parallel work (lead checklist)
 
 1. **Map areas → agents.** List the areas the task touches; one agent per area/layer (hexagon). ≤ 5 running at once.
+   1b. **Pick each agent's model** (rule §6): the cheapest competent tier — `haiku` for mechanical work, `sonnet` for implementation against a written contract, `opus` for protocol/lifecycle/security/core-refactor work. Escalate one tier after two failed gates.
 2. **Contract first (you, alone):**
    - Shared types and docs (`docs/*.md`, `packages/shared`, `packages/web/src/app/office-types.ts`), port interfaces, IPC/HTTP shapes — additive only.
    - `pnpm add` every dependency the agents will need.
@@ -18,6 +19,8 @@ description: Split a multi-area agent-office task across parallel subagents per 
 ## Agent prompt template
 
 ```
+Model: <haiku|sonnet|opus> — <one-line reason>   (set the Agent `model` parameter to match)
+
 You are agent <ID> on the agent-office repo (/Users/asilva/youtube/workspace). Read first (authoritative):
 - <plan file §…>, docs/<contract>.md §…, AGENTS.md, .claude/rules/{ARCHITECTURE,TESTING,PRIVACY_SECURITY,SCENE,PARALLEL_WORK}.md
 

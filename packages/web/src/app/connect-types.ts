@@ -1,7 +1,8 @@
 // Contract for the Connect panel and the empty state (plan §2–§4). Pure data, no DOM.
 // Owned by the lead; view-models.ts implements the functions that produce these shapes.
+import type { ProviderId } from '@agent-office/shared'
 
-export type ConnectTab = 'claude' | 'http' | 'demo' | 'connected'
+export type ConnectTab = 'claude' | 'providers' | 'http' | 'demo' | 'connected'
 export type SnippetLang = 'curl' | 'python' | 'js'
 export type Tone = 'ok' | 'warn' | 'off' | 'error' | 'pending'
 
@@ -37,6 +38,8 @@ export interface ConnectVM {
     live: Pill
   }
   demo: { pill: Pill; toggle: { on: boolean; disabledNote?: string } }
+  /** One card per provider integration (docs/provider-integrations.md). */
+  providers: { cards: ProviderCardVM[] }
   connected: {
     rows: {
       provider: string
@@ -49,6 +52,32 @@ export interface ConnectVM {
   }
 }
 
+/** A provider's Connect card. Every string is display copy (never a path or raw error text). */
+export interface ProviderCardVM {
+  id: ProviderId
+  label: string
+  /** State dot + label, e.g. "● Connected", "○ Needs login". */
+  pill: Pill
+  /** "v0.162.1 · tested 0.162.1"; absent when not installed. */
+  version?: string
+  /** "Managed: app-server · Observed: hooks". */
+  integration: string
+  /** "2 active sessions"; absent when 0. */
+  sessions?: string
+  /** Capability chips, managed and observed, as short labels ("Send", "Approve tools", …). */
+  managedCaps: string[]
+  observedCaps: string[]
+  /** One help line from the hint (e.g. "Run `codex login` in a terminal, then Check again"). */
+  hint?: string
+  /** Enable/Disable switch; absent for providers that can't be enabled (ChatGPT). */
+  toggle?: { on: boolean }
+  /** Hooks row for hook-based providers. */
+  hooks?: { status: Pill; action: 'install' | 'uninstall' | 'repair'; button: string }
+  /** "Start agent" opens New Session with this provider preselected. */
+  canStart: boolean
+  docsUrl: string
+}
+
 export interface HookActionVM {
   label: string
   action: 'install' | 'uninstall'
@@ -56,7 +85,7 @@ export interface HookActionVM {
 }
 
 export type EmptyPhase = 'loading' | 'first-run' | 'active' | 'empty-again' | 'dismissed'
-export type EmptyTileId = 'claude' | 'http' | 'demo'
+export type EmptyTileId = 'claude' | 'http' | 'demo' | 'providers'
 
 export interface EmptyStateVM {
   tiles: {

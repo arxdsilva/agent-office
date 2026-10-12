@@ -447,3 +447,133 @@ describe('lifecycle', () => {
     expect(m.state).toBe('queued')
   })
 })
+
+// ── multi-provider runtimes (plan §2, MS-P) ──
+
+const CODEX_DECL = {
+  provider: 'codex' as const,
+  prefix: 'cx:',
+  caps: ['launch', 'send-message', 'interrupt', 'stop', 'change-mode'] as (
+    'launch' | 'send-message' | 'interrupt' | 'stop' | 'change-mode'
+  )[],
+  modes: [
+    { id: 'read-only', label: 'Read only' },
+    { id: 'ask', label: 'Ask before changes' },
+    { id: 'full-access', label: 'Full access (dangerous)', dangerous: true },
+  ],
+  defaultModeId: 'ask',
+  fallbackModels: [{ id: 'gpt-5', label: 'GPT-5' }],
+}
+
+function setupMulti(over: Partial<Settings> = {}) {
+  const t = setup(over)
+  const codex = new FakeAgentRunner(CODEX_DECL)
+  const svc = new ManagedSessionService({
+    runner: t.runner,
+    runtimes: new Map([['codex', codex]]),
+    activity: t.activity,
+    agents: t.agents,
+    messages: t.messages,
+    inbox: t.inbox,
+    settings: { get: async () => t.settings },
+    bus: t.bus,
+    clock: t.clock,
+    scheduler: t.scheduler,
+    ids: new SeqIds(),
+  })
+  return { ...t, svc, codex }
+}
+
+const CODEX_START: StartSession = { ...START, provider: 'codex', model: 'gpt-5' }
+
+describe('multi-provider runtimes', () => {
+  it('MS-P1 a Codex runtime gives cx: ids, provider codex, and maps its events', async () => {
+    const t = setupMulti()
+    const id = await t.svc.start(CODEX_START)
+    expect(id).toBe('cx:sess-1')
+    expect(t.agents.get(id)).toMatchObject({ provider: 'codex', source: 'managed' })
+    t.codex.last().emit({ status: 'tool', tool: 'Bash' })
+    expect(t.agents.get(id)).toMatchObject({ provider: 'codex', status: 'tool', tool: 'Bash' })
+    expect(t.svc.isManagedSession('sess-1')).toBe(false) // Claude-only (the tailer)
+    await expect(t.svc.start({ ...START, provider: 'cursor' })).rejects.toMatchObject({
+      code: 'runtime',
+    })
+  })
+
+  it('MS-P2 sets caps, modes and the default mode; Claude agents keep caps undefined', async () => {
+    const t = setupMulti()
+    const id = await t.svc.start(CODEX_START)
+    const a = t.agents.get(id)!
+    expect(a.caps).toEqual(CODEX_DECL.caps)
+    expect(a.modeId).toBe('ask')
+    expect(a.managed?.modes).toEqual(CODEX_DECL.modes)
+    expect(t.codex.last().options).toMatchObject({ modeId: 'ask', allowBypass: false })
+    t.codex.last().models = []
+    expect(await t.svc.models(id)).toEqual(CODEX_DECL.fallbackModels)
+    const claude = await t.svc.start(START)
+    expect(t.agents.get(claude)?.caps).toBeUndefined()
+    expect(t.agents.get(claude)?.modeId).toBeUndefined()
+    expect(t.agents.get(claude)?.managed?.modes).toBeUndefined()
+    expect(t.runner.last().options.modeId).toBeUndefined()
+    await t.svc.stop(id)
+    expect(t.agents.get(id)?.caps).toEqual(['observe', 'stop'])
+  })
+
+  it('MS-P3 dangerous modes need allowBypassPermissions, at start and in setModeId', async () => {
+    const off = setupMulti()
+    await expect(off.svc.start({ ...CODEX_START, modeId: 'full-access' })).rejects.toBeInstanceOf(
+      NotAllowedError,
+    )
+    await expect(off.svc.start({ ...CODEX_START, modeId: 'nope' })).rejects.toThrow(/mode/)
+    const id = await off.svc.start(CODEX_START)
+    await expect(off.svc.setModeId(id, 'full-access')).rejects.toBeInstanceOf(NotAllowedError)
+    await expect(off.svc.setModeId(id, 'nope')).rejects.toThrow(/mode/)
+    await off.svc.setModeId(id, 'read-only')
+    expect(off.codex.last().calls).toContain('modeId:read-only')
+    expect(off.agents.get(id)?.modeId).toBe('read-only')
+    expect(off.messages.byAgent(id).at(-1)).toMatchObject({
+      from: 'system',
+      text: 'Mode → Read only',
+    })
+    const on = setupMulti({ allowBypassPermissions: true })
+    const id2 = await on.svc.start({ ...CODEX_START, modeId: 'full-access' })
+    expect(on.codex.last().options).toMatchObject({ modeId: 'full-access', allowBypass: true })
+    await on.svc.setModeId(id2, 'ask')
+    await on.svc.setModeId(id2, 'full-access')
+    const claude = await on.svc.start(START)
+    await expect(on.svc.setModeId(claude, 'ask')).rejects.toThrow(/mode/)
+  })
+
+  it('MS-P4 the session cap of 6 applies across providers', async () => {
+    const t = setupMulti()
+    for (let i = 0; i < 3; i++) await t.svc.start(START)
+    for (let i = 0; i < 3; i++) await t.svc.start(CODEX_START)
+    await expect(t.svc.start(CODEX_START)).rejects.toMatchObject({ code: 'limit' })
+    await expect(t.svc.start(START)).rejects.toMatchObject({ code: 'limit' })
+  })
+
+  it('MS-P5 owns covers every live managed id, of any provider', async () => {
+    const t = setupMulti()
+    const cx = await t.svc.start(CODEX_START)
+    const cc = await t.svc.start(START)
+    expect([t.svc.owns(cx), t.svc.owns(cc), t.svc.owns('cu:x')]).toEqual([true, true, false])
+    await t.svc.stop(cx)
+    expect(t.svc.owns(cx)).toBe(false)
+  })
+
+  it('MS-P6 Claude ids, provider and fallback models are unchanged; chrome needs the cap', async () => {
+    const t = setupMulti()
+    const cc = await t.svc.start(START)
+    expect(cc).toBe('cc:sess-1')
+    expect(t.agents.get(cc)?.provider).toBe('claude-code')
+    expect(await t.svc.models()).toEqual(FALLBACK_MODELS)
+    await expect(t.svc.start({ ...CODEX_START, chrome: true })).rejects.toBeInstanceOf(
+      NotAllowedError,
+    )
+    expect(t.svc.knownModels('codex')).toBeUndefined()
+    const cx = await t.svc.start(CODEX_START)
+    await t.svc.models(cx)
+    expect(t.svc.knownModels('codex')).toEqual(t.codex.last().models)
+    expect(await t.svc.models()).toEqual(FALLBACK_MODELS) // Codex models never leak into Claude's
+  })
+})

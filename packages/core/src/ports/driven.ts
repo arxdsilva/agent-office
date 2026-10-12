@@ -6,7 +6,10 @@ import type {
   ChatMessage,
   HookStatus,
   ModelOption,
+  ModeOption,
   PermissionMode,
+  ProviderId,
+  SessionCap,
   Settings,
 } from '@agent-office/shared'
 import type { AgentState } from '../domain/agent.ts'
@@ -142,9 +145,29 @@ export interface WindowState {
 
 export type { HookStatus }
 
-/** Starts Claude Code sessions (Agent SDK in production; scripted fakes in tests). */
+/**
+ * Starts sessions of one provider's runtime: Claude Code (Agent SDK), Codex (app-server), ACP
+ * agents (Cursor, Gemini CLI, Copilot CLI); scripted fakes in tests. A runner without `decl` is
+ * Claude Code (`cc:` ids), so existing runners need no change.
+ */
 export interface AgentRunner {
+  readonly decl?: RunnerDecl
   start(o: RunnerStart): RunnerSession
+}
+
+/** Who a runner's sessions belong to and what they can do (docs/provider-integrations.md). */
+export interface RunnerDecl {
+  provider: ProviderId
+  /** Agent id prefix, e.g. 'cx:' (Codex), 'cu:' (Cursor). Unique per provider. */
+  prefix: string
+  /** Capabilities of a running managed session. */
+  caps: SessionCap[]
+  /** Provider-specific modes offered at start and in the session header (Claude: none). */
+  modes?: ModeOption[]
+  /** The default mode id when a start names none. */
+  defaultModeId?: string
+  /** Shown before a session reports its own model list. */
+  fallbackModels?: ModelOption[]
 }
 
 export interface RunnerStart {
@@ -155,6 +178,8 @@ export interface RunnerStart {
   chrome: boolean
   /** Only with mode 'bypassPermissions' and the user's setting on. */
   allowBypass: boolean
+  /** Provider-specific mode (runners with `decl.modes`); dangerous modes only when `allowBypass`. */
+  modeId?: string
 }
 
 export type RunnerExit = { error?: 'auth' | 'runtime' | 'folder' | 'crash'; message?: string }
@@ -166,6 +191,8 @@ export interface RunnerSession {
   push(prompt: string): void
   setMode(mode: PermissionMode): Promise<void>
   setModel(model: string): Promise<void>
+  /** Provider-specific mode change (runners with `decl.modes`). */
+  setModeId?(modeId: string): Promise<void>
   supportedModels(): Promise<ModelOption[]>
   interrupt(): Promise<void>
   close(): Promise<void>
@@ -179,9 +206,42 @@ export interface RunnerSession {
 }
 
 export interface RunnerPermission {
+  /**
+   * The tool, normalized by the adapter to the shared names `summarizeToolRequest` knows (Bash,
+   * Edit, Read, WebFetch, Grep, …) so core never sees provider-specific tool kinds or raw titles.
+   */
   tool: string
   input: Record<string, unknown>
   cwd: string
 }
 
 export type RunnerDecision = { behavior: 'allow' } | { behavior: 'deny'; message: string }
+
+/** Detects a provider's CLI without starting a session (`--version`, `--help`; documented status calls only). */
+export interface ProviderProbe {
+  readonly provider: ProviderId
+  /** Never throws; reports failures in `error`. Must finish within its own timeout. */
+  detect(): Promise<ProbeResult>
+}
+
+export interface ProbeResult {
+  installed: boolean
+  version?: string
+  /** The CLI exposes the integration surface we use (e.g. `--acp`, `app-server`). */
+  flagsOk: boolean
+  auth: 'ok' | 'needed' | 'unknown'
+  error?: 'timeout' | 'spawn' | 'protocol'
+}
+
+/**
+ * A provider's JSON config file that holds our observation hooks (Cursor `hooks.json`, Gemini
+ * `settings.json`, a Copilot hooks file). Backs up before the first write; refuses invalid JSON.
+ */
+export interface JsonConfigStore {
+  /** undefined when the file does not exist. Throws ValidationError for invalid JSON. */
+  read(): Promise<Record<string, unknown> | undefined>
+  /** Atomic write (temp + rename) after backing up the previous file once. */
+  write(json: Record<string, unknown>): Promise<void>
+  /** Deletes the file (formats that own a whole file, e.g. Copilot's). */
+  remove(): Promise<void>
+}

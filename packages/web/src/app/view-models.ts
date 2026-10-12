@@ -17,6 +17,10 @@ import {
   type GraphicsQuality,
   type HookStatus,
   type ModelOption,
+  type ModeOption,
+  type ProviderId,
+  type ProviderStatus,
+  type SessionCap,
   type PermissionMode,
   type PermissionRequestVM,
   type Settings,
@@ -25,7 +29,7 @@ import {
   type UpdateState,
 } from '@agent-office/shared'
 import type { Chip } from './capability-vm.ts'
-import { COPY } from './connect-copy.ts'
+import { COPY, PROVIDER_DOCS } from './connect-copy.ts'
 import { snippet } from './connect-snippets.ts'
 import {
   TEST_AGENT_ID,
@@ -34,6 +38,7 @@ import {
   type EmptyPhase,
   type EmptyStateVM,
   type HookActionVM,
+  type ProviderCardVM,
   type Pill,
   type SnippetLang,
 } from './connect-types.ts'
@@ -79,7 +84,8 @@ const TURN_DELIVERY = SESSION_COPY.hint.turnDelivery
 /** How (and whether) a message reaches this agent: the hint matrix of plan §2.5. */
 export function hintFor(a: Agent, hook: HookStatus = 'not-installed'): Hint | null {
   const h = SESSION_COPY.hint
-  if (a.managed) return null
+  // Provider sessions carry their capabilities: the composer explains what is possible.
+  if (a.managed || a.caps) return null
   if (a.provider === 'claude-code') {
     if (a.parentId) return { text: h.subagent, action: 'open-parent', label: h.openParent }
     if (hook === 'not-installed')
@@ -210,6 +216,8 @@ export interface PanelInput {
   models?: ModelOption[]
   allowBypass?: boolean
   draft?: Draft
+  /** Provider statuses (labels for the observation-only copy). */
+  providers?: ProviderStatus[]
 }
 
 export interface UsedChips {
@@ -229,7 +237,12 @@ export function panelVM(
   const d = input.draft ?? EMPTY_DRAFT
   const caps = a ? (state.capabilities.get(a.provider) ?? []) : []
   const session = {
-    composer: composerVM(a, d, caps),
+    composer: composerVM(
+      a,
+      d,
+      caps,
+      a && (input.providers?.find((p) => p.id === a.provider)?.label ?? a.provider),
+    ),
     draftText: d.text,
   }
   if (!a)
@@ -274,7 +287,10 @@ export function panelVM(
       ...(m.context?.length ? { context: m.context } : {}),
     })),
     session: sessionHeaderVM(a, input.models, !!input.allowBypass),
-    permission: a.managed ? permissionVM(state.permissions?.get(id) ?? []) : null,
+    permission:
+      a.managed && (!a.caps || a.caps.includes('approve-tools'))
+        ? permissionVM(state.permissions?.get(id) ?? [])
+        : null,
     ...session,
   }
 }
@@ -305,6 +321,27 @@ const modeText = (m: PermissionMode | undefined) => {
   return c ? `${c.icon} ${c.label}` : SESSION_COPY.modeUnknown
 }
 
+/** A provider's own modes (Codex presets, ACP modes); dangerous ones stay visible but disabled. */
+export function providerModeOptions(
+  modes: ModeOption[],
+  current: string | undefined,
+  allowBypass: boolean,
+): ModeOptionVM[] {
+  return modes.map((m) => ({
+    id: m.id,
+    icon: m.dangerous ? '⚠' : '◯',
+    label: m.label,
+    desc: '',
+    checked: m.id === current,
+    ...(m.dangerous && { dangerous: true }),
+    ...(m.dangerous && !allowBypass && { disabled: true }),
+  }))
+}
+
+/** The mode a new provider session starts in: the chosen one, else the first non-dangerous. */
+const defaultModeId = (modes: ModeOption[], chosen?: string) =>
+  modes.find((m) => m.id === chosen)?.id ?? modes.find((m) => !m.dangerous)?.id ?? modes[0]?.id
+
 /** The mode menu's items; Bypass only when allowed in Settings. */
 export function modeOptions(
   current: PermissionMode | undefined,
@@ -326,7 +363,14 @@ export function sessionHeaderVM(
   if (!m && (a.parentId || (a.provider !== 'claude-code' && !a.permissionMode))) return null
   const modelId = m?.modelId
   const modelLabel = models?.find((o) => o.id === modelId)?.label ?? a.model ?? modelId
-  const mode = modeText(m ? (a.permissionMode ?? 'default') : a.permissionMode)
+  const can = (c: SessionCap) => !a.caps || a.caps.includes(c)
+  const own = m?.modes
+  const mode = own
+    ? (() => {
+        const cur = own.find((o) => o.id === a.modeId)
+        return cur ? `${cur.dangerous ? '⚠' : '◯'} ${cur.label}` : SESSION_COPY.modeUnknown
+      })()
+    : modeText(m ? (a.permissionMode ?? 'default') : a.permissionMode)
   const model = modelLabel ? `✦ ${modelLabel}` : SESSION_COPY.modelUnknown
   if (!m)
     return {
@@ -344,10 +388,16 @@ export function sessionHeaderVM(
     managed: true,
     mode: { text: mode, tone: 'ok' },
     model: { text: model, tone: 'ok' },
-    modes: modeOptions(a.permissionMode, allowBypass),
-    models: (models ?? []).map((o) => ({ ...o, checked: o.id === modelId })),
-    canInterrupt: live && (BUSY.includes(a.status) || m.pending > 0),
-    canStop: true,
+    modes: !can('change-mode')
+      ? []
+      : own
+        ? providerModeOptions(own, a.modeId, allowBypass)
+        : modeOptions(a.permissionMode, allowBypass),
+    models: can('select-model')
+      ? (models ?? []).map((o) => ({ ...o, checked: o.id === modelId }))
+      : [],
+    canInterrupt: can('interrupt') && live && (BUSY.includes(a.status) || m.pending > 0),
+    canStop: can('stop'),
   }
 }
 
@@ -376,7 +426,12 @@ function chipsOf(d: Pick<Draft, 'context' | 'use'>, caps: Capability[], chromeOf
 }
 
 /** The composer under the thread: chips, placeholder, and why it's disabled (plan §2.2). */
-export function composerVM(a: Agent | undefined, d: Draft, caps: Capability[] = []): ComposerVM {
+export function composerVM(
+  a: Agent | undefined,
+  d: Draft,
+  caps: Capability[] = [],
+  providerLabel?: string,
+): ComposerVM {
   const c = SESSION_COPY.composer
   const phase = a?.managed?.phase
   const reason = !a
@@ -387,13 +442,18 @@ export function composerVM(a: Agent | undefined, d: Draft, caps: Capability[] = 
         ? c.starting
         : phase === 'ended'
           ? c.ended
-          : null
+          : a.caps && !a.caps.includes('send-message')
+            ? c.observeOnly(providerLabel ?? a.provider)
+            : null
   const disabled = !a || reason !== null
   return {
     chips: chipsOf(d, caps, !!a?.managed && !a.managed.chrome),
     disabled,
     placeholder: reason ?? c.placeholder,
-    canAddContext: !disabled && d.context.length < MAX_CONTEXT,
+    canAddContext:
+      !disabled &&
+      (!a?.caps || a.caps.includes('attach-context')) &&
+      d.context.length < MAX_CONTEXT,
     canAddUse: !disabled && d.use.length < MAX_USE,
   }
 }
@@ -404,6 +464,7 @@ export function useMenuVM(
   provider: string,
   selected: string[],
   managedChrome?: boolean,
+  sessionCaps?: SessionCap[],
 ): UseMenuVM {
   const has = (id: string) => caps.some((c) => c.id === id)
   const entry = (id: string, seen: boolean) => ({
@@ -417,8 +478,9 @@ export function useMenuVM(
     {
       id: 'browser',
       label: g.browser,
-      entries:
-        provider === 'claude-code' ? [entry(CHROME_ID, has(CHROME_ID) || !!managedChrome)] : [],
+      entries: (sessionCaps ? sessionCaps.includes('chrome') : provider === 'claude-code')
+        ? [entry(CHROME_ID, has(CHROME_ID) || !!managedChrome)]
+        : [],
     },
     {
       id: 'mcp',
@@ -473,35 +535,77 @@ export function permissionVM(requests: PermissionRequestVM[]): PermissionCardVM 
   }
 }
 
+const READY_STATES: ProviderStatus['state'][] = ['managed-available', 'connected', 'installed']
+
+/** Providers that can start a session now; Claude Code whenever enabled (or no info at all). */
+export function startableProviders(
+  providers?: ProviderStatus[],
+): { id: ProviderId; label: string }[] {
+  if (!providers) return [{ id: 'claude-code', label: COPY.panel.tabs.claude }]
+  return providers.filter(
+    (p) =>
+      p.enabled &&
+      (p.id === 'claude-code' ||
+        (p.managedCaps.includes('launch') && READY_STATES.includes(p.state))),
+  )
+}
+
 /** The new-session dialog (plan §2.4). `running` counts live managed sessions. */
 export function newSessionVM(
   form: NewSessionForm,
   models: ModelOption[] | undefined,
   allowBypass: boolean,
   running: number,
-  opts: { starting?: boolean; error?: string; caps?: Capability[] } = {},
+  opts: {
+    starting?: boolean
+    error?: string
+    caps?: Capability[]
+    /** `ConnectionInfo.providers`; absent (older main) = Claude Code only. */
+    providers?: ProviderStatus[]
+  } = {},
 ): NewSessionVM {
   const ns = SESSION_COPY.newSession
   const starting = !!opts.starting
   const limit = running >= MAX_MANAGED ? ns.limit(running) : undefined
-  const list = [{ id: '', label: ns.modelDefault }, ...(models?.length ? models : FALLBACK_MODELS)]
+  const claude = form.provider === 'claude-code'
+  const current = opts.providers?.find((p) => p.id === form.provider)
+  const list = [
+    { id: '', label: ns.modelDefault },
+    ...(models?.length ? models : claude ? FALLBACK_MODELS : []),
+  ]
+  const attachAvailable = current ? current.managedCaps.includes('attach-context') : true
+  const modes = claude
+    ? modeOptions(form.mode, allowBypass)
+    : providerModeOptions(
+        current?.modes ?? [],
+        defaultModeId(current?.modes ?? [], form.modeId),
+        allowBypass,
+      )
   const empty = { text: '', context: form.context, use: form.use }
   const composer = composerVM(undefined, empty, opts.caps)
+  const label = opts.providers?.find((p) => p.id === form.provider)?.label
   return {
+    title: claude ? ns.title : ns.titleFor(label ?? form.provider),
+    providers: startableProviders(opts.providers).map((p) => ({
+      id: p.id,
+      label: p.label,
+      selected: p.id === form.provider,
+    })),
+    attachAvailable,
     ...(form.folder && { folder: { label: form.folder.label, hint: form.folder.hint } }),
     name: form.name,
     namePlaceholder: form.folder?.label ?? '',
     models: list.map((m) => ({ ...m, selected: m.id === (form.model ?? '') })),
-    modes: modeOptions(form.mode, allowBypass),
+    modes,
     extraFolders: form.extraFolders.map((f) => ({ key: f.ref, label: f.label, hint: f.hint })),
-    chrome: { checked: form.chrome, available: true },
+    chrome: { checked: form.chrome && claude, available: claude },
     text: form.text,
     composer: {
       ...composer,
       chips: chipsOf(form, opts.caps ?? [], !form.chrome),
       disabled: starting,
       placeholder: SESSION_COPY.composer.placeholder,
-      canAddContext: !starting && form.context.length < MAX_CONTEXT,
+      canAddContext: !starting && attachAvailable && form.context.length < MAX_CONTEXT,
       canAddUse: !starting && form.use.length < MAX_USE,
     },
     canStart: !!form.folder && !!form.text.trim() && !starting && !limit,
@@ -937,9 +1041,15 @@ export function connectVM(i: ConnectInput): ConnectVM {
     },
   }
 
+  const cards = (info.providers ?? []).map(providerCard)
   const rows = connectedRows(agents, now)
   const tabs: ConnectVM['tabs'] = [
     { id: 'claude', label: COPY.panel.tabs.claude, tone: claude.pill.tone },
+    {
+      id: 'providers',
+      label: COPY.panel.tabs.providers,
+      tone: providersTone(info.providers ?? []),
+    },
     { id: 'http', label: COPY.panel.tabs.http, tone: http.pill.tone },
     { id: 'demo', label: COPY.panel.tabs.demo, tone: demo.pill.tone },
     {
@@ -948,7 +1058,67 @@ export function connectVM(i: ConnectInput): ConnectVM {
       tone: rows.length ? 'ok' : 'off',
     },
   ]
-  return { tab: i.tab, tabs, claude, http, demo, connected: { rows } }
+  return { tab: i.tab, tabs, claude, http, demo, providers: { cards }, connected: { rows } }
+}
+
+const TONE_RANK: Record<Pill['tone'], number> = { off: 0, ok: 1, pending: 2, warn: 3, error: 4 }
+
+/** The Providers tab's tone: the worst state among enabled providers (off when none). */
+function providersTone(list: ProviderStatus[]): Pill['tone'] {
+  let worst: Pill['tone'] = 'off'
+  for (const p of list)
+    if (p.enabled) {
+      const t = COPY.providers.states[p.state][1]
+      if (TONE_RANK[t] > TONE_RANK[worst]) worst = t
+    }
+  return worst
+}
+
+function providerCard(p: ProviderStatus): ProviderCardVM {
+  const c = COPY.providers
+  const [text, tone] = c.states[p.state]
+  const hookCopy =
+    p.hooks === 'installed'
+      ? c.hooks.installed
+      : p.hooks === 'outdated'
+        ? c.hooks.outdated
+        : c.hooks.missing
+  const hint = !p.hint
+    ? undefined
+    : p.hint === 'login-required'
+      ? c.login[p.id]
+      : p.hint === 'install-cli' || p.hint === 'update-cli'
+        ? c.hint[p.hint](p.label)
+        : c.hint[p.hint]
+  const version = c.version(p.version, p.testedVersion)
+  return {
+    id: p.id,
+    label: p.label,
+    pill: pill(text, tone),
+    ...(version && { version }),
+    integration: c.integration(
+      p.integration.managed && c.managedVia[p.integration.managed],
+      p.integration.observe && c.observeVia[p.integration.observe],
+    ),
+    ...(p.activeSessions > 0 && { sessions: c.sessions(p.activeSessions) }),
+    managedCaps: p.managedCaps.map((x) => c.caps[x]),
+    observedCaps: p.observedCaps.map((x) => c.caps[x]),
+    ...(hint && { hint }),
+    ...(p.id !== 'chatgpt' && { toggle: { on: p.enabled } }),
+    ...(p.hooks && {
+      hooks: {
+        status: pill(
+          hookCopy.text,
+          p.hooks === 'installed' ? 'ok' : p.hooks === 'outdated' ? 'warn' : 'off',
+        ),
+        action:
+          p.hooks === 'installed' ? 'uninstall' : p.hooks === 'outdated' ? 'repair' : 'install',
+        button: hookCopy.button,
+      },
+    }),
+    canStart: p.enabled && p.managedCaps.includes('launch') && READY_STATES.includes(p.state),
+    docsUrl: PROVIDER_DOCS[p.id],
+  }
 }
 
 /** How a provider's agents reach the office, from `agent.source` (plan §2.2, Connected tab). */
@@ -1002,6 +1172,18 @@ export function emptyPhase(p: {
 
 export type DemoStart = 'idle' | 'starting' | 'failed'
 
+function providersTile(list: ProviderStatus[]): Pill {
+  const ready = list.filter(
+    (p) =>
+      p.id !== 'claude-code' &&
+      p.enabled &&
+      ['connected', 'managed-available', 'observe-only'].includes(p.state),
+  ).length
+  return ready
+    ? pill(COPY.empty.providers.ready(ready), 'ok')
+    : pill(COPY.empty.providers.none, 'off')
+}
+
 export function emptyStateVM(info: ConnectionInfo, demo: DemoStart): EmptyStateVM {
   const e = COPY.empty
   const demoPillNow = demo === 'failed' ? pill(e.demo.failed, 'error') : demoPill(info.mock, 0)
@@ -1016,6 +1198,13 @@ export function emptyStateVM(info: ConnectionInfo, demo: DemoStart): EmptyStateV
         pill: demoPillNow,
         button: demo === 'starting' ? e.demo.starting : e.demo.button,
         ...(demo === 'starting' && { busy: true }),
+      },
+      {
+        id: 'providers',
+        title: e.providers.title,
+        body: e.providers.body,
+        button: e.providers.button,
+        pill: providersTile(info.providers ?? []),
       },
     ],
     listening: e.listening,

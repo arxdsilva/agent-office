@@ -18,12 +18,15 @@ import type {
   EventSubscriber,
   HookRunner,
   IdGenerator,
+  JsonConfigStore,
   LoginItem,
   Logger,
   MessageRepository,
   Notifier,
   OfficeEvent,
   PlatformInfo,
+  ProbeResult,
+  ProviderProbe,
   Scheduler,
   SettingsRepository,
   TrayView,
@@ -224,6 +227,53 @@ export class FakeHookRunner implements HookRunner {
   }
   async remove() {
     this.installed = false
+  }
+}
+
+/** A provider's hook config file in memory (`raw` = file contents, undefined = no file). */
+export class FakeJsonConfigStore implements JsonConfigStore {
+  writes = 0
+  removed = false
+  lastBackup: string | undefined
+  constructor(public raw?: string) {}
+  async read() {
+    if (this.raw === undefined) return undefined
+    try {
+      return JSON.parse(this.raw) as Record<string, unknown>
+    } catch {
+      throw new ValidationError('invalid JSON')
+    }
+  }
+  async write(json: Record<string, unknown>) {
+    this.writes++
+    this.lastBackup ??= this.raw
+    this.raw = JSON.stringify(json)
+  }
+  async remove() {
+    if (this.raw !== undefined) this.removed = true
+    this.raw = undefined
+  }
+  get json(): Record<string, unknown> | undefined {
+    return this.raw === undefined ? undefined : (JSON.parse(this.raw) as Record<string, unknown>)
+  }
+}
+
+/**
+ * Scripted ProviderProbe. `behavior` 'throw' and 'hang' break the port's promise on purpose, to test
+ * that the core isolates misbehaving adapters (the contract runs the default 'ok').
+ */
+export class FakeProviderProbe implements ProviderProbe {
+  calls = 0
+  constructor(
+    readonly provider: ProviderProbe['provider'],
+    public result: ProbeResult = { installed: true, version: '1.0.0', flagsOk: true, auth: 'ok' },
+    public behavior: 'ok' | 'throw' | 'hang' = 'ok',
+  ) {}
+  detect(): Promise<ProbeResult> {
+    this.calls++
+    if (this.behavior === 'throw') return Promise.reject(new Error('boom /secret/path'))
+    if (this.behavior === 'hang') return new Promise(() => {})
+    return Promise.resolve({ ...this.result })
   }
 }
 

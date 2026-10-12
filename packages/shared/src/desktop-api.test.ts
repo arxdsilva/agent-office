@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PERMISSION_MODES, PermissionModeSchema } from './protocol.ts'
+import { PROVIDER_IDS } from './providers.ts'
 import {
   GraphicsAdvancedSchema,
   AnswerArgsSchema,
@@ -11,6 +12,9 @@ import {
   SendMessageArgsSchema,
   SettingsPatchSchema,
   SettingsSchema,
+  SetModeIdArgsSchema,
+  ProviderEnableArgsSchema,
+  ProviderCallSchema,
 } from './desktop-api.ts'
 
 describe('SettingsSchema', () => {
@@ -185,5 +189,41 @@ describe('view mode (2D RPG plan §10.1)', () => {
     expect(SettingsPatchSchema.safeParse({ viewMode: 'pixel' }).success).toBe(true)
     expect(SettingsPatchSchema.safeParse({ viewMode: '2d' }).success).toBe(false)
     expect(SettingsSchema.parse({ graphicsQuality: 'low' }).viewMode).toBe('3d')
+  })
+})
+
+// Multi-provider contract (plan "multi-provider platform" §1): additive, old payloads still valid.
+describe('provider contracts', () => {
+  it('defaults provider settings to empty and accepts a subset of providers', () => {
+    expect(DEFAULT_SETTINGS.providers).toEqual({})
+    expect(SettingsSchema.parse({ providers: { codex: { enabled: true } } }).providers).toEqual({
+      codex: { enabled: true },
+    })
+    expect(SettingsSchema.safeParse({ providers: { windsurf: { enabled: true } } }).success).toBe(
+      false,
+    )
+  })
+
+  it('starts Claude Code sessions when a new-session payload names no provider', () => {
+    const base = { folder: 'ctx_abcdefghijkl', text: 'hi' }
+    expect(NewSessionArgsSchema.parse(base).provider).toBe('claude-code')
+    expect(NewSessionArgsSchema.parse({ ...base, provider: 'codex', modeId: 'ask' })).toMatchObject(
+      {
+        provider: 'codex',
+        modeId: 'ask',
+      },
+    )
+    expect(NewSessionArgsSchema.safeParse({ ...base, provider: 'aider' }).success).toBe(false)
+    expect(NewSessionArgsSchema.safeParse({ ...base, modeId: 'x'.repeat(61) }).success).toBe(false)
+  })
+
+  it('validates provider and mode-id calls', () => {
+    expect(SetModeIdArgsSchema.safeParse({ agentId: 'cx:1', modeId: 'auto' }).success).toBe(true)
+    expect(SetModeIdArgsSchema.safeParse({ agentId: 'cx:1', modeId: '' }).success).toBe(false)
+    expect(ProviderEnableArgsSchema.safeParse({ provider: 'cursor', enabled: true }).success).toBe(
+      true,
+    )
+    expect(ProviderCallSchema.safeParse({ provider: 'cursor-ide' }).success).toBe(false)
+    expect(PROVIDER_IDS).toContain('claude-code')
   })
 })

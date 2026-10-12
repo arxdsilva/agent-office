@@ -42,3 +42,20 @@ contract → **producers in parallel** (assets, backend, pure logic) → **consu
 | Keep ≤ 5 agents running at once                                                                                         | Spawn more because "it's faster"               |
 
 **Plan mode pauses background agents.** Avoid entering it while agents run; if you must, resume each one with `SendMessage` afterwards.
+
+## 6. Pick the cheapest competent model
+
+Every subagent runs on the **cheapest model that can do its job well**. Choose per agent, not per task.
+
+| Tier | `Agent` `model:` | Use for                                                                                                                                                                                                             |
+| ---- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `haiku`          | Mechanical, fully specified work: repo searches and inventories (Explore), running commands and collecting output, renames, copy and doc-table edits from known facts, fixture data, screenshot capture             |
+| 2    | `sonnet`         | Standard implementation against a written contract: view models, DOM adapters, composition wiring, IPC handlers, config-file installers, fakes, unit and E2E tests, docs prose                                      |
+| 3    | `opus`           | Hard reasoning: protocol clients (JSON-RPC, ACP, app-server), process lifecycle and concurrency, security- or privacy-sensitive logic, core refactors under compatibility constraints, architecture and plan review |
+
+| Do                                                                                                    | Don't                                                       |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Start at the lowest tier that can do the job                                                          | Pick a higher tier "to be safe"                             |
+| Escalate one tier when an agent fails its gate twice or reports it is stuck; relaunch with the reason | Keep retrying a stuck agent on the same tier                |
+| State the model and a one-line reason in every launch, and add a Model column to every phase table    | Leave the model implicit (it then inherits the lead's)      |
+| Keep the lead on the session's model                                                                  | Use other models (e.g. `fable`) unless the user asks for it |

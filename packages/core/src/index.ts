@@ -38,3 +38,36 @@ export {
   MODE_LABELS,
   summarizeToolRequest,
 } from './domain/session-prompt.ts'
+export {
+  ENDED_CAPS,
+  PROVIDER_DECLS,
+  prefixOf,
+  providerOfAgentId,
+  providerState,
+  sessionCaps,
+  type ProviderDecl,
+  type ProviderStateInput,
+  type ProviderStateResult,
+} from './domain/providers.ts'
+export {
+  BLOCKING_EVENTS,
+  HOOK_FORMATS,
+  OBSERVE_MARKER,
+  SUBSCRIBED,
+  addHooks as addProviderHooks,
+  hookStatus as providerHookStatus,
+  removeHooks as removeProviderHooks,
+  type HookFormat,
+} from './domain/provider-hooks.ts'
+export {
+  PROBE_TIMEOUT_MS,
+  PROBE_TTL_MS,
+  ProviderService,
+  type ProviderBinding,
+  type ProviderServiceDeps,
+} from './application/provider-service.ts'
+export {
+  ProviderHookService,
+  type ProviderHookTarget,
+  type ProviderHookTargets,
+} from './application/provider-hook-service.ts'

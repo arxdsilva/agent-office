@@ -11,7 +11,10 @@ import {
   ClaudeCodeTailer,
   ClaudeConfigReader,
   ClaudeKnowledgeReader,
+  ClaudeProbe,
   ClaudeSettingsFile,
+  CodexProbe,
+  CodexRunner,
   createAuth,
   FsHookRunner,
   InMemoryAgentRepository,
@@ -40,6 +43,8 @@ import {
   type LoginItem,
   type Logger,
   type Notifier,
+  type ProviderBinding,
+  type ProviderProbe,
   type PlatformInfo,
   type Scheduler,
   type TrayAction,
@@ -51,6 +56,7 @@ import {
   DEFAULT_SETTINGS,
   IPC,
   type Banner,
+  type ProviderId,
   type ConnectionInfo,
   type ContextRef,
   type HookStatus,
@@ -106,6 +112,16 @@ export interface ComposeOptions {
   processEnv?: Record<string, string | undefined>
   /** Tests inject a runner; otherwise AGENT_OFFICE_FAKE_RUNNER=1 picks the scripted one, else the SDK. */
   runner?: AgentRunner
+  /** Tests inject a probe so no real CLI runs; defaults to `claude --version`. */
+  claudeProbe?: ProviderProbe
+  /** Tests inject Codex's probe and runtime so the real CLI never runs. */
+  codexProbe?: ProviderProbe
+  codexRunner?: AgentRunner
+  /**
+   * Dev-only directory holding fake provider CLIs (packages/adapters/test/fakes). Given only for
+   * unpackaged builds; AGENT_OFFICE_FAKE_PROVIDERS=1 without it falls back to the real CLI.
+   */
+  fakesDir?: string
 }
 
 const SWEEP_MS = 2000
@@ -182,6 +198,35 @@ function testError(err: unknown): string {
   return 'no response'
 }
 
+/** Codex probe + runtime: injected (tests), the fake app-server (dev, flag), or the real CLI. */
+function buildCodex(
+  o: ComposeOptions,
+  processEnv: Record<string, string | undefined>,
+): { probe: ProviderProbe; runner: AgentRunner } {
+  const probe = o.codexProbe
+  const runner = o.codexRunner
+  if (probe && runner) return { probe, runner }
+  if (processEnv.AGENT_OFFICE_FAKE_PROVIDERS === '1') {
+    if (o.fakesDir) {
+      return {
+        probe: probe ?? {
+          provider: 'codex',
+          detect: async () => ({ installed: true, version: 'fake', flagsOk: true, auth: 'ok' }),
+        },
+        runner:
+          runner ??
+          new CodexRunner({
+            bin: process.execPath,
+            args: [join(o.fakesDir, 'fake-codex-app-server.mjs')],
+            env: { ELECTRON_RUN_AS_NODE: '1' },
+          }),
+      }
+    }
+    o.logger.warn('AGENT_OFFICE_FAKE_PROVIDERS ignored: fake providers are not available here')
+  }
+  return { probe: probe ?? new CodexProbe({}), runner: runner ?? new CodexRunner({}) }
+}
+
 export function compose(o: ComposeOptions) {
   const { shell, env, logger } = o
   const scheduler = o.scheduler ?? new TimerScheduler()
@@ -209,6 +254,23 @@ export function compose(o: ComposeOptions) {
             exists: existsSync,
           }),
         }))
+  const claudeProbe: ProviderProbe =
+    o.claudeProbe ??
+    new ClaudeProbe({
+      resolve: () =>
+        resolveClaudeExecutable({
+          env: processEnv,
+          home,
+          platform: shell.platform.platform,
+          exists: existsSync,
+        }),
+    })
+  const codex = buildCodex(o, processEnv)
+  // One binding per provider; the others join as their probes and runtimes land.
+  const providers: ProviderBinding[] = [
+    { provider: 'claude-code', probe: claudeProbe, runner },
+    { provider: 'codex', probe: codex.probe, runner: codex.runner },
+  ]
   const context = createContextRegistry({ dialog: shell.dialog, home })
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
@@ -237,6 +299,11 @@ export function compose(o: ComposeOptions) {
     releaseUrl: o.releaseUrl,
     policy: sweepPolicy,
     runner,
+    providers,
+    runtimes: new Map<ProviderId, AgentRunner>([
+      ['claude-code', runner],
+      ['codex', codex.runner],
+    ]),
     displayPath: (p) => abbreviate(p, home),
   })
   const sessions = office.sessions!
@@ -272,6 +339,10 @@ export function compose(o: ComposeOptions) {
     const s = effective(await office.settings.get())
     const over = env.overrides
     const hook: HookStatus = await office.hooks.status().catch(() => 'not-installed' as const)
+    const providerList = await office.providers.list().catch((err: Error) => {
+      logger.warn(`provider status unavailable: ${err.message}`)
+      return []
+    })
     return {
       api: {
         host: env.host,
@@ -295,6 +366,7 @@ export function compose(o: ComposeOptions) {
           override: over.mock ? ('on' as const) : ('off' as const),
         }),
       },
+      providers: providerList,
     }
   }
 
@@ -476,6 +548,9 @@ export function compose(o: ComposeOptions) {
           context,
           settings: office.settings,
           hooks: office.hooks,
+          providers: office.providers,
+          ...(office.providerHooks ? { providerHooks: office.providerHooks } : {}),
+          onProvidersChanged: pushConnections,
           updates: office.updates,
           version: shell.platform.version,
           connections: { info: connectionInfo, test: testEvent },

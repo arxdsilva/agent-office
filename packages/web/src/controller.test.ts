@@ -8,6 +8,8 @@ import {
   type HookStatus,
   type ModelOption,
   type NewSessionArgs,
+  type ProviderId,
+  type ProviderStatus,
   type PermissionMode,
   type StartResult,
   type ServerMessage,
@@ -156,6 +158,7 @@ function fakeGateway(
         ok: true,
         agentId: 'cc:new',
       })),
+      setModeId: vi.fn(async (_id: string, _m: string) => {}),
       setMode: vi.fn(async (_id: string, _m: PermissionMode) => {}),
       setModel: vi.fn(async (_id: string, _m: string) => {}),
       models: vi.fn(async (_id?: string): Promise<ModelOption[]> => [
@@ -165,6 +168,16 @@ function fakeGateway(
       interrupt: vi.fn(async (_id: string) => {}),
       stop: vi.fn(async (_id: string) => {}),
       answer: vi.fn(async (_id: string, _r: string, _d: string) => {}),
+    },
+    providers: {
+      list: vi.fn(async (): Promise<ProviderStatus[]> => []),
+      refresh: vi.fn(async (_id?: ProviderId): Promise<ProviderStatus[]> => []),
+      setEnabled: vi.fn(async (_id: ProviderId, _on: boolean): Promise<ProviderStatus[]> => []),
+      models: vi.fn(async (_id: ProviderId): Promise<ModelOption[]> => [
+        { id: 'gpt-5', label: 'GPT-5' },
+      ]),
+      installHooks: vi.fn(async (_id: ProviderId): Promise<HookStatus> => 'installed'),
+      removeHooks: vi.fn(async (_id: ProviderId): Promise<HookStatus> => 'not-installed'),
     },
     app: {
       version: vi.fn(async () => '1.0.0'),
@@ -460,6 +473,7 @@ function fakeViews() {
     onCopy: on('connectCopy'),
     onTest: on('connectTest'),
     onGoToWing: on('connectGoTo'),
+    onProviderAction: on('connectProvider'),
     showError(m) {
       this.error = m
     },
@@ -1123,7 +1137,7 @@ describe('controller: connecting agents (Connect panel, empty state, first arriv
     expect(t.empty.vm).toBeNull()
     expect(t.hud.badge).toBe(true)
     t.fire(EMPTY_GRACE_MS)
-    expect(t.empty.vm?.tiles.map((x) => x.id)).toEqual(['claude', 'http', 'demo'])
+    expect(t.empty.vm?.tiles.map((x) => x.id)).toEqual(['claude', 'http', 'demo', 'providers'])
 
     // A push before the grace ends shows it too.
     const u = await empty()
@@ -2272,5 +2286,135 @@ describe('controller: 2D movement in every view and the minimap (C-move, C-map)'
     expect(s.pans).toHaveLength(1)
     expect(t.scene.travels.at(-1)).toEqual({ pos: s.pans[0] })
     expect(t.scene.wentTo).toEqual([])
+  })
+})
+
+describe('controller: providers', () => {
+  const prov = (id: ProviderId, over: Partial<ProviderStatus> = {}): ProviderStatus => ({
+    id,
+    label: id === 'codex' ? 'Codex' : id === 'claude-code' ? 'Claude Code' : 'Cursor',
+    state: 'managed-available',
+    enabled: true,
+    managedCaps: ['launch', 'send-message', 'attach-context', 'change-mode'],
+    observedCaps: [],
+    integration: { managed: 'app-server' },
+    modes: [
+      { id: 'read-only', label: 'Read only' },
+      { id: 'ask', label: 'Ask' },
+    ],
+    activeSessions: 0,
+    ...over,
+  })
+  const withProviders =
+    (list: ProviderStatus[]) => (_v: unknown, g: ReturnType<typeof fakeGateway>) => {
+      g.api.connections.info.mockResolvedValue(connInfo({ providers: list }))
+    }
+  const list = [prov('claude-code'), prov('codex'), prov('cursor', { state: 'needs-auth' })]
+
+  it('opening Connect refreshes providers; actions call the gateway and re-read the facts', async () => {
+    const t = await setup(undefined, withProviders(list))
+    await t.handlers.tile!('providers')
+    expect(t.connect.vm?.tab).toBe('providers')
+    expect(t.api.providers.refresh).toHaveBeenCalledWith()
+    await t.handlers.connectProvider!({ kind: 'toggle', id: 'codex', on: false })
+    expect(t.api.providers.setEnabled).toHaveBeenCalledWith('codex', false)
+    await t.handlers.connectProvider!({ kind: 'refresh', id: 'cursor' })
+    expect(t.api.providers.refresh).toHaveBeenCalledWith('cursor')
+    await t.handlers.connectProvider!({ kind: 'hooks', id: 'cursor', action: 'install' })
+    await t.handlers.connectProvider!({ kind: 'hooks', id: 'cursor', action: 'repair' })
+    expect(t.api.providers.installHooks).toHaveBeenCalledTimes(2)
+    await t.handlers.connectProvider!({ kind: 'hooks', id: 'cursor', action: 'uninstall' })
+    expect(t.api.providers.removeHooks).toHaveBeenCalledWith('cursor')
+  })
+
+  it('a failing provider action shows inside the panel', async () => {
+    const t = await setup(undefined, withProviders(list))
+    await t.handlers.tile!('providers')
+    t.api.providers.setEnabled.mockRejectedValueOnce(new Error('nope'))
+    await t.handlers.connectProvider!({ kind: 'toggle', id: 'codex', on: true })
+    expect(t.connect.error).toBe('nope')
+  })
+
+  it('Start agent closes Connect and opens New Session on that provider, with its models', async () => {
+    const t = await setup(undefined, withProviders(list))
+    await t.handlers.tile!('providers')
+    await t.handlers.connectProvider!({ kind: 'start', id: 'codex' })
+    await t.flush()
+    expect(t.connect.isOpen()).toBe(false)
+    expect(t.api.providers.models).toHaveBeenCalledWith('codex')
+    expect(t.newSession.vm?.providers.find((p) => p.selected)?.id).toBe('codex')
+    expect(t.newSession.vm?.models.map((m) => m.id)).toEqual(['', 'gpt-5'])
+    expect(t.newSession.vm?.chrome.available).toBe(false)
+  })
+
+  it('switching provider resets model/mode/Chrome; start sends provider and modeId', async () => {
+    const t = await setup(undefined, withProviders(list))
+    await t.handlers.newSession!()
+    await t.handlers.nsFolder!()
+    t.handlers.nsChange!({ model: 'opus', chrome: true, text: 'go' })
+    t.handlers.nsChange!({ provider: 'codex' })
+    await t.flush()
+    expect(t.newSession.vm?.chrome).toEqual({ checked: false, available: false })
+    expect(t.newSession.vm?.modes.find((m) => m.checked)?.id).toBe('read-only')
+    t.handlers.nsChange!({ modeId: 'ask' })
+    await t.handlers.nsStart!()
+    expect(t.api.sessions.start).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'codex', modeId: 'ask', chrome: false }),
+    )
+    expect(t.api.sessions.start.mock.calls[0]![0]).not.toHaveProperty('model')
+  })
+
+  it('the picker remembers the last provider for the next session', async () => {
+    const t = await setup(undefined, withProviders(list))
+    await t.handlers.newSession!()
+    t.handlers.nsChange!({ provider: 'codex' })
+    await t.handlers.newSession!()
+    expect(t.newSession.vm?.providers.find((p) => p.selected)?.id).toBe('codex')
+  })
+
+  it('a failing models call leaves the dialog usable', async () => {
+    const t = await setup(undefined, withProviders(list))
+    t.api.providers.models.mockRejectedValueOnce(new Error('x'))
+    await t.handlers.newSession!()
+    t.handlers.nsChange!({ provider: 'codex' })
+    await t.flush()
+    expect(t.newSession.vm?.models.map((m) => m.id)).toEqual([''])
+  })
+
+  it('session header mode change for a provider session uses setModeId', async () => {
+    const cx = agent('cx:1', {
+      provider: 'codex',
+      caps: ['send-message', 'change-mode'],
+      managed: {
+        chrome: false,
+        pending: 0,
+        phase: 'running',
+        modes: [{ id: 'ask', label: 'Ask' }],
+      },
+    })
+    const t = await setup(undefined, undefined, { agents: [cx] })
+    t.handlers.pick!('cx:1')
+    await t.handlers.setMode!('ask' as never)
+    expect(t.api.sessions.setModeId).toHaveBeenCalledWith('cx:1', 'ask')
+    expect(t.api.sessions.setMode).not.toHaveBeenCalled()
+  })
+
+  it('Use… menu of a provider session follows its caps (no Chrome)', async () => {
+    const cx = agent('cx:1', {
+      provider: 'codex',
+      caps: ['send-message'],
+      managed: { chrome: false, pending: 0, phase: 'running' },
+    })
+    const t = await setup(undefined, undefined, { agents: [cx] })
+    t.handlers.pick!('cx:1')
+    const menu = t.handlers.openUse!() as unknown as UseMenuVM
+    expect(menu.groups.map((g) => g.id)).not.toContain('browser')
+  })
+
+  it('observed provider agent: composer is read-only with the provider label', async () => {
+    const cu = agent('cu:1', { provider: 'cursor', caps: ['observe'], source: 'hook' })
+    const t = await setup(undefined, withProviders(list), { agents: [cu] })
+    t.handlers.pick!('cu:1')
+    expect(t.panel.vm?.composer.placeholder).toBe('Observation only — reply in Cursor')
   })
 })

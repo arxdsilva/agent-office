@@ -1,4 +1,4 @@
-import { PERMISSION_MODES, type PermissionMode } from '@agent-office/shared'
+import { PERMISSION_MODES, type PermissionMode, type ProviderId } from '@agent-office/shared'
 import { SESSION_COPY } from '../../app/session-copy.ts'
 import type { NewSessionVM, UseMenuVM } from '../../app/session-types.ts'
 import type { NewSessionView } from '../../ports.ts'
@@ -17,6 +17,7 @@ type Patch = Parameters<Parameters<NewSessionView['onChange']>[0]>[0]
 export class DomNewSession implements NewSessionView {
   private dialog = byId<HTMLDialogElement>('new-session')
   private name = byId<HTMLInputElement>('ns-name')
+  private provider = byId<HTMLSelectElement>('ns-provider')
   private model = byId<HTMLSelectElement>('ns-model')
   private mode = byId<HTMLSelectElement>('ns-mode')
   private chrome = byId<HTMLInputElement>('ns-chrome')
@@ -25,6 +26,7 @@ export class DomNewSession implements NewSessionView {
   private ctxBtn = byId<HTMLButtonElement>('ns-add-context')
   private useBtn = byId<HTMLButtonElement>('ns-use')
   private optionsKey = ''
+  private providerKey = ''
   private folderFn: () => void | Promise<void> = () => {}
   private extraFn: () => void | Promise<void> = () => {}
   private removeExtraFn: (key: string) => void = () => {}
@@ -43,6 +45,7 @@ export class DomNewSession implements NewSessionView {
       ['ns-folder-l', c.folder],
       ['ns-choose', c.choose],
       ['ns-name-l', c.name],
+      ['ns-provider-l', 'Provider'],
       ['ns-model-l', c.model],
       ['ns-mode-l', c.mode],
       ['ns-extra-l', c.extra],
@@ -73,7 +76,11 @@ export class DomNewSession implements NewSessionView {
     this.mode.addEventListener('change', () => {
       const m = this.mode.value as PermissionMode
       if (PERMISSION_MODES.includes(m)) this.changeFn({ mode: m })
+      else this.changeFn({ modeId: this.mode.value })
     })
+    this.provider.addEventListener('change', () =>
+      this.changeFn({ provider: this.provider.value as ProviderId }),
+    )
     this.chrome.addEventListener('change', () => this.changeFn({ chrome: this.chrome.checked }))
     this.ctxBtn.addEventListener('click', () =>
       openMenu(this.ctxBtn, contextMenuGroups(), (k) => void this.pickFn(k as 'files' | 'folder')),
@@ -145,6 +152,23 @@ export class DomNewSession implements NewSessionView {
     if (document.activeElement !== this.text && this.text.value !== vm.text)
       this.text.value = vm.text
 
+    const pkey = JSON.stringify(vm.providers)
+    if (pkey !== this.providerKey) {
+      this.providerKey = pkey
+      this.provider.replaceChildren(
+        ...vm.providers.map((p) => {
+          const o = el('option', p.label)
+          o.value = p.id
+          o.selected = p.selected
+          return o
+        }),
+      )
+    }
+    byId('ns-title').textContent = vm.title
+    const multi = vm.providers.length > 1
+    this.provider.hidden = !multi
+    byId('ns-provider-l').hidden = !multi
+
     const key = JSON.stringify([vm.models, vm.modes])
     if (key !== this.optionsKey) {
       this.optionsKey = key
@@ -159,8 +183,9 @@ export class DomNewSession implements NewSessionView {
       )
       this.mode.replaceChildren(
         ...vm.modes.map((m) => {
-          const o = el('option', `${m.icon} ${m.label}`)
+          const o = el('option', `${m.dangerous ? '⚠ ' : ''}${m.icon} ${m.label}`)
           o.value = m.id
+          o.disabled = !!m.disabled
           o.selected = m.checked
           o.title = m.desc
           return o
@@ -183,6 +208,7 @@ export class DomNewSession implements NewSessionView {
       (k) => this.removeChipFn(k),
       vm.starting,
     )
+    this.ctxBtn.hidden = !vm.attachAvailable
     this.ctxBtn.disabled = !vm.composer.canAddContext
     this.useBtn.disabled = !vm.composer.canAddUse
     this.text.placeholder = vm.composer.placeholder

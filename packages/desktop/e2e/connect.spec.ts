@@ -35,10 +35,11 @@ test('an empty office explains the ways in, and every path connects', async () =
     expect(r.status).toBeLessThan(300)
   }
 
-  // 1. First run with nothing connected: the empty card explains the three ways in, and the
-  //    🔌 button carries a badge.
+  // 1. First run with nothing connected: the empty card explains the ways in (Claude Code, HTTP,
+  //    demo, and more AI providers), and the 🔌 button carries a badge.
   await expect(win.locator('#empty')).toBeVisible()
-  await expect(win.locator('#empty .tile')).toHaveCount(3)
+  await expect(win.locator('#empty .tile')).toHaveCount(4)
+  await expect(win.locator('#empty .tile[data-tile="providers"]')).toBeVisible()
   await expect(win.locator('#connect-btn .badge')).toBeVisible()
 
   // 2. "Show me how" opens the HTTP tab with the live port and a waiting line.

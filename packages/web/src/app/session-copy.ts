@@ -55,6 +55,7 @@ export const SESSION_COPY = {
     subagent: "Subagents can't read messages. Message its parent.",
     starting: 'Starting session…',
     ended: 'This session has ended',
+    observeOnly: (provider: string) => `Observation only — reply in ${provider}`,
   },
   permission: {
     title: 'Needs your approval',
@@ -67,6 +68,7 @@ export const SESSION_COPY = {
   },
   newSession: {
     title: 'New Claude Code session',
+    titleFor: (label: string) => `New ${label} session`,
     button: '⊕ New session',
     folder: 'Folder',
     choose: 'Choose…',

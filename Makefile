@@ -11,7 +11,7 @@ UNSIGNED := CSC_IDENTITY_AUTO_DISCOVERY=$${CSC_IDENTITY_AUTO_DISCOVERY:-$$([ -n 
 # Headless Linux (CI) needs a virtual display for Electron.
 XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null && echo "xvfb-run -a")
 
-.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean
+.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -66,6 +66,12 @@ screenshots-macos: ## macOS only: capture the real tray menu and a native notifi
 
 perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs
+
+verify-providers: ## Verify managed sessions against the real, logged-in provider CLIs (uses your accounts)
+	pnpm exec tsx scripts/verify-providers.ts
+
+codex-schema-check: ## Check our Codex protocol subset against the installed codex's generated schema
+	node scripts/codex-schema-check.mjs
 
 perf-pixel: ## 2D RPG mode frame rate with 60 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs --mode pixel --agents 60 --presets low,high

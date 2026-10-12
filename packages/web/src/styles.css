@@ -918,7 +918,7 @@ button.link:focus-visible,
 }
 .tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin: 12px 0;
 }
@@ -1172,6 +1172,57 @@ button.link:focus-visible,
 }
 .c-rows .none .btn {
   margin-right: 6px;
+}
+.prov-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.prov-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--muted);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  max-width: 560px;
+}
+.prov-card[data-state='connected'] {
+  border-left-color: var(--ok);
+}
+.prov-card[data-state='attention'],
+.prov-card[data-state='pending'] {
+  border-left-color: var(--warn);
+}
+.prov-card[data-state='error'] {
+  border-left-color: var(--error);
+}
+.prov-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.prov-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  padding: 0;
+}
+/* Capability chips on provider cards are plain pills (no colored capability edge). */
+.prov-chips .chip {
+  border-left-width: 1px;
+  border-left-color: var(--border);
+}
+.prov-chips-l {
+  font-size: 12px;
+  margin-right: 2px;
+}
+.prov-actions a {
+  font-size: 12px;
+  margin-left: auto;
 }
 @media (max-width: 640px) {
   .connect-body {

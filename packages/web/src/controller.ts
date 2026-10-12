@@ -6,6 +6,7 @@ import {
   type Grouping,
   type HookStatus,
   type ModelOption,
+  type ProviderId,
   type Settings,
   type SettingsPatch,
   type TestEventResult,
@@ -61,7 +62,7 @@ import {
   type ActivityInfo,
   type DemoStart,
 } from './app/view-models.ts'
-import type { Draft, NewSessionForm } from './app/session-types.ts'
+import { CHROME_ID, type Draft, type NewSessionForm } from './app/session-types.ts'
 import type { Manifest } from './app/manifest.ts'
 import { libraryKind } from './app/library.ts'
 import { dialogueVM } from './app/pixel/dialogue-vm.ts'
@@ -182,7 +183,8 @@ export interface ColorSchemeQuery {
 
 const CLAUDE = 'claude-code'
 const emptyDraft = (): Draft => ({ text: '', context: [], use: [] })
-const emptyForm = (folder?: ContextRef): NewSessionForm => ({
+const emptyForm = (folder?: ContextRef, provider: ProviderId = CLAUDE): NewSessionForm => ({
+  provider,
   ...(folder && { folder }),
   name: '',
   mode: 'default',
@@ -255,6 +257,10 @@ export function createController(d: ControllerDeps) {
   let globalModels: ModelOption[] | undefined
   let form: NewSessionForm = emptyForm()
   let lastFolder: ContextRef | undefined
+  /** Models per non-Claude provider (fetched once per provider). */
+  const providerModels = new Map<ProviderId, ModelOption[]>()
+  /** The provider the last new session used (the picker's next default). */
+  let lastProvider: ProviderId = CLAUDE
   let nsStarting = false
   let nsError: string | undefined
   /** Agent a successful start created: selected as soon as it shows up. */
@@ -424,6 +430,7 @@ export function createController(d: ControllerDeps) {
       {
         hook,
         allowBypass,
+        ...(connInfo?.providers && { providers: connInfo.providers }),
         ...(models && { models }),
         ...(drafts.has(id) && { draft: drafts.get(id)! }),
       },
@@ -874,6 +881,8 @@ export function createController(d: ControllerDeps) {
     if (!info) return
     d.connect.showError(null)
     d.connect.open(connectVMNow(info))
+    // Detection runs when the panel opens (never starts a session); the cards update when done.
+    void inConnect(() => d.gateway.providers.refresh())
   }
 
   /** Runs a Connect action, refreshes the facts, re-renders; errors show inside the panel. */
@@ -1012,7 +1021,7 @@ export function createController(d: ControllerDeps) {
     const a = selected ? state.agents.get(selected) : undefined
     if (!a) return { groups: [] }
     const caps = state.capabilities.get(a.provider) ?? []
-    return useMenuVM(caps, a.provider, drafts.get(a.id)?.use ?? [], a.managed?.chrome)
+    return useMenuVM(caps, a.provider, drafts.get(a.id)?.use ?? [], a.managed?.chrome, a.caps)
   })
   d.panel.onToggleUse((useId) => {
     if (!selected) return
@@ -1032,7 +1041,14 @@ export function createController(d: ControllerDeps) {
       d.panel.showError((err as Error).message)
     }
   }
-  d.panel.onSetMode((mode) => inSession((id) => d.gateway.sessions.setMode(id, mode))())
+  d.panel.onSetMode((mode) =>
+    inSession((id) =>
+      // Providers with their own modes (Codex presets, ACP modes) use the mode id.
+      state.agents.get(id)?.managed?.modes
+        ? d.gateway.sessions.setModeId(id, mode)
+        : d.gateway.sessions.setMode(id, mode),
+    )(),
+  )
   d.panel.onSetModel((model) => inSession((id) => d.gateway.sessions.setModel(id, model))())
   d.panel.onInterrupt(inSession((id) => d.gateway.sessions.interrupt(id)))
   d.panel.onStop(inSession((id) => d.gateway.sessions.stop(id)))
@@ -1044,11 +1060,28 @@ export function createController(d: ControllerDeps) {
   const runningCount = () =>
     [...state.agents.values()].filter((a) => a.managed && a.managed.phase !== 'ended').length
   const nsVM = () =>
-    newSessionVM(form, globalModels, allowBypass, runningCount(), {
-      starting: nsStarting,
-      ...(nsError && { error: nsError }),
-      caps: state.capabilities.get(CLAUDE) ?? [],
-    })
+    newSessionVM(
+      form,
+      form.provider === CLAUDE ? globalModels : providerModels.get(form.provider),
+      allowBypass,
+      runningCount(),
+      {
+        starting: nsStarting,
+        ...(nsError && { error: nsError }),
+        caps: state.capabilities.get(form.provider) ?? [],
+        ...(connInfo?.providers && { providers: connInfo.providers }),
+      },
+    )
+  /** A provider's models for the dialog, fetched once; the list stays empty when it fails. */
+  const loadProviderModels = async (id: ProviderId) => {
+    if (id === CLAUDE || providerModels.has(id)) return
+    try {
+      providerModels.set(id, await d.gateway.providers.models(id))
+    } catch {
+      providerModels.set(id, [])
+    }
+    renderNewSession()
+  }
   const renderNewSession = () => d.newSession.render(nsVM())
   const pickFolder = async (): Promise<ContextRef | undefined> => {
     try {
@@ -1058,11 +1091,12 @@ export function createController(d: ControllerDeps) {
       return undefined
     }
   }
-  const openNewSession = async () => {
-    form = emptyForm(lastFolder)
+  const openNewSession = async (provider?: ProviderId) => {
+    form = emptyForm(lastFolder, provider ?? lastProvider)
     nsError = undefined
     nsStarting = false
     d.newSession.open(nsVM())
+    void loadProviderModels(form.provider)
     try {
       const list = await d.gateway.sessions.models()
       if (list.length) globalModels = list
@@ -1106,7 +1140,13 @@ export function createController(d: ControllerDeps) {
     renderNewSession()
   })
   d.newSession.onOpenUse(() =>
-    useMenuVM(state.capabilities.get(CLAUDE) ?? [], CLAUDE, form.use, form.chrome),
+    useMenuVM(
+      state.capabilities.get(form.provider) ?? [],
+      form.provider,
+      form.use,
+      form.chrome,
+      connInfo?.providers?.find((p) => p.id === form.provider)?.managedCaps,
+    ),
   )
   d.newSession.onToggleUse((useId) => {
     const r = toggleUse(form.use, useId)
@@ -1115,7 +1155,17 @@ export function createController(d: ControllerDeps) {
     renderNewSession()
   })
   d.newSession.onChange((patch) => {
+    const switched = patch.provider !== undefined && patch.provider !== form.provider
     form = { ...form, ...patch }
+    if (switched) {
+      // Models, modes and Chrome belong to the provider: start from its defaults.
+      lastProvider = form.provider
+      delete form.model
+      delete form.modeId
+      form.chrome = false
+      form.use = form.use.filter((u) => u !== CHROME_ID)
+      void loadProviderModels(form.provider)
+    }
     renderNewSession()
   })
   d.newSession.onStart(async () => {
@@ -1124,13 +1174,17 @@ export function createController(d: ControllerDeps) {
     nsError = undefined
     renderNewSession()
     const name = form.name.trim()
+    const other = form.provider !== CLAUDE
+    const modeId = nsVM().modes.find((m) => m.checked)?.id
     const args = {
+      ...(other && { provider: form.provider }),
+      ...(other && modeId && { modeId }),
       folder: form.folder.ref,
       ...(name && { name }),
       ...(form.model && { model: form.model }),
       mode: form.mode,
       extraFolders: form.extraFolders.map((f) => f.ref),
-      chrome: form.chrome,
+      chrome: form.chrome && !other,
       text: form.text.trim(),
       ...(form.context.length && { context: form.context.map((c) => c.ref) }),
       ...(form.use.length && { use: [...form.use] }),
@@ -1210,6 +1264,23 @@ export function createController(d: ControllerDeps) {
     })
     renderPanel()
     if (d.settings.isOpen()) await renderSettings(false)
+  })
+  d.connect.onProviderAction?.(async (a) => {
+    switch (a.kind) {
+      case 'toggle':
+        return inConnect(() => d.gateway.providers.setEnabled(a.id, a.on))
+      case 'refresh':
+        return inConnect(() => d.gateway.providers.refresh(a.id))
+      case 'hooks':
+        return inConnect(() =>
+          a.action === 'uninstall'
+            ? d.gateway.providers.removeHooks(a.id)
+            : d.gateway.providers.installHooks(a.id),
+        )
+      case 'start':
+        d.connect.close()
+        return openNewSession(a.id)
+    }
   })
   d.connect.onPort(async (port) => {
     // Same path as the Settings port form.
@@ -1354,6 +1425,7 @@ export function createController(d: ControllerDeps) {
           pushReceived = true
           refreshConnect()
           renderPanel()
+          if (d.newSession.isOpen()) renderNewSession()
         }),
         d.gateway.updates.onState((s) => {
           update = s

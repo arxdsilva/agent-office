@@ -22,6 +22,7 @@ import {
   type StartResult,
 } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { AgentRunner, ProviderProbe, RunnerDecl, StartSession } from '@agent-office/core'
 import { compose, type Shell } from './composition.ts'
 
 class FakeShellWindow extends FakeWindow {
@@ -110,6 +111,10 @@ function setup(
     scheduler?: ManualScheduler
     homeDir?: string
     runner?: FakeAgentRunner
+    claudeProbe?: ProviderProbe
+    codexProbe?: ProviderProbe
+    codexRunner?: AgentRunner
+    fakesDir?: string
     processEnv?: Record<string, string | undefined>
   } = {},
 ) {
@@ -135,6 +140,16 @@ function setup(
     runAsNode: true,
     releaseUrl: 'https://example.invalid/releases',
     logger: { info: () => {}, warn: () => {} },
+    // Never run the real `claude --version` in unit tests.
+    claudeProbe: {
+      provider: 'claude-code',
+      detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
+    },
+    // Never run the real `codex --version` either.
+    codexProbe: {
+      provider: 'codex',
+      detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
+    },
     ...opts,
   })
   apps.push(app)
@@ -295,7 +310,11 @@ describe('compose', () => {
     )
     await app.start()
     const info = (await call(IPC.connInfo)) as ConnectionInfo
-    expect(info).toEqual({
+    // `providers` is additive (multi-provider plan); its own tests cover it. Everything else is unchanged.
+    const { providers, ...legacy } = info
+    expect(providers?.map((p) => p.id)).toContain('claude-code')
+    expect(JSON.stringify(providers)).not.toMatch(/\/(Users|home)\//)
+    expect(legacy).toEqual({
       api: {
         host: '127.0.0.1',
         port: app.apiPort(),
@@ -585,5 +604,114 @@ describe('compose', () => {
       expect(app.office.sessions).toBeDefined()
       expect(app.managedCount()).toBe(0)
     })
+  })
+})
+
+describe('compose: providers', () => {
+  const probe: ProviderProbe = {
+    provider: 'claude-code',
+    detect: async () => ({ installed: true, version: '2.1.270', flagsOk: true, auth: 'unknown' }),
+  }
+
+  it('lists claude-code in connection info and over prov:list', async () => {
+    const { app, call } = setup({}, { claudeProbe: probe })
+    await app.start()
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info.providers?.map((p) => p.id)).toContain('claude-code')
+    const claude = info.providers!.find((p) => p.id === 'claude-code')!
+    expect(claude.version).toBe('2.1.270')
+    const listed = (await call(IPC.provList)) as { id: string }[]
+    expect(listed.map((p) => p.id)).toContain('claude-code')
+  })
+
+  it('pushes connection info after a provider action', async () => {
+    const scheduler = new ManualScheduler()
+    const { app, call, window } = setup({}, { claudeProbe: probe, scheduler })
+    await app.start()
+    scheduler.fireTimers()
+    await wait(20)
+    window.sent = []
+    await call(IPC.provRefresh, {})
+    scheduler.fireTimers()
+    await wait(20)
+    expect(window.sent.some(([c]) => c === IPC.connChanged)).toBe(true)
+  })
+})
+
+describe('compose: codex', () => {
+  const START: StartSession = {
+    provider: 'codex',
+    modeId: 'ask',
+    cwd: tmpdir(),
+    name: 'cx',
+    mode: 'default',
+    extraDirs: [],
+    chrome: false,
+    first: { text: 'hi', context: [], use: [] },
+  }
+  const codexDecl: RunnerDecl = { provider: 'codex', prefix: 'cx:', caps: ['send-message'] }
+
+  it('lists codex disabled by default', async () => {
+    const { app, call } = setup()
+    await app.start()
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info.providers?.find((p) => p.id === 'codex')).toMatchObject({ enabled: false })
+    expect(app.managedCount()).toBe(0)
+  })
+
+  it('routes a codex session to the codex runtime, not the claude one', async () => {
+    const codexRunner = new FakeAgentRunner(codexDecl)
+    const claude = new FakeAgentRunner()
+    const { app } = setup({}, { runner: claude, codexRunner })
+    await app.start()
+    await app.office.providers.setEnabled('codex', true)
+    const id = await app.office.sessions!.start({ ...START })
+    expect(id).toMatch(/^cx:/)
+    expect(codexRunner.sessions).toHaveLength(1)
+    expect(claude.sessions).toHaveLength(0)
+    // The quit guard sees it: stopAll ends codex sessions too.
+    expect(app.managedCount()).toBe(1)
+    await app.stopAll()
+    expect(codexRunner.last().closed).toBe(true)
+  })
+
+  it('AGENT_OFFICE_FAKE_PROVIDERS=1 with a fakes dir runs the fake app-server as codex', async () => {
+    const fakesDir = join(import.meta.dirname, '..', '..', '..', 'adapters', 'test', 'fakes')
+    const { app } = setup(
+      {},
+      { fakesDir, codexProbe: undefined, processEnv: { AGENT_OFFICE_FAKE_PROVIDERS: '1' } },
+    )
+    await app.start()
+    const info = (await app.office.providers.list()).find((p) => p.id === 'codex')
+    expect(info?.enabled).toBe(false)
+    await app.office.providers.setEnabled('codex', true)
+    const status = (await app.office.providers.list()).find((p) => p.id === 'codex')
+    expect(status).toMatchObject({ state: 'managed-available' })
+    const id = await app.office.sessions!.start({ ...START })
+    expect(id).toMatch(/^cx:/)
+    await app.stopAll()
+  })
+
+  it('warns and uses the real CLI when fake providers are requested without a fakes dir (packaged)', async () => {
+    const warnings: string[] = []
+    const dir = mkdtempSync(join(tmpdir(), 'ao-comp-'))
+    const fake = fakeShell()
+    const app = compose({
+      shell: fake.shell,
+      env: loadEnv({ AGENT_OFFICE_HOME: join(dir, 'h'), PORT: '0', AGENT_OFFICE_CLAUDE: '0' }, dir),
+      userDataDir: join(dir, 'u'),
+      hookScript: '/x',
+      execPath: '/x',
+      runAsNode: true,
+      releaseUrl: 'https://example.invalid',
+      logger: { info: () => {}, warn: (m: string) => warnings.push(m) },
+      processEnv: { AGENT_OFFICE_FAKE_PROVIDERS: '1' },
+      claudeProbe: {
+        provider: 'claude-code',
+        detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
+      },
+    })
+    apps.push(app)
+    expect(warnings.join()).toContain('AGENT_OFFICE_FAKE_PROVIDERS')
   })
 })

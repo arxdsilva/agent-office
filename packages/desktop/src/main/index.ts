@@ -80,6 +80,8 @@ function resources() {
     : {
         hookScript: join(app.getAppPath(), '..', '..', 'hooks', 'agent-office-hook.mjs'),
         icons: join(app.getAppPath(), 'build'),
+        // Fake provider CLIs for E2E (AGENT_OFFICE_FAKE_PROVIDERS=1); never shipped.
+        fakesDir: join(app.getAppPath(), '..', '..', 'packages', 'adapters', 'test', 'fakes'),
       }
 }
 
@@ -233,6 +235,7 @@ async function main(): Promise<void> {
     env: loadEnv(process.env, homedir()),
     userDataDir: app.getPath('userData'),
     hookScript: paths.hookScript,
+    fakesDir: 'fakesDir' in paths ? paths.fakesDir : undefined,
     execPath: process.execPath,
     runAsNode: true,
     releaseUrl: RELEASES,

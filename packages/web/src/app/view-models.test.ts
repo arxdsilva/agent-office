@@ -584,11 +584,12 @@ describe('connectVM: Connected tab and tab rail', () => {
     expect(vmOf({ tab: 'http' }).tab).toBe('http')
     expect(vmOf().tabs).toEqual([
       { id: 'claude', label: 'Claude Code', tone: 'off' },
+      { id: 'providers', label: 'Providers', tone: 'off' },
       { id: 'http', label: 'Any framework', tone: 'ok' },
       { id: 'demo', label: 'Demo', tone: 'off' },
       { id: 'connected', label: 'Connected (0)', tone: 'off' },
     ])
-    expect(vmOf({ agents: [agent()] }).tabs[3]).toEqual({
+    expect(vmOf({ agents: [agent()] }).tabs[4]).toEqual({
       id: 'connected',
       label: 'Connected (1)',
       tone: 'ok',
@@ -631,10 +632,10 @@ describe('emptyPhase', () => {
 })
 
 describe('emptyStateVM', () => {
-  it('three tiles with live pills and the listening line', () => {
+  it('the first three tiles carry live pills and the listening line', () => {
     const vm = emptyStateVM(info(), 'idle')
     expect(vm.listening).toBe('◌ Listening for agents…')
-    expect(vm.tiles.map((t) => [t.id, t.title, t.pill.text, t.button])).toEqual([
+    expect(vm.tiles.slice(0, 3).map((t) => [t.id, t.title, t.pill.text, t.button])).toEqual([
       ['claude', '▶ Claude Code', '○ No sessions yet', 'Set up →'],
       ['http', '</> Any framework', '● Listening on 127.0.0.1:4317', 'Show me how →'],
       ['demo', '✦ Demo office', '○ Off', 'Try the demo'],
@@ -889,6 +890,7 @@ describe('permissionVM', () => {
 
 describe('newSessionVM', () => {
   const form = (over: Partial<NewSessionForm> = {}): NewSessionForm => ({
+    provider: 'claude-code',
     name: '',
     mode: 'default',
     extraFolders: [],

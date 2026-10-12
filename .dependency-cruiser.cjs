@@ -36,6 +36,38 @@ module.exports = {
       to: { path: pkg('@anthropic-ai/claude-agent-sdk') },
     },
     {
+      name: 'acp-sdk-in-providers-only',
+      comment: 'Only adapters/src/providers may import the ACP SDK (types for the ACP runner).',
+      severity: 'error',
+      from: { pathNot: '^packages/adapters/(src|test)/providers/' },
+      to: { path: pkg('@agentclientprotocol/sdk') },
+    },
+    {
+      name: 'providers-isolated',
+      comment:
+        'A provider folder may import providers/common and itself, never another provider (docs/provider-integrations.md).',
+      severity: 'error',
+      from: { path: '^packages/adapters/src/providers/([^/]+)/' },
+      to: {
+        path: '^packages/adapters/src/providers/([^/]+)/',
+        pathNot: [
+          '^packages/adapters/src/providers/common/',
+          '^packages/adapters/src/providers/$1/',
+        ],
+      },
+    },
+    {
+      name: 'providers-common-is-generic',
+      comment:
+        'Shared provider infrastructure (process, JSON-RPC, ACP, hooks) imports no provider.',
+      severity: 'error',
+      from: { path: '^packages/adapters/src/providers/common/' },
+      to: {
+        path: '^packages/adapters/src/providers/',
+        pathNot: '^packages/adapters/src/providers/common/',
+      },
+    },
+    {
       name: 'adapters-no-electron',
       comment: 'Node adapters must not know about Electron, the desktop shell or the renderer.',
       severity: 'error',

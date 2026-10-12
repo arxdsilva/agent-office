@@ -18,7 +18,14 @@ export interface HookRunnerOptions {
    * the hook after heal(). Omitted: the hook uses its built-in default.
    */
   url?: () => string
+  /** Wrapper basename without extension. Default: the Claude hook's marker. */
+  name?: string
+  /** Extra arguments for the script; today only the provider id (`--provider <id>`). */
+  args?: { provider: string }
 }
+
+const SAFE_NAME = /^[A-Za-z0-9._-]{1,80}$/
+const SAFE_PROVIDER = /^[a-z-]{1,20}$/
 
 /** Loopback http only; validated before it is interpolated into a shell or cmd script. */
 const SAFE_URL = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/
@@ -31,11 +38,14 @@ const SAFE_URL = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/
 export class FsHookRunner implements HookRunner {
   readonly wrapperPath: string
 
+  private readonly extra: string
+
   constructor(private o: HookRunnerOptions) {
-    this.wrapperPath = join(
-      o.dir,
-      o.platform === 'win32' ? `${HOOK_MARKER}.cmd` : `${HOOK_MARKER}.sh`,
-    )
+    const name = o.name ?? HOOK_MARKER
+    if (!SAFE_NAME.test(name)) throw new Error('unsafe hook wrapper name')
+    if (o.args && !SAFE_PROVIDER.test(o.args.provider)) throw new Error('unsafe hook provider')
+    this.extra = o.args ? ` --provider ${o.args.provider}` : ''
+    this.wrapperPath = join(o.dir, o.platform === 'win32' ? `${name}.cmd` : `${name}.sh`)
   }
 
   command(): string {
@@ -51,7 +61,7 @@ export class FsHookRunner implements HookRunner {
       const env = runAsNode ? 'set ELECTRON_RUN_AS_NODE=1\r\n' : ''
       await writeFileAtomic(
         this.wrapperPath,
-        `@echo off\r\n${setUrl}${env}"${execPath}" "${script}"\r\n`,
+        `@echo off\r\n${setUrl}${env}"${execPath}" "${script}"${this.extra}\r\n`,
       )
       return
     }
@@ -59,7 +69,7 @@ export class FsHookRunner implements HookRunner {
     const env = runAsNode ? 'ELECTRON_RUN_AS_NODE=1 ' : ''
     await writeFileAtomic(
       this.wrapperPath,
-      `#!/bin/sh\n# agent-office hook wrapper (generated)\n${setUrl}${env}exec "${execPath}" "${script}"\n`,
+      `#!/bin/sh\n# agent-office hook wrapper (generated)\n${setUrl}${env}exec "${execPath}" "${script}"${this.extra}\n`,
     )
     await chmod(this.wrapperPath, 0o755)
   }

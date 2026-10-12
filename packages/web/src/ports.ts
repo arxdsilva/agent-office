@@ -1,6 +1,7 @@
 // Renderer ports: the controller talks to the app (gateway) and to the views only through these.
 import type {
   AgentOfficeApi,
+  ProviderId,
   Banner,
   GraphicsQuality,
   PermissionDecision,
@@ -194,6 +195,10 @@ export interface NewSessionView {
       mode?: PermissionMode
       chrome?: boolean
       text?: string
+      /** The provider picker (`NewSessionVM.providers`). */
+      provider?: ProviderId
+      /** A provider-specific mode (`ModeOptionVM.id` for non-Claude providers). */
+      modeId?: string
     }) => void,
   ): void
   onStart(fn: () => void | Promise<void>): void
@@ -254,6 +259,8 @@ export interface ConnectView {
   onCopy(fn: (text: string, target: 'endpoint' | 'snippet') => void | Promise<void>): void
   onTest(fn: () => void | Promise<void>): void
   onGoToWing(fn: (provider: string) => void): void
+  /** Actions on a provider card (Connect → Providers). */
+  onProviderAction?(fn: (a: ProviderAction) => void | Promise<void>): void
   showError(message: string | null): void
   flashCopied(target: 'endpoint' | 'snippet'): void
 }
@@ -322,3 +329,11 @@ export interface ModeToggleView {
   render(mode: ViewMode): void
   onChange(fn: (mode: ViewMode) => void): void
 }
+
+/** What a provider card can ask for (Connect → Providers; docs/provider-integrations.md). */
+export type ProviderAction =
+  | { kind: 'toggle'; id: ProviderId; on: boolean }
+  | { kind: 'refresh'; id?: ProviderId }
+  | { kind: 'hooks'; id: ProviderId; action: 'install' | 'uninstall' | 'repair' }
+  /** Opens New Session with this provider preselected. */
+  | { kind: 'start'; id: ProviderId }
