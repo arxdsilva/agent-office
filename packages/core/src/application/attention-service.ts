@@ -1,7 +1,19 @@
 import type { Agent } from '@agent-office/shared'
-import { noteForAgentChange, noteForMessage, type AttentionContext, type Note } from '../domain/attention.ts'
+import {
+  noteForAgentChange,
+  noteForMessage,
+  type AttentionContext,
+  type Note,
+} from '../domain/attention.ts'
 import { trayModel } from '../domain/tray.ts'
-import type { Clock, EventSubscriber, Notifier, Scheduler, TrayView, WindowState } from '../ports/driven.ts'
+import type {
+  Clock,
+  EventSubscriber,
+  Notifier,
+  Scheduler,
+  TrayView,
+  WindowState,
+} from '../ports/driven.ts'
 import type { OfficeQuery } from '../ports/driving.ts'
 
 export interface AttentionDeps {
@@ -61,7 +73,12 @@ export class AttentionService {
   }
 
   private ctx(): AttentionContext {
-    return { focused: this.d.window.isFocused(), enabled: this.enabled, now: this.d.clock.now(), lastSentAt: this.lastSentAt }
+    return {
+      focused: this.d.window.isFocused(),
+      enabled: this.enabled,
+      now: this.d.clock.now(),
+      lastSentAt: this.lastSentAt,
+    }
   }
 
   private maybeNotify(note: Note | null): void {

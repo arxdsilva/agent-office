@@ -26,7 +26,11 @@ for (const j of jobs) {
   await page.setContent(
     `<html><body style="margin:0;background:transparent">${svg.replace('<svg ', `<svg width="${j.size}" height="${j.size}" `)}</body></html>`,
   )
-  await page.screenshot({ path: join(dir, j.out), omitBackground: true, clip: { x: 0, y: 0, width: j.size, height: j.size } })
+  await page.screenshot({
+    path: join(dir, j.out),
+    omitBackground: true,
+    clip: { x: 0, y: 0, width: j.size, height: j.size },
+  })
   console.log(`rendered ${j.out}`)
 }
 await browser.close()

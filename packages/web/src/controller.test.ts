@@ -1,4 +1,11 @@
-import { DEFAULT_SETTINGS, type AgentOfficeApi, type Banner, type ServerMessage, type SettingsPatch, type UpdateState } from '@agent-office/shared'
+import {
+  DEFAULT_SETTINGS,
+  type AgentOfficeApi,
+  type Banner,
+  type ServerMessage,
+  type SettingsPatch,
+  type UpdateState,
+} from '@agent-office/shared'
 import { byProviderAndTopic } from '@agent-office/shared'
 import { describe, expect, it, vi } from 'vitest'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
@@ -6,22 +13,73 @@ import { createController } from './controller.ts'
 import type { BannerView, HudView, PanelView, SceneView, SettingsView } from './ports.ts'
 
 function fakeGateway() {
-  const listeners = { message: [] as ((m: ServerMessage) => void)[], select: [] as ((id: string) => void)[], banner: [] as ((b: Banner | null) => void)[], openSettings: [] as (() => void)[], update: [] as ((s: UpdateState) => void)[] }
-  const sub = <T>(list: T[]) => (fn: T) => (list.push(fn), () => list.splice(list.indexOf(fn), 1))
+  const listeners = {
+    message: [] as ((m: ServerMessage) => void)[],
+    select: [] as ((id: string) => void)[],
+    banner: [] as ((b: Banner | null) => void)[],
+    openSettings: [] as (() => void)[],
+    update: [] as ((s: UpdateState) => void)[],
+  }
+  const sub =
+    <T>(list: T[]) =>
+    (fn: T) => (list.push(fn), () => list.splice(list.indexOf(fn), 1))
   const api = {
     ready: vi.fn(async () => ({
-      agents: [{ id: 'a', name: 'Ada', provider: 'p', topic: 't', status: 'idle' as const, source: 's', since: 0, lastSeen: 0, interactive: true, unread: 0 }],
+      agents: [
+        {
+          id: 'a',
+          name: 'Ada',
+          provider: 'p',
+          topic: 't',
+          status: 'idle' as const,
+          source: 's',
+          since: 0,
+          lastSeen: 0,
+          interactive: true,
+          unread: 0,
+        },
+      ],
       messages: [],
     })),
     onMessage: sub(listeners.message),
     onSelect: sub(listeners.select),
     sendMessage: vi.fn(async (agentId: string, text: string) =>
-      text === 'fail' ? { ok: false as const, error: 'too many messages' } : { ok: true as const, message: { id: 'm', agentId, from: 'user' as const, text, ts: 1, state: 'queued' as const } },
+      text === 'fail'
+        ? { ok: false as const, error: 'too many messages' }
+        : {
+            ok: true as const,
+            message: {
+              id: 'm',
+              agentId,
+              from: 'user' as const,
+              text,
+              ts: 1,
+              state: 'queued' as const,
+            },
+          },
     ),
-    settings: { get: vi.fn(async () => DEFAULT_SETTINGS), set: vi.fn(async (p: SettingsPatch) => ({ settings: { ...DEFAULT_SETTINGS, ...p }, restartRequired: 'port' in p })) },
-    hook: { status: vi.fn(async () => 'not-installed' as const), install: vi.fn(async () => 'installed' as const), uninstall: vi.fn(async () => 'not-installed' as const) },
-    app: { version: vi.fn(async () => '1.0.0'), onBanner: sub(listeners.banner), onOpenSettings: sub(listeners.openSettings) },
-    updates: { check: vi.fn(async () => ({ policy: 'auto' as const, status: 'up-to-date' as const })), install: vi.fn(async () => {}), onState: sub(listeners.update) },
+    settings: {
+      get: vi.fn(async () => DEFAULT_SETTINGS),
+      set: vi.fn(async (p: SettingsPatch) => ({
+        settings: { ...DEFAULT_SETTINGS, ...p },
+        restartRequired: 'port' in p,
+      })),
+    },
+    hook: {
+      status: vi.fn(async () => 'not-installed' as const),
+      install: vi.fn(async () => 'installed' as const),
+      uninstall: vi.fn(async () => 'not-installed' as const),
+    },
+    app: {
+      version: vi.fn(async () => '1.0.0'),
+      onBanner: sub(listeners.banner),
+      onOpenSettings: sub(listeners.openSettings),
+    },
+    updates: {
+      check: vi.fn(async () => ({ policy: 'auto' as const, status: 'up-to-date' as const })),
+      install: vi.fn(async () => {}),
+      onState: sub(listeners.update),
+    },
   } satisfies AgentOfficeApi
   return { api, listeners }
 }
@@ -30,27 +88,76 @@ function fakeViews() {
   const handlers: Record<string, (...a: any[]) => void> = {}
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & { synced: number; selected: string | null } = {
-    synced: 0, selected: null,
-    sync() { this.synced++ },
-    select(id) { this.selected = id },
+    synced: 0,
+    selected: null,
+    sync() {
+      this.synced++
+    },
+    select(id) {
+      this.selected = id
+    },
     onPick: on('pick'),
   }
   const panel: PanelView & { vm: PanelVM | null; error: string; cleared: number } = {
-    vm: null, error: '', cleared: 0,
-    open(vm) { this.vm = vm },
-    render(vm) { this.vm = vm },
-    close() { this.vm = null },
-    showError(m) { this.error = m },
-    clearInput() { this.cleared++ },
-    onSend: on('send'), onClose: on('close'), onSelectParent: on('parent'), onInstallHook: on('panelInstall'),
+    vm: null,
+    error: '',
+    cleared: 0,
+    open(vm) {
+      this.vm = vm
+    },
+    render(vm) {
+      this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    showError(m) {
+      this.error = m
+    },
+    clearInput() {
+      this.cleared++
+    },
+    onSend: on('send'),
+    onClose: on('close'),
+    onSelectParent: on('parent'),
+    onInstallHook: on('panelInstall'),
   }
-  const hud: HudView & { vm: HudVM | null } = { vm: null, render(vm) { this.vm = vm }, onOpenSettings: on('openSettings') }
+  const hud: HudView & { vm: HudVM | null } = {
+    vm: null,
+    render(vm) {
+      this.vm = vm
+    },
+    onOpenSettings: on('openSettings'),
+  }
   const settings: SettingsView & { vm: SettingsVM | null; error: string } = {
-    vm: null, error: '',
-    open(vm) { this.vm = vm }, render(vm) { this.vm = vm }, close() { this.vm = null }, isOpen() { return this.vm !== null }, showError(m) { this.error = m },
-    onChange: on('settingsChange'), onHookAction: on('hookAction'), onCheckUpdates: on('check'), onInstallUpdate: on('installUpdate'),
+    vm: null,
+    error: '',
+    open(vm) {
+      this.vm = vm
+    },
+    render(vm) {
+      this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    isOpen() {
+      return this.vm !== null
+    },
+    showError(m) {
+      this.error = m
+    },
+    onChange: on('settingsChange'),
+    onHookAction: on('hookAction'),
+    onCheckUpdates: on('check'),
+    onInstallUpdate: on('installUpdate'),
   }
-  const banner: BannerView & { shown: Banner | null } = { shown: null, show(b) { this.shown = b } }
+  const banner: BannerView & { shown: Banner | null } = {
+    shown: null,
+    show(b) {
+      this.shown = b
+    },
+  }
   return { scene, panel, hud, settings, banner, handlers }
 }
 
@@ -58,7 +165,13 @@ async function setup() {
   const g = fakeGateway()
   const v = fakeViews()
   const ticks: (() => void)[] = []
-  const c = createController({ gateway: g.api, ...v, grouping: byProviderAndTopic, clock: { now: () => 0 }, every: (_ms, fn) => (ticks.push(fn), () => {}) })
+  const c = createController({
+    gateway: g.api,
+    ...v,
+    grouping: byProviderAndTopic,
+    clock: { now: () => 0 },
+    every: (_ms, fn) => (ticks.push(fn), () => {}),
+  })
   await c.start()
   return { ...g, ...v, c, ticks }
 }
@@ -72,7 +185,21 @@ describe('controller', () => {
 
   it('applies pushed messages', async () => {
     const { listeners, hud, scene } = await setup()
-    listeners.message[0]!({ type: 'upsert', agent: { id: 'b', name: 'B', provider: 'p', topic: 't', status: 'tool', source: 's', since: 0, lastSeen: 0, interactive: false, unread: 0 } })
+    listeners.message[0]!({
+      type: 'upsert',
+      agent: {
+        id: 'b',
+        name: 'B',
+        provider: 'p',
+        topic: 't',
+        status: 'tool',
+        source: 's',
+        since: 0,
+        lastSeen: 0,
+        interactive: false,
+        unread: 0,
+      },
+    })
     expect(hud.vm?.count).toBe('2 agents')
     expect(scene.synced).toBe(2)
   })

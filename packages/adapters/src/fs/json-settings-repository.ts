@@ -15,7 +15,8 @@ export class JsonFileSettingsRepository implements SettingsRepository {
     try {
       raw = JSON.parse(await readFile(this.file, 'utf8'))
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') this.log?.warn(`settings file corrupt, using defaults`)
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT')
+        this.log?.warn(`settings file corrupt, using defaults`)
       return SettingsSchema.parse({})
     }
     const obj = raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {}

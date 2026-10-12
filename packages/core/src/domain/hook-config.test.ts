@@ -5,7 +5,10 @@ const CMD = '"/data/hook/agent-office-hook.sh"'
 
 describe('addHooks / removeHooks', () => {
   it('adds Stop and UserPromptSubmit entries and keeps foreign hooks', () => {
-    const existing = { model: 'opus', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] } }
+    const existing = {
+      model: 'opus',
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] },
+    }
     const out = addHooks(existing, CMD) as any
     expect(out.model).toBe('opus')
     expect(out.hooks.Stop).toHaveLength(2)
@@ -24,7 +27,10 @@ describe('addHooks / removeHooks', () => {
   })
 
   it('removes only its own entries', () => {
-    const s = addHooks({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] } }, CMD)
+    const s = addHooks(
+      { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] } },
+      CMD,
+    )
     const out = removeHooks(s) as any
     expect(out.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'say done' }] }])
     expect(out.hooks.UserPromptSubmit).toBeUndefined()

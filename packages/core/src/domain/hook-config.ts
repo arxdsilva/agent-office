@@ -43,13 +43,21 @@ export function addHooks(settings: Json, command: string): Json {
   const out = removeHooks(settings)
   const hooks = (out.hooks ??= {}) as Record<string, HookGroup[]>
   for (const event of EVENTS) {
-    hooks[event] = [...(hooks[event] ?? []), { hooks: [{ type: 'command', command, timeout: TIMEOUT_SECONDS }] }]
+    hooks[event] = [
+      ...(hooks[event] ?? []),
+      { hooks: [{ type: 'command', command, timeout: TIMEOUT_SECONDS }] },
+    ]
   }
   return out
 }
 
-export function hookStatus(settings: Json | undefined, expectedCommand: string): 'installed' | 'outdated' | 'not-installed' {
-  const ours = EVENTS.map((e) => groupsOf(settings, e).flatMap((g) => (g.hooks ?? []).filter(isOurs)))
+export function hookStatus(
+  settings: Json | undefined,
+  expectedCommand: string,
+): 'installed' | 'outdated' | 'not-installed' {
+  const ours = EVENTS.map((e) =>
+    groupsOf(settings, e).flatMap((g) => (g.hooks ?? []).filter(isOurs)),
+  )
   if (ours.every((list) => list.length === 0)) return 'not-installed'
   const current = ours.every((list) => list.some((h) => h.command === expectedCommand))
   return current ? 'installed' : 'outdated'

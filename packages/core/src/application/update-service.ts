@@ -53,7 +53,12 @@ export class UpdateService implements UpdateManagement {
     try {
       const info = await this.d.updater.check()
       if (!info) return this.set({ policy, status: 'up-to-date' })
-      this.set({ policy, status: 'available', version: info.version, url: info.url ?? this.d.releaseUrl })
+      this.set({
+        policy,
+        status: 'available',
+        version: info.version,
+        url: info.url ?? this.d.releaseUrl,
+      })
       if (policy !== 'auto') return this.current
       this.set({ ...this.current, status: 'downloading' })
       await this.d.updater.download()
@@ -64,7 +69,8 @@ export class UpdateService implements UpdateManagement {
   }
 
   install(): void {
-    if (this.current.policy === 'auto' && this.current.status === 'ready') this.d.updater.restartToInstall()
+    if (this.current.policy === 'auto' && this.current.status === 'ready')
+      this.d.updater.restartToInstall()
   }
 
   onChange(fn: (s: UpdateState) => void): () => void {

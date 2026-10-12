@@ -1,8 +1,21 @@
-import type { Grouping, HookStatus, Settings, SettingsPatch, UpdateState } from '@agent-office/shared'
+import type {
+  Grouping,
+  HookStatus,
+  Settings,
+  SettingsPatch,
+  UpdateState,
+} from '@agent-office/shared'
 import { layoutOffice, type LayoutState } from './app/layout.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
 import { hudVM, panelVM, settingsVM } from './app/view-models.ts'
-import type { BannerView, HudView, OfficeGateway, PanelView, SceneView, SettingsView } from './ports.ts'
+import type {
+  BannerView,
+  HudView,
+  OfficeGateway,
+  PanelView,
+  SceneView,
+  SettingsView,
+} from './ports.ts'
 
 export interface ControllerDeps {
   gateway: OfficeGateway
@@ -43,7 +56,10 @@ export function createController(d: ControllerDeps) {
   }
 
   const renderSettings = async (open: boolean, known?: Settings) => {
-    const [settings, version] = await Promise.all([known ?? d.gateway.settings.get(), d.gateway.app.version()])
+    const [settings, version] = await Promise.all([
+      known ?? d.gateway.settings.get(),
+      d.gateway.app.version(),
+    ])
     hook = await d.gateway.hook.status()
     const vm = settingsVM({ settings, hook, version, update, restartNote })
     if (open) d.settings.open(vm)
@@ -82,7 +98,8 @@ export function createController(d: ControllerDeps) {
   })
   d.settings.onHookAction(async (action) => {
     await guarded(async () => {
-      hook = action === 'install' ? await d.gateway.hook.install() : await d.gateway.hook.uninstall()
+      hook =
+        action === 'install' ? await d.gateway.hook.install() : await d.gateway.hook.uninstall()
       await renderSettings(false)
     })()
   })

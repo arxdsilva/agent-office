@@ -1,11 +1,22 @@
 import type { ChatMessage } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import { applyEvent } from '../../src/domain/agent.ts'
-import type { AgentRepository, EventPublisher, EventSubscriber, MessageRepository } from '../../src/ports/driven.ts'
+import type {
+  AgentRepository,
+  EventPublisher,
+  EventSubscriber,
+  MessageRepository,
+} from '../../src/ports/driven.ts'
 
 const agent = (id: string, since = 1) => applyEvent(undefined, { agentId: id }, since)!
 const msg = (id: string, agentId = 'a', over: Partial<ChatMessage> = {}): ChatMessage => ({
-  id, agentId, from: 'user', text: id, ts: 1, state: 'queued', ...over,
+  id,
+  agentId,
+  from: 'user',
+  text: id,
+  ts: 1,
+  state: 'queued',
+  ...over,
 })
 
 /** Every AgentRepository implementation must pass this. */
@@ -16,7 +27,12 @@ export function agentRepositoryContract(name: string, make: () => AgentRepositor
       r.put(agent('a'))
       r.put(agent('b'))
       expect(r.get('a')?.id).toBe('a')
-      expect(r.list().map((a) => a.id).sort()).toEqual(['a', 'b'])
+      expect(
+        r
+          .list()
+          .map((a) => a.id)
+          .sort(),
+      ).toEqual(['a', 'b'])
       r.delete('a')
       expect(r.get('a')).toBeUndefined()
       r.delete('missing')
@@ -68,7 +84,12 @@ export function messageRepositoryContract(name: string, make: (cap: number) => M
       r.append(msg('a1'))
       r.append(msg('a2'))
       r.append(msg('b1', 'b'))
-      expect(r.recent(1).map((m) => m.id).sort()).toEqual(['a2', 'b1'])
+      expect(
+        r
+          .recent(1)
+          .map((m) => m.id)
+          .sort(),
+      ).toEqual(['a2', 'b1'])
       r.dropAgent('a')
       expect(r.byAgent('a')).toEqual([])
     })

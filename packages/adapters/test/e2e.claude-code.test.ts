@@ -72,8 +72,12 @@ describe('Claude Code adapter + hook (E2E)', () => {
     // One polling pass of the real adapter: the session lands in the claude-code zone under its title,
     // and the subagent sits with its parent.
     const source = new ClaudeCodeTailer({
-      dir, files: new NodeTranscriptFiles(), activity: srv.office.activity,
-      clock: new FakeClock(Date.now()), scheduler: new ManualScheduler(), expireAfterMs: 600_000,
+      dir,
+      files: new NodeTranscriptFiles(),
+      activity: srv.office.activity,
+      clock: new FakeClock(Date.now()),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 600_000,
     })
     await source.tick()
     await ui.next(
@@ -84,7 +88,10 @@ describe('Claude Code adapter + hook (E2E)', () => {
       status: 'tool',
       tool: 'Bash',
     })
-    expect(srv.office.query.agent('cc:sub1')).toMatchObject({ name: 'Explore', parentId: 'cc:sess-e2e' })
+    expect(srv.office.query.agent('cc:sub1')).toMatchObject({
+      name: 'Explore',
+      parentId: 'cc:sess-e2e',
+    })
 
     // The user types a message to the session in the UI.
     const sent = await srv.api(`/api/agents/${encodeURIComponent('cc:sess-e2e')}/messages`, {

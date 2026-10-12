@@ -1,4 +1,11 @@
-import { appendFileSync, mkdirSync, mkdtempSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  truncateSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ReportActivity } from '@agent-office/core'
@@ -15,7 +22,14 @@ afterEach(() => {
   for (const c of cleanups.splice(0)) c()
 })
 
-function tailer(o: { dir: string; activity: ReportActivity; expireAfterMs: number; now: number; scheduler?: ManualScheduler; files?: MemoryTranscriptFiles }) {
+function tailer(o: {
+  dir: string
+  activity: ReportActivity
+  expireAfterMs: number
+  now: number
+  scheduler?: ManualScheduler
+  files?: MemoryTranscriptFiles
+}) {
   return new ClaudeCodeTailer({
     dir: o.dir,
     files: o.files ?? new NodeTranscriptFiles(),
@@ -93,7 +107,10 @@ describe('ClaudeCodeTailer (node file system)', () => {
       user('go', { isSidechain: true, agentId: 'a1b2c3d4e5' }) + '\n',
     )
     await src.tick()
-    expect(store.agent('cc:a1b2c3d4e5')).toMatchObject({ name: 'Plan', parentId: 'cc:sess-1234abcd' })
+    expect(store.agent('cc:a1b2c3d4e5')).toMatchObject({
+      name: 'Plan',
+      parentId: 'cc:sess-1234abcd',
+    })
   })
 
   it('ignores files not modified within the expiry window and survives a missing dir', async () => {
@@ -101,17 +118,32 @@ describe('ClaudeCodeTailer (node file system)', () => {
     writeFileSync(file, user('old') + '\n')
     const old = new Date(T0 - 3_600_000)
     utimesSync(file, old, old)
-    const src = tailer({ dir: join(file, '..', '..'), activity: office.activity, expireAfterMs: 60_000, now: T0 })
+    const src = tailer({
+      dir: join(file, '..', '..'),
+      activity: office.activity,
+      expireAfterMs: 60_000,
+      now: T0,
+    })
     await src.tick()
     expect(store.agents()).toEqual([])
-    const missing = tailer({ dir: '/definitely/not/here', activity: office.activity, expireAfterMs: 1, now: T0 })
+    const missing = tailer({
+      dir: '/definitely/not/here',
+      activity: office.activity,
+      expireAfterMs: 1,
+      now: T0,
+    })
     await expect(missing.tick()).resolves.toBeUndefined()
   })
 
   it('drops events older than the expiry window', async () => {
     const { file, store, office } = fixture()
     writeFileSync(file, user('ancient', { timestamp: iso(-3_600_000) }) + '\n')
-    const src = tailer({ dir: join(file, '..', '..'), activity: office.activity, expireAfterMs: 60_000, now: T0 })
+    const src = tailer({
+      dir: join(file, '..', '..'),
+      activity: office.activity,
+      expireAfterMs: 60_000,
+      now: T0,
+    })
     await src.tick()
     expect(store.agents()).toEqual([])
   })
@@ -119,7 +151,13 @@ describe('ClaudeCodeTailer (node file system)', () => {
   it('start/stop schedule and cancel polling', async () => {
     const { src } = fixture()
     const scheduler = new ManualScheduler()
-    const s = tailer({ dir: '/nowhere', activity: { report: () => 0 }, expireAfterMs: 1, now: T0, scheduler })
+    const s = tailer({
+      dir: '/nowhere',
+      activity: { report: () => 0 },
+      expireAfterMs: 1,
+      now: T0,
+      scheduler,
+    })
     s.start(10)
     expect(scheduler.jobs).toHaveLength(1)
     scheduler.runAll()
@@ -132,10 +170,20 @@ describe('ClaudeCodeTailer (in-memory files)', () => {
   it('reads appended lines through the TranscriptFiles port, without touching disk', async () => {
     const files = new MemoryTranscriptFiles()
     const got: AgentEvent[] = []
-    const t = tailer({ dir: '/p', activity: { report: (e) => (got.push(...e), e.length) }, expireAfterMs: 1e15, now: T0, files })
+    const t = tailer({
+      dir: '/p',
+      activity: { report: (e) => (got.push(...e), e.length) },
+      expireAfterMs: 1e15,
+      now: T0,
+      files,
+    })
     files.write('/p/proj/sess-1234abcd.jsonl', user('hi') + '\n', T0)
     await t.tick()
-    files.append('/p/proj/sess-1234abcd.jsonl', assistant([{ type: 'tool_use', name: 'Read', input: {} }], { timestamp: iso(5) }) + '\n', T0)
+    files.append(
+      '/p/proj/sess-1234abcd.jsonl',
+      assistant([{ type: 'tool_use', name: 'Read', input: {} }], { timestamp: iso(5) }) + '\n',
+      T0,
+    )
     await t.tick()
     expect(got.map((e) => e.status)).toEqual(['thinking', 'tool'])
   })
@@ -144,8 +192,13 @@ describe('ClaudeCodeTailer (in-memory files)', () => {
     const files = new MemoryTranscriptFiles()
     const warnings: string[] = []
     const t = new ClaudeCodeTailer({
-      dir: '/p', files, activity: { report: () => 0 }, clock: new FakeClock(T0), scheduler: new ManualScheduler(),
-      expireAfterMs: 1e15, log: { info: () => {}, warn: (m) => warnings.push(m) },
+      dir: '/p',
+      files,
+      activity: { report: () => 0 },
+      clock: new FakeClock(T0),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 1e15,
+      log: { info: () => {}, warn: (m) => warnings.push(m) },
     })
     files.write('/p/proj/s.jsonl', 'x\n', T0)
     files.failReads('/p/proj/s.jsonl')

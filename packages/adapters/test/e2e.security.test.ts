@@ -31,7 +31,11 @@ describe('security (E2E)', () => {
   it('rejects writes from a foreign Origin with 403 even with a token', async () => {
     const srv = await startServer()
     cleanup.push(srv.close)
-    const r = await srv.api('/api/events', { method: 'POST', headers: { origin: 'https://evil.com' }, body: JSON.stringify({ agentId: 'x' }) })
+    const r = await srv.api('/api/events', {
+      method: 'POST',
+      headers: { origin: 'https://evil.com' },
+      body: JSON.stringify({ agentId: 'x' }),
+    })
     expect(r.status).toBe(403)
   })
 

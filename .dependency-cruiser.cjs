@@ -15,7 +15,8 @@ module.exports = {
     },
     {
       name: 'core-is-pure',
-      comment: 'core (domain, use cases, ports) may import only core, shared and zod — no Node, Electron, Fastify, three.',
+      comment:
+        'core (domain, use cases, ports) may import only core, shared and zod — no Node, Electron, Fastify, three.',
       severity: 'error',
       from: { path: '^packages/core/(src|test)' },
       to: { pathNot: ['^packages/(core|shared)/', ZOD, pkg('vitest'), pkg('@vitest')] },
@@ -35,10 +36,13 @@ module.exports = {
     },
     {
       name: 'renderer-isolated',
-      comment: 'The renderer talks to the app only through the preload bridge (shared IPC contract).',
+      comment:
+        'The renderer talks to the app only through the preload bridge (shared IPC contract).',
       severity: 'error',
       from: { path: '^packages/web/src' },
-      to: { pathNot: ['^packages/(web|shared)/', ZOD, pkg('three'), pkg('vitest'), pkg('@vitest')] },
+      to: {
+        pathNot: ['^packages/(web|shared)/', ZOD, pkg('three'), pkg('vitest'), pkg('@vitest')],
+      },
     },
     {
       name: 'renderer-no-node-builtins',
@@ -55,9 +59,13 @@ module.exports = {
     },
     {
       name: 'composition-root-only',
-      comment: 'Only the composition root (composition.ts + the Electron entry index.ts) may know concrete adapters; everything else depends on ports.',
+      comment:
+        'Only the composition root (composition.ts + the Electron entry index.ts) may know concrete adapters; everything else depends on ports.',
       severity: 'error',
-      from: { path: '^packages/desktop/src/main/', pathNot: ['(composition|index)\\.ts$', '\\.test\\.ts$'] },
+      from: {
+        path: '^packages/desktop/src/main/',
+        pathNot: ['(composition|index)\\.ts$', '\\.test\\.ts$'],
+      },
       to: { path: ['^packages/adapters/', '^packages/desktop/src/main/adapters/'] },
     },
     {
@@ -72,6 +80,9 @@ module.exports = {
     exclude: { path: ['/dist/', '/out/', '/coverage/'] },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.base.json' },
-    enhancedResolveOptions: { exportsFields: ['exports'], conditionNames: ['import', 'require', 'node', 'default'] },
+    enhancedResolveOptions: {
+      exportsFields: ['exports'],
+      conditionNames: ['import', 'require', 'node', 'default'],
+    },
   },
 }

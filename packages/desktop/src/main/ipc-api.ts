@@ -7,7 +7,13 @@ import {
   type UpdateManagement,
   type UserChat,
 } from '@agent-office/core'
-import { IPC, SendMessageArgsSchema, SettingsPatchSchema, type SendResult, type ServerMessage } from '@agent-office/shared'
+import {
+  IPC,
+  SendMessageArgsSchema,
+  SettingsPatchSchema,
+  type SendResult,
+  type ServerMessage,
+} from '@agent-office/shared'
 
 /** The driving ports the renderer may reach through IPC — nothing concrete. */
 export interface IpcPorts {

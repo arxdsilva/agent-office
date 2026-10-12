@@ -13,14 +13,28 @@ export interface SweepPolicy {
   interactiveTtlMs: number
 }
 
-const MERGED = ['name', 'provider', 'topic', 'model', 'kind', 'parentId', 'status', 'tool', 'text'] as const
+const MERGED = [
+  'name',
+  'provider',
+  'topic',
+  'model',
+  'kind',
+  'parentId',
+  'status',
+  'tool',
+  'text',
+] as const
 const VISIBLE: (keyof Agent)[] = [...MERGED, 'interactive', 'unread']
 
 /**
  * Applies a partial event. Returns the new state, or null when the event is older than what we
  * already know (out-of-order delivery must never overwrite newer state).
  */
-export function applyEvent(prev: AgentState | undefined, e: AgentEvent, now: number): AgentState | null {
+export function applyEvent(
+  prev: AgentState | undefined,
+  e: AgentEvent,
+  now: number,
+): AgentState | null {
   const ts = e.ts ?? now
   if (prev && ts < prev.lastSeen) return null
   const source = e.source ?? prev?.source ?? 'http'
@@ -50,17 +64,20 @@ export function isVisibleChange(prev: Agent | undefined, next: Agent): boolean {
   return !prev || VISIBLE.some((k) => prev[k] !== next[k])
 }
 
-export type SweepResult = { kind: 'keep' } | { kind: 'remove' } | { kind: 'update'; agent: AgentState }
+export type SweepResult =
+  { kind: 'keep' } | { kind: 'remove' } | { kind: 'update'; agent: AgentState }
 
 export function sweepAgent(a: AgentState, now: number, p: SweepPolicy): SweepResult {
   const silent = now - a.lastSeen
-  if (silent > p.expireAfterMs || (a.status === 'done' && silent > p.doneTtlMs)) return { kind: 'remove' }
+  if (silent > p.expireAfterMs || (a.status === 'done' && silent > p.doneTtlMs))
+    return { kind: 'remove' }
   let next = a
   if (silent > p.idleAfterMs && (a.status === 'thinking' || a.status === 'tool')) {
     next = { ...next, status: 'idle' }
     delete next.tool
   }
-  if (a.interactive && now - (a.inboxReadAt ?? 0) > p.interactiveTtlMs) next = { ...next, interactive: false }
+  if (a.interactive && now - (a.inboxReadAt ?? 0) > p.interactiveTtlMs)
+    next = { ...next, interactive: false }
   return next === a ? { kind: 'keep' } : { kind: 'update', agent: next }
 }
 

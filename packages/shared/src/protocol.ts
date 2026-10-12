@@ -86,4 +86,3 @@ export type ServerMessage =
   | { type: 'upsert'; agent: Agent }
   | { type: 'remove'; id: string }
   | { type: 'chat'; message: ChatMessage }
-

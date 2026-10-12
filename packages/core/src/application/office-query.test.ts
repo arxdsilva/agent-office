@@ -1,6 +1,13 @@
 import type { ServerMessage } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
-import { FakeAgentRepository, FakeClock, FakeEventBus, FakeMessageRepository, ManualScheduler, SeqIds } from '../../test/fakes/index.ts'
+import {
+  FakeAgentRepository,
+  FakeClock,
+  FakeEventBus,
+  FakeMessageRepository,
+  ManualScheduler,
+  SeqIds,
+} from '../../test/fakes/index.ts'
 import { ActivityService } from './activity-service.ts'
 import { InboxService } from './inbox-service.ts'
 import { OfficeQueryService } from './office-query.ts'
@@ -12,7 +19,14 @@ function setup() {
   const clock = new FakeClock(0)
   const policy = { idleAfterMs: 1e9, expireAfterMs: 10, doneTtlMs: 1e9, interactiveTtlMs: 1e9 }
   const activity = new ActivityService({ agents, messages, bus, clock, policy })
-  const inbox = new InboxService({ agents, messages, bus, clock, ids: new SeqIds(), scheduler: new ManualScheduler() })
+  const inbox = new InboxService({
+    agents,
+    messages,
+    bus,
+    clock,
+    ids: new SeqIds(),
+    scheduler: new ManualScheduler(),
+  })
   return { activity, inbox, clock, query: new OfficeQueryService({ agents, messages, bus }) }
 }
 

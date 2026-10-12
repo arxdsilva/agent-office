@@ -125,7 +125,13 @@ export function compose(o: ComposeOptions) {
     backend = b
     let mock: MockAgents | undefined
     if (s.mock) {
-      mock = new MockAgents({ activity: office.activity, inbox: office.inbox, query: office.query, events: bus, scheduler })
+      mock = new MockAgents({
+        activity: office.activity,
+        inbox: office.inbox,
+        query: office.query,
+        events: bus,
+        scheduler,
+      })
       mock.seed()
       mock.start()
       b.stops.push(() => mock!.stop())
@@ -148,7 +154,13 @@ export function compose(o: ComposeOptions) {
     const token = loadOrCreateToken(env.home)
     let listening = s.port
     const api = buildHttpApi(
-      { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query, ...(mock ? { mock } : {}) },
+      {
+        activity: office.activity,
+        inbox: office.inbox,
+        chat: office.chat,
+        query: office.query,
+        ...(mock ? { mock } : {}),
+      },
       // Port getter: with port 0 (tests) the Host allowlist must follow the real port.
       createAuth({ token, port: () => listening, allowedHosts: env.allowedHosts }),
     )
@@ -185,7 +197,9 @@ export function compose(o: ComposeOptions) {
       const settings = effective(await office.settings.get())
       office.attention.setNotificationsEnabled(settings.notifications)
       office.updates.setEnabled(settings.autoUpdate)
-      await office.hooks.heal().catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
+      await office.hooks
+        .heal()
+        .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
       await refreshHookStatus()
 
       registerIpc(
@@ -208,7 +222,11 @@ export function compose(o: ComposeOptions) {
         (url) => isTrustedSender(url, shell.rendererUrl),
       )
       stops.push(
-        createPushBridge(office.query, (channel, payload) => shell.window.send(channel, payload), scheduler),
+        createPushBridge(
+          office.query,
+          (channel, payload) => shell.window.send(channel, payload),
+          scheduler,
+        ),
         office.updates.onChange((s) => shell.window.send(IPC.updateState, s)),
         office.settings.onChange(({ settings: s, restartRequired }) => {
           office.attention.setNotificationsEnabled(s.notifications)

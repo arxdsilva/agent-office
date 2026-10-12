@@ -39,7 +39,13 @@ describe('HookService', () => {
   })
 
   it('heal refreshes an outdated command and leaves non-installed setups alone', async () => {
-    const outdated = setup(JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node /old/agent-office-hook.mjs' }] }] } }))
+    const outdated = setup(
+      JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'command', command: 'node /old/agent-office-hook.mjs' }] }],
+        },
+      }),
+    )
     expect(await outdated.svc.status()).toBe('outdated')
     await outdated.svc.heal()
     expect(await outdated.svc.status()).toBe('installed')

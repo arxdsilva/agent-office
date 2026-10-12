@@ -12,7 +12,10 @@ describe('SettingsService', () => {
     const listener = vi.fn()
     svc.onChange(listener)
     const r = await svc.update({ launchAtLogin: true, port: 5000 })
-    expect(r).toEqual({ settings: { ...DEFAULT_SETTINGS, launchAtLogin: true, port: 5000 }, restartRequired: true })
+    expect(r).toEqual({
+      settings: { ...DEFAULT_SETTINGS, launchAtLogin: true, port: 5000 },
+      restartRequired: true,
+    })
     expect(repo.saved?.port).toBe(5000)
     expect(login.calls).toEqual([true])
     expect(listener).toHaveBeenCalledWith(r)
@@ -29,7 +32,10 @@ describe('SettingsService', () => {
   })
 
   it('unsubscribed listeners are not called', async () => {
-    const svc = new SettingsService({ repo: new FakeSettingsRepository(), loginItem: new RecordingLoginItem() })
+    const svc = new SettingsService({
+      repo: new FakeSettingsRepository(),
+      loginItem: new RecordingLoginItem(),
+    })
     const listener = vi.fn()
     svc.onChange(listener)()
     await svc.update({ mock: true })

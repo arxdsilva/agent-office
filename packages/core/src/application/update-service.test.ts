@@ -4,7 +4,11 @@ import { fakePlatform, ManualScheduler, ScriptedUpdater } from '../../test/fakes
 import { UpdateService } from './update-service.ts'
 
 const RELEASES = 'https://github.com/arxdsilva/agent-office/releases/latest'
-function setup(platform = fakePlatform(), next: ConstructorParameters<typeof ScriptedUpdater>[0] = null, enabled = true) {
+function setup(
+  platform = fakePlatform(),
+  next: ConstructorParameters<typeof ScriptedUpdater>[0] = null,
+  enabled = true,
+) {
   const updater = new ScriptedUpdater(next)
   const scheduler = new ManualScheduler()
   const svc = new UpdateService({ updater, platform, scheduler, enabled, releaseUrl: RELEASES })

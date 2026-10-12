@@ -1,9 +1,23 @@
 import type { ChatMessage } from '@agent-office/shared'
 import { isVisibleChange } from '../domain/agent.ts'
 import { RateLimitedError, UnknownAgentError } from '../domain/errors.ts'
-import { deliver, isAwaitingReply, markReplied, newReply, newUserMessage } from '../domain/message.ts'
+import {
+  deliver,
+  isAwaitingReply,
+  markReplied,
+  newReply,
+  newUserMessage,
+} from '../domain/message.ts'
 import { RateWindow } from '../domain/rate-limit.ts'
-import type { AgentRepository, Clock, EventPublisher, EventSubscriber, IdGenerator, MessageRepository, Scheduler } from '../ports/driven.ts'
+import type {
+  AgentRepository,
+  Clock,
+  EventPublisher,
+  EventSubscriber,
+  IdGenerator,
+  MessageRepository,
+  Scheduler,
+} from '../ports/driven.ts'
 import type { AgentInbox, CancelSignal, UserChat } from '../ports/driving.ts'
 
 export interface InboxDeps {
@@ -65,14 +79,20 @@ export class InboxService implements AgentInbox, UserChat {
         signal?.removeEventListener('abort', onAbort)
         resolve(v)
       }
-      const off = this.d.bus.subscribe((e) => e.type === 'inbox.queued' && e.agentId === agentId && done(true))
+      const off = this.d.bus.subscribe(
+        (e) => e.type === 'inbox.queued' && e.agentId === agentId && done(true),
+      )
       const onAbort = () => done(false)
       const cancelTimer = this.d.scheduler.after(ms, () => done(false))
       signal?.addEventListener('abort', onAbort, { once: true })
     })
   }
 
-  reply(agentId: string, text: string, opts: { inReplyTo?: string; requireAwaiting?: boolean } = {}): ChatMessage | null {
+  reply(
+    agentId: string,
+    text: string,
+    opts: { inReplyTo?: string; requireAwaiting?: boolean } = {},
+  ): ChatMessage | null {
     const awaiting = this.d.messages
       .byAgent(agentId)
       .filter((m) => isAwaitingReply(m) && (!opts.inReplyTo || m.id === opts.inReplyTo))

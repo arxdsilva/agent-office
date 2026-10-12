@@ -38,7 +38,11 @@ export interface AgentInbox {
   /** Resolves true as soon as messages are queued, false on timeout/abort. */
   waitForMessages(agentId: string, ms: number, signal?: CancelSignal): Promise<boolean>
   /** Returns null when `requireAwaiting` is set and nothing awaits a reply. */
-  reply(agentId: string, text: string, opts?: { inReplyTo?: string; requireAwaiting?: boolean }): ChatMessage | null
+  reply(
+    agentId: string,
+    text: string,
+    opts?: { inReplyTo?: string; requireAwaiting?: boolean },
+  ): ChatMessage | null
 }
 
 /** The human in the UI. */

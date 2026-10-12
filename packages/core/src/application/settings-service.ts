@@ -21,7 +21,8 @@ export class SettingsService implements SettingsManagement {
     const current = await this.d.repo.load()
     const result = mergeSettings(current, patch)
     await this.d.repo.save(result.settings)
-    if (result.settings.launchAtLogin !== current.launchAtLogin) this.d.loginItem.setOpenAtLogin(result.settings.launchAtLogin)
+    if (result.settings.launchAtLogin !== current.launchAtLogin)
+      this.d.loginItem.setOpenAtLogin(result.settings.launchAtLogin)
     for (const l of this.listeners) l(result)
     return result
   }

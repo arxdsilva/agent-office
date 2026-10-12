@@ -17,11 +17,23 @@ describe('events over HTTP → UI stream (E2E)', () => {
     // An external agent reports it is running a tool; the UI stream gets an upsert with the merged state.
     const res = await srv.api('/api/events', {
       method: 'POST',
-      body: JSON.stringify({ agentId: 'bot-1', name: 'Bot', provider: 'custom', topic: 'Deploy', status: 'tool', tool: 'Bash' }),
+      body: JSON.stringify({
+        agentId: 'bot-1',
+        name: 'Bot',
+        provider: 'custom',
+        topic: 'Deploy',
+        status: 'tool',
+        tool: 'Bash',
+      }),
     })
     expect(res.status).toBe(202)
     const up = await ui.next(is('upsert', (m) => m.agent.id === 'bot-1'))
-    expect(up.agent).toMatchObject({ provider: 'custom', topic: 'Deploy', status: 'tool', tool: 'Bash' })
+    expect(up.agent).toMatchObject({
+      provider: 'custom',
+      topic: 'Deploy',
+      status: 'tool',
+      tool: 'Bash',
+    })
 
     // After the expiry window the sweep removes it and the UI is told.
     await new Promise((r) => setTimeout(r, 1_100))
@@ -33,7 +45,15 @@ describe('events over HTTP → UI stream (E2E)', () => {
     const srv = await startServer()
     cleanup.push(srv.close)
     // Batch of two events from one producer.
-    await srv.api('/api/events', { method: 'POST', body: JSON.stringify([{ agentId: 'a' }, { agentId: 'b' }]) })
-    expect(srv.office.query.snapshot().agents.map((a) => a.id).sort()).toEqual(['a', 'b'])
+    await srv.api('/api/events', {
+      method: 'POST',
+      body: JSON.stringify([{ agentId: 'a' }, { agentId: 'b' }]),
+    })
+    expect(
+      srv.office.query
+        .snapshot()
+        .agents.map((a) => a.id)
+        .sort(),
+    ).toEqual(['a', 'b'])
   })
 })

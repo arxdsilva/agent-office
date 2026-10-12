@@ -1,19 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import { applyEvent, isVisibleChange, sweepAgent, toDto, type AgentState } from './agent.ts'
 
-const policy = { idleAfterMs: 60_000, expireAfterMs: 600_000, doneTtlMs: 30_000, interactiveTtlMs: 600_000 }
+const policy = {
+  idleAfterMs: 60_000,
+  expireAfterMs: 600_000,
+  doneTtlMs: 30_000,
+  interactiveTtlMs: 600_000,
+}
 
 describe('applyEvent', () => {
   it('creates an agent with defaults; provider falls back to source, then http', () => {
     expect(applyEvent(undefined, { agentId: 'a', source: 'mock' }, 1000)).toMatchObject({
-      id: 'a', name: 'a', provider: 'mock', topic: 'untitled', status: 'idle', source: 'mock',
-      since: 1000, lastSeen: 1000, interactive: false, unread: 0,
+      id: 'a',
+      name: 'a',
+      provider: 'mock',
+      topic: 'untitled',
+      status: 'idle',
+      source: 'mock',
+      since: 1000,
+      lastSeen: 1000,
+      interactive: false,
+      unread: 0,
     })
     expect(applyEvent(undefined, { agentId: 'a' }, 1)?.provider).toBe('http')
   })
 
   it('merges only defined fields and clears the tool when leaving tool status', () => {
-    const a = applyEvent(undefined, { agentId: 'a', name: 'Ada', topic: 'T', status: 'tool', tool: 'Bash' }, 1)!
+    const a = applyEvent(
+      undefined,
+      { agentId: 'a', name: 'Ada', topic: 'T', status: 'tool', tool: 'Bash' },
+      1,
+    )!
     const b = applyEvent(a, { agentId: 'a', status: 'thinking' }, 2)!
     expect(b).toMatchObject({ name: 'Ada', topic: 'T', status: 'thinking', lastSeen: 2 })
     expect(b.tool).toBeUndefined()
@@ -41,7 +58,10 @@ describe('isVisibleChange', () => {
 })
 
 describe('sweepAgent', () => {
-  const at = (over: Partial<AgentState>, now = 0): AgentState => ({ ...applyEvent(undefined, { agentId: 'a' }, now)!, ...over })
+  const at = (over: Partial<AgentState>, now = 0): AgentState => ({
+    ...applyEvent(undefined, { agentId: 'a' }, now)!,
+    ...over,
+  })
 
   it('idles busy agents after idleAfterMs and keeps others', () => {
     const r = sweepAgent(at({ status: 'tool', tool: 'Bash' }), 60_001, policy)

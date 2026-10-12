@@ -1,7 +1,21 @@
 import type { SweepPolicy } from '../domain/agent.ts'
 import type {
-  AgentRepository, ClaudeSettingsStore, Clock, EventPublisher, EventSubscriber, HookRunner, IdGenerator, LoginItem,
-  MessageRepository, Notifier, PlatformInfo, Scheduler, SettingsRepository, TrayView, Updater, WindowState,
+  AgentRepository,
+  ClaudeSettingsStore,
+  Clock,
+  EventPublisher,
+  EventSubscriber,
+  HookRunner,
+  IdGenerator,
+  LoginItem,
+  MessageRepository,
+  Notifier,
+  PlatformInfo,
+  Scheduler,
+  SettingsRepository,
+  TrayView,
+  Updater,
+  WindowState,
 } from '../ports/driven.ts'
 import { ActivityService } from './activity-service.ts'
 import { AttentionService } from './attention-service.ts'

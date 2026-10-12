@@ -74,7 +74,8 @@ export class MemoryTranscriptFiles implements TranscriptFiles {
   async list(dir: string): Promise<string[]> {
     const prefix = dir.endsWith('/') ? dir : `${dir}/`
     const names = new Set<string>()
-    for (const p of this.files.keys()) if (p.startsWith(prefix)) names.add(p.slice(prefix.length).split('/')[0]!)
+    for (const p of this.files.keys())
+      if (p.startsWith(prefix)) names.add(p.slice(prefix.length).split('/')[0]!)
     return [...names]
   }
 
@@ -86,7 +87,9 @@ export class MemoryTranscriptFiles implements TranscriptFiles {
 
   async readRange(path: string, from: number, to: number): Promise<string> {
     if (this.broken.has(path)) throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
-    return Buffer.from(this.files.get(path)?.content ?? '').subarray(from, to).toString('utf8')
+    return Buffer.from(this.files.get(path)?.content ?? '')
+      .subarray(from, to)
+      .toString('utf8')
   }
 
   async readText(path: string): Promise<string | undefined> {

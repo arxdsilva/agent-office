@@ -29,12 +29,15 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
 
   // Host allowlist blocks DNS rebinding; Origin check blocks cross-site browser requests.
   app.addHook('onRequest', async (req, reply) => {
-    if (!auth.hostAllowed(req.headers.host)) return reply.code(421).header('connection', 'close').send({ error: 'host not allowed' })
-    if (!auth.originAllowed(req.headers.origin)) return reply.code(403).header('connection', 'close').send({ error: 'origin not allowed' })
+    if (!auth.hostAllowed(req.headers.host))
+      return reply.code(421).header('connection', 'close').send({ error: 'host not allowed' })
+    if (!auth.originAllowed(req.headers.origin))
+      return reply.code(403).header('connection', 'close').send({ error: 'origin not allowed' })
   })
 
   const requireToken = async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!auth.bearerOk(req.headers.authorization)) return reply.code(401).send({ error: 'missing or invalid token' })
+    if (!auth.bearerOk(req.headers.authorization))
+      return reply.code(401).send({ error: 'missing or invalid token' })
   }
 
   app.setErrorHandler((err, _req, reply) => {
@@ -48,19 +51,30 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
 
   app.post('/api/events', { preHandler: requireToken }, async (req, reply) => {
     const parsed = AgentEventBatchSchema.safeParse(req.body)
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid event', issues: parsed.error.issues })
-    const events = (Array.isArray(parsed.data) ? parsed.data : [parsed.data]).map((e) => ({ source: 'http', ...e }))
+    if (!parsed.success)
+      return reply.code(400).send({ error: 'invalid event', issues: parsed.error.issues })
+    const events = (Array.isArray(parsed.data) ? parsed.data : [parsed.data]).map((e) => ({
+      source: 'http',
+      ...e,
+    }))
     ports.activity.report(events)
     return reply.code(202).send({ accepted: events.length })
   })
 
-  app.get<{ Params: { id: string } }>('/api/agents/:id/messages', async (req) => ports.chat.history(req.params.id))
+  app.get<{ Params: { id: string } }>('/api/agents/:id/messages', async (req) =>
+    ports.chat.history(req.params.id),
+  )
 
-  app.post<{ Params: { id: string } }>('/api/agents/:id/messages', { preHandler: requireToken }, async (req, reply) => {
-    const parsed = ChatMessageSchema.safeParse(req.body)
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid message', issues: parsed.error.issues })
-    return reply.code(202).send({ message: ports.chat.send(req.params.id, parsed.data.text) })
-  })
+  app.post<{ Params: { id: string } }>(
+    '/api/agents/:id/messages',
+    { preHandler: requireToken },
+    async (req, reply) => {
+      const parsed = ChatMessageSchema.safeParse(req.body)
+      if (!parsed.success)
+        return reply.code(400).send({ error: 'invalid message', issues: parsed.error.issues })
+      return reply.code(202).send({ message: ports.chat.send(req.params.id, parsed.data.text) })
+    },
+  )
 
   app.get<{ Params: { id: string }; Querystring: { claim?: string; wait?: string } }>(
     '/api/agents/:id/inbox',
@@ -78,24 +92,33 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
     },
   )
 
-  app.post<{ Params: { id: string } }>('/api/agents/:id/replies', { preHandler: requireToken }, async (req, reply) => {
-    const parsed = AgentReplySchema.safeParse(req.body)
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid reply', issues: parsed.error.issues })
-    const { text, inReplyTo, requireAwaiting } = parsed.data
-    const message = ports.inbox.reply(req.params.id, text, {
-      ...(inReplyTo ? { inReplyTo } : {}),
-      ...(requireAwaiting ? { requireAwaiting } : {}),
-    })
-    return message ? reply.code(202).send({ message }) : reply.code(204).send()
-  })
+  app.post<{ Params: { id: string } }>(
+    '/api/agents/:id/replies',
+    { preHandler: requireToken },
+    async (req, reply) => {
+      const parsed = AgentReplySchema.safeParse(req.body)
+      if (!parsed.success)
+        return reply.code(400).send({ error: 'invalid reply', issues: parsed.error.issues })
+      const { text, inReplyTo, requireAwaiting } = parsed.data
+      const message = ports.inbox.reply(req.params.id, text, {
+        ...(inReplyTo ? { inReplyTo } : {}),
+        ...(requireAwaiting ? { requireAwaiting } : {}),
+      })
+      return message ? reply.code(202).send({ message }) : reply.code(204).send()
+    },
+  )
 
   if (ports.mock) {
     const mock = ports.mock
-    app.post<{ Querystring: { n?: string } }>('/api/mock', { preHandler: requireToken }, async (req, reply) => {
-      const n = Math.min(Math.max(Number(req.query.n) || 0, 0), 1000)
-      mock.spawn(n)
-      return reply.code(202).send({ spawned: n })
-    })
+    app.post<{ Querystring: { n?: string } }>(
+      '/api/mock',
+      { preHandler: requireToken },
+      async (req, reply) => {
+        const n = Math.min(Math.max(Number(req.query.n) || 0, 0), 1000)
+        mock.spawn(n)
+        return reply.code(202).send({ spawned: n })
+      },
+    )
   }
 
   return app

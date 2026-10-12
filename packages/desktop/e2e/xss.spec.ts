@@ -8,7 +8,14 @@ test('agent-provided text from the HTTP API renders as text, never HTML', async 
   const res = await fetch(`http://127.0.0.1:${PORT}/api/events`, {
     method: 'POST',
     headers: { authorization: `Bearer ${profile.token()}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ agentId: 'xss', name: payload, provider: 'custom', status: 'tool', tool: 'Bash', text: payload }),
+    body: JSON.stringify({
+      agentId: 'xss',
+      name: payload,
+      provider: 'custom',
+      status: 'tool',
+      tool: 'Bash',
+      text: payload,
+    }),
   })
   expect(res.status).toBe(202)
   await expect(win.locator('.tag[data-agent-id="xss"]')).toContainText(payload)

@@ -22,8 +22,14 @@ if (!app.requestSingleInstanceLock()) app.exit(0)
 /** Paths differ between `electron-vite dev` (repo layout) and the packaged app (resources/). */
 function resources() {
   return app.isPackaged
-    ? { hookScript: join(process.resourcesPath, 'hooks', 'agent-office-hook.mjs'), icons: join(process.resourcesPath, 'icons') }
-    : { hookScript: join(app.getAppPath(), '..', '..', 'hooks', 'agent-office-hook.mjs'), icons: join(app.getAppPath(), 'build') }
+    ? {
+        hookScript: join(process.resourcesPath, 'hooks', 'agent-office-hook.mjs'),
+        icons: join(process.resourcesPath, 'icons'),
+      }
+    : {
+        hookScript: join(app.getAppPath(), '..', '..', 'hooks', 'agent-office-hook.mjs'),
+        icons: join(app.getAppPath(), 'build'),
+      }
 }
 
 let instance: App | undefined
@@ -36,12 +42,21 @@ async function main(): Promise<void> {
   const paths = resources()
 
   // Deny every permission except the ones the office needs (walk mode, notifications).
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(isAllowedPermission(permission)))
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => isAllowedPermission(permission))
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) =>
+    cb(isAllowedPermission(permission)),
+  )
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    isAllowedPermission(permission),
+  )
   if (devServerUrl) {
     // Production CSP is a <meta> tag in the built index.html; dev responses get it as a header.
     session.defaultSession.webRequest.onHeadersReceived((details, cb) =>
-      cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [contentSecurityPolicy(devServerUrl)] } }),
+      cb({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [contentSecurityPolicy(devServerUrl)],
+        },
+      }),
     )
   }
   Menu.setApplicationMenu(
@@ -65,13 +80,18 @@ async function main(): Promise<void> {
       void instance?.office.settings.update({ windowBounds: bounds }).catch(() => {})
       if (!hiddenHintShown && Notification.isSupported()) {
         hiddenHintShown = true
-        new Notification({ title: 'agent-office is still running', body: 'It lives in the tray. Quit from the tray menu.' }).show()
+        new Notification({
+          title: 'agent-office is still running',
+          body: 'It lives in the tray. Quit from the tray menu.',
+        }).show()
       }
       return true
     },
   })
 
-  const trayIcon = nativeImage.createFromPath(join(paths.icons, process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png'))
+  const trayIcon = nativeImage.createFromPath(
+    join(paths.icons, process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png'),
+  )
   if (process.platform === 'darwin') trayIcon.setTemplateImage(true)
 
   instance = compose({

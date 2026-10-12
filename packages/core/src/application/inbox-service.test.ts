@@ -1,7 +1,15 @@
 import type { ChatMessage } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import { RateLimitedError, UnknownAgentError } from '../domain/errors.ts'
-import { FakeAgentRepository, FakeClock, FakeEventBus, FakeMessageRepository, FakeSignal, ManualScheduler, SeqIds } from '../../test/fakes/index.ts'
+import {
+  FakeAgentRepository,
+  FakeClock,
+  FakeEventBus,
+  FakeMessageRepository,
+  FakeSignal,
+  ManualScheduler,
+  SeqIds,
+} from '../../test/fakes/index.ts'
 import { ActivityService } from './activity-service.ts'
 import { InboxService } from './inbox-service.ts'
 
@@ -14,18 +22,38 @@ function setup(rateLimitPerSec = 10) {
   const policy = { idleAfterMs: 1e9, expireAfterMs: 1e9, doneTtlMs: 1e9, interactiveTtlMs: 1e9 }
   new ActivityService({ agents, messages, bus, clock, policy }).report([{ agentId: 'a' }])
   bus.events = []
-  const svc = new InboxService({ agents, messages, bus, clock, ids: new SeqIds(), scheduler, rateLimitPerSec })
+  const svc = new InboxService({
+    agents,
+    messages,
+    bus,
+    clock,
+    ids: new SeqIds(),
+    scheduler,
+    rateLimitPerSec,
+  })
   return { svc, agents, messages, bus, clock, scheduler }
 }
 const chats = (bus: FakeEventBus) =>
-  bus.events.flatMap((e) => (e.type === 'message.changed' ? [[e.message.from, e.message.state] as const] : []))
+  bus.events.flatMap((e) =>
+    e.type === 'message.changed' ? [[e.message.from, e.message.state] as const] : [],
+  )
 
 describe('UserChat.send', () => {
   it('queues a message, signals the inbox and bumps unread', () => {
     const { svc, agents, bus } = setup()
     const m = svc.send('a', 'hello')
-    expect(m).toMatchObject({ id: 'id1', agentId: 'a', from: 'user', text: 'hello', state: 'queued' })
-    expect(bus.events.map((e) => e.type)).toEqual(['message.changed', 'inbox.queued', 'agent.upserted'])
+    expect(m).toMatchObject({
+      id: 'id1',
+      agentId: 'a',
+      from: 'user',
+      text: 'hello',
+      state: 'queued',
+    })
+    expect(bus.events.map((e) => e.type)).toEqual([
+      'message.changed',
+      'inbox.queued',
+      'agent.upserted',
+    ])
     expect(agents.get('a')?.unread).toBe(1)
     expect(svc.history('a').map((x) => x.text)).toEqual(['hello'])
   })

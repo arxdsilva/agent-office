@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { FakeAgentRepository, FakeClock, FakeEventBus, FakeMessageRepository, FakeWindow, ManualScheduler, RecordingNotifier, RecordingTray, SeqIds } from '../../test/fakes/index.ts'
+import {
+  FakeAgentRepository,
+  FakeClock,
+  FakeEventBus,
+  FakeMessageRepository,
+  FakeWindow,
+  ManualScheduler,
+  RecordingNotifier,
+  RecordingTray,
+  SeqIds,
+} from '../../test/fakes/index.ts'
 import { ActivityService } from './activity-service.ts'
 import { AttentionService } from './attention-service.ts'
 import { InboxService } from './inbox-service.ts'
@@ -12,13 +22,26 @@ function setup(focused = false) {
   const clock = new FakeClock(0)
   const policy = { idleAfterMs: 1e9, expireAfterMs: 1e9, doneTtlMs: 1e9, interactiveTtlMs: 1e9 }
   const activity = new ActivityService({ agents, messages, bus, clock, policy })
-  const inbox = new InboxService({ agents, messages, bus, clock, ids: new SeqIds(), scheduler: new ManualScheduler() })
+  const inbox = new InboxService({
+    agents,
+    messages,
+    bus,
+    clock,
+    ids: new SeqIds(),
+    scheduler: new ManualScheduler(),
+  })
   const notifier = new RecordingNotifier()
   const tray = new RecordingTray()
   const scheduler = new ManualScheduler()
   const window = new FakeWindow(focused)
   const attention = new AttentionService({
-    bus, query: new OfficeQueryService({ agents, messages, bus }), notifier, tray, window, clock, scheduler,
+    bus,
+    query: new OfficeQueryService({ agents, messages, bus }),
+    notifier,
+    tray,
+    window,
+    clock,
+    scheduler,
   })
   return { activity, inbox, notifier, tray, scheduler, attention, clock, window }
 }
@@ -63,7 +86,10 @@ describe('AttentionService', () => {
     expect(tray.last?.title).toBe('⚙1 ✔1')
     attention.setHookInstalled(true)
     scheduler.runAll()
-    expect(tray.last?.items).toContainEqual({ label: 'Claude Code hook: installed ✓', enabled: false })
+    expect(tray.last?.items).toContainEqual({
+      label: 'Claude Code hook: installed ✓',
+      enabled: false,
+    })
   })
 
   it('forgets removed agents and stops cleanly', () => {

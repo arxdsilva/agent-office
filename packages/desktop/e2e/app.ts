@@ -19,9 +19,13 @@ export function newProfile() {
 
 export type Profile = ReturnType<typeof newProfile>
 
-export async function launch(profile: Profile = newProfile()): Promise<{ app: ElectronApplication; win: Page; profile: Profile; errors: string[] }> {
+export async function launch(
+  profile: Profile = newProfile(),
+): Promise<{ app: ElectronApplication; win: Page; profile: Profile; errors: string[] }> {
   // Drop inherited ELECTRON_* vars (e.g. ELECTRON_RUN_AS_NODE from VS Code terminals would start plain Node).
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => !k.startsWith('ELECTRON_') && v !== undefined)) as Record<string, string>
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([k, v]) => !k.startsWith('ELECTRON_') && v !== undefined),
+  ) as Record<string, string>
   const app = await _electron.launch({
     args: ['.'],
     cwd: join(import.meta.dirname, '..'),

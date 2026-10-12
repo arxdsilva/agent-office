@@ -17,8 +17,9 @@ export class DomSettings implements SettingsView {
 
   constructor() {
     for (const key of CHECKBOXES) {
-      byId<HTMLInputElement>(`s-${key}`).addEventListener('change', (e) =>
-        void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
+      byId<HTMLInputElement>(`s-${key}`).addEventListener(
+        'change',
+        (e) => void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
       )
     }
     byId<HTMLFormElement>('s-port-form').addEventListener('submit', (e) => {
@@ -71,7 +72,8 @@ export class DomSettings implements SettingsView {
     byId('s-restart').hidden = !vm.restartNote
     byId('s-hook-label').textContent = vm.hook.label
     this.hookAction = vm.hook.action
-    byId('s-hook-btn').textContent = vm.hook.action === 'install' ? 'Install hook' : 'Uninstall hook'
+    byId('s-hook-btn').textContent =
+      vm.hook.action === 'install' ? 'Install hook' : 'Uninstall hook'
     byId('s-version').textContent = vm.version
     byId('s-update-label').textContent = vm.update.label
     this.updateAction = vm.update.action

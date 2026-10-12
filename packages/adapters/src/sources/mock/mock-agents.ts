@@ -1,4 +1,10 @@
-import type { AgentInbox, EventSubscriber, OfficeQuery, ReportActivity, Scheduler } from '@agent-office/core'
+import type {
+  AgentInbox,
+  EventSubscriber,
+  OfficeQuery,
+  ReportActivity,
+  Scheduler,
+} from '@agent-office/core'
 import { AGENT_STATUSES, type AgentEvent, type AgentStatus } from '@agent-office/shared'
 
 const SEED: AgentEvent[] = [
@@ -145,7 +151,8 @@ export class MockAgents {
     const claimed = this.opts.inbox.claim(agentId)
     this.stops.push(
       this.opts.scheduler.after(this.opts.replyDelayMs ?? 2000, () => {
-        for (const m of claimed) this.opts.inbox.reply(agentId, `(mock) got it: ${m.text}`, { inReplyTo: m.id })
+        for (const m of claimed)
+          this.opts.inbox.reply(agentId, `(mock) got it: ${m.text}`, { inReplyTo: m.id })
       }),
     )
   }

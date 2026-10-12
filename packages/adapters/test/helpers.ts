@@ -18,7 +18,10 @@ export async function startServer(policy: Partial<SweepPolicy> = {}) {
     bearerOk: (h) => current.bearerOk(h),
     tokenOk: (t) => current.tokenOk(t),
   }
-  const app = buildHttpApi({ activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query }, auth)
+  const app = buildHttpApi(
+    { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query },
+    auth,
+  )
   const server = await startHttpServer(app, { host: '127.0.0.1', port: 0 })
   current = createAuth({ token: TOKEN, port: server.port })
   const url = `http://127.0.0.1:${server.port}`
@@ -26,7 +29,11 @@ export async function startServer(policy: Partial<SweepPolicy> = {}) {
   const api = (path: string, init: RequestInit = {}) =>
     fetch(url + path, {
       ...init,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, ...init.headers },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        ...init.headers,
+      },
     })
 
   return {
@@ -55,7 +62,10 @@ export function observe(office: ReturnType<typeof makeOffice>['office']) {
       }
     }
   })
-  const next = <T extends ServerMessage>(pred: (m: ServerMessage) => m is T, timeoutMs = 3000): Promise<T> => {
+  const next = <T extends ServerMessage>(
+    pred: (m: ServerMessage) => m is T,
+    timeoutMs = 3000,
+  ): Promise<T> => {
     const seen = received.find(pred)
     if (seen) {
       received.splice(received.indexOf(seen), 1)
@@ -77,6 +87,9 @@ export function observe(office: ReturnType<typeof makeOffice>['office']) {
 }
 
 export const is =
-  <K extends ServerMessage['type']>(type: K, extra: (m: Extract<ServerMessage, { type: K }>) => boolean = () => true) =>
+  <K extends ServerMessage['type']>(
+    type: K,
+    extra: (m: Extract<ServerMessage, { type: K }>) => boolean = () => true,
+  ) =>
   (m: ServerMessage): m is Extract<ServerMessage, { type: K }> =>
     m.type === type && extra(m as Extract<ServerMessage, { type: K }>)

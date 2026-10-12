@@ -24,10 +24,10 @@ description: Launch the agent-office desktop app locally and verify a change in 
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
+| Symptom                                                                                     | Cause / fix                                                                                                    |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `SyntaxError: … 'electron' does not provide an export named …`, "Node.js vXX" in the output | `ELECTRON_RUN_AS_NODE=1` inherited from VS Code/Cursor. Use `make` targets or strip `ELECTRON_*` from the env. |
-| Red "Port … is busy" banner | Another instance or process owns the port. Change it in Settings or use `PORT=` for this run. |
-| Window opens but shows nothing | Run `make build` again (stale `out/`), or check the devtools console for CSP errors. |
-| No Claude Code sessions | The adapter is off, or no transcript was modified in the last 10 minutes. |
-| Messages to a Claude Code session stay ⏳ | The hook isn't installed (Settings), or the session is idle. Delivery happens at the next turn boundary. |
+| Red "Port … is busy" banner                                                                 | Another instance or process owns the port. Change it in Settings or use `PORT=` for this run.                  |
+| Window opens but shows nothing                                                              | Run `make build` again (stale `out/`), or check the devtools console for CSP errors.                           |
+| No Claude Code sessions                                                                     | The adapter is off, or no transcript was modified in the last 10 minutes.                                      |
+| Messages to a Claude Code session stay ⏳                                                   | The hook isn't installed (Settings), or the session is idle. Delivery happens at the next turn boundary.       |

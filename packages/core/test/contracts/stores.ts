@@ -25,7 +25,9 @@ export function settingsRepositoryContract(name: string, make: () => Promise<Set
  */
 export function claudeSettingsStoreContract(
   name: string,
-  make: (initial?: string) => Promise<{ store: ClaudeSettingsStore; backup: () => Promise<string | undefined> }>,
+  make: (
+    initial?: string,
+  ) => Promise<{ store: ClaudeSettingsStore; backup: () => Promise<string | undefined> }>,
 ) {
   describe(`ClaudeSettingsStore contract: ${name}`, () => {
     it('reads undefined when there is no file', async () => {
@@ -49,7 +51,10 @@ export function claudeSettingsStoreContract(
 }
 
 /** Every HookRunner must pass this. */
-export function hookRunnerContract(name: string, make: () => Promise<{ runner: HookRunner; exists: () => Promise<boolean> }>) {
+export function hookRunnerContract(
+  name: string,
+  make: () => Promise<{ runner: HookRunner; exists: () => Promise<boolean> }>,
+) {
   describe(`HookRunner contract: ${name}`, () => {
     it('exposes a command that mentions the hook marker', async () => {
       const { runner } = await make()

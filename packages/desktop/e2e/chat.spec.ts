@@ -9,7 +9,9 @@ test('chat round trip over IPC: send, deliver, reply', async () => {
   // Enter sends; mock agents claim their inbox and answer after ~2s.
   await win.locator('#p-input').fill('hello')
   await win.keyboard.press('Enter')
-  await expect(win.locator('#p-thread li.agent')).toHaveText('(mock) got it: hello', { timeout: 10_000 })
+  await expect(win.locator('#p-thread li.agent')).toHaveText('(mock) got it: hello', {
+    timeout: 10_000,
+  })
   await expect(win.locator('#p-thread li.user .state')).toHaveText('✓✓ replied')
   // Escape closes the panel.
   await win.locator('#p-input').press('Escape')

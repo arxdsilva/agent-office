@@ -40,7 +40,12 @@
       <div id="p-hint" class="hint-box" hidden></div>
       <ol id="p-thread"></ol>
       <form id="p-form">
-        <textarea id="p-input" rows="2" maxlength="4000" placeholder="Message this agent… (Enter to send)"></textarea>
+        <textarea
+          id="p-input"
+          rows="2"
+          maxlength="4000"
+          placeholder="Message this agent… (Enter to send)"
+        ></textarea>
         <div class="form-row">
           <span id="p-error" class="error"></span>
           <span id="p-counter" class="muted">0/4000</span>
@@ -57,17 +62,27 @@
 
       <section>
         <h3>Claude Code</h3>
-        <p class="row"><span>Hook: <strong id="s-hook-label"></strong></span><button id="s-hook-btn" class="btn" type="button"></button></p>
-        <p class="muted small">
-          The hook lets this app deliver your messages to Claude Code sessions: when a turn ends, or on your next prompt
-          if the session is idle. It changes <code>~/.claude/settings.json</code> (a backup is kept).
+        <p class="row">
+          <span>Hook: <strong id="s-hook-label"></strong></span
+          ><button id="s-hook-btn" class="btn" type="button"></button>
         </p>
-        <label class="row"><input id="s-claudeAdapter" type="checkbox" /> Show Claude Code sessions (reads local transcripts)</label>
+        <p class="muted small">
+          The hook lets this app deliver your messages to Claude Code sessions: when a turn ends, or
+          on your next prompt if the session is idle. It changes
+          <code>~/.claude/settings.json</code> (a backup is kept).
+        </p>
+        <label class="row"
+          ><input id="s-claudeAdapter" type="checkbox" /> Show Claude Code sessions (reads local
+          transcripts)</label
+        >
       </section>
 
       <section>
         <h3>App</h3>
-        <label class="row"><input id="s-notifications" type="checkbox" /> Notify me when an agent waits or replies</label>
+        <label class="row"
+          ><input id="s-notifications" type="checkbox" /> Notify me when an agent waits or
+          replies</label
+        >
         <label class="row"><input id="s-launchAtLogin" type="checkbox" /> Open at login</label>
         <form id="s-port-form" class="row">
           <label for="s-port">Local API port</label>
@@ -79,7 +94,9 @@
 
       <section>
         <h3>Updates</h3>
-        <label class="row"><input id="s-autoUpdate" type="checkbox" /> Check for updates automatically</label>
+        <label class="row"
+          ><input id="s-autoUpdate" type="checkbox" /> Check for updates automatically</label
+        >
         <p class="row">
           <span><span id="s-version"></span> · <span id="s-update-label"></span></span>
           <button id="s-update-btn" class="btn" type="button"></button>

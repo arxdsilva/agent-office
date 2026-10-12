@@ -5,7 +5,10 @@ import { Menu, Tray, type MenuItemConstructorOptions, type NativeImage } from 'e
 export class ElectronTray implements TrayView {
   private tray: Tray
 
-  constructor(icon: NativeImage, private onAction: (a: TrayAction) => void) {
+  constructor(
+    icon: NativeImage,
+    private onAction: (a: TrayAction) => void,
+  ) {
     this.tray = new Tray(icon)
     // Windows/Linux: left click opens the window; macOS shows the menu.
     if (process.platform !== 'darwin') this.tray.on('click', () => onAction({ type: 'open' }))

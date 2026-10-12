@@ -9,7 +9,10 @@ import { startHttpServer } from './server.ts'
 const api = () => {
   const { office, scheduler } = makeOffice()
   scheduler.dispose()
-  return buildHttpApi({ activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query }, createAuth({ token: 't'.repeat(64), port: 0 }))
+  return buildHttpApi(
+    { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query },
+    createAuth({ token: 't'.repeat(64), port: 0 }),
+  )
 }
 
 describe('startHttpServer', () => {
@@ -23,7 +26,9 @@ describe('startHttpServer', () => {
     const blocker = createServer()
     await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', r))
     const port = (blocker.address() as { port: number }).port
-    await expect(startHttpServer(api(), { host: '127.0.0.1', port })).rejects.toBeInstanceOf(PortInUseError)
+    await expect(startHttpServer(api(), { host: '127.0.0.1', port })).rejects.toBeInstanceOf(
+      PortInUseError,
+    )
     blocker.close()
   })
 })

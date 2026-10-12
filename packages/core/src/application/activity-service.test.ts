@@ -1,17 +1,38 @@
 import { describe, expect, it } from 'vitest'
-import { FakeAgentRepository, FakeClock, FakeEventBus, FakeMessageRepository } from '../../test/fakes/index.ts'
+import {
+  FakeAgentRepository,
+  FakeClock,
+  FakeEventBus,
+  FakeMessageRepository,
+} from '../../test/fakes/index.ts'
 import { ActivityService } from './activity-service.ts'
 
-const policy = { idleAfterMs: 60_000, expireAfterMs: 600_000, doneTtlMs: 30_000, interactiveTtlMs: 600_000 }
+const policy = {
+  idleAfterMs: 60_000,
+  expireAfterMs: 600_000,
+  doneTtlMs: 30_000,
+  interactiveTtlMs: 600_000,
+}
 function setup() {
-  const deps = { agents: new FakeAgentRepository(), messages: new FakeMessageRepository(), bus: new FakeEventBus(), clock: new FakeClock(0), policy }
+  const deps = {
+    agents: new FakeAgentRepository(),
+    messages: new FakeMessageRepository(),
+    bus: new FakeEventBus(),
+    clock: new FakeClock(0),
+    policy,
+  }
   return { ...deps, svc: new ActivityService(deps) }
 }
 
 describe('ActivityService.report', () => {
   it('stores agents and publishes only visible changes', () => {
     const { svc, agents, bus } = setup()
-    expect(svc.report([{ agentId: 'a', status: 'thinking' }, { agentId: 'a', status: 'thinking' }])).toBe(2)
+    expect(
+      svc.report([
+        { agentId: 'a', status: 'thinking' },
+        { agentId: 'a', status: 'thinking' },
+      ]),
+    ).toBe(2)
     expect(agents.get('a')?.status).toBe('thinking')
     expect(bus.events.map((e) => e.type)).toEqual(['agent.upserted'])
   })
@@ -35,7 +56,11 @@ describe('ActivityService.sweep', () => {
     svc.sweep()
     expect(agents.get('a')).toBeUndefined()
     expect(messages.byAgent('a')).toEqual([])
-    expect(bus.events.map((e) => e.type)).toEqual(['agent.upserted', 'agent.upserted', 'agent.removed'])
+    expect(bus.events.map((e) => e.type)).toEqual([
+      'agent.upserted',
+      'agent.upserted',
+      'agent.removed',
+    ])
   })
 
   it('does nothing for fresh agents', () => {

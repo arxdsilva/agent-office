@@ -37,7 +37,11 @@ export class ThreeScene implements SceneView {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     el.stage.append(this.renderer.domElement)
-    Object.assign(this.labels.domElement.style, { position: 'absolute', inset: '0', pointerEvents: 'none' })
+    Object.assign(this.labels.domElement.style, {
+      position: 'absolute',
+      inset: '0',
+      pointerEvents: 'none',
+    })
     el.stage.append(this.labels.domElement)
 
     const bg = new THREE.Color(dark ? 0x12151b : 0xeef0f3)
@@ -99,7 +103,10 @@ export class ThreeScene implements SceneView {
       this.leaving.add(av)
       this.avatars.delete(id)
     }
-    this.colliders = [...this.office.wallColliders, ...[...this.avatars.values()].map((a) => a.collider())]
+    this.colliders = [
+      ...this.office.wallColliders,
+      ...[...this.avatars.values()].map((a) => a.collider()),
+    ]
   }
 
   select(id: string | null): void {
@@ -122,7 +129,10 @@ export class ThreeScene implements SceneView {
   private pick(ndcX: number, ndcY: number): string | null {
     this.pointer.set(ndcX, ndcY)
     this.raycaster.setFromCamera(this.pointer, this.camera)
-    const hits = this.raycaster.intersectObjects([...this.avatars.values()].map((a) => a.hit), false)
+    const hits = this.raycaster.intersectObjects(
+      [...this.avatars.values()].map((a) => a.hit),
+      false,
+    )
     return (hits[0]?.object.userData.agentId as string | undefined) ?? null
   }
 
@@ -146,7 +156,12 @@ export class ThreeScene implements SceneView {
     }
     addEventListener('keydown', (e) => {
       const t = e.target
-      if (t instanceof HTMLTextAreaElement || t instanceof HTMLInputElement || t instanceof HTMLSelectElement) return
+      if (
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLSelectElement
+      )
+        return
       if (e.code === 'KeyF' && this.controls.mode === 'orbit') this.controls.enterWalk()
       if (e.code === 'KeyE' && this.controls.mode === 'walk') {
         const id = this.pick(0, 0) // crosshair at screen center

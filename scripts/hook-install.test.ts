@@ -12,7 +12,18 @@ function env(content?: string) {
     writeFileSync(settingsFile, content)
   }
   const lines: string[] = []
-  return { dir, settingsFile, lines, io: { settingsFile, home: join(dir, 'home'), hookScript: '/repo/hooks/agent-office-hook.mjs', log: (l: string) => lines.push(l), confirm: async () => true } }
+  return {
+    dir,
+    settingsFile,
+    lines,
+    io: {
+      settingsFile,
+      home: join(dir, 'home'),
+      hookScript: '/repo/hooks/agent-office-hook.mjs',
+      log: (l: string) => lines.push(l),
+      confirm: async () => true,
+    },
+  }
 }
 
 describe('hook-install CLI', () => {
@@ -23,7 +34,9 @@ describe('hook-install CLI', () => {
     expect(installed.theme).toBe('dark')
     const cmd: string = installed.hooks.Stop[0].hooks[0].command
     expect(cmd).toContain('agent-office-hook.sh')
-    expect(readFileSync(cmd.replaceAll('"', ''), 'utf8')).toContain('exec "node" "/repo/hooks/agent-office-hook.mjs"')
+    expect(readFileSync(cmd.replaceAll('"', ''), 'utf8')).toContain(
+      'exec "node" "/repo/hooks/agent-office-hook.mjs"',
+    )
     expect(existsSync(`${e.settingsFile}.agent-office.bak`)).toBe(true)
     expect(await run(['status'], e.io)).toBe(0)
     expect(e.lines.at(-1)).toBe('installed')

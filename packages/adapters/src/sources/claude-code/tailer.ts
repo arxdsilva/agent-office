@@ -68,7 +68,8 @@ export class ClaudeCodeTailer {
         if (entry.endsWith('.jsonl')) candidates.push(join(projectDir, entry))
         else {
           const subDir = join(projectDir, entry, 'subagents')
-          for (const sub of await files.list(subDir)) if (sub.endsWith('.jsonl')) candidates.push(join(subDir, sub))
+          for (const sub of await files.list(subDir))
+            if (sub.endsWith('.jsonl')) candidates.push(join(subDir, sub))
         }
       }
     }
@@ -105,7 +106,9 @@ export class ClaudeCodeTailer {
     } catch (err) {
       if (!this.warned.has(file)) {
         this.warned.add(file)
-        this.o.log?.warn(`claude-code: skipping ${file} (${(err as NodeJS.ErrnoException).code ?? 'read error'})`)
+        this.o.log?.warn(
+          `claude-code: skipping ${file} (${(err as NodeJS.ErrnoException).code ?? 'read error'})`,
+        )
       }
     }
   }

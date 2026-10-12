@@ -1,12 +1,31 @@
 import type { ChatMessage } from '@agent-office/shared'
 import { DomainError } from './errors.ts'
 
-export function newUserMessage(id: string, agentId: string, text: string, now: number): ChatMessage {
+export function newUserMessage(
+  id: string,
+  agentId: string,
+  text: string,
+  now: number,
+): ChatMessage {
   return { id, agentId, from: 'user', text, ts: now, state: 'queued' }
 }
 
-export function newReply(id: string, agentId: string, text: string, now: number, inReplyTo?: string): ChatMessage {
-  return { id, agentId, from: 'agent', text, ts: now, state: 'replied', ...(inReplyTo ? { inReplyTo } : {}) }
+export function newReply(
+  id: string,
+  agentId: string,
+  text: string,
+  now: number,
+  inReplyTo?: string,
+): ChatMessage {
+  return {
+    id,
+    agentId,
+    from: 'agent',
+    text,
+    ts: now,
+    state: 'replied',
+    ...(inReplyTo ? { inReplyTo } : {}),
+  }
 }
 
 /** queued → delivered (the agent picked it up). */

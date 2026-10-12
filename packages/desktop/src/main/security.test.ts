@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { contentSecurityPolicy, isAllowedPermission, isSafeExternalUrl, isTrustedSender, secureWebPreferences } from './security.ts'
+import {
+  contentSecurityPolicy,
+  isAllowedPermission,
+  isSafeExternalUrl,
+  isTrustedSender,
+  secureWebPreferences,
+} from './security.ts'
 
 describe('secureWebPreferences', () => {
   it('isolates the renderer', () => {
@@ -37,13 +43,23 @@ describe('permissions and senders', () => {
   it('allows only pointer lock and notifications', () => {
     expect(isAllowedPermission('pointerLock')).toBe(true)
     expect(isAllowedPermission('notifications')).toBe(true)
-    for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal']) expect(isAllowedPermission(p)).toBe(false)
+    for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal'])
+      expect(isAllowedPermission(p)).toBe(false)
   })
 
   it('trusts only the app renderer URL', () => {
-    expect(isTrustedSender('file:///app/out/renderer/index.html', 'file:///app/out/renderer/index.html')).toBe(true)
-    expect(isTrustedSender('file:///app/out/renderer/index.html#x', 'file:///app/out/renderer/index.html')).toBe(true)
-    expect(isTrustedSender('file:///etc/evil.html', 'file:///app/out/renderer/index.html')).toBe(false)
+    expect(
+      isTrustedSender('file:///app/out/renderer/index.html', 'file:///app/out/renderer/index.html'),
+    ).toBe(true)
+    expect(
+      isTrustedSender(
+        'file:///app/out/renderer/index.html#x',
+        'file:///app/out/renderer/index.html',
+      ),
+    ).toBe(true)
+    expect(isTrustedSender('file:///etc/evil.html', 'file:///app/out/renderer/index.html')).toBe(
+      false,
+    )
     expect(isTrustedSender('http://localhost:5173/', 'http://localhost:5173')).toBe(true)
     expect(isTrustedSender('http://localhost:5174/', 'http://localhost:5173')).toBe(false)
     expect(isTrustedSender(undefined, 'http://localhost:5173')).toBe(false)

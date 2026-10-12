@@ -3,7 +3,14 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadEnv } from '@agent-office/adapters'
-import { FakeWindow, fakePlatform, RecordingLoginItem, RecordingNotifier, RecordingTray, ScriptedUpdater } from '@agent-office/core/testing'
+import {
+  FakeWindow,
+  fakePlatform,
+  RecordingLoginItem,
+  RecordingNotifier,
+  RecordingTray,
+  ScriptedUpdater,
+} from '@agent-office/core/testing'
 import { IPC, type ServerMessage } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import { compose, type Shell } from './composition.ts'
@@ -33,8 +40,16 @@ function fakeShell() {
     rendererUrl: 'app://renderer/index.html',
     quit: () => quit++,
   }
-  const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!('app://renderer/index.html', ...args)
-  return { shell, handlers, call, window: shell.window as FakeShellWindow, tray: shell.tray as RecordingTray, quits: () => quit }
+  const call = (channel: string, ...args: unknown[]) =>
+    handlers.get(channel)!('app://renderer/index.html', ...args)
+  return {
+    shell,
+    handlers,
+    call,
+    window: shell.window as FakeShellWindow,
+    tray: shell.tray as RecordingTray,
+    quits: () => quit,
+  }
 }
 
 const apps: { stop(): Promise<void> }[] = []
@@ -77,9 +92,13 @@ describe('compose', () => {
     const { app, call, handlers, tray, window } = setup({ AGENT_OFFICE_MOCK: '1' })
     await app.start()
     // The local HTTP API is up for the hook and external agents.
-    const health = await fetch(`http://127.0.0.1:${app.apiPort()}/api/health`, { headers: { host: `localhost:${app.apiPort()}` } })
+    const health = await fetch(`http://127.0.0.1:${app.apiPort()}/api/health`, {
+      headers: { host: `localhost:${app.apiPort()}` },
+    })
     expect(await health.json()).toMatchObject({ ok: true })
-    expect([...handlers.keys()]).toEqual(expect.arrayContaining([IPC.ready, IPC.send, IPC.settingsSet, IPC.hookInstall]))
+    expect([...handlers.keys()]).toEqual(
+      expect.arrayContaining([IPC.ready, IPC.send, IPC.settingsSet, IPC.hookInstall]),
+    )
     expect(tray.models.length).toBeGreaterThan(0)
     // The renderer asks for the snapshot; mock agents are there.
     const snap = (await call(IPC.ready)) as { agents: unknown[] }
@@ -87,7 +106,9 @@ describe('compose', () => {
     // A change is pushed to the window, batched.
     app.office.activity.report([{ agentId: 'x', provider: 'custom' }])
     await wait(40)
-    const pushes = window.sent.filter(([c]) => c === IPC.push).flatMap(([, p]) => p as ServerMessage[])
+    const pushes = window.sent
+      .filter(([c]) => c === IPC.push)
+      .flatMap(([, p]) => p as ServerMessage[])
     expect(pushes.some((m) => m.type === 'upsert' && m.agent.id === 'x')).toBe(true)
   })
 
@@ -98,7 +119,10 @@ describe('compose', () => {
     const { app, window, call } = setup({ PORT: port })
     await app.start()
     expect(app.apiPort()).toBeUndefined()
-    expect(app.banner()).toEqual({ kind: 'error', text: `Port ${port} is busy — change it in Settings.` })
+    expect(app.banner()).toEqual({
+      kind: 'error',
+      text: `Port ${port} is busy — change it in Settings.`,
+    })
     // A renderer that loads later still gets the banner.
     window.sent = []
     await call(IPC.ready)
@@ -132,10 +156,15 @@ describe('compose', () => {
     // Installing from the tray writes the wrapper + Claude settings and refreshes the tray.
     await app.onTrayAction({ type: 'install-hook' })
     const claude = JSON.parse(readFileSync(join(dir, 'claude', 'settings.json'), 'utf8'))
-    expect(claude.hooks.Stop[0].hooks[0].command).toContain(join(dir, 'userData', 'hook', 'agent-office-hook.sh'))
+    expect(claude.hooks.Stop[0].hooks[0].command).toContain(
+      join(dir, 'userData', 'hook', 'agent-office-hook.sh'),
+    )
     expect(existsSync(join(dir, 'userData', 'hook', 'agent-office-hook.sh'))).toBe(true)
     await wait(1100)
-    expect(tray.last?.items).toContainEqual({ label: 'Claude Code hook: installed ✓', enabled: false })
+    expect(tray.last?.items).toContainEqual({
+      label: 'Claude Code hook: installed ✓',
+      enabled: false,
+    })
     await app.onTrayAction({ type: 'quit' })
     expect(quits()).toBe(1)
   })

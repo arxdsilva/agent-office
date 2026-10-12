@@ -14,7 +14,15 @@ function setup() {
   let r = 0
   const random = () => ((r = (r + 0.37) % 1), r)
   const scheduler = new ManualScheduler()
-  const mock = new MockAgents({ activity: office.activity, inbox: office.inbox, query: office.query, events: bus, scheduler, random, replyDelayMs: 2000 })
+  const mock = new MockAgents({
+    activity: office.activity,
+    inbox: office.inbox,
+    query: office.query,
+    events: bus,
+    scheduler,
+    random,
+    replyDelayMs: 2000,
+  })
   return { office, mock, scheduler }
 }
 
@@ -23,7 +31,9 @@ describe('MockAgents', () => {
     const { office, mock } = setup()
     mock.seed()
     const agents = office.query.agents()
-    expect(new Set(agents.map((a) => a.provider))).toEqual(new Set(['claude-code', 'openai-agents', 'langgraph']))
+    expect(new Set(agents.map((a) => a.provider))).toEqual(
+      new Set(['claude-code', 'openai-agents', 'langgraph']),
+    )
     expect(agents.some((a) => a.parentId)).toBe(true)
     expect(agents.every((a) => a.interactive)).toBe(true)
   })

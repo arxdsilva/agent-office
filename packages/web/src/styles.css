@@ -387,19 +387,76 @@ textarea:focus-visible {
 }
 
 /* Banner (e.g. port busy) */
-.banner { position: fixed; top: 0; left: 0; right: 0; z-index: 4; padding: 6px 16px; text-align: center; font-size: 13px; }
-.banner.error { background: #ef4444; color: #fff; }
-.banner.info { background: var(--accent); color: #fff; }
-#hud.with-banner, #actions.with-banner { top: 44px; }
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  padding: 6px 16px;
+  text-align: center;
+  font-size: 13px;
+}
+.banner.error {
+  background: #ef4444;
+  color: #fff;
+}
+.banner.info {
+  background: var(--accent);
+  color: #fff;
+}
+#hud.with-banner,
+#actions.with-banner {
+  top: 44px;
+}
 
 /* Settings dialog */
-#settings { width: min(520px, calc(100vw - 32px)); color: var(--text); padding: 16px 18px; }
-#settings::backdrop { background: rgba(0, 0, 0, 0.35); }
-#settings h2 { margin: 0; font-size: 18px; }
-#settings h3 { margin: 16px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-#settings .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin: 6px 0; }
-#settings label.row { justify-content: flex-start; }
-#settings input[type='number'] { width: 100px; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
-#settings .small { font-size: 12px; margin: 4px 0; }
-#settings a.btn { text-decoration: none; }
-.hint-box .btn { margin-top: 6px; display: block; }
+#settings {
+  width: min(520px, calc(100vw - 32px));
+  color: var(--text);
+  padding: 16px 18px;
+}
+#settings::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+#settings h2 {
+  margin: 0;
+  font-size: 18px;
+}
+#settings h3 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+#settings .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 6px 0;
+}
+#settings label.row {
+  justify-content: flex-start;
+}
+#settings input[type='number'] {
+  width: 100px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+#settings .small {
+  font-size: 12px;
+  margin: 4px 0;
+}
+#settings a.btn {
+  text-decoration: none;
+}
+.hint-box .btn {
+  margin-top: 6px;
+  display: block;
+}

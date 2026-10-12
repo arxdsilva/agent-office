@@ -11,7 +11,11 @@ import {
 } from '@agent-office/shared'
 import type { OfficeState } from './state.ts'
 
-const STATE_LABEL: Record<ChatMessage['state'], string> = { queued: '⏳ queued', delivered: '✓ delivered', replied: '✓✓ replied' }
+const STATE_LABEL: Record<ChatMessage['state'], string> = {
+  queued: '⏳ queued',
+  delivered: '✓ delivered',
+  replied: '✓✓ replied',
+}
 
 export function ago(ts: number, now: number): string {
   const s = Math.max(0, Math.round((now - ts) / 1000))
@@ -28,10 +32,15 @@ export interface Hint {
 export function hintFor(a: Agent): Hint | null {
   if (a.provider === 'claude-code') {
     if (!a.interactive) {
-      return { text: 'Not connected: this session cannot read messages until the Claude Code hook is installed.', action: 'install-hook' }
+      return {
+        text: 'Not connected: this session cannot read messages until the Claude Code hook is installed.',
+        action: 'install-hook',
+      }
     }
     if (a.status === 'waiting' || a.status === 'idle') {
-      return { text: 'This session is idle: messages are delivered when you next prompt it in Claude Code.' }
+      return {
+        text: 'This session is idle: messages are delivered when you next prompt it in Claude Code.',
+      }
     }
     return { text: 'Messages are delivered when the current turn ends.' }
   }
@@ -52,7 +61,16 @@ export interface PanelVM {
 
 export function panelVM(state: OfficeState, id: string, now: number): PanelVM {
   const a = state.agents.get(id)
-  if (!a) return { id, present: false, name: 'This agent has left the office', subtitle: '', meta: [], hint: null, thread: [] }
+  if (!a)
+    return {
+      id,
+      present: false,
+      name: 'This agent has left the office',
+      subtitle: '',
+      meta: [],
+      hint: null,
+      thread: [],
+    }
   const parent = a.parentId ? state.agents.get(a.parentId) : undefined
   return {
     id,
@@ -88,7 +106,11 @@ export function hudVM(state: OfficeState): HudVM {
   const n = state.agents.size
   return {
     count: `${n} agent${n === 1 ? '' : 's'}`,
-    statuses: AGENT_STATUSES.map((status) => ({ status, color: STATUS_COLORS[status], count: counts.get(status) ?? 0 })),
+    statuses: AGENT_STATUSES.map((status) => ({
+      status,
+      color: STATUS_COLORS[status],
+      count: counts.get(status) ?? 0,
+    })),
   }
 }
 
@@ -141,7 +163,11 @@ function updateVM(u: UpdateState): SettingsVM['update'] {
       return { label: `Version ${u.version} is ready`, action: 'install' }
     case 'available':
       return u.policy === 'notify-only'
-        ? { label: `Version ${u.version} is available`, action: 'download', ...(u.url ? { url: u.url } : {}) }
+        ? {
+            label: `Version ${u.version} is available`,
+            action: 'download',
+            ...(u.url ? { url: u.url } : {}),
+          }
         : { label: `Version ${u.version} is available`, action: null }
     case 'up-to-date':
       return { label: 'Up to date', action: 'check' }

@@ -12,5 +12,7 @@ const result = await cruise(
   undefined,
   { tsConfig: extractTSConfig('tsconfig.base.json') },
 )
-process.stdout.write(typeof result.output === 'string' ? result.output : JSON.stringify(result.output))
+process.stdout.write(
+  typeof result.output === 'string' ? result.output : JSON.stringify(result.output),
+)
 process.exit(result.exitCode)

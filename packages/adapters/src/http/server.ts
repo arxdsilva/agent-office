@@ -7,7 +7,10 @@ export interface RunningServer {
 }
 
 /** Starts the API; EADDRINUSE surfaces as the domain's PortInUseError. */
-export async function startHttpServer(app: HttpApi, opts: { host: string; port: number }): Promise<RunningServer> {
+export async function startHttpServer(
+  app: HttpApi,
+  opts: { host: string; port: number },
+): Promise<RunningServer> {
   try {
     await app.listen({ host: opts.host, port: opts.port })
   } catch (err) {

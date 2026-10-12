@@ -1,4 +1,9 @@
-import { DomainError, RateLimitedError, UnknownAgentError, ValidationError } from '@agent-office/core'
+import {
+  DomainError,
+  RateLimitedError,
+  UnknownAgentError,
+  ValidationError,
+} from '@agent-office/core'
 
 /** The one place domain errors become HTTP status codes. */
 export function httpStatusFor(err: unknown): number {

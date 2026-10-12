@@ -18,7 +18,12 @@ export class OfficeQueryService implements OfficeQuery {
     return this.d.agents
       .list()
       .map(toDto)
-      .sort((a, b) => a.provider.localeCompare(b.provider) || a.topic.localeCompare(b.topic) || a.since - b.since)
+      .sort(
+        (a, b) =>
+          a.provider.localeCompare(b.provider) ||
+          a.topic.localeCompare(b.topic) ||
+          a.since - b.since,
+      )
   }
 
   agent(id: string): Agent | undefined {
@@ -27,7 +32,10 @@ export class OfficeQueryService implements OfficeQuery {
   }
 
   snapshot(): Snapshot {
-    return { agents: this.agents(), messages: this.d.messages.recent(this.d.snapshotMessagesPerAgent ?? 50) }
+    return {
+      agents: this.agents(),
+      messages: this.d.messages.recent(this.d.snapshotMessagesPerAgent ?? 50),
+    }
   }
 
   watch(fn: (m: ServerMessage) => void): () => void {

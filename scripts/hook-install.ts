@@ -21,7 +21,13 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
   const [cmd] = argv
   const hooks: HookManagement = new HookService({
     claude: new ClaudeSettingsFile(io.settingsFile),
-    runner: new FsHookRunner({ dir: join(io.home, 'hook'), execPath: 'node', script: io.hookScript, platform: process.platform, runAsNode: false }),
+    runner: new FsHookRunner({
+      dir: join(io.home, 'hook'),
+      execPath: 'node',
+      script: io.hookScript,
+      platform: process.platform,
+      runAsNode: false,
+    }),
   })
   try {
     if (cmd === 'status') {
@@ -32,7 +38,9 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       io.log('usage: hook-install.ts install|uninstall|status [--yes]')
       return 2
     }
-    io.log(`${cmd === 'install' ? 'Add' : 'Remove'} the agent-office hook (Stop, UserPromptSubmit) in ${io.settingsFile}? A backup is written first.`)
+    io.log(
+      `${cmd === 'install' ? 'Add' : 'Remove'} the agent-office hook (Stop, UserPromptSubmit) in ${io.settingsFile}? A backup is written first.`,
+    )
     if (!argv.includes('--yes') && !(await io.confirm('Apply? [y/N] '))) {
       io.log('Aborted, nothing changed.')
       return 1

@@ -23,9 +23,15 @@ export function createAuth(opts: AuthOptions): Auth {
   const portOf = typeof opts.port === 'function' ? opts.port : () => opts.port as number
   const hosts = () => {
     const port = portOf()
-    return new Set([`localhost:${port}`, `127.0.0.1:${port}`, ...devHosts, ...(opts.allowedHosts ?? [])])
+    return new Set([
+      `localhost:${port}`,
+      `127.0.0.1:${port}`,
+      ...devHosts,
+      ...(opts.allowedHosts ?? []),
+    ])
   }
-  const origins = () => new Set([...[...hosts()].map((h) => `http://${h}`), ...(opts.devOrigins ?? [])])
+  const origins = () =>
+    new Set([...[...hosts()].map((h) => `http://${h}`), ...(opts.devOrigins ?? [])])
   const expected = Buffer.from(opts.token)
 
   const tokenOk = (t: string | undefined) => {

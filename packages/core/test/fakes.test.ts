@@ -1,7 +1,22 @@
 // The fakes are held to the same contracts as the real adapters.
-import { FakeAgentRepository, FakeClaudeSettingsStore, FakeEventBus, FakeHookRunner, FakeMessageRepository, FakeSettingsRepository } from './fakes/index.ts'
-import { agentRepositoryContract, eventBusContract, messageRepositoryContract } from './contracts/repositories.ts'
-import { claudeSettingsStoreContract, hookRunnerContract, settingsRepositoryContract } from './contracts/stores.ts'
+import {
+  FakeAgentRepository,
+  FakeClaudeSettingsStore,
+  FakeEventBus,
+  FakeHookRunner,
+  FakeMessageRepository,
+  FakeSettingsRepository,
+} from './fakes/index.ts'
+import {
+  agentRepositoryContract,
+  eventBusContract,
+  messageRepositoryContract,
+} from './contracts/repositories.ts'
+import {
+  claudeSettingsStoreContract,
+  hookRunnerContract,
+  settingsRepositoryContract,
+} from './contracts/stores.ts'
 
 agentRepositoryContract('FakeAgentRepository', () => new FakeAgentRepository())
 messageRepositoryContract('FakeMessageRepository', (cap) => new FakeMessageRepository(cap))

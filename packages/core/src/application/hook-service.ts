@@ -37,6 +37,9 @@ export class HookService implements HookManagement {
     const status = await this.status()
     if (status === 'not-installed') return
     await this.d.runner.ensureInstalled()
-    if (status === 'outdated') await this.d.claude.write(addHooks((await this.d.claude.read()) ?? {}, this.d.runner.command()))
+    if (status === 'outdated')
+      await this.d.claude.write(
+        addHooks((await this.d.claude.read()) ?? {}, this.d.runner.command()),
+      )
   }
 }

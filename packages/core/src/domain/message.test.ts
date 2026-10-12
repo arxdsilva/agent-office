@@ -21,7 +21,13 @@ describe('message state machine', () => {
 
   it('creates agent replies, optionally linked to a message', () => {
     expect(newReply('r1', 'a', 'ok', 20, 'm1')).toEqual({
-      id: 'r1', agentId: 'a', from: 'agent', text: 'ok', ts: 20, state: 'replied', inReplyTo: 'm1',
+      id: 'r1',
+      agentId: 'a',
+      from: 'agent',
+      text: 'ok',
+      ts: 20,
+      state: 'replied',
+      inReplyTo: 'm1',
     })
     expect(newReply('r2', 'a', 'ok', 20)).not.toHaveProperty('inReplyTo')
     expect(isAwaitingReply(newReply('r3', 'a', 'x', 1))).toBe(false)

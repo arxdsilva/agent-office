@@ -20,4 +20,3 @@ export const assistant = (
   })
 export const user = (content: unknown, over: Record<string, unknown> = {}) =>
   JSON.stringify({ type: 'user', ...base(over), message: { role: 'user', content } })
-

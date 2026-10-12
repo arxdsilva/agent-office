@@ -6,14 +6,23 @@ import { contentSecurityPolicy } from './src/main/security.ts'
 // Workspace packages are TypeScript sources: bundle them. Electron and the real npm runtime deps stay
 // external (electron-builder packs `dependencies` into the app).
 const workspace = ['@agent-office/core', '@agent-office/adapters', '@agent-office/shared']
-const runtimeExternals = [/^electron(\/.*)?$/, /^electron-updater(\/.*)?$/, /^fastify(\/.*)?$/, /^zod(\/.*)?$/, /^node:/]
+const runtimeExternals = [
+  /^electron(\/.*)?$/,
+  /^electron-updater(\/.*)?$/,
+  /^fastify(\/.*)?$/,
+  /^zod(\/.*)?$/,
+  /^node:/,
+]
 
 /** Production CSP as a <meta> tag (file:// pages have no response headers). Dev gets it as a header. */
 const cspMeta = (): Plugin => ({
   name: 'agent-office-csp',
   apply: 'build',
   transformIndexHtml: (html) =>
-    html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy()}" />`),
+    html.replace(
+      '<head>',
+      `<head>\n    <meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy()}" />`,
+    ),
 })
 
 export default defineConfig({

@@ -11,7 +11,9 @@ describe('mergeSettings', () => {
     })
     expect(mergeSettings(DEFAULT_SETTINGS, { port: 5000 }).restartRequired).toBe(true)
     expect(mergeSettings(DEFAULT_SETTINGS, { claudeAdapter: false }).restartRequired).toBe(true)
-    expect(mergeSettings(DEFAULT_SETTINGS, { port: DEFAULT_SETTINGS.port }).restartRequired).toBe(false)
+    expect(mergeSettings(DEFAULT_SETTINGS, { port: DEFAULT_SETTINGS.port }).restartRequired).toBe(
+      false,
+    )
   })
 
   it('rejects invalid patches', () => {

@@ -24,7 +24,10 @@ export class FsHookRunner implements HookRunner {
   readonly wrapperPath: string
 
   constructor(private o: HookRunnerOptions) {
-    this.wrapperPath = join(o.dir, o.platform === 'win32' ? `${HOOK_MARKER}.cmd` : `${HOOK_MARKER}.sh`)
+    this.wrapperPath = join(
+      o.dir,
+      o.platform === 'win32' ? `${HOOK_MARKER}.cmd` : `${HOOK_MARKER}.sh`,
+    )
   }
 
   command(): string {
@@ -39,7 +42,10 @@ export class FsHookRunner implements HookRunner {
       return
     }
     const env = runAsNode ? 'ELECTRON_RUN_AS_NODE=1 ' : ''
-    await writeFileAtomic(this.wrapperPath, `#!/bin/sh\n# agent-office hook wrapper (generated)\n${env}exec "${execPath}" "${script}"\n`)
+    await writeFileAtomic(
+      this.wrapperPath,
+      `#!/bin/sh\n# agent-office hook wrapper (generated)\n${env}exec "${execPath}" "${script}"\n`,
+    )
     await chmod(this.wrapperPath, 0o755)
   }
 

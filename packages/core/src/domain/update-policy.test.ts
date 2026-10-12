@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { updatePolicy } from './update-policy.ts'
 
-const base = { packaged: true, platform: 'win32', signed: false, enabled: true, linuxAppImage: false }
+const base = {
+  packaged: true,
+  platform: 'win32',
+  signed: false,
+  enabled: true,
+  linuxAppImage: false,
+}
 
 describe('updatePolicy', () => {
   it('is off in development or when disabled', () => {

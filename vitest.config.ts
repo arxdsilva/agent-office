@@ -8,7 +8,12 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['packages/*/src/**/*.test.ts', 'packages/core/test/**/*.test.ts', 'hooks/**/*.test.ts', 'scripts/**/*.test.ts'],
+          include: [
+            'packages/*/src/**/*.test.ts',
+            'packages/core/test/**/*.test.ts',
+            'hooks/**/*.test.ts',
+            'scripts/**/*.test.ts',
+          ],
         },
       },
       {

@@ -23,10 +23,12 @@ export function loadEnv(env: Record<string, string | undefined>, home: string): 
     const v = env[name]
     if (v === undefined || v === '') return undefined
     const n = Number(v)
-    if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got "${v}"`)
+    if (!Number.isInteger(n) || n < 0)
+      throw new Error(`${name} must be a non-negative integer, got "${v}"`)
     return n
   }
-  const flag = (name: string): boolean | undefined => (env[name] === undefined ? undefined : env[name] === '1')
+  const flag = (name: string): boolean | undefined =>
+    env[name] === undefined ? undefined : env[name] === '1'
   const port = num('PORT')
   const claudeAdapter = flag('AGENT_OFFICE_CLAUDE')
   const mock = flag('AGENT_OFFICE_MOCK')
@@ -34,7 +36,10 @@ export function loadEnv(env: Record<string, string | undefined>, home: string): 
   const expireAfterMs = num('EXPIRE_AFTER_MS')
   return {
     host: env.HOST || '127.0.0.1',
-    allowedHosts: (env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+    allowedHosts: (env.ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((h) => h.trim())
+      .filter(Boolean),
     home: expand(env.AGENT_OFFICE_HOME || '~/.agent-office'),
     claudeProjectsDir: expand(env.CLAUDE_PROJECTS_DIR || '~/.claude/projects'),
     claudeSettingsFile: expand(env.CLAUDE_SETTINGS_FILE || '~/.claude/settings.json'),

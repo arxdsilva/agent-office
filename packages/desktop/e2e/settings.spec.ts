@@ -13,7 +13,11 @@ test('settings: install and uninstall the Claude Code hook (isolated settings fi
   await win.locator('#s-hook-btn').click()
   await expect(win.locator('#s-hook-label')).toHaveText('Installed ✓')
   const claude = JSON.parse(readFileSync(profile.claudeSettings, 'utf8'))
-  const wrapper = join(profile.userData, 'hook', process.platform === 'win32' ? 'agent-office-hook.cmd' : 'agent-office-hook.sh')
+  const wrapper = join(
+    profile.userData,
+    'hook',
+    process.platform === 'win32' ? 'agent-office-hook.cmd' : 'agent-office-hook.sh',
+  )
   expect(claude.hooks.Stop[0].hooks[0].command).toBe(`"${wrapper}"`)
   expect(existsSync(wrapper)).toBe(true)
 
