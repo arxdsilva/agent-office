@@ -47,6 +47,11 @@ const debugEnabled = () => new URLSearchParams(location.search).get('debug') ===
 
 type Vec3T = [number, number, number]
 
+const THEMES = {
+  light: { background: 0xe9edf3, sky: 0xeef3ff, ground: 0x8a7a66, fill: 0.45, environment: 1.1 },
+  dark: { background: 0x1b2028, sky: 0xdfe8ff, ground: 0x6b5a48, fill: 0.35, environment: 1.0 },
+} as const
+
 export class ThreeScene implements SceneView {
   private renderer = new THREE.WebGLRenderer({
     antialias: false,
@@ -75,6 +80,7 @@ export class ThreeScene implements SceneView {
     new THREE.ShadowMaterial({ opacity: 0.3, depthWrite: false }),
   )
   private fill = new THREE.HemisphereLight(0xdfe8ff, 0x6b5a48, 0.35)
+  private background = new THREE.Color(0x1b2028)
   private selected: string | null = null
   private pickFn: (id: string | null) => void = () => {}
   private pickCapFn: (ref: CapabilityRef) => void = () => {}
@@ -105,7 +111,7 @@ export class ThreeScene implements SceneView {
     this.store.manager.onProgress = (_url, loaded, total) =>
       this.loading.progress(total ? loaded / total : 0)
 
-    this.scene.background = new THREE.Color(0x1b2028)
+    this.scene.background = this.background
     this.camera.position.set(30, 40, 50)
     this.sun.position.copy(SUN_DIR).multiplyScalar(40)
     const s = this.sun.shadow
@@ -375,6 +381,16 @@ export class ThreeScene implements SceneView {
     this.building.setScreens(screens)
     this.building.setLeds(leds)
     this.building.setStats({ agents: this.plans.size, working, waiting, meetings: rooms.size })
+  }
+
+  /** Plan §2.6: background, hemisphere fill and environment strength per theme (in-place, live). */
+  setTheme(theme: 'light' | 'dark'): void {
+    const t = THEMES[theme] ?? THEMES.dark
+    this.background.setHex(t.background)
+    this.fill.color.setHex(t.sky)
+    this.fill.groundColor.setHex(t.ground)
+    this.fill.intensity = t.fill
+    this.scene.environmentIntensity = t.environment
   }
 
   setQuality(q: GraphicsQuality): void {
@@ -700,6 +716,8 @@ export class ThreeScene implements SceneView {
         })
         return out
       },
+      /** The current scene background as a hex number (theme.spec). */
+      sceneBackground: () => this.background.getHex(),
       stats: () => ({
         ...this.pipeline.stats,
         preset: this.preset,

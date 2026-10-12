@@ -1,5 +1,6 @@
 // Node adapters. Imported only by the composition root (packages/desktop/src/main/composition.ts) and tests.
 export { loadEnv, type EnvConfig } from './config.ts'
+export * from './agents/index.ts'
 export * from './fs/index.ts'
 export * from './http/index.ts'
 export * from './memory/index.ts'

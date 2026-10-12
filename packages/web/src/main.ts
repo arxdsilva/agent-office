@@ -7,6 +7,7 @@ import { DomConnectPanel, SNIPPET_LANG_KEY } from './adapters/dom/connect-panel.
 import { DomEmptyState } from './adapters/dom/empty-state.ts'
 import { DomToast } from './adapters/dom/toast.ts'
 import { DomPanel } from './adapters/dom/panel.ts'
+import { DomNewSession } from './adapters/dom/new-session-dialog.ts'
 import { DomSettings } from './adapters/dom/settings-dialog.ts'
 import { preloadGateway } from './adapters/preload-gateway.ts'
 import { ThreeScene } from './adapters/three/scene.ts'
@@ -64,6 +65,9 @@ const controller = createController({
   connect: new DomConnectPanel(),
   empty: new DomEmptyState(),
   toast: new DomToast(),
+  newSession: new DomNewSession(),
+  // The scene follows the effective color scheme (Settings → Appearance drives it from main).
+  matchMedia: (q) => window.matchMedia(q),
   isWindows: /Windows/i.test(navigator.userAgent),
   ...(snippetLang && { snippetLang }),
   grouping: byProviderAndTopic,

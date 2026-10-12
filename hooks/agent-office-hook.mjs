@@ -5,20 +5,29 @@
 // Claude's answer back. It FAILS OPEN: on any error it prints nothing and exits 0, so it can
 // never block or break a Claude session. Messages are passed to Claude as text only.
 //
-// Env overrides (used by tests): AGENT_OFFICE_URL, AGENT_OFFICE_TOKEN_FILE.
+// It also reports the session's permission mode (`permission_mode`) to /api/events, in parallel
+// with the inbox claim and inside the same time budget.
+//
+// Env: AGENT_OFFICE_URL, AGENT_OFFICE_TOKEN_FILE (overrides, used by tests);
+// AGENT_OFFICE_MANAGED=1 (set by agent-office on sessions it runs itself: the hook does nothing).
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const MAX_REPLY_CHARS = 4000
+/** Claude Code permission modes; mirrors PERMISSION_MODES in shared (plain Node can't import it). */
+const MODES = new Set(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
 
 /**
- * @param {{hook_event_name?: string, session_id?: string, last_assistant_message?: string}} input
- * @param {{url: string, token: string, fetch: typeof fetch, timeoutMs: number}} deps
+ * @param {{hook_event_name?: string, session_id?: string, last_assistant_message?: string, permission_mode?: unknown}} input
+ * @param {{url: string, token: string, fetch: typeof fetch, timeoutMs: number, env?: Record<string, string | undefined>}} deps
  * @returns {Promise<string>} what to print on stdout ('' for nothing)
  */
 export async function handle(input, deps) {
+  // Managed sessions: agent-office talks to them directly, so the hook stays out of the way.
+  if (deps.env?.AGENT_OFFICE_MANAGED === '1') return ''
+  let modeReport = Promise.resolve()
   try {
     const event = input?.hook_event_name
     if (!input?.session_id || !deps.token || (event !== 'Stop' && event !== 'UserPromptSubmit'))
@@ -26,6 +35,20 @@ export async function handle(input, deps) {
     const signal = AbortSignal.timeout(deps.timeoutMs)
     const agent = `${deps.url}/api/agents/${encodeURIComponent(`cc:${input.session_id}`)}`
     const headers = { authorization: `Bearer ${deps.token}`, 'content-type': 'application/json' }
+
+    // Report the permission mode in parallel; its failure never matters.
+    if (MODES.has(input.permission_mode)) {
+      const body = JSON.stringify({
+        agentId: `cc:${input.session_id}`,
+        permissionMode: input.permission_mode,
+      })
+      modeReport = Promise.resolve()
+        .then(() => deps.fetch(`${deps.url}/api/events`, { method: 'POST', headers, signal, body }))
+        .then(
+          () => {},
+          () => {},
+        )
+    }
 
     // Stop: Claude just finished a turn. If it was answering UI messages, record that answer.
     if (
@@ -64,6 +87,9 @@ export async function handle(input, deps) {
     })
   } catch {
     return ''
+  } finally {
+    // Never rejects; bounded by the same AbortSignal as the claim.
+    await modeReport
   }
 }
 
@@ -93,6 +119,7 @@ export async function fromStdin(raw, env, fetchImpl) {
     token: readToken(env.AGENT_OFFICE_TOKEN_FILE || join(homedir(), '.agent-office', 'token')),
     fetch: fetchImpl,
     timeoutMs: 1500,
+    env,
   })
 }
 

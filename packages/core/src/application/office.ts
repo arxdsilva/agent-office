@@ -1,6 +1,7 @@
 import type { SweepPolicy } from '../domain/agent.ts'
 import type {
   AgentRepository,
+  AgentRunner,
   CapabilityRepository,
   ClaudeSettingsStore,
   Clock,
@@ -23,6 +24,7 @@ import { AttentionService } from './attention-service.ts'
 import { CapabilityService } from './capability-service.ts'
 import { HookService } from './hook-service.ts'
 import { InboxService } from './inbox-service.ts'
+import { ComposeService, ManagedSessionService } from './managed-session-service.ts'
 import { OfficeQueryService } from './office-query.ts'
 import { SettingsService } from './settings-service.ts'
 import { UpdateService } from './update-service.ts'
@@ -57,6 +59,10 @@ export interface OfficeDeps {
   policy?: SweepPolicy
   rateLimitPerSec?: number
   autoUpdate?: boolean
+  /** Starts managed Claude Code sessions; without it `sessions` is undefined. */
+  runner?: AgentRunner
+  /** How working directories are shown on permission cards (e.g. '~'-abbreviated). */
+  displayPath?: (path: string) => string
 }
 
 export type OfficeCore = ReturnType<typeof createOffice>
@@ -66,7 +72,22 @@ export function createOffice(d: OfficeDeps) {
   const activity = new ActivityService({ ...d, policy: d.policy ?? DEFAULT_SWEEP_POLICY })
   const inbox = new InboxService(d)
   const capabilities = new CapabilityService({ ...d, repo: d.capabilities })
-  const query = new OfficeQueryService({ ...d, capabilities })
+  const settings = new SettingsService({ repo: d.settingsRepo, loginItem: d.loginItem })
+  const sessions = d.runner
+    ? new ManagedSessionService({
+        ...d,
+        runner: d.runner,
+        activity,
+        inbox,
+        settings,
+        ...(d.rateLimitPerSec ? { rateLimitPerSec: d.rateLimitPerSec } : {}),
+      })
+    : undefined
+  const query = new OfficeQueryService({
+    ...d,
+    capabilities,
+    ...(sessions ? { permissions: sessions } : {}),
+  })
   return {
     activity,
     /** Implements ReportCapabilities; also the catalog behind snapshots. */
@@ -77,7 +98,16 @@ export function createOffice(d: OfficeDeps) {
     query,
     attention: new AttentionService({ ...d, query }),
     hooks: new HookService({ claude: d.claudeSettings, runner: d.hookRunner }),
-    settings: new SettingsService({ repo: d.settingsRepo, loginItem: d.loginItem }),
+    settings,
+    /** Managed Claude Code sessions (only with a runner). */
+    sessions: sessions as ManagedSessionService | undefined,
+    /** Messages with context/tool hints: managed → runner, others → inbox. */
+    compose: new ComposeService({
+      chat: inbox,
+      messages: d.messages,
+      bus: d.bus,
+      ...(sessions ? { sessions } : {}),
+    }),
     updates: new UpdateService({ ...d, enabled: d.autoUpdate ?? true }),
   }
 }

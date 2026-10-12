@@ -1,10 +1,22 @@
 // Electron entry (part of the composition root): lifecycle, native shell objects, then compose().
+import { electronDialog } from './adapters/electron-dialog.ts'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ConsoleLogger, loadEnv } from '@agent-office/adapters'
-import { app, BrowserWindow, Menu, nativeImage, Notification, protocol, session } from 'electron'
+import type { Settings } from '@agent-office/shared'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  Notification,
+  protocol,
+  session,
+} from 'electron'
 import { ElectronNotifier } from './adapters/electron-notifier.ts'
 import { ElectronTray } from './adapters/electron-tray.ts'
 import { ElectronUpdater } from './adapters/electron-updater.ts'
@@ -22,6 +34,7 @@ import {
   RENDERER_URL,
 } from './renderer-protocol.ts'
 import { contentSecurityPolicy, isAllowedPermission } from './security.ts'
+import { bindTheme, createQuitGuard, QUIT_COPY } from './theme.ts'
 import { createMainWindow } from './window.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -48,6 +61,44 @@ function resources() {
 
 let instance: App | undefined
 let quitting = false
+
+/** M1 adds these to the composed App; guarded so the entry runs before that lands. */
+type ManagedSessions = { managedCount?: () => number; stopAll?: () => Promise<void> | void }
+const managed = () => instance as (App & ManagedSessions) | undefined
+const quitGuard = createQuitGuard({
+  count: () => {
+    const a = managed()
+    return typeof a?.managedCount === 'function' ? a.managedCount() : 0
+  },
+  confirm: async (n) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const opts = {
+      type: 'warning' as const,
+      message: QUIT_COPY.confirm(n),
+      buttons: [QUIT_COPY.quit, QUIT_COPY.cancel],
+      defaultId: 1,
+      cancelId: 1,
+    }
+    const { response } = win
+      ? await dialog.showMessageBox(win, opts)
+      : await dialog.showMessageBox(opts)
+    return response === 0
+  },
+  stopAll: () => {
+    const a = managed()
+    return typeof a?.stopAll === 'function' ? a.stopAll() : undefined
+  },
+})
+
+/** The saved theme, read before compose() so the first paint matches (themeSource() sanitizes it). */
+async function readSavedTheme(): Promise<Settings['theme'] | undefined> {
+  try {
+    const raw = JSON.parse(await readFile(join(app.getPath('userData'), 'settings.json'), 'utf8'))
+    return (raw as { theme?: Settings['theme'] } | null)?.theme
+  } catch {
+    return undefined
+  }
+}
 
 async function main(): Promise<void> {
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
@@ -90,6 +141,16 @@ async function main(): Promise<void> {
     ]),
   )
 
+  // Apply the saved theme before the window exists, so its first paint already matches.
+  let winRef: BrowserWindow | undefined
+  const theme = bindTheme({
+    nativeTheme,
+    setBackground: (c) => {
+      if (winRef && !winRef.isDestroyed()) winRef.setBackgroundColor(c)
+    },
+  })
+  theme.apply(await readSavedTheme())
+
   const logger = new ConsoleLogger()
   const platform = electronPlatform()
   let hiddenHintShown = false
@@ -109,6 +170,8 @@ async function main(): Promise<void> {
       return true
     },
   })
+
+  winRef = win
 
   const trayIcon = nativeImage.createFromPath(
     join(paths.icons, process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png'),
@@ -133,6 +196,7 @@ async function main(): Promise<void> {
         },
       },
       clipboard: electronClipboard(),
+      dialog: electronDialog(),
       ipc: electronIpc(),
       rendererUrl,
       quit: () => app.quit(),
@@ -146,6 +210,9 @@ async function main(): Promise<void> {
     logger,
   })
   await instance.start()
+  // Settings → Appearance applies live (the renderer's prefers-color-scheme follows nativeTheme).
+  instance.office.settings.onChange(({ settings }) => theme.apply(settings.theme))
+  theme.apply((await instance.office.settings.get()).theme)
 
   const saved = (await instance.office.settings.get()).windowBounds
   if (saved) win.setBounds(saved)
@@ -163,11 +230,15 @@ app.on('activate', () => BrowserWindow.getAllWindows()[0]?.show())
 app.on('window-all-closed', () => {})
 app.on('before-quit', (e) => {
   if (!instance) return
-  quitting = true
   e.preventDefault()
-  const stopping = instance
-  instance = undefined
-  void stopping.stop().finally(() => app.exit(0))
+  // Managed sessions die with the app, so ask first (Cancel keeps everything running).
+  void quitGuard.confirmQuit().then((ok) => {
+    if (!ok || !instance) return
+    quitting = true
+    const stopping = instance
+    instance = undefined
+    void stopping.stop().finally(() => app.exit(0))
+  })
 })
 
 app.whenReady().then(main, (err) => {

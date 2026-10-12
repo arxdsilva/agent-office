@@ -20,4 +20,12 @@ export const IPC = {
   connTest: 'conn:test',
   copyText: 'app:copy-text',
   openConnect: 'app:open-connect',
+  ctxPick: 'ctx:pick',
+  sessStart: 'sess:start',
+  sessMode: 'sess:mode',
+  sessModel: 'sess:model',
+  sessModels: 'sess:models',
+  sessInterrupt: 'sess:interrupt',
+  sessStop: 'sess:stop',
+  sessAnswer: 'sess:answer',
 } as const

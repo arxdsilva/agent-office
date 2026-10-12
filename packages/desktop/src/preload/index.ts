@@ -13,7 +13,26 @@ const api: AgentOfficeApi = {
   ready: () => ipcRenderer.invoke(IPC.ready),
   onMessage: (cb) => listen<ServerMessage[]>(IPC.push, (batch) => batch.forEach(cb)),
   onSelect: (cb) => listen(IPC.select, cb),
-  sendMessage: (agentId, text) => ipcRenderer.invoke(IPC.send, { agentId, text }),
+  sendMessage: (agentId, text, opts) =>
+    ipcRenderer.invoke(IPC.send, {
+      agentId,
+      text,
+      ...(opts?.context?.length ? { context: opts.context } : {}),
+      ...(opts?.use?.length ? { use: opts.use } : {}),
+    }),
+  context: {
+    pick: (kind) => ipcRenderer.invoke(IPC.ctxPick, kind),
+  },
+  sessions: {
+    start: (args) => ipcRenderer.invoke(IPC.sessStart, args),
+    setMode: (agentId, mode) => ipcRenderer.invoke(IPC.sessMode, { agentId, mode }),
+    setModel: (agentId, model) => ipcRenderer.invoke(IPC.sessModel, { agentId, model }),
+    models: (agentId) => ipcRenderer.invoke(IPC.sessModels, agentId),
+    interrupt: (agentId) => ipcRenderer.invoke(IPC.sessInterrupt, { agentId }),
+    stop: (agentId) => ipcRenderer.invoke(IPC.sessStop, { agentId }),
+    answer: (agentId, requestId, decision) =>
+      ipcRenderer.invoke(IPC.sessAnswer, { agentId, requestId, decision }),
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     set: (patch) => ipcRenderer.invoke(IPC.settingsSet, patch),

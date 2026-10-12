@@ -94,3 +94,39 @@ describe('OfficeQueryService: capabilities', () => {
     expect(got).toEqual([{ type: 'capabilities', provider: 'p', capabilities: [cap] }])
   })
 })
+
+describe('OfficeQueryService: permissions', () => {
+  it('watch maps permission.changed to the pending requests of that agent', () => {
+    const agents = new FakeAgentRepository()
+    const messages = new FakeMessageRepository()
+    const bus = new FakeEventBus()
+    const requests = [{ id: 'perm_0000000001', tool: 'Bash', summary: 'pnpm test' }]
+    const query = new OfficeQueryService({
+      agents,
+      messages,
+      bus,
+      permissions: { pending: (id) => (id === 'a' ? requests : []) },
+    })
+    const got: ServerMessage[] = []
+    query.watch((m) => got.push(m))
+    bus.publish({ type: 'permission.changed', agentId: 'a' })
+    bus.publish({ type: 'permission.changed', agentId: 'b' })
+    expect(got).toEqual([
+      { type: 'permission', agentId: 'a', requests },
+      { type: 'permission', agentId: 'b', requests: [] },
+    ])
+  })
+
+  it('without a permissions source, permission changes carry no requests', () => {
+    const bus = new FakeEventBus()
+    const query = new OfficeQueryService({
+      agents: new FakeAgentRepository(),
+      messages: new FakeMessageRepository(),
+      bus,
+    })
+    const got: ServerMessage[] = []
+    query.watch((m) => got.push(m))
+    bus.publish({ type: 'permission.changed', agentId: 'a' })
+    expect(got).toEqual([{ type: 'permission', agentId: 'a', requests: [] }])
+  })
+})

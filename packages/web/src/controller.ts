@@ -1,9 +1,11 @@
 import {
   DEFAULT_SETTINGS,
   type ConnectionInfo,
+  type ContextRef,
   type GraphicsQuality,
   type Grouping,
   type HookStatus,
+  type ModelOption,
   type Settings,
   type SettingsPatch,
   type TestEventResult,
@@ -14,6 +16,7 @@ import { createDirector, type Director } from './app/director.ts'
 import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
 import { COPY } from './app/connect-copy.ts'
+import { SESSION_COPY } from './app/session-copy.ts'
 import {
   DEMO_START_TIMEOUT_MS,
   EMPTY_GRACE_MS,
@@ -24,15 +27,22 @@ import {
   type SnippetLang,
 } from './app/connect-types.ts'
 import {
+  FALLBACK_MODELS,
+  addContext,
   connectVM,
   emptyPhase,
   emptyStateVM,
   hudVM,
+  newSessionVM,
   panelVM,
   settingsVM,
+  startErrorText,
+  toggleUse,
+  useMenuVM,
   type ActivityInfo,
   type DemoStart,
 } from './app/view-models.ts'
+import type { Draft, NewSessionForm } from './app/session-types.ts'
 import type {
   BannerView,
   CapabilityPanelView,
@@ -40,6 +50,7 @@ import type {
   ConnectView,
   EmptyStateView,
   HudView,
+  NewSessionView,
   OfficeGateway,
   PanelView,
   SceneView,
@@ -58,6 +69,9 @@ export interface ControllerDeps {
   connect: ConnectView
   empty: EmptyStateView
   toast: ToastView
+  newSession: NewSessionView
+  /** `window.matchMedia`: the scene follows `prefers-color-scheme` (plan §5.6). */
+  matchMedia?: (query: string) => ColorSchemeQuery
   grouping: Grouping
   clock: { now(): number }
   every: (ms: number, fn: () => void) => () => void
@@ -68,6 +82,26 @@ export interface ControllerDeps {
   /** Snippet language remembered from last time (the DOM adapter keeps it). */
   snippetLang?: SnippetLang
 }
+
+/** The part of `MediaQueryList` the controller uses. */
+export interface ColorSchemeQuery {
+  matches: boolean
+  addEventListener(type: 'change', fn: (e: { matches: boolean }) => void): void
+  removeEventListener(type: 'change', fn: (e: { matches: boolean }) => void): void
+}
+
+const CLAUDE = 'claude-code'
+const emptyDraft = (): Draft => ({ text: '', context: [], use: [] })
+const emptyForm = (folder?: ContextRef): NewSessionForm => ({
+  ...(folder && { folder }),
+  name: '',
+  mode: 'default',
+  extraFolders: [],
+  chrome: false,
+  text: '',
+  context: [],
+  use: [],
+})
 
 export const MANIFEST_URL = 'assets/manifest.json'
 /** The director runs at 4 Hz (plan §4.3); messages also trigger an immediate update. */
@@ -91,7 +125,23 @@ export function createController(d: ControllerDeps) {
   let hook: HookStatus = 'not-installed'
   let restartNote = false
   let quality: GraphicsQuality | null = null
+  let allowBypass = false
   const stops: (() => void)[] = []
+
+  // Managed sessions and the composer (plan §2.1–2.4)
+  /** Composer contents per agent, kept while switching agents, cleared on send. */
+  const drafts = new Map<string, Draft>()
+  /** `supportedModels()` per managed session (fetched once per selection). */
+  const modelsCache = new Map<string, ModelOption[]>()
+  const modelsLoading = new Set<string>()
+  /** Models for the new-session dialog (from any running session, or the fallback). */
+  let globalModels: ModelOption[] | undefined
+  let form: NewSessionForm = emptyForm()
+  let lastFolder: ContextRef | undefined
+  let nsStarting = false
+  let nsError: string | undefined
+  /** Agent a successful start created: selected as soon as it shows up. */
+  let pendingSelect: string | null = null
 
   // Connecting agents (plan §2): live facts from main, the empty card's phase, first arrivals.
   let connInfo: ConnectionInfo | undefined
@@ -149,13 +199,41 @@ export function createController(d: ControllerDeps) {
   const vmFor = (id: string) => {
     const provider = (state.agents.get(id) ?? plans.get(id)?.agent)?.provider
     const caps = provider ? (state.capabilities.get(provider) ?? []) : []
+    const models = modelsCache.get(id)
     return panelVM(
       state,
       id,
       d.clock.now(),
       activityOf(id),
       usedChips(caps, used.get(id) ?? new Map()),
+      {
+        hook,
+        allowBypass,
+        ...(models && { models }),
+        ...(drafts.has(id) && { draft: drafts.get(id)! }),
+      },
     )
+  }
+
+  /** A managed session's model list, fetched once; the alias fallback when it can't be listed. */
+  const loadModels = (id: string) => {
+    if (!state.agents.get(id)?.managed || modelsCache.has(id) || modelsLoading.has(id)) return
+    modelsLoading.add(id)
+    d.gateway.sessions
+      .models(id)
+      .catch(() => FALLBACK_MODELS)
+      .then((list) => {
+        modelsCache.set(id, list.length ? list : FALLBACK_MODELS)
+        if (list.length) globalModels = list
+        modelsLoading.delete(id)
+        renderPanel()
+      })
+  }
+
+  const draftOf = (id: string) => {
+    let dr = drafts.get(id)
+    if (!dr) drafts.set(id, (dr = emptyDraft()))
+    return dr
   }
 
   /** Counts a use each time an agent starts using a capability (it shows up in `active`). */
@@ -207,6 +285,8 @@ export function createController(d: ControllerDeps) {
     const vm = vmFor(selected)
     shownActivity = vm.activity
     d.panel.render(vm)
+    // A new session can become `managed` after it was selected; loadModels is idempotent.
+    loadModels(selected)
   }
 
   /** One director step: building only when it changed, then every agent's plan. */
@@ -257,6 +337,7 @@ export function createController(d: ControllerDeps) {
     const vm = vmFor(selected)
     shownActivity = vm.activity
     d.panel.open(vm)
+    loadModels(selected)
   }
 
   const loadScene = async () => {
@@ -279,7 +360,9 @@ export function createController(d: ControllerDeps) {
       d.gateway.app.version(),
     ])
     applyQuality(settings.graphicsQuality)
+    allowBypass = settings.allowBypassPermissions
     hook = await d.gateway.hook.status()
+    renderPanel()
     const vm = settingsVM({ settings, hook, version, update, restartNote })
     if (open) d.settings.open(vm)
     else if (d.settings.isOpen()) d.settings.render(vm)
@@ -331,13 +414,14 @@ export function createController(d: ControllerDeps) {
         lastHttp = { provider: a.provider, ts: Math.max(a.lastSeen, d.clock.now()) }
       if (firstSeen.has(a.provider)) continue
       firstSeen.set(a.provider, d.clock.now())
-      if (announce) arrived(a.provider)
+      if (announce) arrived(a.provider, !!a.managed || a.source === 'managed')
     }
   }
 
-  const arrived = (provider: string) => {
+  const arrived = (provider: string, managed: boolean) => {
     const hook = connInfo?.hook ?? hookStatusNow()
-    if (provider === 'claude-code' && hook !== 'installed')
+    // Managed sessions get messages directly; only terminal sessions need the hook.
+    if (provider === 'claude-code' && !managed && hook !== 'installed')
       d.toast.show(COPY.toast.connected(provider) + COPY.toast.hookHint, {
         label: COPY.hud.connect,
         run: () => void openConnect('claude'),
@@ -351,6 +435,7 @@ export function createController(d: ControllerDeps) {
   const loadInfo = async (): Promise<ConnectionInfo | undefined> => {
     try {
       connInfo = await d.gateway.connections.info()
+      hook = connInfo.hook
     } catch {
       // Older or failing main process: the panel and the card simply stay unavailable.
     }
@@ -411,13 +496,194 @@ export function createController(d: ControllerDeps) {
   d.panel.onSelectParent(select)
   d.panel.onSend(async (text) => {
     if (!selected) return
-    const r = await d.gateway.sendMessage(selected, text)
-    if (r.ok) d.panel.clearInput()
-    else d.panel.showError(r.error)
+    const id = selected
+    const dr = drafts.get(id)
+    const opts = {
+      ...(dr?.context.length && { context: dr.context.map((c) => c.ref) }),
+      ...(dr?.use.length && { use: [...dr.use] }),
+    }
+    const r = Object.keys(opts).length
+      ? await d.gateway.sendMessage(id, text, opts)
+      : await d.gateway.sendMessage(id, text)
+    if (r.ok) {
+      drafts.delete(id)
+      d.panel.clearInput()
+      renderPanel()
+    } else d.panel.showError(r.error)
   })
   d.panel.onInstallHook(async () => {
     hook = await d.gateway.hook.install()
+    renderPanel()
     await renderSettings(false)
+  })
+
+  // Composer: drafts, + Context, Use… (plan §2.2)
+  d.panel.onDraft((text) => {
+    if (selected) draftOf(selected).text = text
+  })
+  d.panel.onPickContext(async (kind) => {
+    if (!selected) return
+    const id = selected
+    try {
+      const picked = await d.gateway.context.pick(kind)
+      const dr = draftOf(id)
+      const r = addContext(dr.context, picked)
+      dr.context = r.context
+      renderPanel()
+      if (r.error) d.panel.showError(r.error)
+    } catch (err) {
+      d.panel.showError((err as Error).message)
+    }
+  })
+  d.panel.onRemoveChip((key) => {
+    if (!selected) return
+    const dr = draftOf(selected)
+    dr.context = dr.context.filter((c) => c.ref !== key)
+    dr.use = dr.use.filter((u) => u !== key)
+    renderPanel()
+  })
+  d.panel.onOpenUse(() => {
+    const a = selected ? state.agents.get(selected) : undefined
+    if (!a) return { groups: [] }
+    const caps = state.capabilities.get(a.provider) ?? []
+    return useMenuVM(caps, a.provider, drafts.get(a.id)?.use ?? [], a.managed?.chrome)
+  })
+  d.panel.onToggleUse((useId) => {
+    if (!selected) return
+    const dr = draftOf(selected)
+    const r = toggleUse(dr.use, useId)
+    dr.use = r.use
+    renderPanel()
+    if (r.error) d.panel.showError(r.error)
+  })
+
+  // Managed session controls (plan §2.1, §2.3): errors show in the panel.
+  const inSession = (fn: (id: string) => Promise<unknown>) => async () => {
+    if (!selected) return
+    try {
+      await fn(selected)
+    } catch (err) {
+      d.panel.showError((err as Error).message)
+    }
+  }
+  d.panel.onSetMode((mode) => inSession((id) => d.gateway.sessions.setMode(id, mode))())
+  d.panel.onSetModel((model) => inSession((id) => d.gateway.sessions.setModel(id, model))())
+  d.panel.onInterrupt(inSession((id) => d.gateway.sessions.interrupt(id)))
+  d.panel.onStop(inSession((id) => d.gateway.sessions.stop(id)))
+  d.panel.onAnswer((requestId, decision) =>
+    inSession((id) => d.gateway.sessions.answer(id, requestId, decision))(),
+  )
+
+  // New session dialog (plan §2.4)
+  const runningCount = () =>
+    [...state.agents.values()].filter((a) => a.managed && a.managed.phase !== 'ended').length
+  const nsVM = () =>
+    newSessionVM(form, globalModels, allowBypass, runningCount(), {
+      starting: nsStarting,
+      ...(nsError && { error: nsError }),
+      caps: state.capabilities.get(CLAUDE) ?? [],
+    })
+  const renderNewSession = () => d.newSession.render(nsVM())
+  const pickFolder = async (): Promise<ContextRef | undefined> => {
+    try {
+      return (await d.gateway.context.pick('folder'))[0]
+    } catch (err) {
+      nsError = (err as Error).message
+      return undefined
+    }
+  }
+  const openNewSession = async () => {
+    form = emptyForm(lastFolder)
+    nsError = undefined
+    nsStarting = false
+    d.newSession.open(nsVM())
+    try {
+      const list = await d.gateway.sessions.models()
+      if (list.length) globalModels = list
+    } catch {
+      // Keep the fallback aliases.
+    }
+    renderNewSession()
+  }
+  d.hud.onNewSession(() => void openNewSession())
+  d.newSession.onClose(() => {
+    nsError = undefined
+  })
+  d.newSession.onPickFolder(async () => {
+    const f = await pickFolder()
+    if (f) form.folder = lastFolder = f
+    renderNewSession()
+  })
+  d.newSession.onAddExtraFolder(async () => {
+    const f = await pickFolder()
+    if (f && form.extraFolders.length < 5 && !form.extraFolders.some((x) => x.ref === f.ref))
+      form.extraFolders = [...form.extraFolders, f]
+    renderNewSession()
+  })
+  d.newSession.onRemoveExtraFolder((key) => {
+    form.extraFolders = form.extraFolders.filter((f) => f.ref !== key)
+    renderNewSession()
+  })
+  d.newSession.onPickContext(async (kind) => {
+    try {
+      const r = addContext(form.context, await d.gateway.context.pick(kind))
+      form.context = r.context
+      nsError = r.error
+    } catch (err) {
+      nsError = (err as Error).message
+    }
+    renderNewSession()
+  })
+  d.newSession.onRemoveChip((key) => {
+    form.context = form.context.filter((c) => c.ref !== key)
+    form.use = form.use.filter((u) => u !== key)
+    renderNewSession()
+  })
+  d.newSession.onOpenUse(() =>
+    useMenuVM(state.capabilities.get(CLAUDE) ?? [], CLAUDE, form.use, form.chrome),
+  )
+  d.newSession.onToggleUse((useId) => {
+    const r = toggleUse(form.use, useId)
+    form.use = r.use
+    nsError = r.error
+    renderNewSession()
+  })
+  d.newSession.onChange((patch) => {
+    form = { ...form, ...patch }
+    renderNewSession()
+  })
+  d.newSession.onStart(async () => {
+    if (!nsVM().canStart || !form.folder) return
+    nsStarting = true
+    nsError = undefined
+    renderNewSession()
+    const name = form.name.trim()
+    const args = {
+      folder: form.folder.ref,
+      ...(name && { name }),
+      ...(form.model && { model: form.model }),
+      mode: form.mode,
+      extraFolders: form.extraFolders.map((f) => f.ref),
+      chrome: form.chrome,
+      text: form.text.trim(),
+      ...(form.context.length && { context: form.context.map((c) => c.ref) }),
+      ...(form.use.length && { use: [...form.use] }),
+    }
+    try {
+      const r = await d.gateway.sessions.start(args)
+      nsStarting = false
+      if (r.ok) {
+        d.newSession.close()
+        if (state.agents.has(r.agentId)) select(r.agentId)
+        else pendingSelect = r.agentId
+        return
+      }
+      nsError = startErrorText(r, runningCount())
+    } catch (err) {
+      nsStarting = false
+      nsError = SESSION_COPY.newSession.errors.generic((err as Error).message)
+    }
+    renderNewSession()
   })
   d.hud.onOpenSettings(() => renderSettings(true))
   d.settings.onChange(async (patch: SettingsPatch) => {
@@ -431,6 +697,7 @@ export function createController(d: ControllerDeps) {
     await guarded(async () => {
       hook =
         action === 'install' ? await d.gateway.hook.install() : await d.gateway.hook.uninstall()
+      renderPanel()
       await renderSettings(false)
     })()
   })
@@ -481,6 +748,7 @@ export function createController(d: ControllerDeps) {
       hook =
         action === 'install' ? await d.gateway.hook.install() : await d.gateway.hook.uninstall()
     })
+    renderPanel()
     if (d.settings.isOpen()) await renderSettings(false)
   })
   d.connect.onPort(async (port) => {
@@ -511,13 +779,29 @@ export function createController(d: ControllerDeps) {
     d.scene.goTo(`wing:${provider}:0`)
   })
 
+  /** The scene follows the effective color scheme (Settings → Appearance sets it in main). */
+  const followColorScheme = () => {
+    const mql = d.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!mql) return
+    d.scene.setTheme(mql.matches ? 'dark' : 'light')
+    const onChange = (e: { matches: boolean }) => d.scene.setTheme(e.matches ? 'dark' : 'light')
+    mql.addEventListener('change', onChange)
+    stops.push(() => mql.removeEventListener('change', onChange))
+  }
+
   return {
     async start(): Promise<void> {
+      followColorScheme()
       stops.push(
         d.gateway.onMessage((m) => {
           state = applyMessage(state, m)
           noteArrivals()
           render()
+          if (pendingSelect && state.agents.has(pendingSelect)) {
+            const id = pendingSelect
+            pendingSelect = null
+            select(id)
+          }
         }),
         d.gateway.onSelect(select),
         d.gateway.app.onBanner((b) => d.banner.show(b)),
@@ -525,8 +809,10 @@ export function createController(d: ControllerDeps) {
         d.gateway.app.onOpenConnect(() => void openConnect()),
         d.gateway.connections.onChange((i) => {
           connInfo = i
+          hook = i.hook
           pushReceived = true
           refreshConnect()
+          renderPanel()
         }),
         d.gateway.updates.onState((s) => {
           update = s
@@ -543,6 +829,7 @@ export function createController(d: ControllerDeps) {
         d.gateway.settings.get().catch(() => DEFAULT_SETTINGS),
       ])
       applyQuality(settings.graphicsQuality)
+      allowBypass = settings.allowBypassPermissions
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       noteArrivals()
       ready = true

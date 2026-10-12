@@ -125,6 +125,29 @@ describe('lineToEvent', () => {
     expect(e?.name).toBe('sub·a1b2c3')
   })
 
+  it('takes the permission mode from user lines, ignoring unknown values and sidechains (LM-mode)', () => {
+    const ctx = newParseContext()
+    expect(lineToEvent(user('plan it', { permissionMode: 'plan' }), ctx)?.permissionMode).toBe(
+      'plan',
+    )
+    expect(lineToEvent(user('go', { permissionMode: 'yolo' }), ctx)).not.toHaveProperty(
+      'permissionMode',
+    )
+    expect(lineToEvent(user('go', { permissionMode: 42 }), ctx)).not.toHaveProperty(
+      'permissionMode',
+    )
+    expect(lineToEvent(user('go'), ctx)).not.toHaveProperty('permissionMode')
+    const sub = lineToEvent(
+      user('task', { isSidechain: true, agentId: 'a1b2c3d4e5', permissionMode: 'plan' }),
+      ctx,
+    )
+    expect(sub?.agentId).toBe('cc:a1b2c3d4e5')
+    expect(sub).not.toHaveProperty('permissionMode')
+    expect(
+      lineToEvent(assistant([{ type: 'text', text: 'hi' }], { permissionMode: 'plan' }), ctx),
+    ).not.toHaveProperty('permissionMode')
+  })
+
   it('skips <synthetic> models', () => {
     const line = JSON.stringify({
       type: 'assistant',

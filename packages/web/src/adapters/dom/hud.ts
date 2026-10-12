@@ -1,5 +1,6 @@
 import type { AgentStatus, Banner } from '@agent-office/shared'
 import { COPY } from '../../app/connect-copy.ts'
+import { SESSION_COPY } from '../../app/session-copy.ts'
 import type { HudVM } from '../../app/view-models.ts'
 import type { BannerView, HudView } from '../../ports.ts'
 import { byId, el } from './el.ts'
@@ -14,6 +15,11 @@ export class DomHud implements HudView {
     const btn = byId('connect-btn')
     btn.querySelector('.connect-label')!.textContent = COPY.hud.connectBtn
     btn.addEventListener('click', () => this.connectFn())
+    byId('new-session-btn').textContent = SESSION_COPY.newSession.button
+  }
+
+  onNewSession(fn: () => void): void {
+    byId('new-session-btn').addEventListener('click', () => fn())
   }
 
   onConnect(fn: () => void): void {

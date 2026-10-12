@@ -27,6 +27,7 @@ const MERGED = [
   'status',
   'tool',
   'text',
+  'permissionMode',
 ] as const
 const VISIBLE: (keyof Agent)[] = [...MERGED, 'interactive', 'unread']
 /** Internal fields whose change still matters to subscribers (a new capability use). */

@@ -3,7 +3,13 @@ import {
   type AgentOfficeApi,
   type Banner,
   type ConnectionInfo,
+  type ContextRef,
   type GraphicsQuality,
+  type HookStatus,
+  type ModelOption,
+  type NewSessionArgs,
+  type PermissionMode,
+  type StartResult,
   type ServerMessage,
   type Settings,
   type SettingsPatch,
@@ -16,6 +22,7 @@ import { fixtureManifest } from './app/__fixtures__/manifest.ts'
 import { LEAVE_MS } from './app/behavior.ts'
 import type { AgentPlan, BuildingLayout, Link } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
+import type { NewSessionVM, UseMenuVM } from './app/session-types.ts'
 import {
   DEMO_START_TIMEOUT_MS,
   EMPTY_GRACE_MS,
@@ -25,6 +32,7 @@ import {
   type EmptyStateVM,
 } from './app/connect-types.ts'
 import { createController } from './controller.ts'
+import { SESSION_COPY } from './app/session-copy.ts'
 import { cap } from './app/__fixtures__/capabilities.ts'
 import type { CapabilityPanelVM } from './app/capability-vm.ts'
 import type {
@@ -33,6 +41,7 @@ import type {
   ConnectView,
   EmptyStateView,
   HudView,
+  NewSessionView,
   PanelView,
   CapabilityRef,
   SceneSurfaces,
@@ -79,6 +88,7 @@ function fakeGateway(
   snapshotAgents: Agent[] = [agent('a', { name: 'Ada', status: 'idle' })],
 ) {
   let current = initial
+  let hookState: HookStatus = 'not-installed'
   const listeners = {
     message: [] as ((m: ServerMessage) => void)[],
     select: [] as ((id: string) => void)[],
@@ -95,7 +105,7 @@ function fakeGateway(
     ready: vi.fn(async () => ({ agents: snapshotAgents, messages: [] })),
     onMessage: sub(listeners.message),
     onSelect: sub(listeners.select),
-    sendMessage: vi.fn(async (agentId: string, text: string) =>
+    sendMessage: vi.fn(async (agentId: string, text: string, _opts?: object) =>
       text === 'fail'
         ? { ok: false as const, error: 'too many messages' }
         : {
@@ -118,9 +128,34 @@ function fakeGateway(
       }),
     },
     hook: {
-      status: vi.fn(async () => 'not-installed' as const),
-      install: vi.fn(async () => 'installed' as const),
-      uninstall: vi.fn(async () => 'not-installed' as const),
+      status: vi.fn(async (): Promise<HookStatus> => hookState),
+      install: vi.fn(async (): Promise<HookStatus> => (hookState = 'installed')),
+      uninstall: vi.fn(async (): Promise<HookStatus> => (hookState = 'not-installed')),
+    },
+    context: {
+      pick: vi.fn(async (kind: 'files' | 'folder'): Promise<ContextRef[]> =>
+        kind === 'folder'
+          ? [{ ref: 'ctx_folder000001', kind: 'folder', label: 'auth', hint: '~/code/auth' }]
+          : [
+              { ref: 'ctx_file00000001', kind: 'file', label: 'README.md', hint: '~/README.md' },
+              { ref: 'ctx_file00000002', kind: 'file', label: 'a.ts', hint: '~/a.ts' },
+            ],
+      ),
+    },
+    sessions: {
+      start: vi.fn(async (_a: NewSessionArgs): Promise<StartResult> => ({
+        ok: true,
+        agentId: 'cc:new',
+      })),
+      setMode: vi.fn(async (_id: string, _m: PermissionMode) => {}),
+      setModel: vi.fn(async (_id: string, _m: string) => {}),
+      models: vi.fn(async (_id?: string): Promise<ModelOption[]> => [
+        { id: 'opus', label: 'Opus' },
+        { id: 'sonnet', label: 'Sonnet' },
+      ]),
+      interrupt: vi.fn(async (_id: string) => {}),
+      stop: vi.fn(async (_id: string) => {}),
+      answer: vi.fn(async (_id: string, _r: string, _d: string) => {}),
     },
     app: {
       version: vi.fn(async () => '1.0.0'),
@@ -130,7 +165,7 @@ function fakeGateway(
       onOpenConnect: sub(listeners.openConnect),
     },
     connections: {
-      info: vi.fn(async () => connInfo()),
+      info: vi.fn(async () => connInfo({ hook: hookState })),
       onChange: sub(listeners.conn),
       test: vi.fn(async (): Promise<TestEventResult> => ({ ok: true })),
     },
@@ -159,8 +194,13 @@ function fakeViews() {
     highlighted: string | null
     selected: string | null
     qualities: GraphicsQuality[]
+    themes: ('light' | 'dark')[]
     last(): Map<string, AgentPlan>
   } = {
+    themes: [],
+    setTheme(t) {
+      this.themes.push(t)
+    },
     loads: [],
     fail: null,
     buildings: [],
@@ -238,6 +278,16 @@ function fakeViews() {
     onSelectParent: on('parent'),
     onInstallHook: on('panelInstall'),
     onOpenConnect: on('panelConnect'),
+    onSetMode: on('setMode'),
+    onSetModel: on('setModel'),
+    onInterrupt: on('interrupt'),
+    onStop: on('stop'),
+    onAnswer: on('answer'),
+    onPickContext: on('pickContext'),
+    onRemoveChip: on('removeChip'),
+    onOpenUse: on('openUse') as unknown as PanelView['onOpenUse'],
+    onToggleUse: on('toggleUse'),
+    onDraft: on('draft'),
   }
   const hud: HudView & { vm: HudVM | null; badge: boolean | null } = {
     vm: null,
@@ -247,8 +297,50 @@ function fakeViews() {
     },
     onOpenSettings: on('openSettings'),
     onConnect: on('hudConnect'),
+    onNewSession: on('newSession'),
     setConnectBadge(on) {
       this.badge = on
+    },
+  }
+  const newSession: NewSessionView & { vm: NewSessionVM | null; opens: number } = {
+    vm: null,
+    opens: 0,
+    open(vm) {
+      this.vm = vm
+      this.opens++
+    },
+    render(vm) {
+      if (this.vm) this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    isOpen() {
+      return this.vm !== null
+    },
+    onPickFolder: on('nsFolder'),
+    onAddExtraFolder: on('nsExtra'),
+    onRemoveExtraFolder: on('nsRemoveExtra'),
+    onPickContext: on('nsPick'),
+    onRemoveChip: on('nsRemoveChip'),
+    onOpenUse: on('nsOpenUse') as unknown as NewSessionView['onOpenUse'],
+    onToggleUse: on('nsToggleUse'),
+    onChange: on('nsChange'),
+    onStart: on('nsStart'),
+    onClose: on('nsClose'),
+  }
+  const mql = {
+    matches: false,
+    listeners: [] as ((e: { matches: boolean }) => void)[],
+    addEventListener(_t: 'change', fn: (e: { matches: boolean }) => void) {
+      this.listeners.push(fn)
+    },
+    removeEventListener(_t: 'change', fn: (e: { matches: boolean }) => void) {
+      this.listeners.splice(this.listeners.indexOf(fn), 1)
+    },
+    flip(dark: boolean) {
+      this.matches = dark
+      this.listeners.forEach((fn) => fn({ matches: dark }))
     },
   }
   const settings: SettingsView & { vm: SettingsVM | null; error: string } = {
@@ -352,7 +444,20 @@ function fakeViews() {
         this.shown.push({ text, ...(action && { action }) })
       },
     }
-  return { scene, panel, hud, settings, banner, capabilityPanel, connect, empty, toast, handlers }
+  return {
+    scene,
+    panel,
+    hud,
+    settings,
+    banner,
+    capabilityPanel,
+    connect,
+    empty,
+    toast,
+    newSession,
+    mql,
+    handlers,
+  }
 }
 
 async function setup(
@@ -366,9 +471,11 @@ async function setup(
   const timers: { ms: number; fn: () => void }[] = []
   const timeouts: { ms: number; fn: () => void; live: boolean }[] = []
   let now = 0
+  const { mql, ...views } = v
   const c = createController({
     gateway: g.api,
-    ...v,
+    ...views,
+    matchMedia: () => mql,
     grouping: byProviderAndTopic,
     clock: { now: () => now },
     every: (ms, fn) => (timers.push({ ms, fn }), () => {}),
@@ -916,6 +1023,32 @@ describe('controller: connecting agents (Connect panel, empty state, first arriv
     expect(t.toast.shown).toHaveLength(3)
   })
 
+  // Managed sessions get messages directly from agent-office; the hook doesn't matter for them.
+  it('a managed Claude Code session arriving first: no "install the hook" hint', async () => {
+    const t = await empty()
+    t.fire(EMPTY_GRACE_MS)
+    t.push({
+      type: 'upsert',
+      agent: agent('cc:m', {
+        provider: 'claude-code',
+        source: 'managed',
+        managed: { chrome: false, pending: 0, phase: 'running' },
+      }),
+    })
+    t.advance(250)
+    expect(t.toast.shown.map((s) => s.text)).toEqual(['claude-code connected'])
+    expect(t.toast.shown[0]?.action).toBeUndefined()
+  })
+
+  // The session's first update can carry source 'managed' before the `managed` field is set.
+  it('a managed session known only by its source: no "install the hook" hint either', async () => {
+    const t = await empty()
+    t.fire(EMPTY_GRACE_MS)
+    t.push({ type: 'upsert', agent: agent('cc:m', { provider: 'claude-code', source: 'managed' }) })
+    t.advance(250)
+    expect(t.toast.shown.map((s) => s.text)).toEqual(['claude-code connected'])
+  })
+
   it('Claude Code without the hook: the toast offers Connect', async () => {
     const t = await empty()
     t.fire(EMPTY_GRACE_MS)
@@ -955,5 +1088,342 @@ describe('controller: connecting agents (Connect panel, empty state, first arriv
     await t.handlers.hudConnect!()
     expect(t.connect.isOpen()).toBe(false)
     expect(t.banner.shown).toBeNull()
+  })
+})
+
+describe('controller: hook status in the agent panel (the reported bug)', () => {
+  const claude = (over: Partial<Agent> = {}) =>
+    agent('cc:1', { provider: 'claude-code', interactive: false, status: 'idle', ...over })
+
+  it('uses the installed hook from the connection info, not "not installed"', async () => {
+    const t = await setup(
+      undefined,
+      (_v, g) => {
+        g.api.connections.info.mockResolvedValue(connInfo({ hook: 'installed' }))
+      },
+      { agents: [claude()] },
+    )
+    t.handlers.pick!('cc:1')
+    expect(t.panel.vm?.hint).toEqual({ text: SESSION_COPY.hint.waitingCheckIn })
+  })
+
+  it('re-renders the open panel after install from the hint and on connection pushes', async () => {
+    const t = await setup(undefined, undefined, { agents: [claude()] })
+    t.handlers.pick!('cc:1')
+    expect(t.panel.vm?.hint?.action).toBe('install-hook')
+    await t.handlers.panelInstall!()
+    expect(t.panel.vm?.hint?.text).toBe(SESSION_COPY.hint.waitingCheckIn)
+    t.listeners.conn[0]!(connInfo({ hook: 'outdated' }))
+    expect(t.panel.vm?.hint?.label).toBe(SESSION_COPY.hint.repair)
+    await t.handlers.hookAction!('uninstall')
+    expect(t.panel.vm?.hint?.text).toBe(SESSION_COPY.hint.notInstalled)
+    await t.handlers.connectHook!('install')
+    expect(t.panel.vm?.hint?.text).toBe(SESSION_COPY.hint.waitingCheckIn)
+  })
+
+  it('C-sub: a subagent points at its parent, its composer is disabled; Open parent selects it', async () => {
+    const t = await setup(undefined, undefined, {
+      agents: [claude(), claude({ id: 'cc:sub', parentId: 'cc:1' })],
+    })
+    t.handlers.pick!('cc:sub')
+    expect(t.panel.vm?.hint?.action).toBe('open-parent')
+    expect(t.panel.vm?.composer).toMatchObject({
+      disabled: true,
+      placeholder: SESSION_COPY.composer.subagent,
+    })
+    t.handlers.parent!('cc:1')
+    expect(t.panel.vm?.id).toBe('cc:1')
+  })
+})
+
+describe('controller: composer (context, Use…, drafts)', () => {
+  const ada = agent('a', { name: 'Ada', status: 'idle', provider: 'claude-code' })
+  const bob = agent('b', { provider: 'claude-code' })
+
+  it('C-pick: picking adds chips; removing drops one; send passes refs and tools, then clears', async () => {
+    const t = await setup(undefined, undefined, { agents: [ada] })
+    t.handlers.pick!('a')
+    await t.handlers.pickContext!('folder')
+    await t.handlers.pickContext!('files')
+    await t.handlers.pickContext!('folder') // same ref again: no duplicate
+    expect(t.panel.vm?.composer.chips.map((c) => c.label)).toEqual(['auth', 'README.md', 'a.ts'])
+    t.handlers.removeChip!('ctx_file00000002')
+    t.handlers.toggleUse!('mcp:claude-in-chrome')
+    expect(t.panel.vm?.composer.chips.map((c) => c.key)).toEqual([
+      'ctx_folder000001',
+      'ctx_file00000001',
+      'mcp:claude-in-chrome',
+    ])
+    await t.handlers.send!('review these')
+    expect(t.api.sendMessage).toHaveBeenLastCalledWith('a', 'review these', {
+      context: ['ctx_folder000001', 'ctx_file00000001'],
+      use: ['mcp:claude-in-chrome'],
+    })
+    expect(t.panel.cleared).toBe(1)
+    expect(t.panel.vm?.composer.chips).toEqual([])
+    // Without chips the call stays the old two-argument shape.
+    await t.handlers.send!('plain')
+    expect(t.api.sendMessage).toHaveBeenLastCalledWith('a', 'plain')
+  })
+
+  it('a failed send keeps the draft; a picker error shows inline', async () => {
+    const t = await setup(undefined, undefined, { agents: [ada] })
+    t.handlers.pick!('a')
+    await t.handlers.pickContext!('folder')
+    await t.handlers.send!('fail')
+    expect(t.panel.error).toBe('too many messages')
+    expect(t.panel.vm?.composer.chips).toHaveLength(1)
+    t.api.context.pick.mockRejectedValueOnce(new Error('dialog failed'))
+    await t.handlers.pickContext!('files')
+    expect(t.panel.error).toBe('dialog failed')
+    t.api.context.pick.mockResolvedValueOnce(
+      Array.from({ length: 12 }, (_, i) => ({
+        ref: `ctx_many${String(i).padStart(8, '0')}`,
+        kind: 'file' as const,
+        label: `f${i}`,
+        hint: `~/f${i}`,
+      })),
+    )
+    await t.handlers.pickContext!('files')
+    expect(t.panel.vm?.composer.chips).toHaveLength(10)
+    expect(t.panel.error).toBe(SESSION_COPY.composer.maxContext)
+  })
+
+  it('the Use… menu lists the provider capabilities; a 6th tool is refused', async () => {
+    const t = await setup(undefined, undefined, { agents: [ada] })
+    t.push({ type: 'capabilities', provider: 'claude-code', capabilities: [cap('mcp:github')] })
+    t.handlers.pick!('a')
+    const menu = t.handlers.openUse!() as unknown as UseMenuVM
+    expect(menu.groups.map((g) => g.id)).toEqual(['browser', 'mcp', 'builtin'])
+    for (const id of ['shell', 'web', 'subagents', 'mcp:github', 'mcp:claude-in-chrome'])
+      t.handlers.toggleUse!(id)
+    t.handlers.toggleUse!('mcp:other')
+    expect(t.panel.error).toBe(SESSION_COPY.composer.maxUse)
+    expect((t.handlers.openUse!() as unknown as UseMenuVM).groups[0]!.entries[0]!.selected).toBe(
+      true,
+    )
+    t.handlers.toggleUse!('shell')
+    t.handlers.removeChip!('web')
+    expect(t.panel.vm?.composer.chips.map((c) => c.key)).toEqual([
+      'subagents',
+      'mcp:github',
+      'mcp:claude-in-chrome',
+    ])
+  })
+
+  it('drafts are kept per agent while switching', async () => {
+    const t = await setup(undefined, undefined, { agents: [ada, bob] })
+    t.handlers.pick!('a')
+    t.handlers.draft!('half a thought')
+    await t.handlers.pickContext!('folder')
+    t.handlers.pick!('b')
+    expect(t.panel.vm).toMatchObject({ draftText: '', composer: { chips: [] } })
+    t.handlers.pick!('a')
+    expect(t.panel.vm?.draftText).toBe('half a thought')
+    expect(t.panel.vm?.composer.chips).toHaveLength(1)
+  })
+
+  it('composer handlers do nothing without a selection', async () => {
+    const t = await setup()
+    await t.handlers.pickContext!('folder')
+    t.handlers.toggleUse!('shell')
+    t.handlers.removeChip!('shell')
+    t.handlers.draft!('x')
+    expect((t.handlers.openUse!() as unknown as UseMenuVM).groups).toEqual([])
+    await t.handlers.setMode!('plan')
+    await t.handlers.interrupt!()
+    expect(t.api.context.pick).not.toHaveBeenCalled()
+    expect(t.api.sessions.setMode).not.toHaveBeenCalled()
+  })
+})
+
+describe('controller: managed sessions', () => {
+  const managed = agent('cc:m', {
+    provider: 'claude-code',
+    status: 'thinking',
+    permissionMode: 'plan',
+    managed: { chrome: false, pending: 0, phase: 'running', modelId: 'sonnet' },
+  })
+
+  it('loads the session models once; pills show them', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    await t.flush()
+    expect(t.api.sessions.models).toHaveBeenCalledWith('cc:m')
+    expect(t.panel.vm?.session).toMatchObject({
+      managed: true,
+      mode: { text: '◐ Plan' },
+      model: { text: '✦ Sonnet' },
+    })
+    t.handlers.pick!(null)
+    t.handlers.pick!('cc:m')
+    await t.flush()
+    expect(t.api.sessions.models).toHaveBeenCalledTimes(1)
+  })
+
+  // A new session's first upsert can arrive before `managed` is set; the model list must still load.
+  it('loads the models once the selected agent becomes managed', async () => {
+    const plain = agent('cc:m', { provider: 'claude-code', status: 'thinking' })
+    const t = await setup(undefined, undefined, { agents: [plain] })
+    t.handlers.pick!('cc:m')
+    await t.flush()
+    expect(t.api.sessions.models).not.toHaveBeenCalled()
+    t.push({ type: 'upsert', agent: managed })
+    await t.flush()
+    expect(t.api.sessions.models).toHaveBeenCalledWith('cc:m')
+  })
+
+  it('falls back to the alias models when the session cannot list them', async () => {
+    const t = await setup(
+      undefined,
+      (_v, g) => g.api.sessions.models.mockRejectedValue(new Error('nope')),
+      { agents: [managed] },
+    )
+    t.handlers.pick!('cc:m')
+    await t.flush()
+    expect(t.panel.vm?.session?.models.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku'])
+  })
+
+  it('C-mode: mode and model changes go to the gateway; errors show in the panel', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    await t.handlers.setMode!('acceptEdits')
+    expect(t.api.sessions.setMode).toHaveBeenCalledWith('cc:m', 'acceptEdits')
+    await t.handlers.setModel!('opus')
+    expect(t.api.sessions.setModel).toHaveBeenCalledWith('cc:m', 'opus')
+    t.api.sessions.setModel.mockRejectedValueOnce(new Error('unknown model'))
+    await t.handlers.setModel!('nope')
+    expect(t.panel.error).toBe('unknown model')
+  })
+
+  it('bypass shows up in the mode menu only when allowed in Settings', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    expect(t.panel.vm?.session?.modes.map((m) => m.id)).not.toContain('bypassPermissions')
+    await t.handlers.settingsChange!({ allowBypassPermissions: true })
+    expect(t.panel.vm?.session?.modes.map((m) => m.id)).toContain('bypassPermissions')
+  })
+
+  it('C-answer: interrupt, stop and permission answers go to the gateway', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    t.push({
+      type: 'permission',
+      agentId: 'cc:m',
+      requests: [{ id: 'perm_0123456789', tool: 'Bash', summary: 'pnpm test' }],
+    })
+    expect(t.panel.vm?.permission?.request.summary).toBe('pnpm test')
+    await t.handlers.answer!('perm_0123456789', 'allow')
+    expect(t.api.sessions.answer).toHaveBeenCalledWith('cc:m', 'perm_0123456789', 'allow')
+    await t.handlers.interrupt!()
+    expect(t.api.sessions.interrupt).toHaveBeenCalledWith('cc:m')
+    await t.handlers.stop!()
+    expect(t.api.sessions.stop).toHaveBeenCalledWith('cc:m')
+    t.api.sessions.stop.mockRejectedValueOnce(new Error('already gone'))
+    await t.handlers.stop!()
+    expect(t.panel.error).toBe('already gone')
+  })
+})
+
+describe('controller: theme', () => {
+  it('C-theme: applies the OS scheme at start, then follows matchMedia changes', async () => {
+    const t = await setup()
+    expect(t.scene.themes).toEqual(['light'])
+    // Settings → Dark: main flips nativeTheme, Chromium fires the media query change.
+    await t.handlers.settingsChange!({ theme: 'dark' })
+    t.mql.flip(true)
+    expect(t.scene.themes).toEqual(['light', 'dark'])
+    t.c.stop()
+    t.mql.flip(false)
+    expect(t.scene.themes).toEqual(['light', 'dark'])
+  })
+})
+
+describe('controller: new session dialog', () => {
+  it('C-new: opens from the HUD with the fallback models; Start stays disabled until ready', async () => {
+    const t = await setup()
+    await t.handlers.newSession!()
+    expect(t.newSession.vm).toMatchObject({ canStart: false, name: '' })
+    expect(t.api.sessions.models).toHaveBeenCalledWith()
+    expect(t.newSession.vm?.models.map((m) => m.id)).toEqual(['', 'opus', 'sonnet'])
+    await t.handlers.nsFolder!()
+    expect(t.api.context.pick).toHaveBeenCalledWith('folder')
+    expect(t.newSession.vm?.folder).toEqual({ label: 'auth', hint: '~/code/auth' })
+    t.handlers.nsChange!({ text: 'Plan the logout flow', mode: 'plan', model: 'sonnet' })
+    expect(t.newSession.vm?.canStart).toBe(true)
+  })
+
+  it('C-new: start success closes the dialog and selects the new agent when it arrives', async () => {
+    const t = await setup()
+    await t.handlers.newSession!()
+    await t.handlers.nsFolder!()
+    await t.handlers.nsExtra!()
+    t.handlers.nsChange!({ text: 'Plan it', name: 'shop', chrome: true })
+    await t.handlers.nsPick!('files')
+    t.handlers.nsToggleUse!('mcp:claude-in-chrome')
+    await t.handlers.nsStart!()
+    expect(t.api.sessions.start).toHaveBeenCalledWith({
+      folder: 'ctx_folder000001',
+      name: 'shop',
+      mode: 'default',
+      extraFolders: ['ctx_folder000001'],
+      chrome: true,
+      text: 'Plan it',
+      context: ['ctx_file00000001', 'ctx_file00000002'],
+      use: ['mcp:claude-in-chrome'],
+    })
+    expect(t.newSession.isOpen()).toBe(false)
+    t.push({ type: 'upsert', agent: agent('cc:new', { provider: 'claude-code' }) })
+    expect(t.panel.vm?.id).toBe('cc:new')
+  })
+
+  it('C-new: an error shows inline and keeps the dialog open; the folder is remembered', async () => {
+    const t = await setup()
+    t.api.sessions.start.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'login' })
+    await t.handlers.newSession!()
+    await t.handlers.nsFolder!()
+    t.handlers.nsChange!({ text: 'go' })
+    await t.handlers.nsStart!()
+    expect(t.newSession.vm).toMatchObject({
+      error: SESSION_COPY.newSession.errors.auth,
+      starting: false,
+    })
+    t.api.sessions.start.mockRejectedValueOnce(new Error('ipc down'))
+    await t.handlers.nsStart!()
+    expect(t.newSession.vm?.error).toBe("Couldn't start: ipc down")
+    t.handlers.nsClose!()
+    await t.handlers.newSession!()
+    expect(t.newSession.vm?.folder?.label).toBe('auth')
+    expect(t.newSession.vm?.error).toBeUndefined()
+  })
+
+  it('chips and extra folders can be removed; the menu is the claude-code one', async () => {
+    const t = await setup()
+    await t.handlers.newSession!()
+    await t.handlers.nsExtra!()
+    t.handlers.nsRemoveExtra!('ctx_folder000001')
+    expect(t.newSession.vm?.extraFolders).toEqual([])
+    await t.handlers.nsPick!('folder')
+    t.handlers.nsToggleUse!('shell')
+    t.handlers.nsRemoveChip!('ctx_folder000001')
+    t.handlers.nsRemoveChip!('shell')
+    expect(t.newSession.vm?.composer.chips).toEqual([])
+    const menu = t.handlers.nsOpenUse!() as unknown as UseMenuVM
+    expect(menu.groups[0]!.id).toBe('browser')
+    // Start without a folder does nothing.
+    await t.handlers.nsStart!()
+    expect(t.api.sessions.start).not.toHaveBeenCalled()
+  })
+
+  it('shows the limit with 6 sessions running', async () => {
+    const agents = Array.from({ length: 6 }, (_, i) =>
+      agent(`cc:${i}`, {
+        provider: 'claude-code',
+        managed: { chrome: false, pending: 0, phase: 'running' },
+      }),
+    )
+    const t = await setup(undefined, undefined, { agents })
+    await t.handlers.newSession!()
+    expect(t.newSession.vm?.limit).toBe('Stop a session first (6 running)')
   })
 })

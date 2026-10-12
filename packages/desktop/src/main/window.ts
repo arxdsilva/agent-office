@@ -1,6 +1,7 @@
 import type { Settings } from '@agent-office/shared'
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, nativeTheme, shell } from 'electron'
 import { isSafeExternalUrl, secureWebPreferences } from './security.ts'
+import { windowBackground } from './theme.ts'
 
 export interface MainWindowOptions {
   preload: string
@@ -18,7 +19,7 @@ export function createMainWindow(o: MainWindowOptions): BrowserWindow {
     minHeight: 360,
     show: false,
     title: 'agent-office',
-    backgroundColor: '#12151b',
+    backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     webPreferences: secureWebPreferences(o.preload),
   })
   win.once('ready-to-show', () => win.show())

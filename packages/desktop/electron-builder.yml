@@ -9,6 +9,9 @@ directories:
 files:
   - out/**
   - package.json
+  # The SDK's bundled Claude Code binaries are ~225 MB per platform. Packaged builds run the user's
+  # installed `claude` CLI instead (resolved by adapters/src/agents/claude-executable.ts).
+  - '!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**'
 extraResources:
   # The Claude Code hook runs outside the app (via the generated wrapper), so it ships unpacked.
   - from: ../../hooks/agent-office-hook.mjs

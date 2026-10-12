@@ -1,17 +1,26 @@
+@import './styles/session.css';
+
 :root {
   --bg: #eef0f3;
   --card: rgba(255, 255, 255, 0.92);
   --text: #1d2129;
   --muted: #687080;
   --border: rgba(20, 24, 33, 0.12);
-  --accent: #4f8cff;
-  --user-bubble: #4f8cff;
+  /* #2b62d1 (darker than plan §2.6's #3b74e6, which is 4.35:1 on white) keeps ≥ 4.5:1 on cards and --bg. */
+  --accent: #2b62d1;
+  --on-accent: #ffffff;
+  --user-bubble: #2b62d1;
   --user-text: #fff;
   --agent-bubble: #eceff4;
-  --error: #d93636;
+  --error: #c42b2b;
   --ok: #1f9d63;
   --warn: #b7791f;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  --bubble-bg: #ffffff;
+  --bubble-text: #1d2129;
+  --loading-bg: #eef1f6;
+  --loading-text: #1d2129;
+  --loading-track: #d6dce6;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -22,9 +31,19 @@
     --muted: #98a0ae;
     --border: rgba(255, 255, 255, 0.1);
     --agent-bubble: #2a303b;
+    --accent: #6f9dff;
+    --on-accent: #0b1020;
+    --error: #ff6b6b;
+    --user-bubble: #2f5fd0;
+    --user-text: #ffffff;
     --ok: #3ccf91;
     --warn: #f5a524;
     --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    --bubble-bg: #262b36;
+    --bubble-text: #e8ebf2;
+    --loading-bg: #12151b;
+    --loading-text: #e8ebf2;
+    --loading-track: #2a303c;
   }
 }
 
@@ -76,7 +95,7 @@ body {
 }
 .btn.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: transparent;
 }
 .btn:focus-visible,
@@ -111,11 +130,11 @@ textarea:focus-visible {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #f5a524;
+  background: var(--warn);
   display: inline-block;
 }
 .dot.open {
-  background: #3ccf91;
+  background: var(--ok);
 }
 #legend {
   list-style: none;
@@ -203,8 +222,8 @@ textarea:focus-visible {
   outline: 2px solid var(--accent);
 }
 .tag .badge {
-  background: #ef4444;
-  color: #fff;
+  background: var(--error);
+  color: var(--on-accent);
   border-radius: 999px;
   padding: 0 6px;
   font-size: 11px;
@@ -218,8 +237,8 @@ textarea:focus-visible {
   padding: 3px 8px;
   border-radius: 8px;
   font-size: 11px;
-  color: #1d2129;
-  background: #fff;
+  color: var(--bubble-text);
+  background: var(--bubble-bg);
   border-left: 4px solid var(--status, #8a8f98);
 }
 .zone-sign {
@@ -402,12 +421,12 @@ textarea:focus-visible {
   font-size: 13px;
 }
 .banner.error {
-  background: #ef4444;
-  color: #fff;
+  background: var(--error);
+  color: var(--on-accent);
 }
 .banner.info {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 #hud.with-banner,
 #actions.with-banner {
@@ -468,6 +487,48 @@ textarea:focus-visible {
 #settings a.btn {
   text-decoration: none;
 }
+/* Settings → Appearance: [System] [Light] [Dark] */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.segmented [role='radio'] {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 14px;
+  background: none;
+  color: var(--text);
+}
+.segmented [role='radio'][aria-checked='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.segmented [role='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn.danger {
+  background: var(--error);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+#s-confirm {
+  width: min(400px, calc(100vw - 48px));
+  color: var(--text);
+  padding: 14px 16px;
+}
+#s-confirm::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+#s-confirm .confirm-actions {
+  justify-content: flex-end;
+}
 .hint-box .btn {
   margin-top: 6px;
   display: block;
@@ -480,8 +541,12 @@ textarea:focus-visible {
   z-index: 5;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at 50% 40%, #2a3140 0%, #12151b 70%);
-  color: #e8ebf1;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    color-mix(in srgb, var(--loading-bg), var(--accent) 14%) 0%,
+    var(--loading-bg) 70%
+  );
+  color: var(--loading-text);
   transition: opacity 0.4s ease;
 }
 #loading.done {
@@ -503,13 +568,13 @@ textarea:focus-visible {
   margin: 18px 0 10px;
   height: 4px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--loading-track);
   overflow: hidden;
 }
 #loading-fill {
   width: 0;
   height: 100%;
-  background: linear-gradient(90deg, #4f8cff, #3ccf91);
+  background: linear-gradient(90deg, var(--accent), var(--ok));
   transition: width 0.25s ease;
 }
 #loading-label {
@@ -520,10 +585,11 @@ textarea:focus-visible {
   margin: 10px 0 0;
   font-size: 12px;
   min-height: 2.8em;
-  color: #98a0ae;
+  color: var(--loading-text);
+  opacity: 0.8;
 }
 #loading.failed #loading-fill {
-  background: #ef4444;
+  background: var(--error);
 }
 
 /* Camera bookmarks */
@@ -686,7 +752,7 @@ button.chip {
 }
 #c-links[aria-pressed='true'] {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: transparent;
 }
 
@@ -745,7 +811,7 @@ button.link:focus-visible,
   height: 9px;
   border-radius: 50%;
   background: var(--warn);
-  border: 2px solid var(--card);
+  border: 2px solid var(--bg);
 }
 #connect-btn .badge[hidden] {
   display: none;
@@ -983,7 +1049,7 @@ button.link:focus-visible,
 .lang[aria-pressed='true'] {
   background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 .snippet {
   font:

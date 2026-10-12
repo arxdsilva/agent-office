@@ -21,6 +21,8 @@ export interface ClaudeCodeTailerOptions {
   claudeHome?: string
   /** Called once per session cwd the first time it appears (capability discovery). */
   onNewCwd?: (cwd: string) => void
+  /** Session ids whose transcripts belong to someone else (managed sessions report through their runner). */
+  skip?: (sessionId: string) => boolean
   /** Called after a polling pass when `stats()` changed (Connect panel). */
   onStats?: (s: TailerStats) => void
 }
@@ -81,7 +83,8 @@ export class ClaudeCodeTailer {
     try {
       const active = await this.activeFiles()
       await this.updateStats(active.filter((f) => f.topLevel).length)
-      for (const { path } of active) await this.readFile(path)
+      for (const { path, sessionId } of active)
+        if (!this.o.skip?.(sessionId)) await this.readFile(path)
     } finally {
       this.running = false
     }
@@ -95,24 +98,28 @@ export class ClaudeCodeTailer {
     this.o.onStats?.(this.stats())
   }
 
-  private async activeFiles(): Promise<{ path: string; topLevel: boolean }[]> {
+  private async activeFiles(): Promise<{ path: string; topLevel: boolean; sessionId: string }[]> {
     const { files, dir } = this.o
     const cutoff = this.o.clock.now() - this.o.expireAfterMs
-    const candidates: { path: string; topLevel: boolean }[] = []
+    const candidates: { path: string; topLevel: boolean; sessionId: string }[] = []
     for (const project of await files.list(dir)) {
       const projectDir = join(dir, project)
       for (const entry of await files.list(projectDir)) {
         if (entry.endsWith('.jsonl'))
-          candidates.push({ path: join(projectDir, entry), topLevel: true })
+          candidates.push({
+            path: join(projectDir, entry),
+            topLevel: true,
+            sessionId: entry.slice(0, -'.jsonl'.length),
+          })
         else {
           const subDir = join(projectDir, entry, 'subagents')
           for (const sub of await files.list(subDir))
             if (sub.endsWith('.jsonl'))
-              candidates.push({ path: join(subDir, sub), topLevel: false })
+              candidates.push({ path: join(subDir, sub), topLevel: false, sessionId: entry })
         }
       }
     }
-    const active: { path: string; topLevel: boolean }[] = []
+    const active: typeof candidates = []
     for (const f of candidates) {
       const s = await files.stat(f.path)
       if (s?.isFile && s.mtimeMs >= cutoff) active.push(f)

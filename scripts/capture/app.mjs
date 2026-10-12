@@ -27,6 +27,8 @@ export function cleanEnv(extra = {}) {
  * @param {boolean} [o.notifications] native notifications on
  * @param {number} [o.width] window content width (CSS px)
  * @param {number} [o.height] window content height (CSS px)
+ * @param {boolean} [o.fakeRunner] managed sessions use the scripted runner (never the real Claude Code)
+ * @param {'system'|'light'|'dark'} [o.theme] UI theme written to the profile's settings
  */
 /** A free local port, so concurrent runs (another agent, a dev instance) never share an API. */
 export function freePort() {
@@ -48,6 +50,8 @@ export async function launchApp({
   notifications = false,
   width = 1440,
   height = 810,
+  fakeRunner = false,
+  theme,
 } = {}) {
   port ??= await freePort()
   const dir = mkdtempSync(join(tmpdir(), 'ao-shots-'))
@@ -57,7 +61,12 @@ export async function launchApp({
   if (claude) mkdirSync(join(dir, '.claude', 'projects'), { recursive: true })
   writeFileSync(
     join(userData, 'settings.json'),
-    JSON.stringify({ graphicsQuality: quality, notifications, claudeAdapter: claude }),
+    JSON.stringify({
+      graphicsQuality: quality,
+      notifications,
+      claudeAdapter: claude,
+      ...(theme ? { theme } : {}),
+    }),
   )
   const app = await _electron.launch({
     args: ['.'],
@@ -76,6 +85,7 @@ export async function launchApp({
       CLAUDE_CONFIG_FILE: join(dir, '.claude.json'),
       ...(claude ? {} : { AGENT_OFFICE_CLAUDE: '0' }),
       AGENT_OFFICE_DEBUG: '1',
+      ...(fakeRunner ? { AGENT_OFFICE_FAKE_RUNNER: '1' } : {}),
       PORT: String(port),
     }),
   })

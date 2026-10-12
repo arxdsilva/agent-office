@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>agent-office</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
@@ -44,6 +45,7 @@
     <div id="actions">
       <button id="fit" class="btn" type="button" title="Fit the whole office in view">⤢ Fit</button>
       <button id="walk" class="btn" type="button" title="Walk around (F)">🚶 Walk</button>
+      <button id="new-session-btn" class="btn" type="button"></button>
       <button id="connect-btn" class="btn" type="button" aria-label="Connect agents">
         <span class="connect-label">🔌 Connect</span><span class="badge" hidden></span>
       </button>
@@ -77,19 +79,30 @@
     <div id="crosshair" hidden></div>
     <p id="walk-help" class="card" hidden>WASD move · Shift sprint · E talk to agent · Esc exit</p>
 
+    <!-- region:W2 panel (composer, session header, permission card) -->
     <aside id="panel" class="card" hidden aria-live="polite">
       <div class="panel-head">
         <div>
           <h2 id="p-name"></h2>
           <p id="p-sub" class="muted"></p>
         </div>
+        <span id="p-badge" class="pill managed-badge" hidden></span>
         <button id="p-close" class="icon-btn" type="button" aria-label="Close">✕</button>
       </div>
+      <div id="p-session" class="session-bar" hidden></div>
       <dl id="p-meta"></dl>
       <section id="p-used" class="used" hidden></section>
       <div id="p-hint" class="hint-box" hidden></div>
       <ol id="p-thread"></ol>
+      <section
+        id="p-perm"
+        class="perm-card"
+        role="group"
+        aria-labelledby="p-perm-title"
+        hidden
+      ></section>
       <form id="p-form">
+        <ul id="p-chips" class="composer-chips" hidden></ul>
         <textarea
           id="p-input"
           rows="2"
@@ -97,12 +110,23 @@
           placeholder="Message this agent… (Enter to send)"
         ></textarea>
         <div class="form-row">
+          <button id="p-add-context" class="btn small" type="button" aria-haspopup="menu"></button>
+          <button id="p-use" class="btn small" type="button" aria-haspopup="menu"></button>
           <span id="p-error" class="error"></span>
           <span id="p-counter" class="muted">0/4000</span>
-          <button class="btn primary" type="submit">Send</button>
+          <button id="p-send" class="btn primary" type="submit">Send</button>
         </div>
       </form>
+      <dialog id="p-stop-confirm" class="card confirm-dialog">
+        <p id="p-stop-text"></p>
+        <div class="form-row end">
+          <button id="p-stop-cancel" class="btn" type="button"></button>
+          <button id="p-stop-ok" class="btn danger" type="button"></button>
+        </div>
+      </dialog>
     </aside>
+
+    <!-- endregion:W2 panel -->
 
     <aside id="cap-panel" class="card" hidden aria-live="polite">
       <div class="panel-head">
@@ -120,11 +144,21 @@
       <ul id="c-used" class="chips"></ul>
     </aside>
 
+    <!-- region:T1 settings (Appearance, bypass toggle) -->
     <dialog id="settings" class="card">
       <div class="panel-head">
         <h2>Settings</h2>
         <button id="s-close" class="icon-btn" type="button" aria-label="Close">✕</button>
       </div>
+
+      <section>
+        <h3 id="s-appearance-h"></h3>
+        <div id="s-theme" class="segmented" role="radiogroup" aria-labelledby="s-appearance-h">
+          <button type="button" role="radio" data-theme="system" aria-checked="true"></button>
+          <button type="button" role="radio" data-theme="light" aria-checked="false"></button>
+          <button type="button" role="radio" data-theme="dark" aria-checked="false"></button>
+        </div>
+      </section>
 
       <section>
         <h3>Claude Code</h3>
@@ -146,6 +180,9 @@
           ><input id="s-discoverCapabilities" type="checkbox" /> Discover capabilities from Claude
           Code config (MCP server names, skill descriptions, rule titles)</label
         >
+        <label class="row"
+          ><input id="s-allowBypassPermissions" type="checkbox" /> <span id="s-bypass-label"></span
+        ></label>
       </section>
 
       <section>
@@ -196,7 +233,61 @@
         </p>
       </section>
       <p id="s-error" class="error"></p>
+
+      <dialog id="s-confirm" class="card" aria-labelledby="s-confirm-text">
+        <p id="s-confirm-text"></p>
+        <p class="row confirm-actions">
+          <button id="s-confirm-cancel" class="btn" type="button">Cancel</button>
+          <button id="s-confirm-ok" class="btn danger" type="button">Allow</button>
+        </p>
+      </dialog>
     </dialog>
+    <!-- endregion:T1 settings -->
+
+    <!-- region:W2 new-session dialog (agent W2 adds <dialog id="new-session"> here) -->
+    <dialog id="new-session" class="card" aria-labelledby="ns-title">
+      <div class="panel-head">
+        <h2 id="ns-title"></h2>
+        <button id="ns-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <form id="ns-form">
+        <div class="ns-grid">
+          <span id="ns-folder-l" class="ns-label"></span>
+          <div class="ns-field">
+            <span id="ns-folder" class="ns-folder muted" aria-labelledby="ns-folder-l"></span>
+            <button id="ns-choose" class="btn small" type="button"></button>
+          </div>
+          <label id="ns-name-l" class="ns-label" for="ns-name"></label>
+          <input id="ns-name" type="text" maxlength="40" />
+          <label id="ns-model-l" class="ns-label" for="ns-model"></label>
+          <select id="ns-model"></select>
+          <label id="ns-mode-l" class="ns-label" for="ns-mode"></label>
+          <select id="ns-mode"></select>
+          <span id="ns-extra-l" class="ns-label"></span>
+          <div class="ns-field">
+            <ul id="ns-extra" class="composer-chips" aria-labelledby="ns-extra-l"></ul>
+            <button id="ns-add-extra" class="btn small" type="button"></button>
+          </div>
+        </div>
+        <label id="ns-chrome-row" class="row"
+          ><input id="ns-chrome" type="checkbox" /> <span id="ns-chrome-l"></span
+        ></label>
+        <label id="ns-text-l" class="ns-label" for="ns-text"></label>
+        <ul id="ns-chips" class="composer-chips" hidden></ul>
+        <textarea id="ns-text" rows="3" maxlength="4000"></textarea>
+        <div class="form-row">
+          <button id="ns-add-context" class="btn small" type="button" aria-haspopup="menu"></button>
+          <button id="ns-use" class="btn small" type="button" aria-haspopup="menu"></button>
+        </div>
+        <p id="ns-error" class="error" role="alert"></p>
+        <div class="form-row end">
+          <button id="ns-cancel" class="btn" type="button"></button>
+          <button id="ns-start" class="btn primary" type="submit"></button>
+        </div>
+        <p id="ns-footer" class="muted small"></p>
+      </form>
+    </dialog>
+    <!-- endregion:W2 new-session -->
 
     <script type="module" src="/src/main.ts"></script>
   </body>

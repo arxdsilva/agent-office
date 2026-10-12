@@ -19,3 +19,5 @@ Rules: `PRIVACY_SECURITY.md` (Electron checklist), `ARCHITECTURE.md`, `TESTING.m
 6. **App E2E:** add or extend a spec in `packages/desktop/e2e/` (isolated profile from `e2e/app.ts`), then `make build test-ui`.
 7. **Security review** against the Electron checklist: no new permissions, no Node in the renderer, the CSP is unchanged, and the IPC is validated and sender-checked.
 8. **Packaging changes:** run `make package`, launch the unpacked app once, and run the hook wrapper from Settings → Install (temp `CLAUDE_SETTINGS_FILE`). Run `make icons` after editing `build/*.svg`.
+
+Theme: `desktop/src/main/theme.ts` (pure) applies the `theme` setting to `nativeTheme.themeSource` and the window background; `desktop/e2e/theme.spec.ts` checks both themes and contrast (drop Playwright's color-scheme emulation with `emulateMedia({ colorScheme: null })`). Quitting with managed sessions asks first (`createQuitGuard`).

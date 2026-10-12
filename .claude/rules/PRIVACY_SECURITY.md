@@ -44,6 +44,19 @@ Render API-provided text with `textContent` and elements built with `document.cr
 | Validate the hook wrapper URL (`127.0.0.1`/`localhost`/`[::1]` + port) before writing it into a script                                                                                              | Interpolate any other value into the wrapper                                    |
 | Send the test agent as a fixed payload through the real authenticated route                                                                                                                         | Let renderer input reach the test event                                         |
 
+## Managed sessions and context (`ManagedSessions`, `context.pick`)
+
+| Do                                                                                                                         | Don't                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Keep absolute context paths in main only, behind opaque `ctx_` refs; the renderer gets the basename and a `~` hint         | Put absolute paths in IPC payloads to the renderer, logs or anything persisted |
+| Accept context only from the native picker (`ctx:pick`)                                                                    | Accept typed or pasted paths from the renderer                                 |
+| Send the agent the absolute paths and tool hints (the user's explicit choice, to their own agent)                          | Read file contents in agent-office to "help"; the agent reads them itself      |
+| Show permission requests as `summarizeToolRequest` summaries (≤ 120 chars)                                                 | Send raw tool input to the renderer or log it                                  |
+| Offer Bypass only when `allowBypassPermissions` is on (confirm to enable), per session                                     | Default to Bypass or remember it per folder                                    |
+| Run managed sessions with the user's own Claude Code login, settings and installed CLI; mark them `AGENT_OFFICE_MANAGED=1` | Store credentials, or let the hook claim or reply inside managed sessions      |
+| Let only the session service set `Agent.managed` (the HTTP schema has no such field)                                       | Let HTTP producers mark agents as managed                                      |
+| Rate-limit session calls (10/s per agent) and cap sessions at 6                                                            | Allow unbounded process spawning                                               |
+
 ## Electron checklist (`desktop/src/main/security.ts`, unit-tested + `shell.spec.ts`)
 
 | Do                                                                                                                                                                                              | Don't                                                         |

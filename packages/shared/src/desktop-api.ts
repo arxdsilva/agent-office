@@ -2,6 +2,8 @@ import { z } from 'zod'
 import {
   type Capability,
   MAX_MESSAGE_CHARS,
+  PermissionModeSchema,
+  type PermissionMode,
   type Agent,
   type ChatMessage,
   type ServerMessage,
@@ -42,6 +44,10 @@ export const SettingsSchema = z.object({
   mock: z.boolean().default(false),
   /** 3D render quality preset. Applied live by the renderer (no backend restart). */
   graphicsQuality: GraphicsQualitySchema.default('auto'),
+  /** UI theme. 'system' follows the OS. Applied live (main sets nativeTheme.themeSource). */
+  theme: z.enum(['system', 'light', 'dark']).default('system'),
+  /** Offer the "Bypass permissions" mode for managed sessions (off by default; confirm to enable). */
+  allowBypassPermissions: z.boolean().default(false),
   windowBounds: WindowBoundsSchema.optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
@@ -53,10 +59,68 @@ export interface SettingsResult {
   restartRequired: boolean
 }
 
+/** Opaque handle for a file/folder picked in main (the renderer never sees full paths). */
+export const CONTEXT_REF = /^ctx_[a-z0-9]{12}$/
+export const ContextRefIdSchema = z.string().regex(CONTEXT_REF)
+/** Capability ids a message may ask the agent to use (docs/capabilities.md §1). */
+export const UseIdSchema = z
+  .string()
+  .regex(/^(?:(?:mcp|api):[A-Za-z0-9_.-]{1,80}|shell|web|subagents|skill:[A-Za-z0-9:_-]{1,80})$/)
+
 export const SendMessageArgsSchema = z.object({
   agentId: z.string().min(1).max(200),
   text: z.string().min(1).max(MAX_MESSAGE_CHARS),
+  /** Files/folders from `context.pick` (≤ 10). */
+  context: z.array(ContextRefIdSchema).max(10).optional(),
+  /** Tools/adapters the agent should use for this message (≤ 5). */
+  use: z.array(UseIdSchema).max(5).optional(),
 })
+export interface SendOptions {
+  context?: string[]
+  use?: string[]
+}
+
+/** A picked file or folder as the renderer sees it. */
+export interface ContextRef {
+  ref: string
+  kind: 'file' | 'folder'
+  /** Basename. */
+  label: string
+  /** '~'-abbreviated location for the tooltip (full path only outside home). */
+  hint: string
+}
+
+export const NewSessionArgsSchema = z.object({
+  /** Must resolve to a picked folder. */
+  folder: ContextRefIdSchema,
+  name: z.string().trim().min(1).max(40).optional(),
+  model: z.string().min(1).max(80).optional(),
+  mode: PermissionModeSchema.default('default'),
+  extraFolders: z.array(ContextRefIdSchema).max(5).default([]),
+  chrome: z.boolean().default(false),
+  text: z.string().min(1).max(MAX_MESSAGE_CHARS),
+  context: z.array(ContextRefIdSchema).max(10).optional(),
+  use: z.array(UseIdSchema).max(5).optional(),
+})
+export type NewSessionArgs = z.input<typeof NewSessionArgsSchema>
+export const SessionCallSchema = z.object({ agentId: z.string().min(1).max(200) })
+export const SetModeArgsSchema = SessionCallSchema.extend({ mode: PermissionModeSchema })
+export const SetModelArgsSchema = SessionCallSchema.extend({ model: z.string().min(1).max(80) })
+export const PERMISSION_DECISIONS = ['allow', 'allow-session', 'deny'] as const
+export type PermissionDecision = (typeof PERMISSION_DECISIONS)[number]
+export const AnswerArgsSchema = SessionCallSchema.extend({
+  requestId: z.string().regex(/^perm_[a-z0-9]{10}$/),
+  decision: z.enum(PERMISSION_DECISIONS),
+})
+export const PickKindSchema = z.enum(['files', 'folder'])
+export interface ModelOption {
+  id: string
+  label: string
+  description?: string
+}
+export type StartResult =
+  | { ok: true; agentId: string }
+  | { ok: false; error: string; code: 'auth' | 'runtime' | 'folder' | 'limit' | 'other' }
 export type SendResult = { ok: true; message: ChatMessage } | { ok: false; error: string }
 
 export type HookStatus = 'installed' | 'outdated' | 'not-installed'
@@ -126,7 +190,22 @@ export interface AgentOfficeApi {
   ready(): Promise<Snapshot>
   onMessage(cb: (m: ServerMessage) => void): () => void
   onSelect(cb: (agentId: string) => void): () => void
-  sendMessage(agentId: string, text: string): Promise<SendResult>
+  sendMessage(agentId: string, text: string, opts?: SendOptions): Promise<SendResult>
+  /** Native file/folder picker in main; returns opaque refs. */
+  context: {
+    pick(kind: 'files' | 'folder'): Promise<ContextRef[]>
+  }
+  /** Claude Code sessions started and owned by agent-office (Agent SDK). */
+  sessions: {
+    start(args: NewSessionArgs): Promise<StartResult>
+    setMode(agentId: string, mode: PermissionMode): Promise<void>
+    setModel(agentId: string, model: string): Promise<void>
+    /** Models of a running session, or the cached/fallback list without an id. */
+    models(agentId?: string): Promise<ModelOption[]>
+    interrupt(agentId: string): Promise<void>
+    stop(agentId: string): Promise<void>
+    answer(agentId: string, requestId: string, decision: PermissionDecision): Promise<void>
+  }
   settings: {
     get(): Promise<Settings>
     set(patch: SettingsPatch): Promise<SettingsResult>

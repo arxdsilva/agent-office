@@ -13,11 +13,23 @@ import {
   connectVM,
   emptyPhase,
   emptyStateVM,
+  addContext,
+  composerVM,
+  hintFor,
   hookVM,
   hudVM,
+  newSessionVM,
   panelVM,
+  permissionVM,
+  sessionHeaderVM,
   settingsVM,
+  startErrorText,
+  toggleUse,
+  useMenuVM,
 } from './view-models.ts'
+import { cap } from './__fixtures__/capabilities.ts'
+import { CHROME_ID, MAX_MANAGED, type Draft, type NewSessionForm } from './session-types.ts'
+import { SESSION_COPY } from './session-copy.ts'
 
 const agent = (over: Partial<Agent> = {}): Agent => ({
   id: 'a',
@@ -97,20 +109,65 @@ describe('panelVM', () => {
     })
   })
 
-  it('explains message delivery, offering the hook install for unconnected Claude Code sessions', () => {
-    expect(panelVM(stateWith([agent({ interactive: false })]), 'a', 0)!.hint).toEqual({
-      text: 'Not connected: this session cannot read messages until the Claude Code hook is installed.',
-      action: 'install-hook',
+  it('passes the hook status into the hint (the reported bug: installed but "not installed")', () => {
+    const s = stateWith([agent({ interactive: false })])
+    expect(panelVM(s, 'a', 0, undefined, undefined, { hook: 'installed' }).hint).toEqual({
+      text: SESSION_COPY.hint.waitingCheckIn,
     })
-    expect(panelVM(stateWith([agent({ status: 'waiting' })]), 'a', 0)!.hint?.text).toMatch(
-      /next prompt/,
-    )
-    expect(panelVM(stateWith([agent()]), 'a', 0)!.hint?.text).toMatch(/current turn ends/)
-    // Other frameworks not reading their inbox: point at the Connect panel instead of the README.
-    expect(
-      panelVM(stateWith([agent({ provider: 'langgraph', interactive: false })]), 'a', 0)!.hint,
-    ).toEqual({ text: COPY.hint.notReading, action: 'open-connect' })
-    expect(panelVM(stateWith([agent({ provider: 'langgraph' })]), 'a', 0)!.hint).toBeNull()
+  })
+})
+
+describe('hintFor (plan §2.5)', () => {
+  const sub = agent({ id: 's', parentId: 'a' })
+  it('HF-1: managed sessions need no hint', () => {
+    const managed = { chrome: false, pending: 0, phase: 'running' as const }
+    expect(hintFor(agent({ managed, interactive: false }), 'not-installed')).toBeNull()
+  })
+  it('HF-2: subagents point at their parent, whatever the hook', () => {
+    for (const hook of ['installed', 'outdated', 'not-installed'] as const)
+      expect(hintFor(sub, hook)).toEqual({
+        text: SESSION_COPY.hint.subagent,
+        action: 'open-parent',
+        label: SESSION_COPY.hint.openParent,
+      })
+  })
+  it('HF-3: hook not installed offers the install', () => {
+    expect(hintFor(agent(), 'not-installed')).toEqual({
+      text: SESSION_COPY.hint.notInstalled,
+      action: 'install-hook',
+      label: SESSION_COPY.hint.install,
+    })
+  })
+  it('HF-4: an outdated hook offers the repair', () => {
+    expect(hintFor(agent(), 'outdated')).toEqual({
+      text: SESSION_COPY.hint.outdated,
+      action: 'install-hook',
+      label: SESSION_COPY.hint.repair,
+    })
+  })
+  it('HF-5: installed but not checked in yet says so, without a button', () => {
+    expect(hintFor(agent({ interactive: false }), 'installed')).toEqual({
+      text: SESSION_COPY.hint.waitingCheckIn,
+    })
+  })
+  it('HF-6: installed and reading, idle: delivered on the next prompt', () => {
+    expect(hintFor(agent({ status: 'waiting' }), 'installed')?.text).toMatch(/next prompt/)
+    expect(hintFor(agent({ status: 'idle' }), 'installed')?.action).toBeUndefined()
+  })
+  it('HF-7: installed and reading, busy: delivered when the turn ends', () => {
+    expect(hintFor(agent(), 'installed')?.text).toMatch(/current turn ends/)
+  })
+  it('HF-8: other providers not reading their inbox point at Connect', () => {
+    expect(hintFor(agent({ provider: 'langgraph', interactive: false }), 'installed')).toEqual({
+      text: COPY.hint.notReading,
+      action: 'open-connect',
+    })
+  })
+  it('HF-9: other providers reading their inbox need no hint', () => {
+    expect(hintFor(agent({ provider: 'langgraph' }), 'not-installed')).toBeNull()
+  })
+  it('defaults to "not installed" when the hook status is unknown', () => {
+    expect(hintFor(agent())?.action).toBe('install-hook')
   })
 })
 
@@ -602,5 +659,359 @@ describe('hudVM hint', () => {
         action: 'connect',
       })
     expect(hudVM(stateWith([agent()]), 'dismissed').hint.action).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Managed sessions: header, composer, Use… menu, permission card, new-session dialog (plan §2.1–2.4)
+
+const running = { chrome: false, pending: 0, phase: 'running' as const, modelId: 'sonnet' }
+const MODELS = [
+  { id: 'opus', label: 'Opus', description: 'Most capable' },
+  { id: 'sonnet', label: 'Sonnet', description: 'Fast' },
+]
+const ref = (n: string, kind: 'file' | 'folder' = 'folder') => ({
+  ref: `ctx_${n.padEnd(12, '0')}`,
+  kind,
+  label: n,
+  hint: `~/code/${n}`,
+})
+const draft = (over: Partial<Draft> = {}): Draft => ({ text: '', context: [], use: [], ...over })
+
+describe('settingsVM: appearance and bypass', () => {
+  it('passes the theme and the bypass permission through', () => {
+    const vm = settingsVM({
+      settings: { ...DEFAULT_SETTINGS, theme: 'dark', allowBypassPermissions: true },
+      hook: 'installed',
+      version: '1.0.0',
+      update: { policy: 'off', status: 'idle' },
+    })
+    expect(vm.theme).toBe('dark')
+    expect(vm.allowBypassPermissions).toBe(true)
+  })
+})
+
+describe('sessionHeaderVM', () => {
+  it('SH-VM-1: managed header with live pills, modes without bypass unless allowed', () => {
+    const vm = sessionHeaderVM(
+      agent({ managed: running, permissionMode: 'plan', status: 'thinking' }),
+      MODELS,
+      false,
+    )!
+    expect(vm.managed).toBe(true)
+    expect(vm.mode.text).toBe('◐ Plan')
+    expect(vm.model.text).toBe('✦ Sonnet')
+    expect(vm.modes.map((m) => m.id)).toEqual(['default', 'acceptEdits', 'plan', 'auto', 'dontAsk'])
+    expect(vm.modes.find((m) => m.checked)?.id).toBe('plan')
+    expect(vm.models.find((m) => m.checked)?.id).toBe('sonnet')
+    expect(vm.canInterrupt).toBe(true)
+    expect(vm.canStop).toBe(true)
+    expect(vm.readOnlyNote).toBeUndefined()
+
+    const allowed = sessionHeaderVM(agent({ managed: running }), MODELS, true)!
+    expect(allowed.modes.map((m) => m.id)).toContain('bypassPermissions')
+    expect(allowed.mode.text).toBe('◯ Default')
+  })
+
+  it('SH-VM-1: Interrupt only while busy or waiting for approval', () => {
+    const idle = agent({ managed: running, status: 'idle' })
+    expect(sessionHeaderVM(idle, MODELS, false)!.canInterrupt).toBe(false)
+    const asking = agent({ managed: { ...running, pending: 1 }, status: 'waiting' })
+    expect(sessionHeaderVM(asking, MODELS, false)!.canInterrupt).toBe(true)
+    const ended = agent({ managed: { ...running, phase: 'ended' }, status: 'tool' })
+    expect(sessionHeaderVM(ended, MODELS, false)!.canInterrupt).toBe(false)
+  })
+
+  it('SH-VM-1: model falls back to the display model, then "unknown", while models load', () => {
+    const noId = { chrome: false, pending: 0, phase: 'running' as const }
+    expect(sessionHeaderVM(agent({ managed: noId }), undefined, false)!.model.text).toBe(
+      '✦ claude-opus-5-5',
+    )
+    expect(
+      sessionHeaderVM(agent({ managed: noId, model: undefined }), undefined, false)!.model.text,
+    ).toBe(SESSION_COPY.modelUnknown)
+    expect(sessionHeaderVM(agent({ managed: running }), undefined, false)!.models).toEqual([])
+  })
+
+  it('SH-VM-2: terminal sessions get read-only pills with a note; unknown mode text', () => {
+    const vm = sessionHeaderVM(agent({ permissionMode: 'acceptEdits' }), MODELS, true)!
+    expect(vm).toMatchObject({
+      managed: false,
+      mode: { text: '✎ Accept edits' },
+      model: { text: '✦ claude-opus-5-5' },
+      modes: [],
+      models: [],
+      readOnlyNote: SESSION_COPY.readOnly,
+      canInterrupt: false,
+      canStop: false,
+    })
+    expect(sessionHeaderVM(agent(), MODELS, false)!.mode.text).toBe(SESSION_COPY.modeUnknown)
+  })
+
+  it('no header for subagents or other providers (unless they report a mode)', () => {
+    expect(sessionHeaderVM(agent({ parentId: 'p' }), MODELS, false)).toBeNull()
+    expect(sessionHeaderVM(agent({ provider: 'langgraph' }), MODELS, false)).toBeNull()
+    expect(
+      sessionHeaderVM(agent({ provider: 'langgraph', permissionMode: 'plan' }), MODELS, false)
+        ?.readOnlyNote,
+    ).toBe(SESSION_COPY.readOnly)
+  })
+})
+
+describe('composerVM', () => {
+  it('CM-1: disabled for subagents, starting and ended sessions, each with its reason', () => {
+    expect(composerVM(agent({ parentId: 'p' }), draft())).toMatchObject({
+      disabled: true,
+      placeholder: SESSION_COPY.composer.subagent,
+      canAddContext: false,
+      canAddUse: false,
+    })
+    const starting = agent({ managed: { ...running, phase: 'starting' } })
+    expect(composerVM(starting, draft()).placeholder).toBe(SESSION_COPY.composer.starting)
+    const ended = agent({ managed: { ...running, phase: 'ended' } })
+    expect(composerVM(ended, draft())).toMatchObject({
+      disabled: true,
+      placeholder: SESSION_COPY.composer.ended,
+    })
+    expect(composerVM(undefined, draft()).disabled).toBe(true)
+    expect(composerVM(agent(), draft())).toMatchObject({
+      disabled: false,
+      placeholder: SESSION_COPY.composer.placeholder,
+      canAddContext: true,
+      canAddUse: true,
+    })
+  })
+
+  it('shows context and Use… chips; warns when Chrome is off for a managed session', () => {
+    const caps = [cap('mcp:github', { label: 'GitHub' })]
+    const vm = composerVM(
+      agent({ managed: running }),
+      draft({ context: [ref('auth'), ref('README.md', 'file')], use: ['mcp:github', CHROME_ID] }),
+      caps,
+    )
+    expect(vm.chips).toEqual([
+      { kind: 'folder', key: 'ctx_auth00000000', label: 'auth', hint: '~/code/auth' },
+      { kind: 'file', key: 'ctx_README.md000', label: 'README.md', hint: '~/code/README.md' },
+      { kind: 'capability', key: 'mcp:github', label: 'GitHub' },
+      {
+        kind: 'capability',
+        key: CHROME_ID,
+        label: SESSION_COPY.composer.chrome,
+        warn: SESSION_COPY.composer.chromeOff,
+      },
+    ])
+    const on = composerVM(
+      agent({ managed: { ...running, chrome: true } }),
+      draft({ use: [CHROME_ID] }),
+    )
+    expect(on.chips[0]!.warn).toBeUndefined()
+  })
+
+  it('stops offering pickers at the limits (10 context items, 5 tools)', () => {
+    const full = draft({
+      context: Array.from({ length: 10 }, (_, i) => ref(`f${i}`)),
+      use: ['shell', 'web', 'subagents', 'mcp:a', 'mcp:b'],
+    })
+    expect(composerVM(agent(), full)).toMatchObject({ canAddContext: false, canAddUse: false })
+  })
+})
+
+describe('useMenuVM', () => {
+  const caps = [
+    cap('shell'),
+    cap('mcp:github', { label: 'GitHub' }),
+    cap('skill:run-office', { label: 'run-office' }),
+    cap('rule:project:CLAUDE.md'),
+  ]
+  it('U-1: groups entries; Chrome pinned for claude-code; seen dots from capabilities', () => {
+    const vm = useMenuVM(caps, 'claude-code', ['shell'])
+    expect(vm.groups.map((g) => g.id)).toEqual(['browser', 'mcp', 'builtin', 'skill'])
+    expect(vm.groups[0]).toEqual({
+      id: 'browser',
+      label: SESSION_COPY.composer.groups.browser,
+      entries: [
+        { id: CHROME_ID, label: SESSION_COPY.composer.chrome, seen: false, selected: false },
+      ],
+    })
+    expect(vm.groups[1]!.entries).toEqual([
+      { id: 'mcp:github', label: 'GitHub', seen: true, selected: false },
+    ])
+    expect(vm.groups[2]!.entries.map((e) => [e.id, e.seen, e.selected])).toEqual([
+      ['shell', true, true],
+      ['web', false, false],
+      ['subagents', false, false],
+    ])
+    expect(vm.groups[3]!.entries[0]!.label).toBe('Use skill run-office')
+  })
+
+  it('U-1: a managed session started with Chrome counts it as seen; other providers get no Chrome', () => {
+    expect(useMenuVM([], 'claude-code', [], true).groups[0]!.entries[0]!.seen).toBe(true)
+    const other = useMenuVM([cap('mcp:x', { provider: 'langgraph' })], 'langgraph', [])
+    expect(other.groups.map((g) => g.id)).toEqual(['mcp', 'builtin'])
+  })
+
+  it('U-2: toggling caps at 5 tools; toggling again removes', () => {
+    expect(toggleUse(['a', 'b'], 'a')).toEqual({ use: ['b'] })
+    expect(toggleUse(['a'], 'b')).toEqual({ use: ['a', 'b'] })
+    const five = ['shell', 'web', 'subagents', 'mcp:a', 'mcp:b']
+    expect(toggleUse(five, 'mcp:c')).toEqual({ use: five, error: SESSION_COPY.composer.maxUse })
+  })
+
+  it('adds picked context without duplicates, truncating at 10', () => {
+    const a = ref('a')
+    expect(addContext([a], [a, ref('b')])).toEqual({ context: [a, ref('b')] })
+    const nine = Array.from({ length: 9 }, (_, i) => ref(`f${i}`))
+    expect(addContext(nine, [ref('x'), ref('y')])).toEqual({
+      context: [...nine, ref('x')],
+      error: SESSION_COPY.composer.maxContext,
+    })
+  })
+})
+
+describe('permissionVM', () => {
+  const req = (id: string, tool = 'Bash') => ({ id, tool, summary: 'pnpm test', where: '~/x' })
+  it('PM-1: first request with a counter when several are queued', () => {
+    expect(permissionVM([])).toBeNull()
+    expect(permissionVM([req('perm_1')])).toEqual({
+      request: req('perm_1'),
+      allowSessionLabel: 'Always allow Bash this session',
+    })
+    expect(permissionVM([req('perm_1'), req('perm_2', 'Edit')])).toMatchObject({
+      request: { id: 'perm_1' },
+      counter: '1 of 2',
+    })
+  })
+})
+
+describe('newSessionVM', () => {
+  const form = (over: Partial<NewSessionForm> = {}): NewSessionForm => ({
+    name: '',
+    mode: 'default',
+    extraFolders: [],
+    chrome: false,
+    text: '',
+    context: [],
+    use: [],
+    ...over,
+  })
+  it('NS-1: Start is disabled until the folder and the message are set', () => {
+    expect(newSessionVM(form({ text: 'hi' }), undefined, false, 0).canStart).toBe(false)
+    expect(newSessionVM(form({ folder: ref('shop-api') }), undefined, false, 0).canStart).toBe(
+      false,
+    )
+    const ok = newSessionVM(form({ folder: ref('shop-api'), text: 'Plan it' }), undefined, false, 0)
+    expect(ok).toMatchObject({
+      canStart: true,
+      folder: { label: 'shop-api', hint: '~/code/shop-api' },
+      namePlaceholder: 'shop-api',
+      starting: false,
+    })
+    expect(
+      newSessionVM(form({ folder: ref('x'), text: 'y' }), undefined, false, 0, { starting: true })
+        .canStart,
+    ).toBe(false)
+  })
+
+  it('NS-1: limit message at 6 running sessions', () => {
+    const vm = newSessionVM(form({ folder: ref('x'), text: 'y' }), undefined, false, MAX_MANAGED)
+    expect(vm.limit).toBe('Stop a session first (6 running)')
+    expect(vm.canStart).toBe(false)
+  })
+
+  it('NS-1: fallback models before any session reported its list; default first', () => {
+    const vm = newSessionVM(form(), undefined, false, 0)
+    expect(vm.models.map((m) => [m.id, m.label, m.selected])).toEqual([
+      ['', SESSION_COPY.newSession.modelDefault, true],
+      ['opus', 'Opus', false],
+      ['sonnet', 'Sonnet', false],
+      ['haiku', 'Haiku', false],
+    ])
+    const cached = newSessionVM(form({ model: 'sonnet' }), MODELS, false, 0)
+    expect(cached.models.filter((m) => m.selected).map((m) => m.id)).toEqual(['sonnet'])
+    expect(cached.models).toHaveLength(3)
+  })
+
+  it('modes, extra folders, chips, Chrome and errors', () => {
+    const vm = newSessionVM(
+      form({
+        mode: 'plan',
+        extraFolders: [ref('docs')],
+        chrome: true,
+        context: [ref('README.md', 'file')],
+        use: [CHROME_ID],
+        name: 'api',
+        text: 'go',
+      }),
+      undefined,
+      true,
+      0,
+      { error: 'boom' },
+    )
+    expect(vm.modes.find((m) => m.checked)?.id).toBe('plan')
+    expect(vm.modes.map((m) => m.id)).toContain('bypassPermissions')
+    expect(vm.extraFolders).toEqual([
+      { key: 'ctx_docs00000000', label: 'docs', hint: '~/code/docs' },
+    ])
+    expect(vm.chrome).toEqual({ checked: true, available: true })
+    expect(vm.composer.chips.map((c) => c.key)).toEqual(['ctx_README.md000', CHROME_ID])
+    expect(vm.composer.chips[1]!.warn).toBeUndefined()
+    expect(vm).toMatchObject({ name: 'api', text: 'go', error: 'boom' })
+  })
+
+  it('maps start errors to their copy', () => {
+    const e = SESSION_COPY.newSession.errors
+    expect(startErrorText({ ok: false, code: 'auth', error: 'x' }, 0)).toBe(e.auth)
+    expect(startErrorText({ ok: false, code: 'runtime', error: 'x' }, 0)).toBe(e.runtime)
+    expect(startErrorText({ ok: false, code: 'folder', error: 'x' }, 0)).toBe(e.folder)
+    expect(startErrorText({ ok: false, code: 'limit', error: 'x' }, 6)).toBe(
+      SESSION_COPY.newSession.limit(6),
+    )
+    expect(startErrorText({ ok: false, code: 'other', error: 'boom' }, 0)).toBe(
+      "Couldn't start: boom",
+    )
+  })
+})
+
+describe('panelVM: sessions, composer, permission and system lines', () => {
+  it('carries the session header, composer, permission card, draft and thread chips', () => {
+    let s = stateWith(
+      [agent({ managed: running, permissionMode: 'plan' })],
+      [
+        msg({ id: 'm1', context: [{ kind: 'folder', label: 'auth', hint: '~/auth' }] }),
+        msg({ id: 'm2', from: 'system', text: 'Mode → Plan', state: 'delivered' }),
+      ],
+    )
+    s = applyMessage(s, {
+      type: 'permission',
+      agentId: 'a',
+      requests: [{ id: 'perm_1', tool: 'Bash', summary: 'pnpm test' }],
+    })
+    const vm = panelVM(s, 'a', 0, undefined, undefined, {
+      hook: 'installed',
+      models: MODELS,
+      allowBypass: false,
+      draft: draft({ text: 'half', context: [ref('auth')] }),
+    })
+    expect(vm.session?.mode.text).toBe('◐ Plan')
+    expect(vm.composer.chips).toHaveLength(1)
+    expect(vm.draftText).toBe('half')
+    expect(vm.permission?.request.id).toBe('perm_1')
+    expect(vm.hint).toBeNull()
+    expect(vm.thread).toEqual([
+      {
+        id: 'm1',
+        from: 'user',
+        text: 'hi',
+        stateLabel: '⏳ queued',
+        context: [{ kind: 'folder', label: 'auth', hint: '~/auth' }],
+      },
+      { id: 'm2', from: 'system', text: 'Mode → Plan' },
+    ])
+  })
+
+  it('an absent agent has no session, a disabled composer and no card', () => {
+    const vm = panelVM(stateWith([]), 'gone', 0)
+    expect(vm).toMatchObject({ session: null, permission: null, draftText: '' })
+    expect(vm.composer.disabled).toBe(true)
   })
 })

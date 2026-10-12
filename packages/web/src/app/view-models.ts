@@ -1,15 +1,23 @@
 // Pure view models: everything the DOM adapters show, computed from state. No DOM here.
 import {
   AGENT_STATUSES,
+  PERMISSION_MODES,
   STATUS_COLORS,
   type Agent,
   type AgentStatus,
+  type Capability,
   type CapabilityCategory,
   type ChatMessage,
   type ConnectionInfo,
+  type ContextChip,
+  type ContextRef,
   type GraphicsQuality,
   type HookStatus,
+  type ModelOption,
+  type PermissionMode,
+  type PermissionRequestVM,
   type Settings,
+  type StartResult,
   type TestEventResult,
   type UpdateState,
 } from '@agent-office/shared'
@@ -28,6 +36,20 @@ import {
 } from './connect-types.ts'
 import { ago } from './format.ts'
 import type { Activity } from './office-types.ts'
+import { SESSION_COPY } from './session-copy.ts'
+import {
+  CHROME_ID,
+  MAX_MANAGED,
+  type ComposerChipVM,
+  type ComposerVM,
+  type Draft,
+  type ModeOptionVM,
+  type NewSessionForm,
+  type NewSessionVM,
+  type PermissionCardVM,
+  type SessionHeaderVM,
+  type UseMenuVM,
+} from './session-types.ts'
 import type { OfficeState } from './state.ts'
 
 const STATE_LABEL: Record<ChatMessage['state'], string> = {
@@ -40,23 +62,26 @@ export { ago } from './format.ts'
 
 export interface Hint {
   text: string
-  action?: 'install-hook' | 'open-connect'
+  action?: 'install-hook' | 'open-connect' | 'open-parent'
+  /** Button label for the action ("Install hook", "Repair hook", "Open parent"). */
+  label?: string
 }
 
-export function hintFor(a: Agent): Hint | null {
+const IDLE_DELIVERY = SESSION_COPY.hint.idleDelivery
+const TURN_DELIVERY = SESSION_COPY.hint.turnDelivery
+
+/** How (and whether) a message reaches this agent: the hint matrix of plan §2.5. */
+export function hintFor(a: Agent, hook: HookStatus = 'not-installed'): Hint | null {
+  const h = SESSION_COPY.hint
+  if (a.managed) return null
   if (a.provider === 'claude-code') {
-    if (!a.interactive) {
-      return {
-        text: 'Not connected: this session cannot read messages until the Claude Code hook is installed.',
-        action: 'install-hook',
-      }
-    }
-    if (a.status === 'waiting' || a.status === 'idle') {
-      return {
-        text: 'This session is idle: messages are delivered when you next prompt it in Claude Code.',
-      }
-    }
-    return { text: 'Messages are delivered when the current turn ends.' }
+    if (a.parentId) return { text: h.subagent, action: 'open-parent', label: h.openParent }
+    if (hook === 'not-installed')
+      return { text: h.notInstalled, action: 'install-hook', label: h.install }
+    if (hook === 'outdated') return { text: h.outdated, action: 'install-hook', label: h.repair }
+    if (!a.interactive) return { text: h.waitingCheckIn }
+    if (a.status === 'waiting' || a.status === 'idle') return { text: IDLE_DELIVERY }
+    return { text: TURN_DELIVERY }
   }
   if (!a.interactive) return { text: COPY.hint.notReading, action: 'open-connect' }
   return null
@@ -149,9 +174,34 @@ export interface PanelVM {
   meta: [string, string][]
   parent?: { id: string; name: string }
   hint: Hint | null
-  thread: { id: string; from: 'user' | 'agent'; text: string; stateLabel?: string }[]
+  thread: ThreadItemVM[]
   /** Connections, skills and rules this agent used this session (chips). */
   used?: UsedChips
+  /** Mode/model pills and session controls (Claude Code and agents that report a mode). */
+  session: SessionHeaderVM | null
+  composer: ComposerVM
+  /** The first pending permission request of a managed session. */
+  permission: PermissionCardVM | null
+  /** Draft text for this agent (restored into the input when the panel opens on it). */
+  draftText: string
+}
+
+export interface ThreadItemVM {
+  id: string
+  from: ChatMessage['from']
+  text: string
+  stateLabel?: string
+  /** Files, folders and tools sent with a user message (display only). */
+  context?: ContextChip[]
+}
+
+/** What the panel needs beyond office state: hook status, session models, settings, draft. */
+export interface PanelInput {
+  hook?: HookStatus
+  /** Models of the selected managed session (undefined while loading). */
+  models?: ModelOption[]
+  allowBypass?: boolean
+  draft?: Draft
 }
 
 export interface UsedChips {
@@ -165,8 +215,15 @@ export function panelVM(
   now: number,
   info?: ActivityInfo,
   used?: UsedChips,
+  input: PanelInput = {},
 ): PanelVM {
   const a = state.agents.get(id)
+  const d = input.draft ?? EMPTY_DRAFT
+  const caps = a ? (state.capabilities.get(a.provider) ?? []) : []
+  const session = {
+    composer: composerVM(a, d, caps),
+    draftText: d.text,
+  }
   if (!a)
     return {
       id,
@@ -176,6 +233,9 @@ export function panelVM(
       meta: [],
       hint: null,
       thread: [],
+      session: null,
+      permission: null,
+      ...session,
     }
   const parent = a.parentId ? state.agents.get(a.parentId) : undefined
   const activity = info ? activityLabel(info.activity, info) : undefined
@@ -194,14 +254,267 @@ export function panelVM(
       ['Last seen', ago(a.lastSeen, now)],
     ],
     ...(a.parentId ? { parent: { id: a.parentId, name: parent?.name ?? a.parentId } } : {}),
-    hint: hintFor(a),
+    hint: hintFor(a, input.hook),
     ...(used && (used.adapters.length || used.library.length) ? { used } : {}),
     thread: (state.messages.get(id) ?? []).map((m) => ({
       id: m.id,
       from: m.from,
       text: m.text,
       ...(m.from === 'user' ? { stateLabel: STATE_LABEL[m.state] } : {}),
+      ...(m.context?.length ? { context: m.context } : {}),
     })),
+    session: sessionHeaderVM(a, input.models, !!input.allowBypass),
+    permission: a.managed ? permissionVM(state.permissions?.get(id) ?? []) : null,
+    ...session,
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Managed sessions: header, composer, Use… menu, permission card, new-session dialog (plan §2.1–2.4)
+
+const EMPTY_DRAFT: Draft = { text: '', context: [], use: [] }
+const MAX_CONTEXT = 10
+const MAX_USE = 5
+const BUSY: AgentStatus[] = ['thinking', 'tool']
+
+/** Before any session reported `supportedModels()` (plan §2.4; labels pending in SESSION_COPY). */
+export const FALLBACK_MODELS: ModelOption[] = [
+  { id: 'opus', label: SESSION_COPY.fallbackModels.opus },
+  { id: 'sonnet', label: SESSION_COPY.fallbackModels.sonnet },
+  { id: 'haiku', label: SESSION_COPY.fallbackModels.haiku },
+]
+/** Built-in tools offered in the Use… menu (`fs` is implicit). Labels pending in SESSION_COPY. */
+const BUILTINS: { id: string; label: string }[] = [
+  { id: 'shell', label: SESSION_COPY.builtins.shell },
+  { id: 'web', label: SESSION_COPY.builtins.web },
+  { id: 'subagents', label: SESSION_COPY.builtins.subagents },
+]
+
+const modeText = (m: PermissionMode | undefined) => {
+  const c = m && SESSION_COPY.modes[m]
+  return c ? `${c.icon} ${c.label}` : SESSION_COPY.modeUnknown
+}
+
+/** The mode menu's items; Bypass only when allowed in Settings. */
+export function modeOptions(
+  current: PermissionMode | undefined,
+  allowBypass: boolean,
+): ModeOptionVM[] {
+  return PERMISSION_MODES.filter((m) => allowBypass || m !== 'bypassPermissions').map((id) => ({
+    id,
+    ...SESSION_COPY.modes[id],
+    checked: id === (current ?? 'default'),
+  }))
+}
+
+export function sessionHeaderVM(
+  a: Agent,
+  models: ModelOption[] | undefined,
+  allowBypass: boolean,
+): SessionHeaderVM | null {
+  const m = a.managed
+  if (!m && (a.parentId || (a.provider !== 'claude-code' && !a.permissionMode))) return null
+  const modelId = m?.modelId
+  const modelLabel = models?.find((o) => o.id === modelId)?.label ?? a.model ?? modelId
+  const mode = modeText(m ? (a.permissionMode ?? 'default') : a.permissionMode)
+  const model = modelLabel ? `✦ ${modelLabel}` : SESSION_COPY.modelUnknown
+  if (!m)
+    return {
+      managed: false,
+      mode: { text: mode, tone: 'off' },
+      model: { text: model, tone: 'off' },
+      modes: [],
+      models: [],
+      readOnlyNote: SESSION_COPY.readOnly,
+      canInterrupt: false,
+      canStop: false,
+    }
+  const live = m.phase === 'running'
+  return {
+    managed: true,
+    mode: { text: mode, tone: 'ok' },
+    model: { text: model, tone: 'ok' },
+    modes: modeOptions(a.permissionMode, allowBypass),
+    models: (models ?? []).map((o) => ({ ...o, checked: o.id === modelId })),
+    canInterrupt: live && (BUSY.includes(a.status) || m.pending > 0),
+    canStop: true,
+  }
+}
+
+function useLabel(id: string, caps: Capability[]): string {
+  if (id === CHROME_ID) return SESSION_COPY.composer.chrome
+  const c = caps.find((x) => x.id === id)
+  if (id.startsWith('skill:')) return SESSION_COPY.composer.useSkill(c?.label ?? id.slice(6))
+  return c?.label ?? BUILTINS.find((b) => b.id === id)?.label ?? id
+}
+
+function chipsOf(d: Pick<Draft, 'context' | 'use'>, caps: Capability[], chromeOff: boolean) {
+  return [
+    ...d.context.map((r): ComposerChipVM => ({
+      kind: r.kind,
+      key: r.ref,
+      label: r.label,
+      hint: r.hint,
+    })),
+    ...d.use.map((id): ComposerChipVM => ({
+      kind: 'capability',
+      key: id,
+      label: useLabel(id, caps),
+      ...(id === CHROME_ID && chromeOff && { warn: SESSION_COPY.composer.chromeOff }),
+    })),
+  ]
+}
+
+/** The composer under the thread: chips, placeholder, and why it's disabled (plan §2.2). */
+export function composerVM(a: Agent | undefined, d: Draft, caps: Capability[] = []): ComposerVM {
+  const c = SESSION_COPY.composer
+  const phase = a?.managed?.phase
+  const reason = !a
+    ? c.placeholder
+    : a.parentId && !a.managed && a.provider === 'claude-code'
+      ? c.subagent
+      : phase === 'starting'
+        ? c.starting
+        : phase === 'ended'
+          ? c.ended
+          : null
+  const disabled = !a || reason !== null
+  return {
+    chips: chipsOf(d, caps, !!a?.managed && !a.managed.chrome),
+    disabled,
+    placeholder: reason ?? c.placeholder,
+    canAddContext: !disabled && d.context.length < MAX_CONTEXT,
+    canAddUse: !disabled && d.use.length < MAX_USE,
+  }
+}
+
+/** The Use… menu: Chrome pinned for Claude Code, then MCP servers, built-ins and skills. */
+export function useMenuVM(
+  caps: Capability[],
+  provider: string,
+  selected: string[],
+  managedChrome?: boolean,
+): UseMenuVM {
+  const has = (id: string) => caps.some((c) => c.id === id)
+  const entry = (id: string, seen: boolean) => ({
+    id,
+    label: useLabel(id, caps),
+    seen,
+    selected: selected.includes(id),
+  })
+  const g = SESSION_COPY.composer.groups
+  const groups: UseMenuVM['groups'] = [
+    {
+      id: 'browser',
+      label: g.browser,
+      entries:
+        provider === 'claude-code' ? [entry(CHROME_ID, has(CHROME_ID) || !!managedChrome)] : [],
+    },
+    {
+      id: 'mcp',
+      label: g.mcp,
+      entries: caps
+        .filter((c) => c.id.startsWith('mcp:') && c.id !== CHROME_ID)
+        .map((c) => entry(c.id, true)),
+    },
+    { id: 'builtin', label: g.builtin, entries: BUILTINS.map((b) => entry(b.id, has(b.id))) },
+    {
+      id: 'skill',
+      label: g.skill,
+      entries: caps.filter((c) => c.id.startsWith('skill:')).map((c) => entry(c.id, true)),
+    },
+  ]
+  return { groups: groups.filter((x) => x.entries.length) }
+}
+
+/** Adds or removes a tool; refuses a 6th. */
+export function toggleUse(use: string[], id: string): { use: string[]; error?: string } {
+  if (use.includes(id)) return { use: use.filter((u) => u !== id) }
+  if (use.length >= MAX_USE) return { use, error: SESSION_COPY.composer.maxUse }
+  return { use: [...use, id] }
+}
+
+/** Adds picked files/folders (the same ref once), at most 10. */
+export function addContext(
+  context: ContextRef[],
+  picked: ContextRef[],
+): { context: ContextRef[]; error?: string } {
+  const fresh = picked.filter(
+    (p, i) =>
+      !context.some((c) => c.ref === p.ref) && picked.findIndex((q) => q.ref === p.ref) === i,
+  )
+  const room = MAX_CONTEXT - context.length
+  const next = [...context, ...fresh.slice(0, Math.max(0, room))]
+  return fresh.length > room
+    ? { context: next, error: SESSION_COPY.composer.maxContext }
+    : { context: next }
+}
+
+/** The permission card: one request at a time, with a counter when several wait. */
+export function permissionVM(requests: PermissionRequestVM[]): PermissionCardVM | null {
+  const request = requests[0]
+  if (!request) return null
+  return {
+    request,
+    ...(requests.length > 1 && {
+      counter: SESSION_COPY.permission.counter(1, requests.length),
+    }),
+    allowSessionLabel: SESSION_COPY.permission.allowSession(request.tool),
+  }
+}
+
+/** The new-session dialog (plan §2.4). `running` counts live managed sessions. */
+export function newSessionVM(
+  form: NewSessionForm,
+  models: ModelOption[] | undefined,
+  allowBypass: boolean,
+  running: number,
+  opts: { starting?: boolean; error?: string; caps?: Capability[] } = {},
+): NewSessionVM {
+  const ns = SESSION_COPY.newSession
+  const starting = !!opts.starting
+  const limit = running >= MAX_MANAGED ? ns.limit(running) : undefined
+  const list = [{ id: '', label: ns.modelDefault }, ...(models?.length ? models : FALLBACK_MODELS)]
+  const empty = { text: '', context: form.context, use: form.use }
+  const composer = composerVM(undefined, empty, opts.caps)
+  return {
+    ...(form.folder && { folder: { label: form.folder.label, hint: form.folder.hint } }),
+    name: form.name,
+    namePlaceholder: form.folder?.label ?? '',
+    models: list.map((m) => ({ ...m, selected: m.id === (form.model ?? '') })),
+    modes: modeOptions(form.mode, allowBypass),
+    extraFolders: form.extraFolders.map((f) => ({ key: f.ref, label: f.label, hint: f.hint })),
+    chrome: { checked: form.chrome, available: true },
+    text: form.text,
+    composer: {
+      ...composer,
+      chips: chipsOf(form, opts.caps ?? [], !form.chrome),
+      disabled: starting,
+      placeholder: SESSION_COPY.composer.placeholder,
+      canAddContext: !starting && form.context.length < MAX_CONTEXT,
+      canAddUse: !starting && form.use.length < MAX_USE,
+    },
+    canStart: !!form.folder && !!form.text.trim() && !starting && !limit,
+    starting,
+    ...(opts.error && { error: opts.error }),
+    ...(limit && { limit }),
+  }
+}
+
+/** Inline error for a failed start (plan §12). */
+export function startErrorText(r: Extract<StartResult, { ok: false }>, running: number): string {
+  const e = SESSION_COPY.newSession.errors
+  switch (r.code) {
+    case 'auth':
+      return e.auth
+    case 'runtime':
+      return e.runtime
+    case 'folder':
+      return e.folder
+    case 'limit':
+      return SESSION_COPY.newSession.limit(Math.max(running, MAX_MANAGED))
+    default:
+      return e.generic(r.error)
   }
 }
 
@@ -240,6 +553,8 @@ export interface SettingsVM {
   discoverCapabilities: boolean
   autoUpdate: boolean
   graphicsQuality: GraphicsQuality
+  theme: Settings['theme']
+  allowBypassPermissions: boolean
   version: string
   restartNote: boolean
   hook: HookActionVM
@@ -262,6 +577,8 @@ export function settingsVM(i: {
     discoverCapabilities: i.settings.discoverCapabilities,
     autoUpdate: i.settings.autoUpdate,
     graphicsQuality: i.settings.graphicsQuality,
+    theme: i.settings.theme,
+    allowBypassPermissions: i.settings.allowBypassPermissions,
     version: `v${i.version}`,
     restartNote: !!i.restartNote,
     hook,

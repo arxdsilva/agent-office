@@ -107,4 +107,26 @@ describe('applyMessage', () => {
     const s = emptyState()
     expect(applyMessage(s, { type: 'future-thing' } as unknown as ServerMessage)).toBe(s)
   })
+
+  it('ST-1: permission requests per agent; an empty list clears; removal drops them', () => {
+    const req = { id: 'perm_0123456789', tool: 'Bash', summary: 'pnpm test' }
+    let s = applyMessage(emptyState(), { type: 'upsert', agent: agent('a') })
+    s = applyMessage(s, { type: 'permission', agentId: 'a', requests: [req] })
+    expect(s.permissions?.get('a')).toEqual([req])
+    expect(
+      applyMessage(s, { type: 'permission', agentId: 'a', requests: [] }).permissions?.has('a'),
+    ).toBe(false)
+    expect(applyMessage(s, { type: 'remove', id: 'a' }).permissions?.has('a')).toBe(false)
+    // A snapshot keeps the pending requests of agents that are still there.
+    const snap = applyMessage(s, { type: 'snapshot', agents: [agent('a')], messages: [] })
+    expect(snap.permissions?.get('a')).toEqual([req])
+    const gone = applyMessage(s, { type: 'snapshot', agents: [], messages: [] })
+    expect(gone.permissions?.size).toBe(0)
+  })
+
+  it('ST-1: system lines stay in the thread like any message', () => {
+    const line: ChatMessage = { ...msg('s1'), from: 'system', text: 'Interrupted' }
+    const s = applyMessage(emptyState(), { type: 'chat', message: line })
+    expect(s.messages.get('a')).toEqual([line])
+  })
 })

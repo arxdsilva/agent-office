@@ -11,6 +11,8 @@ const runtimeExternals = [
   /^electron-updater(\/.*)?$/,
   /^fastify(\/.*)?$/,
   /^zod(\/.*)?$/,
+  // Claude Agent SDK: loaded at runtime from node_modules (spawns the Claude Code CLI).
+  /^@anthropic-ai\/claude-agent-sdk(\/.*)?$/,
   /^node:/,
 ]
 

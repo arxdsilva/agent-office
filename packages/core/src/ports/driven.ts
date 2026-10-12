@@ -1,6 +1,14 @@
 // Driven (secondary) ports: what the core needs from the outside world.
 // Implemented by adapters (packages/adapters, packages/desktop). Additive changes only.
-import type { Capability, ChatMessage, HookStatus, Settings } from '@agent-office/shared'
+import type {
+  AgentEvent,
+  Capability,
+  ChatMessage,
+  HookStatus,
+  ModelOption,
+  PermissionMode,
+  Settings,
+} from '@agent-office/shared'
 import type { AgentState } from '../domain/agent.ts'
 import type { Note } from '../domain/attention.ts'
 import type { TrayModel } from '../domain/tray.ts'
@@ -62,6 +70,8 @@ export type OfficeEvent =
   | { type: 'inbox.queued'; agentId: string }
   /** A provider's capabilities changed (debounced); carries the provider's full list. */
   | { type: 'capabilities.changed'; provider: string; capabilities: Capability[] }
+  /** A managed session's pending permission requests changed. */
+  | { type: 'permission.changed'; agentId: string }
 
 export interface EventPublisher {
   publish(e: OfficeEvent): void
@@ -131,3 +141,47 @@ export interface WindowState {
 }
 
 export type { HookStatus }
+
+/** Starts Claude Code sessions (Agent SDK in production; scripted fakes in tests). */
+export interface AgentRunner {
+  start(o: RunnerStart): RunnerSession
+}
+
+export interface RunnerStart {
+  cwd: string
+  model?: string
+  mode: PermissionMode
+  extraDirs: string[]
+  chrome: boolean
+  /** Only with mode 'bypassPermissions' and the user's setting on. */
+  allowBypass: boolean
+}
+
+export type RunnerExit = { error?: 'auth' | 'runtime' | 'folder' | 'crash'; message?: string }
+
+export interface RunnerSession {
+  /** The Claude session id (from the init message). Rejects with the exit reason if it never starts. */
+  readonly sessionId: Promise<string>
+  /** Streams a user prompt into the session. */
+  push(prompt: string): void
+  setMode(mode: PermissionMode): Promise<void>
+  setModel(model: string): Promise<void>
+  supportedModels(): Promise<ModelOption[]>
+  interrupt(): Promise<void>
+  close(): Promise<void>
+  /** Privacy-safe activity, already mapped like transcript lines (agentId filled by the service). */
+  onEvent(fn: (e: Omit<AgentEvent, 'agentId'>) => void): () => void
+  /** End of a turn: the final assistant text (≤ 4000 chars). */
+  onResult(fn: (r: { text: string; isError: boolean }) => void): () => void
+  /** A tool call needs approval; the returned promise is the user's decision. */
+  onPermission(fn: (r: RunnerPermission) => Promise<RunnerDecision>): void
+  onExit(fn: (e: RunnerExit) => void): void
+}
+
+export interface RunnerPermission {
+  tool: string
+  input: Record<string, unknown>
+  cwd: string
+}
+
+export type RunnerDecision = { behavior: 'allow' } | { behavior: 'deny'; message: string }

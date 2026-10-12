@@ -21,3 +21,15 @@ export class PortInUseError extends DomainError {
     super(`port ${port} is already in use`)
   }
 }
+export type SessionStartCode = 'auth' | 'runtime' | 'folder' | 'limit' | 'other'
+/** A managed session could not start; `code` picks the user-facing message. */
+export class SessionStartError extends DomainError {
+  constructor(
+    readonly code: SessionStartCode,
+    message = code,
+  ) {
+    super(message)
+  }
+}
+/** The action is not allowed by the user's settings (e.g. bypass mode while it's disabled). */
+export class NotAllowedError extends DomainError {}

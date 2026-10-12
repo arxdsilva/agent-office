@@ -1,6 +1,8 @@
 // The fakes are held to the same contracts as the real adapters.
+import { agentRunnerContract } from './contracts/agent-runner.ts'
 import { capabilityRepositoryContract } from './contracts/capabilities.ts'
 import {
+  FakeAgentRunner,
   FakeAgentRepository,
   FakeCapabilityRepository,
   FakeClaudeSettingsStore,
@@ -33,3 +35,21 @@ hookRunnerContract('FakeHookRunner', async () => {
   return { runner, exists: async () => runner.installed }
 })
 capabilityRepositoryContract('FakeCapabilityRepository', () => new FakeCapabilityRepository())
+
+agentRunnerContract('FakeAgentRunner', () => {
+  const runner = new FakeAgentRunner()
+  runner.autoInit = false
+  const s = () => runner.last()
+  return {
+    runner,
+    init: (id) => {
+      Object.assign(s(), { id }) // the contract picks the session id
+      s().init()
+    },
+    toolUse: (name) => s().emit({ status: 'tool', tool: name }),
+    result: (text) => s().result(text),
+    ask: (tool, input) => s().ask(tool, input),
+    prompts: () => s().prompts,
+    controls: () => s().calls,
+  }
+})

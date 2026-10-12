@@ -132,4 +132,54 @@ describe('Claude Code adapter + hook (E2E)', () => {
     )
     expect(srv.office.chat.history('cc:sess-e2e').filter((m) => m.from === 'agent')).toHaveLength(1)
   })
+
+  it('shows the permission mode a terminal session reports through the hook (CC-mode)', async () => {
+    const srv = await startServer()
+    cleanup.push(srv.close)
+
+    // A terminal session whose last prompt ran in the default mode. The line is a second old, so
+    // the hook's report (stamped by the server now) is the later write.
+    const dir = mkdtempSync(join(tmpdir(), 'ao-e2e-cc-mode-'))
+    const project = join(dir, '-home-dev-shop')
+    mkdirSync(project, { recursive: true })
+    writeFileSync(
+      join(project, 'sess-mode.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'sess-mode',
+        cwd: '/home/dev/shop',
+        timestamp: new Date(Date.now() - 1000).toISOString(),
+        permissionMode: 'default',
+        message: { content: 'start' },
+      }) + '\n',
+    )
+    const source = new ClaudeCodeTailer({
+      dir,
+      files: new NodeTranscriptFiles(),
+      activity: srv.office.activity,
+      clock: new FakeClock(Date.now()),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 600_000,
+    })
+    await source.tick()
+    expect(srv.office.query.agent('cc:sess-mode')?.permissionMode).toBe('default')
+
+    // The user presses Shift+Tab into Plan mode and prompts: the hook reports the new mode.
+    const tokenFile = join(dir, 'token')
+    writeFileSync(tokenFile, TOKEN)
+    const env = { AGENT_OFFICE_URL: srv.url, AGENT_OFFICE_TOKEN_FILE: tokenFile }
+    const out = await runHook(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'sess-mode', permission_mode: 'plan' },
+      env,
+    )
+    expect(out).toBe('')
+    expect(srv.office.query.agent('cc:sess-mode')?.permissionMode).toBe('plan')
+
+    // Inside a session agent-office runs itself, the hook stays silent and reports nothing.
+    await runHook(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'sess-mode', permission_mode: 'auto' },
+      { ...env, AGENT_OFFICE_MANAGED: '1' },
+    )
+    expect(srv.office.query.agent('cc:sess-mode')?.permissionMode).toBe('plan')
+  })
 })

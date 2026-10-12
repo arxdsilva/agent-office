@@ -1,10 +1,13 @@
 // Composition root: the only module (with the Electron entry index.ts) that knows concrete adapters.
 // Everything it builds talks to the rest through core ports.
+import { randomBytes } from 'node:crypto'
+import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, sep } from 'node:path'
 import {
   buildHttpApi,
   ClaudeCapabilityDiscovery,
+  ClaudeSdkRunner,
   ClaudeCodeTailer,
   ClaudeConfigReader,
   ClaudeKnowledgeReader,
@@ -20,6 +23,8 @@ import {
   MockAgents,
   NodeTranscriptFiles,
   RandomIds,
+  resolveClaudeExecutable,
+  ScriptedAgentRunner,
   startHttpServer,
   SystemClock,
   TimerScheduler,
@@ -31,6 +36,7 @@ import {
   createOffice,
   DEFAULT_SWEEP_POLICY,
   PortInUseError,
+  type AgentRunner,
   type LoginItem,
   type Logger,
   type Notifier,
@@ -46,11 +52,19 @@ import {
   IPC,
   type Banner,
   type ConnectionInfo,
+  type ContextRef,
   type HookStatus,
   type Settings,
   type TestEventResult,
 } from '@agent-office/shared'
-import { createIpcHandlers, createPushBridge, registerIpc, type IpcRegistrar } from './ipc-api.ts'
+import {
+  createIpcHandlers,
+  createPushBridge,
+  registerIpc,
+  type ContextEntry,
+  type ContextRegistry,
+  type IpcRegistrar,
+} from './ipc-api.ts'
 import { isTrustedSender } from './security.ts'
 
 /** Electron-side adapters, built in index.ts (or faked in tests). */
@@ -65,6 +79,8 @@ export interface Shell {
   ipc: IpcRegistrar & { removeAll(): void }
   /** URL of the renderer document; IPC from anything else is refused. */
   rendererUrl: string
+  /** Native file/folder picker (absolute paths; they never reach the renderer). */
+  dialog?: { pick(kind: 'files' | 'folder'): Promise<string[]> }
   quit(): void
 }
 
@@ -83,6 +99,10 @@ export interface ComposeOptions {
   scheduler?: Scheduler & { dispose?(): void }
   /** For '~' abbreviation of displayed paths; defaults to os.homedir(). */
   homeDir?: string
+  /** Environment for managed Claude Code sessions and the runner choice; defaults to process.env. */
+  processEnv?: Record<string, string | undefined>
+  /** Tests inject a runner; otherwise AGENT_OFFICE_FAKE_RUNNER=1 picks the scripted one, else the SDK. */
+  runner?: AgentRunner
 }
 
 const SWEEP_MS = 2000
@@ -103,6 +123,47 @@ const NO_STATS: TailerStats = { projectsDirFound: false, activeSessions: 0 }
 /** `~`-abbreviates paths under home; others (a user-configured AGENT_OFFICE_HOME) stay whole so snippets work. */
 function abbreviate(path: string, home: string): string {
   return path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path
+}
+
+const MAX_PICK = 10
+
+/**
+ * Opaque `ctx_` refs for picked paths, de-duplicated by path. Paths stay in main; the renderer
+ * gets the basename and a '~' hint. Never logged.
+ */
+function createContextRegistry(o: { dialog?: Shell['dialog']; home: string }): ContextRegistry {
+  const byRef = new Map<string, ContextEntry>()
+  const byPath = new Map<string, string>()
+  const newRef = () => {
+    let id = ''
+    while (id.length < 12) id += BigInt('0x' + randomBytes(8).toString('hex')).toString(36)
+    return `ctx_${id.slice(0, 12)}`
+  }
+  const register = (path: string, kind: 'file' | 'folder'): ContextRef => {
+    let ref = byPath.get(`${kind}:${path}`)
+    if (!ref) {
+      ref = newRef()
+      byPath.set(`${kind}:${path}`, ref)
+      byRef.set(ref, { path, kind, label: basename(path) || path, hint: abbreviate(path, o.home) })
+    }
+    const { label, hint } = byRef.get(ref)!
+    return { ref, kind, label, hint }
+  }
+  return {
+    async pick(kind) {
+      const paths = (await o.dialog?.pick(kind)) ?? []
+      const k = kind === 'folder' ? 'folder' : 'file'
+      return paths.slice(0, kind === 'folder' ? 1 : MAX_PICK).map((p) => register(p, k))
+    },
+    resolve: (ref) => byRef.get(ref),
+    exists: (path) => {
+      try {
+        return statSync(path).isDirectory()
+      } catch {
+        return false
+      }
+    },
+  }
 }
 
 /** Loopback host the hook should call: the bind host when it is loopback, else 127.0.0.1. */
@@ -127,6 +188,25 @@ export function compose(o: ComposeOptions) {
   const bus = new InMemoryEventBus(logger)
   const settingsRepo = new JsonFileSettingsRepository(join(o.userDataDir, 'settings.json'), logger)
   const sweepPolicy = { ...DEFAULT_SWEEP_POLICY, ...env.sweep }
+  const processEnv = o.processEnv ?? process.env
+  const runner: AgentRunner =
+    o.runner ??
+    (processEnv.AGENT_OFFICE_FAKE_RUNNER === '1'
+      ? new ScriptedAgentRunner()
+      : new ClaudeSdkRunner({
+          env: processEnv,
+          log: logger,
+          claudeHome: env.claudeHome,
+          projectsDir: env.claudeProjectsDir,
+          // Packaged builds ship without the SDK's bundled binary: use the installed CLI.
+          executable: resolveClaudeExecutable({
+            env: processEnv,
+            home,
+            platform: shell.platform.platform,
+            exists: existsSync,
+          }),
+        }))
+  const context = createContextRegistry({ dialog: shell.dialog, home })
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
     capabilities: new InMemoryCapabilityRepository(),
@@ -153,7 +233,10 @@ export function compose(o: ComposeOptions) {
     platform: shell.platform,
     releaseUrl: o.releaseUrl,
     policy: sweepPolicy,
+    runner,
+    displayPath: (p) => abbreviate(p, home),
   })
+  const sessions = office.sessions!
 
   /** Env overrides (dev/test) win over saved settings for this run only. */
   const effective = (s: Settings): Settings => ({ ...s, ...env.overrides })
@@ -282,6 +365,8 @@ export function compose(o: ComposeOptions) {
         scheduler,
         expireAfterMs: sweepPolicy.expireAfterMs,
         log: logger,
+        // Managed sessions report through their runner; their transcripts would double-count.
+        skip: (sid) => sessions.isManagedSession(sid),
         onNewCwd: () => discovery?.refresh(),
         onStats: (next) => {
           if (backend !== b) return // a late tick from a stopped backend
@@ -379,6 +464,9 @@ export function compose(o: ComposeOptions) {
         createIpcHandlers({
           query: office.query,
           chat: office.chat,
+          compose: office.compose,
+          sessions,
+          context,
           settings: office.settings,
           hooks: office.hooks,
           updates: office.updates,
@@ -423,6 +511,7 @@ export function compose(o: ComposeOptions) {
     async stop(): Promise<void> {
       if (!started) return
       started = false
+      await sessions.stopAll()
       for (const s of stops.splice(0)) s()
       cancelTestAgent?.()
       office.attention.stop()
@@ -462,6 +551,11 @@ export function compose(o: ComposeOptions) {
       shell.window.show()
       shell.window.send(IPC.select, agentId)
     },
+
+    /** Managed sessions running now (the quit confirm asks before stopping them). */
+    managedCount: (): number => sessions.count(),
+    /** Stops every managed session (quit, after the confirm). */
+    stopAll: (): Promise<void> => sessions.stopAll(),
 
     apiPort: (): number | undefined => backend?.server?.port,
     banner: (): Banner | null => banner,

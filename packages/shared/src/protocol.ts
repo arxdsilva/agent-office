@@ -5,6 +5,18 @@ export type AgentStatus = (typeof AGENT_STATUSES)[number]
 
 export const MAX_MESSAGE_CHARS = 4000
 
+/** Claude Code permission modes (Agent SDK `PermissionMode`; hook input `permission_mode`). */
+export const PERMISSION_MODES = [
+  'default',
+  'acceptEdits',
+  'plan',
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+] as const
+export type PermissionMode = (typeof PERMISSION_MODES)[number]
+export const PermissionModeSchema = z.enum(PERMISSION_MODES)
+
 /**
  * Public contract for `POST /api/events`: a partial update keyed by `agentId`.
  * Missing fields keep their previous value. Changes must be additive (see ARCHITECTURE rule).
@@ -40,6 +52,8 @@ export const AgentEventSchema = z.object({
   target: z.string().max(100).optional(),
   /** Explicit capability id for generic producers (otherwise classified from `tool` + `target`). */
   capability: z.string().max(120).optional(),
+  /** Current permission mode (Claude Code: from the hook or transcript; others may send it too). */
+  permissionMode: PermissionModeSchema.optional(),
 })
 export type AgentEvent = z.infer<typeof AgentEventSchema>
 
@@ -74,18 +88,55 @@ export interface Agent {
   interactive: boolean
   /** Messages queued but not yet delivered. */
   unread: number
+  /** Last known permission mode (read-only for sessions agent-office doesn't own). */
+  permissionMode?: PermissionMode
+  /** Set only for managed sessions (started by agent-office). */
+  managed?: ManagedInfo
 }
 
 export type MessageState = 'queued' | 'delivered' | 'replied'
 
+/** Display-only attachment shown under a message (the agent receives paths/tool hints as text). */
+export interface ContextChip {
+  kind: 'file' | 'folder' | 'capability'
+  /** Basename or capability label. Never a full path. */
+  label: string
+  /** '~'-abbreviated location or capability id, for the tooltip. */
+  hint?: string
+}
+
 export interface ChatMessage {
   id: string
   agentId: string
-  from: 'user' | 'agent'
+  /** 'system': app notes in the thread (mode/model changes, interrupts); never delivered to agents. */
+  from: 'user' | 'agent' | 'system'
   text: string
   ts: number
   state: MessageState
   inReplyTo?: string
+  /** Files, folders and tools attached to a user message (≤ 15). */
+  context?: ContextChip[]
+}
+
+/** A tool call a managed session wants approved (summary only, never the raw tool input). */
+export interface PermissionRequestVM {
+  /** `perm_` + 10 base36 chars. */
+  id: string
+  tool: string
+  /** ≤ 120 chars, e.g. the first line of a Bash command or a cwd-relative path. */
+  summary: string
+  /** '~'-abbreviated working directory, when relevant. */
+  where?: string
+}
+
+/** Present only on agents whose Claude Code session agent-office started (Agent SDK). */
+export interface ManagedInfo {
+  /** Model id the session reports (checks the picker); `Agent.model` keeps the display string. */
+  modelId?: string
+  chrome: boolean
+  /** Pending permission requests. */
+  pending: number
+  phase: 'starting' | 'running' | 'ended'
 }
 
 /** Messages pushed from server to browser over the WebSocket. */
@@ -153,3 +204,5 @@ export type ServerMessage =
   | { type: 'remove'; id: string }
   | { type: 'chat'; message: ChatMessage }
   | { type: 'capabilities'; provider: string; capabilities: Capability[] }
+  /** Pending permission requests of a managed session (empty list = none). */
+  | { type: 'permission'; agentId: string; requests: PermissionRequestVM[] }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadEnv } from '@agent-office/adapters'
 import {
+  FakeAgentRunner,
   FakeWindow,
   fakePlatform,
   ManualScheduler,
@@ -12,7 +13,14 @@ import {
   RecordingTray,
   ScriptedUpdater,
 } from '@agent-office/core/testing'
-import { IPC, type ConnectionInfo, type ServerMessage } from '@agent-office/shared'
+import {
+  IPC,
+  type ConnectionInfo,
+  type ContextRef,
+  type SendResult,
+  type ServerMessage,
+  type StartResult,
+} from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import { compose, type Shell } from './composition.ts'
 
@@ -31,7 +39,14 @@ function fakeShell() {
   const handlers = new Map<string, (senderUrl: string | undefined, ...args: unknown[]) => unknown>()
   let quit = 0
   const copied: string[] = []
+  const picked: { kind?: string; paths: string[] } = { paths: [] }
   const shell: Shell = {
+    dialog: {
+      pick: async (kind) => {
+        picked.kind = kind
+        return picked.paths
+      },
+    },
     clipboard: { writeText: (t) => copied.push(t) },
     notifier: new RecordingNotifier(),
     tray: new RecordingTray(),
@@ -53,6 +68,7 @@ function fakeShell() {
     tray: shell.tray as RecordingTray,
     quits: () => quit,
     copied,
+    picked,
   }
 }
 
@@ -63,7 +79,12 @@ afterEach(async () => {
 
 function setup(
   envVars: Record<string, string | undefined> = {},
-  opts: { scheduler?: ManualScheduler; homeDir?: string } = {},
+  opts: {
+    scheduler?: ManualScheduler
+    homeDir?: string
+    runner?: FakeAgentRunner
+    processEnv?: Record<string, string | undefined>
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'ao-comp-'))
   const env = loadEnv(
@@ -390,5 +411,140 @@ describe('compose', () => {
     expect(handlers.size).toBe(0)
     await expect(fetch(`http://127.0.0.1:${port}/api/health`)).rejects.toThrow()
     await app.stop()
+  })
+
+  describe('managed sessions', () => {
+    const START = { mode: 'plan', text: 'Plan the logout flow' }
+
+    it('ctx:pick registers picked paths as opaque refs with a ~ hint, de-duplicated', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'ao-home-'))
+      const folder = join(home, 'code', 'shop-api')
+      mkdirSync(folder, { recursive: true })
+      const { app, call, picked } = setup({}, { homeDir: home, runner: new FakeAgentRunner() })
+      await app.start()
+      picked.paths = [folder]
+      const [ref] = (await call(IPC.ctxPick, 'folder')) as ContextRef[]
+      expect(picked.kind).toBe('folder')
+      expect(ref).toEqual({
+        ref: expect.stringMatching(/^ctx_[a-z0-9]{12}$/),
+        kind: 'folder',
+        label: 'shop-api',
+        hint: '~/code/shop-api',
+      })
+      expect(JSON.stringify(ref)).not.toContain(home)
+      // Same path again → same ref.
+      const [again] = (await call(IPC.ctxPick, 'folder')) as ContextRef[]
+      expect(again!.ref).toBe(ref!.ref)
+      // Files: up to 10 per pick.
+      picked.paths = Array.from({ length: 12 }, (_, i) => join(folder, `f${i}.md`))
+      const files = (await call(IPC.ctxPick, 'files')) as ContextRef[]
+      expect(files).toHaveLength(10)
+      expect(files[0]).toMatchObject({ kind: 'file', label: 'f0.md' })
+      // A cancelled dialog returns nothing.
+      picked.paths = []
+      expect(await call(IPC.ctxPick, 'files')).toEqual([])
+    })
+
+    it('starts, messages and stops a session through IPC; exposes managedCount/stopAll', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'ao-home-'))
+      const folder = join(home, 'shop-api')
+      mkdirSync(folder)
+      const runner = new FakeAgentRunner()
+      const { app, call, picked } = setup({}, { homeDir: home, runner })
+      await app.start()
+      picked.paths = [folder]
+      const [ref] = (await call(IPC.ctxPick, 'folder')) as ContextRef[]
+      const started = (await call(IPC.sessStart, { ...START, folder: ref!.ref })) as StartResult
+      expect(started).toEqual({ ok: true, agentId: 'cc:sess-1' })
+      expect(runner.last().options).toMatchObject({ cwd: folder, mode: 'plan' })
+      expect(app.managedCount()).toBe(1)
+      // A follow-up with the folder attached: the runner receives the absolute path.
+      const sent = (await call(IPC.send, {
+        agentId: 'cc:sess-1',
+        text: 'look here',
+        context: [ref!.ref],
+      })) as SendResult
+      expect(sent).toMatchObject({ ok: true, message: { state: 'delivered' } })
+      expect(runner.last().prompts.at(-1)).toContain(`- folder: ${folder}`)
+      // Permission cards carry a ~-abbreviated location.
+      void runner.last().ask('Bash', { command: 'ls' })
+      expect(app.office.sessions!.pending('cc:sess-1')[0]?.where).toBe('~/shop-api')
+      await app.stopAll()
+      expect(app.managedCount()).toBe(0)
+      expect(runner.last().closed).toBe(true)
+    })
+
+    it('stopping the app stops managed sessions', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'ao-home-'))
+      const runner = new FakeAgentRunner()
+      const { app, call, picked } = setup({}, { homeDir: home, runner })
+      await app.start()
+      picked.paths = [home]
+      const [ref] = (await call(IPC.ctxPick, 'folder')) as ContextRef[]
+      await call(IPC.sessStart, { ...START, folder: ref!.ref })
+      await app.stop()
+      expect(runner.last().closed).toBe(true)
+    })
+
+    it('the transcript tailer skips managed sessions', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'ao-skip-'))
+      const projects = join(dir, 'projects')
+      mkdirSync(join(projects, 'p'), { recursive: true })
+      const line = (sid: string) =>
+        JSON.stringify({
+          type: 'user',
+          sessionId: sid,
+          timestamp: new Date(Date.now() + 60_000).toISOString(), // newer than the managed agent
+          cwd: '/w/from-transcript',
+          message: { content: 'x' },
+        }) + '\n'
+      writeFileSync(join(projects, 'p', 'sess-1.jsonl'), line('sess-1'))
+      writeFileSync(join(projects, 'p', 'other.jsonl'), line('other'))
+      const runner = new FakeAgentRunner()
+      runner.autoInit = true
+      const { app } = setup(
+        { AGENT_OFFICE_CLAUDE: '1', CLAUDE_PROJECTS_DIR: projects },
+        { homeDir: dir, runner },
+      )
+      await app.office.settings.update({ discoverCapabilities: false })
+      // Start the session before the backend's first tailer tick.
+      await app.office.sessions!.start({
+        cwd: dir,
+        name: 'shop',
+        mode: 'default',
+        extraDirs: [],
+        chrome: false,
+        first: { text: 'hi', context: [], use: [] },
+      })
+      await app.start()
+      await wait(80)
+      expect(app.office.query.agent('cc:other')?.source).toBe('claude-code')
+      // Unskipped, the transcript line would rename the agent after its cwd.
+      expect(app.office.query.agent('cc:sess-1')?.name).toBe('shop')
+    })
+
+    it('AGENT_OFFICE_FAKE_RUNNER=1 selects the scripted runner (replies "ok")', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'ao-home-'))
+      const { app, call, picked } = setup(
+        {},
+        { homeDir: home, processEnv: { AGENT_OFFICE_FAKE_RUNNER: '1' } },
+      )
+      await app.start()
+      picked.paths = [home]
+      const [ref] = (await call(IPC.ctxPick, 'folder')) as ContextRef[]
+      const r = (await call(IPC.sessStart, { ...START, folder: ref!.ref })) as StartResult
+      expect(r.ok).toBe(true)
+      const agentId = (r as { agentId: string }).agentId
+      expect(agentId).toMatch(/^cc:fake-/)
+      await wait(500)
+      expect(app.office.chat.history(agentId).map((m) => m.text)).toContain('ok')
+    })
+
+    it('without the fake flag the SDK runner is wired (not started until a session starts)', async () => {
+      const { app } = setup({}, { processEnv: { PATH: '' } })
+      await app.start()
+      expect(app.office.sessions).toBeDefined()
+      expect(app.managedCount()).toBe(0)
+    })
   })
 })

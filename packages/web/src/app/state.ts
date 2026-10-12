@@ -1,4 +1,10 @@
-import type { Agent, Capability, ChatMessage, ServerMessage } from '@agent-office/shared'
+import type {
+  Agent,
+  Capability,
+  ChatMessage,
+  PermissionRequestVM,
+  ServerMessage,
+} from '@agent-office/shared'
 
 const MAX_MESSAGES_PER_AGENT = 200
 
@@ -8,12 +14,15 @@ export interface OfficeState {
   messages: Map<string, ChatMessage[]>
   /** What each provider's agents can use (adapters, skills, rules), keyed by provider. */
   capabilities: Map<string, Capability[]>
+  /** Pending permission requests of managed sessions, keyed by agent id (oldest first). */
+  permissions?: Map<string, PermissionRequestVM[]>
 }
 
 export const emptyState = (): OfficeState => ({
   agents: new Map(),
   messages: new Map(),
   capabilities: new Map(),
+  permissions: new Map(),
 })
 
 function byProvider(caps: Capability[]): Map<string, Capability[]> {
@@ -28,11 +37,14 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
     case 'snapshot': {
       const messages = new Map<string, ChatMessage[]>()
       for (const m of msg.messages) messages.set(m.agentId, [...(messages.get(m.agentId) ?? []), m])
+      const agents = new Map(msg.agents.map((a) => [a.id, a]))
       return {
-        agents: new Map(msg.agents.map((a) => [a.id, a])),
+        agents,
         messages,
         // Older backends send no capabilities: keep what we have.
         capabilities: msg.capabilities ? byProvider(msg.capabilities) : state.capabilities,
+        // Not part of the snapshot: keep the requests of agents that are still here.
+        permissions: new Map([...(state.permissions ?? [])].filter(([id]) => agents.has(id))),
       }
     }
     case 'upsert': {
@@ -43,9 +55,11 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
     case 'remove': {
       const agents = new Map(state.agents)
       const messages = new Map(state.messages)
+      const permissions = new Map(state.permissions ?? [])
       agents.delete(msg.id)
       messages.delete(msg.id)
-      return { ...state, agents, messages }
+      permissions.delete(msg.id)
+      return { ...state, agents, messages, permissions }
     }
     case 'capabilities': {
       const capabilities = new Map(state.capabilities)
@@ -62,6 +76,12 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
       const messages = new Map(state.messages)
       messages.set(m.agentId, thread.slice(-MAX_MESSAGES_PER_AGENT))
       return { ...state, messages }
+    }
+    case 'permission': {
+      const permissions = new Map(state.permissions ?? [])
+      if (msg.requests.length) permissions.set(msg.agentId, msg.requests)
+      else permissions.delete(msg.agentId)
+      return { ...state, permissions }
     }
     default:
       // Newer backends may send message types this renderer doesn't know yet.

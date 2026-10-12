@@ -28,6 +28,14 @@ module.exports = {
       to: { dependencyTypes: ['core'] },
     },
     {
+      name: 'agent-sdk-in-adapters-only',
+      comment:
+        'Only adapters/src/agents may import the Claude Agent SDK (the AgentRunner adapter).',
+      severity: 'error',
+      from: { pathNot: '^packages/adapters/src/agents/' },
+      to: { path: pkg('@anthropic-ai/claude-agent-sdk') },
+    },
+    {
       name: 'adapters-no-electron',
       comment: 'Node adapters must not know about Electron, the desktop shell or the renderer.',
       severity: 'error',

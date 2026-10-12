@@ -29,6 +29,7 @@ function tailer(o: {
   now: number
   scheduler?: ManualScheduler
   files?: MemoryTranscriptFiles
+  skip?: (sessionId: string) => boolean
 }) {
   return new ClaudeCodeTailer({
     dir: o.dir,
@@ -37,6 +38,7 @@ function tailer(o: {
     clock: new FakeClock(o.now),
     scheduler: o.scheduler ?? new ManualScheduler(),
     expireAfterMs: o.expireAfterMs,
+    ...(o.skip ? { skip: o.skip } : {}),
   })
 }
 
@@ -111,6 +113,32 @@ describe('ClaudeCodeTailer (node file system)', () => {
       name: 'Plan',
       parentId: 'cc:sess-1234abcd',
     })
+  })
+
+  it('TL-skip skips the transcripts of managed sessions, subagents included', async () => {
+    const { dir, project, file, office } = fixture()
+    let managed = true
+    const src = tailer({
+      dir,
+      activity: office.activity,
+      expireAfterMs: 1e15,
+      now: T0 + 1000,
+      skip: (sid) => managed && sid === 'sess-1234abcd',
+    })
+    writeFileSync(file, user('hi') + '\n')
+    const subDir = join(project, 'sess-1234abcd', 'subagents')
+    mkdirSync(subDir, { recursive: true })
+    writeFileSync(
+      join(subDir, 'agent-a1b2c3d4e5.jsonl'),
+      user('go', { isSidechain: true, agentId: 'a1b2c3d4e5' }) + '\n',
+    )
+    await src.tick()
+    expect(office.query.agents()).toEqual([])
+    // Once the session is no longer managed, its transcript is read like any other.
+    managed = false
+    await src.tick()
+    expect(office.query.agent('cc:sess-1234abcd')).toBeDefined()
+    expect(office.query.agent('cc:a1b2c3d4e5')).toBeDefined()
   })
 
   it('ignores files not modified within the expiry window and survives a missing dir', async () => {

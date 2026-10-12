@@ -6,6 +6,10 @@ import type {
   CapabilityDecl,
   ChatMessage,
   HookStatus,
+  ModelOption,
+  PermissionDecision,
+  PermissionMode,
+  PermissionRequestVM,
   ServerMessage,
   Settings,
   SettingsPatch,
@@ -89,4 +93,52 @@ export interface UpdateManagement {
   check(): Promise<UpdateState>
   install(): void
   onChange(fn: (s: UpdateState) => void): () => void
+}
+
+/** A user message plus what the user attached (paths are resolved by the caller, never by the core). */
+export interface ComposedMessage {
+  text: string
+  context: { kind: 'file' | 'folder'; path: string; label: string; hint: string }[]
+  /** Capabilities the agent should use, with display labels (e.g. mcp:claude-in-chrome → Chrome browser). */
+  use: { id: string; label: string }[]
+}
+
+/**
+ * The UI sending a message with optional context/tool hints. Routes managed sessions straight to
+ * their runner and everything else to the inbox (as text with a preamble). Throws like `UserChat.send`.
+ */
+export interface ComposeMessage {
+  send(agentId: string, m: ComposedMessage): Promise<ChatMessage>
+}
+
+export interface StartSession {
+  cwd: string
+  name: string
+  model?: string
+  mode: PermissionMode
+  extraDirs: string[]
+  chrome: boolean
+  first: ComposedMessage
+}
+
+/**
+ * Claude Code sessions agent-office starts and owns (Agent SDK). Throws `SessionStartError`
+ * (code auth | runtime | folder | limit | other) from `start`, `UnknownAgentError` for ids it doesn't own.
+ */
+export interface ManagedSessions {
+  /** Resolves with the new agent id (`cc:<sessionId>`). */
+  start(o: StartSession): Promise<string>
+  setMode(agentId: string, mode: PermissionMode): Promise<void>
+  setModel(agentId: string, model: string): Promise<void>
+  /** A running session's models; without an id, the last list seen (or a fallback). */
+  models(agentId?: string): Promise<ModelOption[]>
+  interrupt(agentId: string): Promise<void>
+  stop(agentId: string): Promise<void>
+  answer(agentId: string, requestId: string, decision: PermissionDecision): void
+  pending(agentId: string): PermissionRequestVM[]
+  isManaged(agentId: string): boolean
+  /** By Claude session id (the transcript tailer skips these). */
+  isManagedSession(sessionId: string): boolean
+  count(): number
+  stopAll(): Promise<void>
 }

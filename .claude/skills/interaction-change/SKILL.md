@@ -20,3 +20,5 @@ Rules: `PRIVACY_SECURITY.md` (the hook fails open; auth fails closed), `ARCHITEC
 7. **Manual check with a real session** (ask the user first — it edits their real `~/.claude/settings.json`): `make dev`, Settings → Install hook, message a working Claude Code session; the reply should appear when its turn ends. Uninstall afterwards if it was only for testing.
 
 Known limit: Claude Code has no hook that can wake an idle session; messages to a waiting session arrive on the user's next prompt. Keep the UI hint honest about this.
+
+Managed sessions (`/interaction-change` also covers them): the core service is `core/src/application/managed-session-service.ts` behind `ManagedSessions` and `ComposeMessage`; the SDK adapter is `adapters/src/agents/claude-sdk-runner.ts` (contract `agentRunnerContract`; the scripted runner `AGENT_OFFICE_FAKE_RUNNER=1` drives `desktop/e2e/session.spec.ts`). Context paths stay in main behind `ctx_` refs. The hook exits early when `AGENT_OFFICE_MANAGED=1`. Strings live in `web/src/app/session-copy.ts`.

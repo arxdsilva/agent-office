@@ -1,5 +1,5 @@
 import { basename, posix } from 'node:path'
-import type { AgentEvent, AgentStatus } from '@agent-office/shared'
+import { PermissionModeSchema, type AgentEvent, type AgentStatus } from '@agent-office/shared'
 
 const PROVIDER = 'claude-code'
 const SNIPPET = 80
@@ -221,6 +221,10 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
     event.name = (meta?.agentType ?? `sub·${d.agentId.slice(0, 6)}`).slice(0, 100)
     if (meta?.agentType) event.kind = meta.agentType.slice(0, 100)
     if (!text && meta?.description) event.text = snippet(meta.description)
+  } else if (d.type === 'user') {
+    // Only the session's own prompts carry its permission mode (Shift+Tab); subagents never do.
+    const mode = PermissionModeSchema.safeParse(d.permissionMode)
+    if (mode.success) event.permissionMode = mode.data
   }
   return event
 }

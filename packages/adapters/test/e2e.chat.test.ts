@@ -1,6 +1,26 @@
+import { execFile } from 'node:child_process'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ChatMessage } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
-import { is, observe, startServer } from './helpers.ts'
+import { is, observe, startServer, TOKEN } from './helpers.ts'
+
+const HOOK = fileURLToPath(new URL('../../../hooks/agent-office-hook.mjs', import.meta.url))
+
+/** Runs the real hook script the way Claude Code does: JSON on stdin, JSON (or nothing) on stdout. */
+function runHook(input: object, env: Record<string, string>) {
+  return new Promise<string>((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      [HOOK],
+      { env: { ...process.env, ...env } },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    )
+    child.stdin!.end(JSON.stringify(input))
+  })
+}
 
 let cleanup: (() => unknown)[] = []
 afterEach(async () => {
@@ -56,5 +76,45 @@ describe('chat round trip (E2E)', () => {
       ['user', 'replied'],
       ['agent', 'replied'],
     ])
+  })
+
+  it('delivers a context preamble to a terminal session verbatim through the hook (EC-ctx)', async () => {
+    const srv = await startServer()
+    cleanup.push(srv.close)
+    await srv.api('/api/events', {
+      method: 'POST',
+      body: JSON.stringify({ agentId: 'cc:sess-ctx', provider: 'claude-code' }),
+    })
+
+    // The UI composed a message with attached context and tools (format of session-prompt §6.1;
+    // paths and tools are invented). For a terminal session it is queued as plain text.
+    const preamble = [
+      'why does checkout fail?',
+      '',
+      '---',
+      'Context from agent-office (the user attached these; read them as needed):',
+      '- file: /home/dev/shop/src/checkout.ts',
+      '- folder: /home/dev/shop/src/coupons',
+      'Use these tools for this request: skill run-office, Shell (Bash).',
+    ].join('\n')
+    const sent = await srv.api(`/api/agents/${encodeURIComponent('cc:sess-ctx')}/messages`, {
+      method: 'POST',
+      headers: { origin: srv.url },
+      body: JSON.stringify({ text: preamble }),
+    })
+    expect(sent.status).toBe(202)
+
+    // The user prompts in the terminal: the hook hands the whole preamble to Claude, line for line.
+    const dir = mkdtempSync(join(tmpdir(), 'ao-e2e-ctx-'))
+    const tokenFile = join(dir, 'token')
+    writeFileSync(tokenFile, TOKEN)
+    const out = JSON.parse(
+      await runHook(
+        { hook_event_name: 'UserPromptSubmit', session_id: 'sess-ctx', permission_mode: 'default' },
+        { AGENT_OFFICE_URL: srv.url, AGENT_OFFICE_TOKEN_FILE: tokenFile },
+      ),
+    )
+    expect(out.hookSpecificOutput.additionalContext).toContain(`- ${preamble}`)
+    expect(srv.office.query.agent('cc:sess-ctx')?.permissionMode).toBe('default')
   })
 })

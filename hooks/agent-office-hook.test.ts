@@ -118,6 +118,118 @@ describe('handle fails open', () => {
   })
 })
 
+const EVENTS = 'POST /api/events'
+
+describe('handle reports the permission mode (HK-mode)', () => {
+  it('posts permissionMode alongside the reply and the claim, keeping the output', async () => {
+    const { f, calls } = fakeFetch({
+      [EVENTS]: {},
+      [REPLIES]: {},
+      [INBOX]: { messages: [{ text: 'check CI' }] },
+    })
+    const out = await handle(
+      {
+        hook_event_name: 'Stop',
+        session_id: 's1',
+        last_assistant_message: 'Done.',
+        permission_mode: 'plan',
+      },
+      deps(f),
+    )
+    expect(calls.find((c) => c.url === '/api/events')).toEqual({
+      method: 'POST',
+      url: '/api/events',
+      body: { agentId: 'cc:s1', permissionMode: 'plan' },
+      auth: 'Bearer t0k',
+    })
+    expect(calls.map((c) => c.url)).toContain('/api/agents/cc%3As1/replies')
+    expect(calls.map((c) => c.url)).toContain('/api/agents/cc%3As1/inbox?claim=1')
+    expect(JSON.parse(out).reason).toContain('- check CI')
+  })
+
+  it('skips unknown or missing modes', async () => {
+    for (const permission_mode of ['yolo', 42, undefined, '']) {
+      const { f, calls } = fakeFetch({ [INBOX]: { messages: [] } })
+      await handle(
+        { hook_event_name: 'UserPromptSubmit', session_id: 's1', permission_mode },
+        deps(f),
+      )
+      expect(calls.map((c) => c.url)).toEqual(['/api/agents/cc%3As1/inbox?claim=1'])
+    }
+  })
+
+  it('ignores a failed mode post and still delivers messages', async () => {
+    const { f: inner, calls } = fakeFetch({ [INBOX]: { messages: [{ text: 'use staging' }] } })
+    const f = async (url: string, init: { method?: string; headers: Record<string, string> }) => {
+      if (new URL(url).pathname === '/api/events') throw new Error('ECONNRESET')
+      return inner(url, init)
+    }
+    const out = await handle(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', permission_mode: 'acceptEdits' },
+      deps(f),
+    )
+    expect(calls).toHaveLength(1)
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toContain('- use staging')
+  })
+
+  it('awaits the mode post within the same time budget when it hangs', async () => {
+    const { f: inner } = fakeFetch({ [INBOX]: { messages: [{ text: 'hi' }] } })
+    let settled = false
+    const f = (
+      url: string,
+      init: { method?: string; headers: Record<string, string>; signal: AbortSignal },
+    ) => {
+      if (new URL(url).pathname !== '/api/events') return inner(url, init)
+      return new Promise((_r, reject) =>
+        init.signal.addEventListener('abort', () => {
+          settled = true
+          reject(new Error('aborted'))
+        }),
+      )
+    }
+    const t = Date.now()
+    const out = await handle(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', permission_mode: 'plan' },
+      { ...deps(f), timeoutMs: 150 },
+    )
+    expect(settled).toBe(true)
+    expect(Date.now() - t).toBeLessThan(1000)
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toContain('- hi')
+  })
+})
+
+describe('managed sessions (HK-managed)', () => {
+  it('does nothing when AGENT_OFFICE_MANAGED=1: empty output, zero fetches', async () => {
+    const { f, calls } = fakeFetch({ [EVENTS]: {}, [INBOX]: { messages: [{ text: 'x' }] } })
+    const input = {
+      hook_event_name: 'Stop',
+      session_id: 's1',
+      last_assistant_message: 'Done.',
+      permission_mode: 'plan',
+    }
+    expect(await handle(input, { ...deps(f), env: { AGENT_OFFICE_MANAGED: '1' } })).toBe('')
+    const tokenFile = join(mkdtempSync(join(tmpdir(), 'ao-hook-')), 'token')
+    writeFileSync(tokenFile, 'filetoken\n')
+    expect(
+      await fromStdin(
+        JSON.stringify(input),
+        { AGENT_OFFICE_MANAGED: '1', AGENT_OFFICE_TOKEN_FILE: tokenFile },
+        f,
+      ),
+    ).toBe('')
+    expect(calls).toEqual([])
+  })
+
+  it('runs normally when AGENT_OFFICE_MANAGED is anything else', async () => {
+    const { f, calls } = fakeFetch({ [INBOX]: { messages: [] } })
+    await handle(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1' },
+      { ...deps(f), env: { AGENT_OFFICE_MANAGED: '0' } },
+    )
+    expect(calls).toHaveLength(1)
+  })
+})
+
 describe('fromStdin', () => {
   it('parses stdin, reads the token file and uses env overrides', async () => {
     const tokenFile = join(mkdtempSync(join(tmpdir(), 'ao-hook-')), 'token')
@@ -184,6 +296,53 @@ describe('script (child process)', () => {
     expect(code).toBe(0)
     expect(auth).toBe('Bearer filetoken')
     expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toContain('from the UI')
+  })
+
+  it('posts the mode and claims the inbox well within 1.5 s (HK-mode, real process)', async () => {
+    const tokenFile = join(mkdtempSync(join(tmpdir(), 'ao-hook-')), 'token')
+    writeFileSync(tokenFile, 'filetoken\n')
+    const seen: { url: string; body: string }[] = []
+    server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        seen.push({ url: req.url ?? '', body })
+        if (req.url === '/api/events') res.writeHead(202).end('{}')
+        else res.end(JSON.stringify({ messages: [{ text: 'from the UI' }] }))
+      })
+    })
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r))
+    const port = (server.address() as { port: number }).port
+    const t = Date.now()
+    const { code, stdout } = await run(
+      JSON.stringify({
+        hook_event_name: 'UserPromptSubmit',
+        session_id: 's9',
+        permission_mode: 'bypassPermissions',
+      }),
+      { AGENT_OFFICE_URL: `http://127.0.0.1:${port}`, AGENT_OFFICE_TOKEN_FILE: tokenFile },
+    )
+    const elapsed = Date.now() - t
+    expect(code).toBe(0)
+    expect(elapsed).toBeLessThan(1500)
+    expect(JSON.parse(seen.find((s) => s.url === '/api/events')!.body)).toEqual({
+      agentId: 'cc:s9',
+      permissionMode: 'bypassPermissions',
+    })
+    expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toContain('from the UI')
+    console.info(`hook with mode post: ${elapsed} ms`)
+  })
+
+  it('exits 0 silently when the server is down and a mode is present (HK-down)', async () => {
+    const tokenFile = join(mkdtempSync(join(tmpdir(), 'ao-hook-')), 'token')
+    writeFileSync(tokenFile, 'filetoken\n')
+    const t = Date.now()
+    const down = await run(
+      JSON.stringify({ hook_event_name: 'Stop', session_id: 's9', permission_mode: 'plan' }),
+      { AGENT_OFFICE_URL: 'http://127.0.0.1:1', AGENT_OFFICE_TOKEN_FILE: tokenFile },
+    )
+    expect(down).toEqual({ code: 0, stdout: '' })
+    expect(Date.now() - t).toBeLessThan(1500)
   })
 
   it('exits 0 silently when the server is down or the token is missing', async () => {

@@ -2,6 +2,7 @@
 // isolated profile and no mock agents, seeds agents and capabilities through the HTTP API, drives
 // the camera through the renderer's debug hook, and saves stills and clips. All names, topics and
 // capabilities are invented; there are no third-party logos or product names in what is seeded.
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { apiClient } from './api.mjs'
 import { launchApp } from './app.mjs'
@@ -691,7 +692,7 @@ export const SCENARIOS = [
   },
   {
     name: 'chat',
-    shots: ['chat-panel', 'light-dark'],
+    shots: ['chat-panel'],
     clips: ['chat-roundtrip'],
     async run(c, want) {
       await c.post(team('Refactor auth', 'claude-code', ['Maya', 'Leo', 'Pat']))
@@ -725,21 +726,6 @@ export const SCENARIOS = [
       else for (let i = 0; i <= 80; i++) await exchange(i)
       await c.sleep(1500)
       if (want('chat-panel')) await c.still('chat-panel', { hud: true })
-      if (want('light-dark')) {
-        const shots = {}
-        for (const scheme of ['light', 'dark']) {
-          await c.win.emulateMedia({ colorScheme: scheme })
-          await c.sleep(800)
-          shots[scheme] = await c.win.screenshot()
-        }
-        await c.win.emulateMedia({ colorScheme: null })
-        await saveSideBySide(
-          shots.light,
-          shots.dark,
-          ['Light', 'Dark'],
-          join(c.out, 'light-dark.png'),
-        )
-      }
     },
   },
   {
@@ -769,6 +755,63 @@ export const SCENARIOS = [
         .filter({ hasText: 'Received from' })
         .waitFor({ timeout: 8000 })
       if (want('connect-panel')) await c.still('connect-panel', { hud: true, settle: 1500 })
+    },
+  },
+  {
+    // A managed Claude Code session (scripted runner, never the real CLI): the new-session dialog,
+    // the panel with mode/model pills and composer chips, a permission card, and both themes.
+    name: 'session',
+    empty: true,
+    launch: { fakeRunner: true },
+    shots: ['new-session', 'managed-session', 'permission-card', 'themes'],
+    clips: [],
+    async run(c, want) {
+      const { win } = c
+      const folder = join(c.app.dir, 'shop-api')
+      mkdirSync(folder, { recursive: true })
+      // Every folder pick returns the temp folder (no native dialog in captures).
+      await c.app.app.evaluate(({ dialog }, dir) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] })
+      }, folder)
+      // ⊕ New session: folder, Plan mode and a first message.
+      await win.locator('#new-session-btn').click()
+      await win.locator('#ns-choose').click()
+      await win.locator('#ns-mode').selectOption('plan')
+      await win.locator('#ns-text').fill('Plan the logout flow')
+      if (want('new-session')) await c.still('new-session', { hud: true, settle: 800 })
+      await win.locator('#ns-start').click()
+      await win.locator('#p-badge').waitFor({ state: 'visible', timeout: 20_000 })
+      await win.locator('#p-thread li.agent').first().waitFor({ timeout: 15_000 })
+      // Composer with a folder chip and the Chrome browser, and the mode menu open.
+      await win.locator('#p-add-context').click()
+      await win.locator('.menu-item[data-id="folder"]').click()
+      await win.locator('#p-use').click()
+      await win.locator('.menu-item[data-id="mcp:claude-in-chrome"]').click()
+      await win
+        .locator('#p-input')
+        .fill('Review the auth folder and check the login page in Chrome')
+      await win.locator('#p-session .session-pill.mode').click()
+      if (want('managed-session')) await c.still('managed-session', { hud: true, settle: 1500 })
+      await win.keyboard.press('Escape')
+      // A tool call that needs approval.
+      // Remove the chips one at a time (each removal re-renders the list).
+      while (await win.locator('#p-chips .chip-x').count())
+        await win.locator('#p-chips .chip-x').first().click()
+      await win.locator('#p-input').fill('/perm')
+      await win.locator('#p-input').press('Enter')
+      await win.locator('#p-perm').waitFor({ state: 'visible', timeout: 10_000 })
+      if (want('permission-card')) await c.still('permission-card', { hud: true, settle: 1200 })
+      if (want('themes')) {
+        // Playwright pins prefers-color-scheme to light; drop it so the app's theme setting applies.
+        await win.emulateMedia({ colorScheme: null })
+        const shots = {}
+        for (const theme of ['light', 'dark']) {
+          await win.evaluate((t) => window.agentOffice.settings.set({ theme: t }), theme)
+          await c.sleep(1200)
+          shots[theme] = await win.screenshot()
+        }
+        await saveSideBySide(shots.light, shots.dark, ['Light', 'Dark'], join(c.out, 'themes.png'))
+      }
     },
   },
 ]

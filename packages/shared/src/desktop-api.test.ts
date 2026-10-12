@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { PERMISSION_MODES, PermissionModeSchema } from './protocol.ts'
 import {
+  AnswerArgsSchema,
+  NewSessionArgsSchema,
   CopyTextSchema,
   DEFAULT_SETTINGS,
   GRAPHICS_QUALITIES,
@@ -67,5 +70,68 @@ describe('IPC payloads', () => {
   it('channel names are unique', () => {
     const names = Object.values(IPC)
     expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('managed sessions and context contracts', () => {
+  const ref = 'ctx_abc123def456'
+
+  it('lists the six Claude Code permission modes', () => {
+    expect(PERMISSION_MODES).toEqual([
+      'default',
+      'acceptEdits',
+      'plan',
+      'auto',
+      'dontAsk',
+      'bypassPermissions',
+    ])
+    expect(PermissionModeSchema.safeParse('yolo').success).toBe(false)
+  })
+
+  it('accepts messages with or without context refs and tool ids, within limits', () => {
+    const base = { agentId: 'a', text: 'hi' }
+    expect(SendMessageArgsSchema.safeParse(base).success).toBe(true)
+    expect(
+      SendMessageArgsSchema.safeParse({ ...base, context: [ref], use: ['mcp:claude-in-chrome'] })
+        .success,
+    ).toBe(true)
+    expect(
+      SendMessageArgsSchema.safeParse({ ...base, use: ['skill:run-office', 'shell'] }).success,
+    ).toBe(true)
+    expect(SendMessageArgsSchema.safeParse({ ...base, context: Array(10).fill(ref) }).success).toBe(
+      true,
+    )
+    expect(SendMessageArgsSchema.safeParse({ ...base, context: Array(11).fill(ref) }).success).toBe(
+      false,
+    )
+    expect(SendMessageArgsSchema.safeParse({ ...base, context: ['ctx_ABC'] }).success).toBe(false)
+    expect(SendMessageArgsSchema.safeParse({ ...base, context: ['/etc/passwd'] }).success).toBe(
+      false,
+    )
+    expect(SendMessageArgsSchema.safeParse({ ...base, use: ['rm -rf /'] }).success).toBe(false)
+    expect(SendMessageArgsSchema.safeParse({ ...base, use: Array(6).fill('web') }).success).toBe(
+      false,
+    )
+  })
+
+  it('fills new-session defaults and requires a folder and a first message', () => {
+    const parsed = NewSessionArgsSchema.parse({ folder: ref, text: 'Plan the logout flow' })
+    expect(parsed).toMatchObject({ mode: 'default', extraFolders: [], chrome: false })
+    expect(NewSessionArgsSchema.safeParse({ text: 'x' }).success).toBe(false)
+    expect(NewSessionArgsSchema.safeParse({ folder: ref, text: '' }).success).toBe(false)
+  })
+
+  it('defaults the theme to system and bypass mode to off', () => {
+    expect(DEFAULT_SETTINGS.theme).toBe('system')
+    expect(DEFAULT_SETTINGS.allowBypassPermissions).toBe(false)
+    expect(SettingsPatchSchema.safeParse({ theme: 'dark' }).success).toBe(true)
+    expect(SettingsPatchSchema.safeParse({ theme: 'sepia' }).success).toBe(false)
+  })
+
+  it('checks permission answer ids and decisions', () => {
+    const ok = { agentId: 'a', requestId: 'perm_0a1b2c3d4e', decision: 'allow-session' }
+    expect(AnswerArgsSchema.safeParse(ok).success).toBe(true)
+    expect(AnswerArgsSchema.safeParse({ ...ok, requestId: 'perm_x' }).success).toBe(false)
+    expect(AnswerArgsSchema.safeParse({ ...ok, decision: 'always' }).success).toBe(false)
   })
 })

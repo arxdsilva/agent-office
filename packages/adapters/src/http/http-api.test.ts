@@ -63,6 +63,26 @@ describe('guards', () => {
 })
 
 describe('POST /api/events', () => {
+  it('HTTP-spoof: producers cannot mark an agent as managed (unknown keys are stripped)', async () => {
+    const { app, office } = setup()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/events',
+      headers: authed,
+      payload: {
+        agentId: 'cc:spoof',
+        source: 'claude-code',
+        managed: { phase: 'running', chrome: true, pending: 0 },
+        permissionMode: 'plan',
+      },
+    })
+    expect(res.statusCode).toBe(202)
+    const agent = office.query.agent('cc:spoof')
+    expect(agent).toBeDefined()
+    expect(agent).not.toHaveProperty('managed')
+    expect(JSON.stringify(office.query.snapshot())).not.toContain('"managed"')
+  })
+
   it('401 without token; 202 for the minimal payload (compatibility guard) and for batches', async () => {
     const { app, office } = setup()
     const anon = await app.inject({

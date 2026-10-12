@@ -26,3 +26,15 @@ export {
   CapabilityService,
   MAX_CAPABILITIES_PER_PROVIDER,
 } from './application/capability-service.ts'
+export {
+  ComposeService,
+  FALLBACK_MODELS,
+  MAX_MANAGED,
+  ManagedSessionService,
+} from './application/managed-session-service.ts'
+export {
+  composePrompt,
+  modeOf,
+  MODE_LABELS,
+  summarizeToolRequest,
+} from './domain/session-prompt.ts'

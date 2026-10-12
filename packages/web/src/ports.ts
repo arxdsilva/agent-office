@@ -1,5 +1,18 @@
 // Renderer ports: the controller talks to the app (gateway) and to the views only through these.
-import type { AgentOfficeApi, Banner, GraphicsQuality, SettingsPatch } from '@agent-office/shared'
+import type {
+  AgentOfficeApi,
+  Banner,
+  GraphicsQuality,
+  PermissionDecision,
+  PermissionMode,
+  SettingsPatch,
+} from '@agent-office/shared'
+import type {
+  NewSessionVM,
+  PermissionCardVM,
+  SessionHeaderVM,
+  UseMenuVM,
+} from './app/session-types.ts'
 import type { Manifest } from './app/manifest.ts'
 import type { CapabilityPanelVM, ProviderSurfaces } from './app/capability-vm.ts'
 import type { AgentPlan, BuildingLayout, ClipName, Link } from './app/office-types.ts'
@@ -49,6 +62,8 @@ export interface SceneView {
   goTo(viewId: string): void
   /** Milliseconds since the user last moved the camera (orbit, zoom, walk, view button). */
   cameraIdleMs(): number
+  /** Light or dark scene background and fill light (plan §2.6); no rebuild. */
+  setTheme(theme: 'light' | 'dark'): void
 }
 
 export interface SceneSurfaces {
@@ -88,6 +103,47 @@ export interface PanelView {
   onInstallHook(fn: () => void | Promise<void>): void
   /** The hint's "How to connect it →" action (non-Claude agents not reading their inbox). */
   onOpenConnect(fn: () => void): void
+
+  // ── Managed sessions and the composer (plan §2.1–2.3). The VM arrives inside PanelVM. ──
+  onSetMode(fn: (mode: PermissionMode) => void | Promise<void>): void
+  onSetModel(fn: (model: string) => void | Promise<void>): void
+  onInterrupt(fn: () => void | Promise<void>): void
+  /** Called after the user confirmed the stop dialog. */
+  onStop(fn: () => void | Promise<void>): void
+  onAnswer(fn: (requestId: string, decision: PermissionDecision) => void | Promise<void>): void
+  onPickContext(fn: (kind: 'files' | 'folder') => void | Promise<void>): void
+  onRemoveChip(fn: (key: string) => void): void
+  /** Opening the Use… menu asks for its entries; picking one toggles it. */
+  onOpenUse(fn: () => UseMenuVM): void
+  onToggleUse(fn: (id: string) => void): void
+  /** Text typed so far (kept per agent as a draft). */
+  onDraft(fn: (text: string) => void): void
+}
+
+/** The new-session dialog (`<dialog id="new-session">`), plan §2.4. */
+export interface NewSessionView {
+  open(vm: NewSessionVM): void
+  render(vm: NewSessionVM): void
+  close(): void
+  isOpen(): boolean
+  onPickFolder(fn: () => void | Promise<void>): void
+  onAddExtraFolder(fn: () => void | Promise<void>): void
+  onRemoveExtraFolder(fn: (key: string) => void): void
+  onPickContext(fn: (kind: 'files' | 'folder') => void | Promise<void>): void
+  onRemoveChip(fn: (key: string) => void): void
+  onOpenUse(fn: () => UseMenuVM): void
+  onToggleUse(fn: (id: string) => void): void
+  onChange(
+    fn: (patch: {
+      name?: string
+      model?: string
+      mode?: PermissionMode
+      chrome?: boolean
+      text?: string
+    }) => void,
+  ): void
+  onStart(fn: () => void | Promise<void>): void
+  onClose(fn: () => void): void
 }
 
 export interface HudView {
@@ -97,6 +153,8 @@ export interface HudView {
   onConnect(fn: () => void): void
   /** Badge on the 🔌 button while nothing has been seen this session. */
   setConnectBadge(on: boolean): void
+  /** The ⊕ New session button. */
+  onNewSession(fn: () => void): void
 }
 
 /** The Connect panel (`<dialog id="connect">`), plan §2.2. */

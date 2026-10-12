@@ -41,6 +41,18 @@ describe('applyEvent', () => {
     expect(applyEvent(a, { agentId: 'a', status: 'thinking', ts: 100 }, 300)).toBeNull()
   })
 
+  it('merges permissionMode; a later ts wins and an older one is dropped (AG-1)', () => {
+    const a = applyEvent(undefined, { agentId: 'a', permissionMode: 'default', ts: 100 }, 100)!
+    expect(a.permissionMode).toBe('default')
+    const b = applyEvent(a, { agentId: 'a', permissionMode: 'plan', ts: 200 }, 200)!
+    expect(b.permissionMode).toBe('plan')
+    expect(applyEvent(b, { agentId: 'a', status: 'thinking', ts: 300 }, 300)!.permissionMode).toBe(
+      'plan',
+    )
+    expect(applyEvent(b, { agentId: 'a', permissionMode: 'acceptEdits', ts: 150 }, 300)).toBeNull()
+    expect(isVisibleChange(a, b)).toBe(true)
+  })
+
   it('does not mutate the previous state', () => {
     const a = applyEvent(undefined, { agentId: 'a', status: 'idle' }, 1)!
     applyEvent(a, { agentId: 'a', status: 'tool' }, 2)

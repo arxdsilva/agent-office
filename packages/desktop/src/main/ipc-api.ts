@@ -1,6 +1,10 @@
 import {
   DomainError,
+  SessionStartError,
+  type ComposedMessage,
+  type ComposeMessage,
   type HookManagement,
+  type ManagedSessions,
   type OfficeQuery,
   type Scheduler,
   type SettingsManagement,
@@ -8,15 +12,49 @@ import {
   type UserChat,
 } from '@agent-office/core'
 import {
+  AnswerArgsSchema,
   CopyTextSchema,
   IPC,
+  NewSessionArgsSchema,
+  PickKindSchema,
   SendMessageArgsSchema,
+  SessionCallSchema,
+  SetModeArgsSchema,
+  SetModelArgsSchema,
   SettingsPatchSchema,
   type ConnectionInfo,
+  type ContextRef,
+  type StartResult,
   type SendResult,
   type ServerMessage,
   type TestEventResult,
 } from '@agent-office/shared'
+
+/** A picked file or folder as main knows it (the absolute path never leaves main). */
+export interface ContextEntry {
+  path: string
+  kind: 'file' | 'folder'
+  label: string
+  hint: string
+}
+
+/** Opaque `ctx_` refs for paths picked in the native dialog (built by the composition root). */
+export interface ContextRegistry {
+  pick(kind: 'files' | 'folder'): Promise<ContextRef[]>
+  resolve(ref: string): ContextEntry | undefined
+  exists(path: string): boolean
+}
+
+/** Display labels for capability ids the composer may attach. */
+export function useLabel(id: string): string {
+  if (id === 'mcp:claude-in-chrome') return 'Chrome browser'
+  if (id === 'shell') return 'Shell'
+  if (id === 'web') return 'Web'
+  if (id === 'subagents') return 'Subagents'
+  return id.slice(id.indexOf(':') + 1)
+}
+
+class InvalidContextError extends Error {}
 
 /** The driving ports the renderer may reach through IPC — nothing concrete. */
 export interface IpcPorts {
@@ -34,6 +72,11 @@ export interface IpcPorts {
   onHookChanged: () => void
   /** Called when a renderer (re)loads and asks for the snapshot. */
   onReady: () => void
+  /** Messages with context/tool hints (falls back to `chat` when absent). */
+  compose?: ComposeMessage
+  /** Managed Claude Code sessions; the session and context channels exist only with both. */
+  sessions?: ManagedSessions
+  context?: ContextRegistry
 }
 
 export type IpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -43,18 +86,44 @@ export type IpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
  * schemas — the renderer is treated as untrusted input.
  */
 export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
-  return {
+  const entry = (ref: string, kind?: 'file' | 'folder'): ContextEntry => {
+    const e = p.context?.resolve(ref)
+    if (!e) throw new InvalidContextError('invalid context')
+    if (kind && e.kind !== kind) throw new InvalidContextError('choose a folder')
+    return e
+  }
+  const composed = (text: string, context: string[] = [], use: string[] = []): ComposedMessage => ({
+    text,
+    context: context.map((ref) => {
+      const { path, kind, label, hint } = entry(ref)
+      return { path, kind, label, hint }
+    }),
+    use: use.map((id) => ({ id, label: useLabel(id) })),
+  })
+  const call = <T>(
+    schema: { safeParse(x: unknown): { success: boolean; data?: T } },
+    x: unknown,
+  ) => {
+    const r = schema.safeParse(x)
+    if (!r.success) throw new Error('invalid request')
+    return r.data as T
+  }
+
+  const handlers: Record<string, IpcHandler> = {
     [IPC.ready]: () => {
       p.onReady()
       return p.query.snapshot()
     },
-    [IPC.send]: (args: unknown): SendResult => {
+    [IPC.send]: async (args: unknown): Promise<SendResult> => {
       const parsed = SendMessageArgsSchema.safeParse(args)
       if (!parsed.success) return { ok: false, error: 'invalid message' }
+      const { agentId, text, context, use } = parsed.data
       try {
-        return { ok: true, message: p.chat.send(parsed.data.agentId, parsed.data.text) }
+        if (!p.compose) return { ok: true, message: p.chat.send(agentId, text) }
+        return { ok: true, message: await p.compose.send(agentId, composed(text, context, use)) }
       } catch (err) {
-        if (err instanceof DomainError) return { ok: false, error: err.message }
+        if (err instanceof DomainError || err instanceof InvalidContextError)
+          return { ok: false, error: err.message }
         throw err
       }
     },
@@ -87,6 +156,65 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
       const parsed = CopyTextSchema.safeParse(text)
       if (!parsed.success) throw new Error('invalid text')
       p.copyText(parsed.data)
+    },
+  }
+  const { sessions, context } = p
+  if (!sessions || !context) return handlers
+
+  return {
+    ...handlers,
+    [IPC.ctxPick]: async (kind: unknown) => context.pick(call(PickKindSchema, kind)),
+    [IPC.sessStart]: async (args: unknown): Promise<StartResult> => {
+      const parsed = NewSessionArgsSchema.safeParse(args)
+      if (!parsed.success) return { ok: false, code: 'other', error: 'invalid session' }
+      const a = parsed.data
+      let start
+      try {
+        const folder = entry(a.folder, 'folder')
+        const extra = a.extraFolders.map((ref) => entry(ref, 'folder'))
+        const missing = [folder, ...extra].some((f) => !context.exists(f.path))
+        if (missing) return { ok: false, code: 'folder', error: 'folder not found' }
+        start = {
+          cwd: folder.path,
+          name: a.name ?? folder.label,
+          ...(a.model ? { model: a.model } : {}),
+          mode: a.mode,
+          extraDirs: extra.map((f) => f.path),
+          chrome: a.chrome,
+          first: composed(a.text, a.context, a.use),
+        }
+      } catch (err) {
+        if (!(err instanceof InvalidContextError)) throw err
+        const code = err.message === 'choose a folder' ? 'folder' : 'other'
+        return { ok: false, code, error: err.message }
+      }
+      try {
+        return { ok: true, agentId: await sessions.start(start) }
+      } catch (err) {
+        if (err instanceof SessionStartError)
+          return { ok: false, code: err.code, error: err.message }
+        if (err instanceof DomainError) return { ok: false, code: 'other', error: err.message }
+        throw err
+      }
+    },
+    [IPC.sessMode]: async (args: unknown) => {
+      const a = call(SetModeArgsSchema, args)
+      return sessions.setMode(a.agentId, a.mode)
+    },
+    [IPC.sessModel]: async (args: unknown) => {
+      const a = call(SetModelArgsSchema, args)
+      return sessions.setModel(a.agentId, a.model)
+    },
+    [IPC.sessModels]: async (agentId: unknown) =>
+      agentId === undefined
+        ? sessions.models()
+        : sessions.models(call(SessionCallSchema.shape.agentId, agentId)),
+    [IPC.sessInterrupt]: async (args: unknown) =>
+      sessions.interrupt(call(SessionCallSchema, args).agentId),
+    [IPC.sessStop]: async (args: unknown) => sessions.stop(call(SessionCallSchema, args).agentId),
+    [IPC.sessAnswer]: async (args: unknown) => {
+      const a = call(AnswerArgsSchema, args)
+      sessions.answer(a.agentId, a.requestId, a.decision)
     },
   }
 }

@@ -33,6 +33,9 @@ The **Connected** tab lists every provider, its agent count and how it's connect
 ## Features
 
 - **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they are doing ([Tour](#tour)).
+- **Managed sessions.** Start Claude Code from the app and switch its permission mode and model live, approve tool calls from permission cards, interrupt or stop it ([Managed sessions](#managed-sessions)).
+- **Context and tools in every message.** Attach files and folders, and ask the agent to use the Chrome browser, an MCP server or a skill ([Talk to agents](#talk-to-agents)).
+- **Light and dark themes.** System, Light or Dark, with the same features in both ([Appearance](#appearance)).
 - **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP ([Talk to agents](#talk-to-agents)).
 - **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
 - **Library.** Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
@@ -180,9 +183,49 @@ agent) and ✓✓ (replied).
 </tr>
 </table>
 
-![The chat and capability panels in light and dark mode](docs/screenshots/light-dark.png)
+**Delivery hint.** The panel says exactly how a message will reach the agent:
 
-The panels follow your system's light or dark appearance.
+| Agent                                                   | Hint                                                                                    |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Claude Code, hook not installed                         | "Not connected: install the Claude Code hook…" with **Install hook**                    |
+| Claude Code, hook installed, session not checked in yet | "Hook installed ✓ · This session checks in after its current turn or your next prompt." |
+| Claude Code, connected                                  | When the message is delivered (end of the current turn, or your next prompt)            |
+| Subagent                                                | "Subagents can't read messages. Message its parent instead." with **Open parent**       |
+| Managed session                                         | None: messages go straight in                                                           |
+
+**Context and tools.** Every composer has **+ Context** (files or folders from a native picker) and **Use…** (Chrome browser, MCP servers, built-ins, skills). The agent receives the absolute paths and a "use these tools" line with your message; the app shows only file names. Terminal sessions get them through the hook as text.
+
+**Mode and model.** Every Claude Code agent shows its permission mode and model. Terminal sessions show them read-only (they report their mode through the hook); change them in the terminal (Shift+Tab, `/model`).
+
+## Managed sessions
+
+Start Claude Code from agent-office: **⊕ New session** (top right), pick a folder, a model and a mode, and write the first message. The session runs with your own Claude Code login and settings, through the installed `claude` CLI, on this machine.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/new-session.png" width="100%" alt="The New Claude Code session dialog: folder, name, model, mode, extra folders, Chrome and the first message"></td>
+<td width="50%"><img src="docs/screenshots/managed-session.png" width="100%" alt="A managed session's panel with the mode menu open, and a folder and Chrome browser attached to the next message"></td>
+</tr>
+<tr>
+<td>New session: folder, model, mode, extra folders and an optional Chrome browser.</td>
+<td>Switch mode (Default, Accept edits, Plan, Auto, Don't ask) and model live, and attach context.</td>
+</tr>
+</table>
+
+![A permission card: Bash pnpm test, with Allow once, Always allow Bash this session, and Deny](docs/screenshots/permission-card.png)
+
+- **Mode and model** change live, for the rest of the session. Each change is noted in the thread.
+- **Permission cards:** when the session needs approval (Default mode), the agent waits in a phone booth and the panel shows a short summary, never the raw tool input: **Allow once**, **Always allow \<tool\> this session**, or **Deny**.
+- **Interrupt** stops the current turn; **Stop** ends the session (the agent leaves by elevator). Quitting the app asks before stopping running sessions.
+- **Bypass permissions** mode is hidden unless you turn on Settings → "Allow Bypass permissions mode" (with a confirmation).
+- Up to 6 sessions run at once. They end when the app quits.
+- Needs Claude Code installed and signed in (`claude`, then `/login`).
+
+## Appearance
+
+Settings → **Appearance**: System (default), Light or Dark. Everything follows it: panels, name tags, the loading screen, the window and the 3D scene's background. Both themes have the same features, and text contrast is at least 4.5:1 in each (checked by `desktop/e2e/theme.spec.ts`).
+
+![The same managed session panel in the light and dark themes](docs/screenshots/themes.png)
 
 ## Adapters
 
