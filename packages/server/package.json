@@ -1,0 +1,22 @@
+{
+  "name": "@agent-office/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
+  },
+  "dependencies": {
+    "@agent-office/shared": "workspace:*",
+    "@fastify/static": "^10.1.6",
+    "@fastify/websocket": "^11.3.4",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
+  }
+}
