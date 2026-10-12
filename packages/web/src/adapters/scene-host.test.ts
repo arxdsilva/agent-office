@@ -331,3 +331,45 @@ describe('SceneHost', () => {
     expect(made[0]!.names()).toContain('dispose')
   })
 })
+
+describe('SceneHost: 2D camera, minimap base and travel (HS-6)', () => {
+  it('HS-6 forwards onCamera/onMinimapBase across a switch and panTo/travelTo({pos}) to the active scene', async () => {
+    const made: ReturnType<typeof fakeScene>[] = []
+    const factory = vi.fn((mode: ViewMode) => {
+      const f = fakeScene(mode)
+      const on =
+        (name: string) =>
+        (fn: (...a: never[]) => void): void => {
+          f.calls.push({ name, args: [] })
+          ;(f as unknown as { fns?: Record<string, unknown> }).fns ??= {}
+          ;(f as unknown as { fns: Record<string, unknown> }).fns[name] = fn
+        }
+      Object.assign(f.scene, {
+        onCamera: on('onCamera'),
+        onMinimapBase: on('onMinimapBase'),
+        panTo: (pos: unknown) => void f.calls.push({ name: 'panTo', args: [pos] }),
+      })
+      made.push(f)
+      return f.scene
+    })
+    const host = new SceneHost({ factory, resync: () => new Map(), mode: '3d' })
+    const views: unknown[] = []
+    const bases: unknown[][] = []
+    host.onCamera((v) => views.push(v))
+    host.onMinimapBase((img, w, h) => bases.push([img, w, h]))
+    await host.load('m.json')
+    await host.switchTo('pixel')
+    const p = made[1]!
+    const fns = (p as unknown as { fns: Record<string, (...a: unknown[]) => void> }).fns
+    // The listeners reached the new 2D scene.
+    fns.onCamera!({ tx: 1, ty: 2, tw: 3, th: 4 })
+    fns.onMinimapBase!('img', 10, 20)
+    expect(views).toEqual([{ tx: 1, ty: 2, tw: 3, th: 4 }])
+    expect(bases).toEqual([['img', 10, 20]])
+    // Pan and travel to a point reach the active scene.
+    host.panTo({ x: 1, z: 2 })
+    host.travelTo({ pos: { x: 3, z: 4 } })
+    expect(p.calls.find((c) => c.name === 'panTo')?.args).toEqual([{ x: 1, z: 2 }])
+    expect(p.calls.find((c) => c.name === 'travelTo')?.args).toEqual([{ pos: { x: 3, z: 4 } }])
+  })
+})

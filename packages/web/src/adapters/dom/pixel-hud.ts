@@ -1,13 +1,26 @@
 // PixelHudView port → the 2D mode's DOM overlay (plan §9):
 //   #pixel-hud     room name, counts and the selected-agent chip (top-left)
 //   #pixel-alerts  clickable waiting / approval / error alerts (top-right, max 4 + "+N")
-//   #minimap       1 px per tile canvas with status dots; click to pan (M toggles)
+//   #minimap       a 320×280 map: the scene's base image (rooms, walls, furniture), the camera
+//                  viewport, agents in status colours, you, wing/room labels and a legend.
+//                  Click pans the camera there; shift-click travels the player (M toggles)
 //   #directory     wings → topics → agents with search and "Go there" (J toggles)
 // Text goes through textContent only; colours come from the VMs (shared status palette).
 import { PIXEL_COPY } from '../../app/pixel-copy.ts'
 import type { DirectoryVM, MinimapVM, PixelHudVM } from '../../app/pixel/types.ts'
 import type { PixelHudView } from '../../ports.ts'
+import { drawText, GLYPH_H, textWidth } from '../pixel/font.ts'
 import { byId, el } from './el.ts'
+
+/** The minimap canvas in CSS px; the map is fitted inside (letterboxed). */
+export const MINIMAP_W = 320
+export const MINIMAP_H = 280
+const LEGEND: { kind: string; mark: string; text: string }[] = [
+  { kind: 'working', mark: '●', text: 'working' },
+  { kind: 'waiting', mark: '!', text: 'waiting' },
+  { kind: 'error', mark: '✖', text: 'error' },
+  { kind: 'you', mark: '■', text: 'you' },
+]
 
 type DirectoryPick = { agentId?: string; viewId?: string; travel: boolean }
 
@@ -34,9 +47,12 @@ export class DomPixelHud implements PixelHudView {
   private hasMinimap = false
   private hasDirectory = false
   private mapVM: MinimapVM | null = null
+  private base: { img: CanvasImageSource; w: number; h: number } | null = null
+  /** The fitted map inside the canvas (CSS px): offset and px per tile. */
+  private fit = { ox: 0, oy: 0, k: 1 }
 
   private alertFn: (agentId: string, opensPermission: boolean) => void = () => {}
-  private mapFn: (tx: number, ty: number) => void = () => {}
+  private mapFn: (tx: number, ty: number, opts?: { travel?: boolean }) => void = () => {}
   private dirFn: (pick: DirectoryPick) => void = () => {}
   private searchFn: (q: string) => void = () => {}
 
@@ -62,10 +78,23 @@ export class DomPixelHud implements PixelHudView {
       if (!vm) return
       const r = this.canvas.getBoundingClientRect()
       if (!r.width || !r.height) return
-      const tx = Math.floor(((e.clientX - r.left) / r.width) * vm.widthTiles)
-      const ty = Math.floor(((e.clientY - r.top) / r.height) * vm.heightTiles)
-      this.mapFn(clamp(tx, 0, vm.widthTiles - 1), clamp(ty, 0, vm.heightTiles - 1))
+      // Client px → canvas CSS px → tiles (inside the letterboxed map).
+      const cx = ((e.clientX - r.left) / r.width) * MINIMAP_W
+      const cy = ((e.clientY - r.top) / r.height) * MINIMAP_H
+      const tx = Math.floor((cx - this.fit.ox) / this.fit.k)
+      const ty = Math.floor((cy - this.fit.oy) / this.fit.k)
+      const at = [clamp(tx, 0, vm.widthTiles - 1), clamp(ty, 0, vm.heightTiles - 1)] as const
+      if (e.shiftKey) this.mapFn(at[0], at[1], { travel: true })
+      else this.mapFn(at[0], at[1])
     })
+    const legend = el('ul', undefined, 'minimap-legend')
+    for (const l of LEGEND) {
+      const li = el('li', undefined, 'minimap-legend-item')
+      li.dataset.kind = l.kind
+      li.append(el('span', l.mark, 'minimap-legend-mark'), el('span', l.text))
+      legend.append(li)
+    }
+    this.canvas.after(legend)
     document.addEventListener('keydown', (e) => {
       if (!this.shown || e.repeat || keysBlocked(e)) return
       const k = e.key.toLowerCase()
@@ -79,7 +108,7 @@ export class DomPixelHud implements PixelHudView {
   onAlert(fn: (agentId: string, opensPermission: boolean) => void): void {
     this.alertFn = fn
   }
-  onMinimapPick(fn: (tx: number, ty: number) => void): void {
+  onMinimapPick(fn: (tx: number, ty: number, opts?: { travel?: boolean }) => void): void {
     this.mapFn = fn
   }
   onDirectory(fn: (pick: DirectoryPick) => void): void {
@@ -154,6 +183,12 @@ export class DomPixelHud implements PixelHudView {
     if (!vm.wings.length) this.list.append(el('li', '—', 'muted'))
   }
 
+  /** The scene's base image (wired in main.ts; outside the PixelHudView port). */
+  setBase(img: CanvasImageSource, widthTiles: number, heightTiles: number): void {
+    this.base = { img, w: widthTiles, h: heightTiles }
+    if (!this.minimap.hidden && this.mapVM) this.draw(this.mapVM)
+  }
+
   // ── minimap ───────────────────────────────────────────────────────────────────────────────────
   private toggleMinimap(): void {
     if (!this.hasMinimap) return
@@ -164,28 +199,78 @@ export class DomPixelHud implements PixelHudView {
 
   private draw(vm: MinimapVM): void {
     const c = this.canvas
-    if (c.width !== vm.widthTiles || c.height !== vm.heightTiles) {
-      c.width = Math.max(1, vm.widthTiles)
-      c.height = Math.max(1, vm.heightTiles)
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1))
+    if (c.width !== MINIMAP_W * dpr || c.height !== MINIMAP_H * dpr) {
+      c.width = MINIMAP_W * dpr
+      c.height = MINIMAP_H * dpr
     }
     const g = c.getContext('2d')
     if (!g) return
+    g.setTransform(dpr, 0, 0, dpr, 0, 0)
+    g.imageSmoothingEnabled = false
     const css = getComputedStyle(this.minimap)
-    g.fillStyle = css.getPropertyValue('--px-map-bg').trim() || '#2b2f3a'
-    g.fillRect(0, 0, c.width, c.height)
-    for (const d of vm.dots) {
-      g.fillStyle = d.color
-      g.fillRect(d.tx - 1, d.ty - 1, 3, 3)
+    const color = (v: string, d: string) => css.getPropertyValue(v).trim() || d
+    g.fillStyle = color('--px-map-bg', '#2b2f3a')
+    g.fillRect(0, 0, MINIMAP_W, MINIMAP_H)
+    // Fit the map's aspect into the panel.
+    const k = Math.min(
+      MINIMAP_W / Math.max(1, vm.widthTiles),
+      MINIMAP_H / Math.max(1, vm.heightTiles),
+    )
+    const ox = (MINIMAP_W - vm.widthTiles * k) / 2
+    const oy = (MINIMAP_H - vm.heightTiles * k) / 2
+    this.fit = { ox, oy, k }
+    const X = (tx: number) => ox + tx * k
+    const Y = (ty: number) => oy + ty * k
+    if (this.base && this.base.w === vm.widthTiles && this.base.h === vm.heightTiles)
+      g.drawImage(this.base.img, ox, oy, vm.widthTiles * k, vm.heightTiles * k)
+    // The camera's viewport.
+    if (vm.viewport) {
+      const v = vm.viewport
+      g.strokeStyle = 'rgba(255,255,255,0.9)'
+      g.lineWidth = 1
+      g.strokeRect(
+        Math.round(X(v.tx)) + 0.5,
+        Math.round(Y(v.ty)) + 0.5,
+        Math.round(v.tw * k),
+        Math.round(v.th * k),
+      )
     }
+    // Agents: 3×3, waiting and error 5×5 and pulsing.
+    const pulse = Math.floor(performance.now() / 500) % 2 === 0
+    for (const d of vm.dots) {
+      const flagged = d.waiting || d.error
+      const size = flagged ? (pulse ? 5 : 4) : 3
+      const x = Math.round(X(d.tx + 0.5) - size / 2)
+      const y = Math.round(Y(d.ty + 0.5) - size / 2)
+      if (flagged) {
+        g.fillStyle = '#000000'
+        g.fillRect(x - 1, y - 1, size + 2, size + 2)
+      }
+      g.fillStyle = d.color
+      g.fillRect(x, y, size, size)
+    }
+    // Labels in the pixel font: wings in yellow, rooms in white, on a dark backing.
+    for (const l of vm.labels ?? []) {
+      const w = textWidth(l.text)
+      const x = Math.round(X(l.tx + 0.5) - w / 2)
+      const y = Math.round(Y(l.ty + 0.5) - GLYPH_H / 2)
+      g.fillStyle = 'rgba(20,18,28,0.72)'
+      g.fillRect(x - 2, y - 2, w + 4, GLYPH_H + 4)
+      drawText(g, l.text, x, y, l.kind === 'wing' ? '#ffd23f' : '#f4f1ea')
+    }
+    // You: 5×5 with an outline.
     if (vm.player) {
-      g.fillStyle = css.getPropertyValue('--px-map-player').trim() || '#ffffff'
-      g.fillRect(vm.player.tx - 2, vm.player.ty - 2, 5, 5)
+      const x = Math.round(X(vm.player.tx + 0.5))
+      const y = Math.round(Y(vm.player.ty + 0.5))
       g.fillStyle = '#000000'
-      g.fillRect(vm.player.tx - 1, vm.player.ty - 1, 3, 3)
-      g.fillStyle = css.getPropertyValue('--px-map-player').trim() || '#ffffff'
-      g.fillRect(vm.player.tx, vm.player.ty, 1, 1)
+      g.fillRect(x - 3, y - 3, 7, 7)
+      g.fillStyle = color('--px-map-player', '#ffffff')
+      g.fillRect(x - 2, y - 2, 5, 5)
     }
     this.minimap.dataset.dots = String(vm.dots.length)
+    this.minimap.dataset.labels = String(vm.labels?.length ?? 0)
+    this.minimap.dataset.base = this.base ? 'true' : 'false'
   }
 
   // ── directory ─────────────────────────────────────────────────────────────────────────────────

@@ -355,5 +355,237 @@ test('X8: in 2D, a managed session asking for approval raises an alert that open
   await expect(win.locator('#p-perm')).toBeHidden()
   await expect(alert).toHaveCount(0, { timeout: 10_000 })
   expect(errors).toEqual([])
+  // The session is still running, so quitting asks "managed sessions will stop": answer Quit.
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as never
+  })
+  await app.close()
+})
+
+// 2D polish (plan §2–§2d): the player walks in every view, the M minimap is a real map, Main
+// Street has no invisible barriers, meeting tables use their vertical art and kitchens sit inside
+// their walls. Debug state only (`__aoDebug.pixel()`, its `objects()` and `rooms()`), no pixels.
+interface TileRect {
+  tx: number
+  ty: number
+  tw: number
+  th: number
+}
+interface PixelMapDebug {
+  player: { x: number; z: number }
+  overview: boolean
+  camera: 'player' | 'overview' | 'follow' | 'pan'
+  following: string | null
+  view: { cx: number; cz: number; w: number; h: number } | null
+  originM: { x: number; z: number } | null
+  tiles: { w: number; h: number } | null
+  entities: { id: string; visible: boolean }[]
+}
+interface DebugObject {
+  id: string
+  kind: string
+  rect: TileRect
+  room?: string
+  orientation?: 'h' | 'v'
+}
+interface DebugRoom {
+  id: string
+  name: string
+  rect: TileRect
+  placement: string
+}
+type MapWindow = {
+  __aoDebug: {
+    pixel(): PixelMapDebug & { objects(): DebugObject[]; rooms(): DebugRoom[] }
+    pixelTeleport(x: number, z: number, dir?: string): boolean
+    focus(agentId: string): void
+  }
+}
+const state = (win: Page) =>
+  win.evaluate(() => {
+    const { objects: _o, rooms: _r, ...rest } = (window as unknown as MapWindow).__aoDebug.pixel()
+    return rest as PixelMapDebug
+  })
+const objects = (win: Page) =>
+  win.evaluate(() => (window as unknown as MapWindow).__aoDebug.pixel().objects())
+const rooms = (win: Page) =>
+  win.evaluate(() => (window as unknown as MapWindow).__aoDebug.pixel().rooms())
+const teleport = (win: Page, x: number, z: number) =>
+  win.evaluate(
+    ([x, z]) => (window as unknown as MapWindow).__aoDebug.pixelTeleport(x!, z!, 's'),
+    [x, z],
+  )
+const inside = (a: TileRect, b: TileRect) =>
+  a.tx >= b.tx && a.ty >= b.ty && a.tx + a.tw <= b.tx + b.tw && a.ty + a.th <= b.ty + b.th
+/** Holds `key` and returns how far the player moved (m). */
+async function walked(win: Page, key: string, ms: number): Promise<{ dx: number; dz: number }> {
+  const a = (await state(win)).player
+  await hold(win, key, ms)
+  const b = (await state(win)).player
+  return { dx: b.x - a.x, dz: b.z - a.z }
+}
+
+/** Tries each direction until the player moves (furniture may block one side); the distance (m). */
+async function walkedSomewhere(win: Page, ms: number): Promise<number> {
+  for (const key of ['s', 'd', 'a', 'w']) {
+    const d = await walked(win, key, ms)
+    const m = Math.abs(d.dx) + Math.abs(d.dz)
+    if (m > 0.2) return m
+  }
+  return 0
+}
+
+test('2D polish: walk in every view, the minimap, Main Street, meeting tables, kitchens', async () => {
+  const profile = profileWith({ viewMode: 'pixel' })
+  // 2D has no 3D name tags to wait for; the canvas and the debug entities say it's ready.
+  const { app, win, errors } = await launch(profile, {
+    env: { AGENT_OFFICE_DEBUG: '1' },
+    waitForAgents: false,
+  })
+  await expect(win.locator('#pixel')).toBeVisible({ timeout: 20_000 })
+  await expect.poll(async () => (await state(win)).entities.length).toBeGreaterThan(0)
+  // Start in the middle of the atrium's open floor, so walking east has room.
+  const lobby = (await rooms(win)).find((r) => r.placement === 'atrium' && r.name === 'Plaza')
+  const s0 = await state(win)
+  if (lobby && s0.originM)
+    await teleport(
+      win,
+      s0.originM.x + (lobby.rect.tx + lobby.rect.tw / 2) * 0.5,
+      s0.originM.z + (lobby.rect.ty + lobby.rect.th / 2) * 0.5,
+    )
+
+  await test.step('MV-1: the player walks while the overview stays open', async () => {
+    await blur(win)
+    // O opens the overview; D walks east inside it; the overview doesn't close.
+    await win.keyboard.press('o')
+    await expect.poll(async () => (await state(win)).overview).toBe(true)
+    const d = await walked(win, 'd', 800)
+    expect(d.dx).toBeGreaterThan(0.5)
+    expect((await state(win)).overview).toBe(true)
+    // Space brings the camera back to the player.
+    await win.keyboard.press('Space')
+    await expect.poll(async () => (await state(win)).camera).toBe('player')
+  })
+
+  await test.step('MV-2: the player walks while the camera follows Ada', async () => {
+    // Follow from Ada's dialogue box, then walk away: the camera keeps following her.
+    await win.evaluate(() =>
+      (window as unknown as { __aoDebug: { pixelGoTo(t: object): void } }).__aoDebug.pixelGoTo({
+        agentId: 'mock:ada',
+      }),
+    )
+    await blur(win)
+    await win.keyboard.press('e')
+    await expect(win.locator('#dialogue')).toBeVisible()
+    await win.locator('#dlg-actions [data-action="follow"]').click()
+    await expect.poll(async () => (await state(win)).following).toBe('mock:ada')
+    await blur(win)
+    expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
+    expect((await state(win)).following).toBe('mock:ada')
+    // Esc returns the camera to the player.
+    await win.keyboard.press('Escape')
+    await expect.poll(async () => (await state(win)).camera).toBe('player')
+  })
+
+  await test.step('MV-3: the player walks with an agent selected (panel open) and the Library open', async () => {
+    // Selecting Ada opens the chat panel; with focus off the composer, the player still walks.
+    await win.evaluate(() => (window as unknown as MapWindow).__aoDebug.focus('mock:ada'))
+    await expect(win.locator('#panel')).toBeVisible()
+    await blur(win)
+    expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
+    // Typing in the composer never moves the player.
+    const before = (await state(win)).player
+    await win.locator('#p-input').press('s')
+    await win.locator('#p-input').press('d')
+    const after = (await state(win)).player
+    expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeLessThan(0.05)
+    await win.locator('#p-input').press('Escape')
+    await expect(win.locator('#panel')).toBeHidden()
+    // The Library drawer open, focus back on the page: the player walks.
+    await win.locator('#library-btn').click()
+    await expect(win.locator('#library')).toBeVisible()
+    await blur(win)
+    expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
+    await win.locator('#lib-close').click()
+    await expect(win.locator('#library')).toBeHidden()
+  })
+
+  await test.step('MAP-1: M shows a 320 px map with labels and one dot per agent; a click pans', async () => {
+    await blur(win)
+    await win.keyboard.press('m')
+    const map = win.locator('#minimap')
+    await expect(map).toBeVisible()
+    const box = (await win.locator('#minimap-canvas').boundingBox())!
+    expect(Math.round(box.width)).toBe(320)
+    await expect
+      .poll(async () => Number(await map.getAttribute('data-labels')), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(3)
+    // One dot per visible agent (both refresh at 2 Hz; agents may walk in or out meanwhile).
+    await expect
+      .poll(async () => {
+        const visible = (await state(win)).entities.filter((e) => e.visible).length
+        return Math.abs(Number(await map.getAttribute('data-dots')) - visible)
+      })
+      .toBeLessThanOrEqual(1)
+    await expect(map).toHaveAttribute('data-base', 'true')
+    // Click the map's centre: the camera pans to the map's centre (± the clamp at the edges).
+    const s = await state(win)
+    await win.locator('#minimap-canvas').click({ position: { x: 160, y: 140 } })
+    const cx = s.originM!.x + (s.tiles!.w / 2) * 0.5
+    const cz = s.originM!.z + (s.tiles!.h / 2) * 0.5
+    await expect
+      .poll(async () => {
+        const v = (await state(win)).view!
+        return Math.hypot(v.cx - cx, v.cz - cz)
+      })
+      .toBeLessThan(3)
+    expect((await state(win)).camera).toBe('pan')
+    // A movement key returns the camera to the player.
+    await blur(win)
+    await hold(win, 'a', 200)
+    await expect.poll(async () => (await state(win)).camera).toBe('player')
+    await win.keyboard.press('m')
+    await expect(map).toBeHidden()
+  })
+
+  await test.step('PC-1: the player walks the length of Main Street from its north end', async () => {
+    // The northernmost street bay; start 1 m inside its north edge, on its centre line.
+    const streets = (await rooms(win))
+      .filter((r) => r.placement.startsWith('street'))
+      .sort((a, b) => a.rect.ty - b.rect.ty)
+    expect(streets.length).toBeGreaterThan(0)
+    const north = streets[0]!
+    const o = (await state(win)).originM!
+    await teleport(
+      win,
+      o.x + (north.rect.tx + north.rect.tw / 2) * 0.5,
+      o.z + north.rect.ty * 0.5 + 1,
+    )
+    await blur(win)
+    // 6 s of S at walking speed (1.4 m/s): at least 7 m south, no invisible barriers.
+    const d = await walked(win, 's', 6000)
+    expect(d.dz).toBeGreaterThanOrEqual(7)
+  })
+
+  await test.step('PC-2: vertical meeting tables use their vertical art', async () => {
+    const tables = (await objects(win)).filter((o) => o.kind === 'meeting-table')
+    expect(tables.length).toBeGreaterThan(0)
+    // A table taller than wide is drawn with the 'v' variant (its rect is the drawn sprite).
+    for (const t of tables) if (t.rect.th > t.rect.tw) expect(t.orientation, t.id).toBe('v')
+    expect(tables.some((t) => t.orientation === 'v')).toBe(true)
+  })
+
+  await test.step('PC-3: kitchen counters sit inside the kitchen in every wing', async () => {
+    const kitchens = (await rooms(win)).filter((r) => r.id.endsWith('/kitchen'))
+    expect(kitchens.length).toBeGreaterThan(0)
+    const counters = (await objects(win)).filter((o) => o.kind === 'kitchen-counter')
+    for (const k of kitchens) {
+      const mine = counters.filter((c) => c.room === k.id)
+      expect(mine.length, k.id).toBeGreaterThan(0)
+      for (const c of mine) expect(inside(c.rect, k.rect), `${c.id} in ${k.id}`).toBe(true)
+    }
+  })
+
+  expect(errors).toEqual([])
   await app.close()
 })

@@ -75,6 +75,10 @@ export interface PlanWall {
   kind: WallKind
   /** Door/gap intervals [t0, t1] in metres along a→b. */
   openings?: [number, number][]
+  /** Which side of the a→b line the wall body extends to (−1 left, +1 right, module-local). */
+  side?: -1 | 1
+  /** Wall body thickness in metres. */
+  thick?: number
 }
 export interface PlanFurniture {
   kind: FurnitureKind
@@ -107,6 +111,12 @@ export interface MapObject {
   solid: boolean
   theme?: ThemeId
   facing?: Dir4
+  /** Drawing orientation: 'v' when the footprint is taller than wide (vertical art variants). */
+  orientation?: 'h' | 'v'
+  /** How the renderer fills `rect`: one sprite, a sprite repeated along the long axis, or a 9-slice. */
+  fill?: 'sprite' | 'repeat' | 'area'
+  /** Room id the object belongs to (for invariants and debug). */
+  room?: string
   /** Interactive objects: what E/click opens. */
   interact?:
     | { kind: 'capability'; ref: CapabilityRef }
@@ -203,8 +213,17 @@ export interface PixelHudVM {
 export interface MinimapVM {
   widthTiles: number
   heightTiles: number
-  dots: { id: string; tx: number; ty: number; color: string }[]
+  dots: { id: string; tx: number; ty: number; color: string; waiting?: boolean; error?: boolean }[]
   player?: TilePos
+  /** Wing names (provider) and major room names, at their centres. */
+  labels?: { text: string; tx: number; ty: number; kind: 'wing' | 'room' }[]
+  /** The tiles the camera shows right now. */
+  viewport?: TileRect
+}
+
+/** Atlas footprint (tiles) of an object's art for an orientation; null when the kind has no art. */
+export interface SpriteFoot {
+  foot(kind: string, orientation: 'h' | 'v'): { tw: number; th: number } | null
 }
 export interface DirectoryVM {
   query: string

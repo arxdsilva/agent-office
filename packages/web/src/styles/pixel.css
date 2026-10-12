@@ -228,11 +228,43 @@ body:has(#actions.with-banner) #pixel-alerts {
 }
 #minimap-canvas {
   display: block;
-  width: 220px;
+  width: 320px;
+  height: 280px;
   max-width: calc(100vw - 64px);
-  height: auto;
+  max-height: calc(100vh - 140px);
+  object-fit: contain;
   image-rendering: pixelated;
   cursor: crosshair;
+}
+.minimap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--px-muted);
+}
+.minimap-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.minimap-legend-mark {
+  font-weight: 700;
+}
+.minimap-legend-item[data-kind='working'] .minimap-legend-mark {
+  color: var(--px-accent);
+}
+.minimap-legend-item[data-kind='waiting'] .minimap-legend-mark {
+  color: var(--px-waiting);
+}
+.minimap-legend-item[data-kind='error'] .minimap-legend-mark {
+  color: var(--px-error);
+}
+.minimap-legend-item[data-kind='you'] .minimap-legend-mark {
+  color: var(--px-text);
 }
 
 /* ── directory (left drawer) ───────────────────────────────────────────────────────────────── */

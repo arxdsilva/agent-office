@@ -170,9 +170,16 @@ class Geo:
             item['ref'] = ref
         self.plan['furniture'].append(item)
 
-    def plan_wall(self, a, b, kind='solid', openings=()):
-        """Record a wall segment a→b (local XZ); openings are door/gap intervals [t0, t1] along a→b."""
+    def plan_wall(self, a, b, kind='solid', openings=(), *, side, thick):
+        """Record a wall segment a→b (local XZ); openings are door/gap intervals [t0, t1] along a→b.
+
+        `side` (±1) is the side of a→b the body extends to: +1 is the (−dz, dx) normal, which is local +z of
+        the kit's wall frame (right of a→b seen from above, x right and z down). `thick` is the body depth in
+        metres. A body centred on the line records side +1 and its full depth. Frames only translate and
+        yaw (never mirror), so the side survives the transform to module space."""
         pa, pb = self.world(a[0], 0, a[1]), self.world(b[0], 0, b[1])
+        if side not in (-1, 1) or not thick > 0:
+            raise ValueError(f'plan_wall: side must be ±1 and thick > 0 (got {side!r}, {thick!r})')
         wall_ = {'a': [_r3(pa[0]), _r3(pa[2])], 'b': [_r3(pb[0]), _r3(pb[2])], 'kind': kind}
         ops = []
         for (t0, t1) in sorted(openings):  # merge touching cuts (a door next to a storefront gap)
@@ -185,6 +192,7 @@ class Geo:
         ops = [[_r3(t0), _r3(t1)] for (t0, t1) in ops]
         if ops:
             wall_['openings'] = ops
+        wall_['side'], wall_['thick'] = side, _r3(thick)
         self.plan['walls'].append(wall_)
 
     def room(self, rid, name, x0, z0, x1, z1, floor=None):
@@ -427,8 +435,9 @@ def triangle_count(obj):
 
 # ---------------------------------------------------------------------------- architecture kit
 def wall(g, mat, a, b, h, thick=0.15, y0=0.0, openings=(), side=1, bevel=0.003, skirting=None):
-    """Straight wall from a=(x, z) to b=(x, z) in local coords; the wall body lies on the `side` (+1 left,
-    −1 right of a→b) of the line so two modules sharing a boundary never overlap.
+    """Straight wall from a=(x, z) to b=(x, z) in local coords; the wall body lies on the `side` of the line
+    (+1: the (−dz, dx) normal, local +z of the wall frame; see Geo.plan_wall) so two modules sharing a
+    boundary never overlap.
     openings: [(t0, t1, ybot, ytop)] distances along a→b."""
     ax, az = a
     bx, bz = b
@@ -436,7 +445,7 @@ def wall(g, mat, a, b, h, thick=0.15, y0=0.0, openings=(), side=1, bevel=0.003, 
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2  # local +x along a→b
     cuts = sorted(openings)
     # floor-level cuts are doors/gaps; raised ones are windows (contract §11)
-    g.plan_wall(a, b, 'solid', [(t0, t1) for (t0, t1, yb, yt) in cuts if yb <= y0 + 0.01])
+    g.plan_wall(a, b, 'solid', [(t0, t1) for (t0, t1, yb, yt) in cuts if yb <= y0 + 0.01], side=side, thick=thick)
     with g.at(ax, az, yaw):
         zc = side * thick / 2
         spans = []
@@ -473,7 +482,9 @@ def glass_partition(g, P, a, b, h=2.7, spacing=1.2, door=None, frame='metal', to
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2
     fm = P[frame]
     mw = 0.05
-    g.plan_wall(a, b, 'glass', [door] if door else ())
+    # the body is centred on the line: mullions ±0.03, door frames ±0.05, the solid head ±0.06
+    depth = 0.12 if top and top > h else 0.10 if door else 0.06
+    g.plan_wall(a, b, 'glass', [door] if door else (), side=1, thick=depth)
     with g.at(ax, az, yaw):
         g.box_b(fm, 0, L, h - 0.06, h, -0.03, 0.03, bevel=0.003)
         segs = []
@@ -515,7 +526,7 @@ def curtain_wall(g, P, a, b, h, spacing=1.5, transoms=(), thick=0.12, sill=0.0, 
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2
     fm = P[frame]
     zc = side * thick / 2
-    g.plan_wall(a, b, 'curtain')
+    g.plan_wall(a, b, 'curtain', side=side, thick=thick)
     with g.at(ax, az, yaw):
         n = max(1, round(L / spacing))
         for i in range(n + 1):

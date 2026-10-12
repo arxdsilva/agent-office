@@ -855,6 +855,7 @@ export const SCENARIOS = [
       'pixel-booth',
       'pixel-library',
       'pixel-meeting',
+      'pixel-minimap',
     ],
     clips: ['pixel-walk'],
     async run(c, want) {
@@ -908,6 +909,14 @@ export const SCENARIOS = [
         // A parent and its subagents around the meeting table.
         await goTo({ agentId: 'cc:maya' })
         await still('pixel-meeting')
+      }
+      if (want('pixel-minimap')) {
+        // M: the minimap — rooms, walls, wing and room labels, agents by status, you, the viewport.
+        await goTo({ agentId: 'cc:omar' })
+        await win.keyboard.press('m')
+        await win.locator('#minimap').waitFor({ state: 'visible', timeout: 5000 })
+        await still('pixel-minimap')
+        await win.keyboard.press('m')
       }
       if (want('pixel-walk')) {
         // The player walks east along the pods (D held while frames are taken).

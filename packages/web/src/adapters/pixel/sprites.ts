@@ -6,7 +6,10 @@
 import type { Appearance } from '../../app/motion.ts'
 import type { PropName } from '../../app/office-types.ts'
 import type { TileQuery } from '../../app/pixel/map.ts'
-import type { Dir4, PixelAnim } from '../../app/pixel/types.ts'
+import type { Dir4, PixelAnim, SpriteFoot } from '../../app/pixel/types.ts'
+import { objectArt, spriteFootOf } from './object-art.ts'
+
+export { objectArt, spriteFootOf, type ObjectArt } from './object-art.ts'
 
 export const CHAR_W = 16
 export const CHAR_H = 24
@@ -44,13 +47,15 @@ interface RawVariant {
   foot?: [number, number]
   placeholder?: boolean
 }
+/** Object variants: facings (s/n/e/w), `v` (vertical art) and named states (booth-lamp on/off, …). */
+type RawVariants = Record<string, RawVariant | undefined>
 export interface RawAtlas {
   sheets?: Record<string, { file: string }>
   frames?: Record<string, RawFrame>
   tileIds?: Record<string, number>
   tiles?: ({ frame: string } | null)[]
   tileSets?: { wallTop?: Record<string, string>; wallFace?: Record<string, [string, string]> }
-  objects?: Record<string, { variants: Partial<Record<Dir4, RawVariant>> }>
+  objects?: Record<string, { variants: RawVariants }>
   characters?: {
     layers?: string[]
     recolor?: { source: string[]; groups: Record<string, string | null> }
@@ -74,6 +79,7 @@ export interface RawAtlas {
 export class Atlas {
   private placeholders: Set<string>
   private anims = new Map<string, RawAnim>()
+  private objects = new Map<string, ObjectFrame | null>()
 
   constructor(
     readonly raw: RawAtlas,
@@ -128,12 +134,40 @@ export class Atlas {
     return this.tileFrame(q.layer === 'overhead' ? face[0] : face[1], theme)
   }
 
-  /** An object's frame for a facing (falls back to 's'); themed frames use `frame@theme`. */
-  object(kind: string, dir: Dir4 | undefined, theme?: string): AtlasFrame | null {
-    const o = this.raw.objects?.[kind]
-    const v = o?.variants[dir ?? 's'] ?? o?.variants.s
-    if (!v || v.placeholder) return null
-    return (v.themed && theme ? this.frame(`${v.frame}@${theme}`) : null) ?? this.frame(v.frame)
+  /**
+   * An object's frame for an orientation and facing (plan §1.5): `v` art for vertical pieces, else the
+   * facing's art, else `s` (`rotated` when a vertical piece only has `s` art: draw it turned 90°).
+   * `named` picks a state variant (booth-lamp `on`/`off`, elevator-door `closed`/`open-1`…).
+   * Themed frames use `frame@theme`, falling back to the house theme outside wings.
+   */
+  object(
+    kind: string,
+    theme?: string,
+    facing?: Dir4,
+    orientation?: 'h' | 'v',
+    named?: string,
+  ): ObjectFrame | null {
+    const key = `${kind}|${theme ?? ''}|${facing ?? ''}|${orientation ?? ''}|${named ?? ''}`
+    if (this.objects.has(key)) return this.objects.get(key)!
+    const out = this.resolveObject(kind, theme, facing, orientation, named)
+    this.objects.set(key, out)
+    return out
+  }
+
+  private resolveObject(
+    kind: string,
+    theme?: string,
+    facing?: Dir4,
+    orientation?: 'h' | 'v',
+    named?: string,
+  ): ObjectFrame | null {
+    const art = objectArt(this.raw, kind, facing, orientation, named, this.placeholders)
+    if (!art) return null
+    const f =
+      (art.themed
+        ? ((theme ? this.frame(`${art.frame}@${theme}`) : null) ?? this.frame(`${art.frame}@house`))
+        : null) ?? this.frame(art.frame)
+    return f && { ...f, foot: art.foot, rotated: art.rotated }
   }
 
   /** The pose ref (e.g. 'walk-a-s') `t` seconds into an animation, with its alpha. */
@@ -170,6 +204,15 @@ export class Atlas {
     return n
   }
 }
+
+/** A frame plus the footprint (tiles) its art covers; `rotated`: draw the footprint turned 90°. */
+export interface ObjectFrame extends AtlasFrame {
+  foot: [number, number]
+  rotated: boolean
+}
+
+/** `spriteFootOf` for a loaded atlas (what the scene passes to `buildPixelMap`). */
+export const createSpriteFoot = (atlas: Atlas): SpriteFoot => spriteFootOf(atlas.raw)
 
 /** Loads the atlas, or null when it isn't published (the 2D mode then draws placeholders). */
 export async function loadAtlas(base: string): Promise<Atlas | null> {

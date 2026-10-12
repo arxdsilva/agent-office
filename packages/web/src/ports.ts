@@ -15,6 +15,7 @@ import type {
   InteractTarget,
   MinimapVM,
   PixelHudVM,
+  TileRect,
 } from './app/pixel/types.ts'
 import type { ViewMode } from '@agent-office/shared'
 import type { LibraryTab, LibrarySort, LibraryVM, ViewEntry } from './app/library-types.ts'
@@ -97,10 +98,18 @@ export interface SceneView {
   onRoom?(fn: (roomName: string) => void): void
   /** 2D: where the player stands, in world metres (minimap), at most 4 Hz. */
   onPlayerMove?(fn: (pos: { x: number; z: number }) => void): void
+  /** 2D: the visible tiles of the camera (minimap viewport), at most 4 Hz. */
+  onCamera?(fn: (view: TileRect) => void): void
+  /** 2D: the minimap's base image (floors, walls, furniture), re-sent when the map changes. */
+  onMinimapBase?(
+    fn: (img: CanvasImageSource, widthTiles: number, heightTiles: number) => void,
+  ): void
   /** 2D: the camera follows an agent without moving the player (Follow); null stops. */
   follow?(agentId: string | null): void
   /** 2D: move the player next to an agent or view region (directory "Go there"). */
-  travelTo?(target: { agentId?: string; viewId?: string }): void
+  travelTo?(target: { agentId?: string; viewId?: string; pos?: { x: number; z: number } }): void
+  /** 2D: pan the camera to a world point (minimap click); any movement key returns it to the player. */
+  panTo?(pos: { x: number; z: number }): void
 }
 
 export interface SceneSurfaces {
@@ -293,7 +302,7 @@ export interface PixelHudView {
   renderMinimap(vm: MinimapVM | null): void
   renderDirectory(vm: DirectoryVM | null): void
   onAlert(fn: (agentId: string, opensPermission: boolean) => void): void
-  onMinimapPick(fn: (tx: number, ty: number) => void): void
+  onMinimapPick(fn: (tx: number, ty: number, opts?: { travel?: boolean }) => void): void
   onDirectory(fn: (pick: { agentId?: string; viewId?: string; travel: boolean }) => void): void
   onDirectorySearch(fn: (q: string) => void): void
 }

@@ -383,9 +383,9 @@ def _room_sign(g, P, ref, z):
 
 def _front(g, A, P, t, rng):
     """x = 24: solid behind the meeting rooms, glass front with two doors between them; z = 0 partition."""
-    g.plan_wall((23.92, -9.0), (23.92, -2.6))
-    g.plan_wall((23.92, 2.6), (23.92, 9.0))
-    g.plan_wall((24.0, 0.0), (30.0, 0.0))
+    g.plan_wall((23.92, -9.0), (23.92, -2.6), side=1, thick=0.15)  # body x ∈ [23.85, 24]
+    g.plan_wall((23.92, 2.6), (23.92, 9.0), side=1, thick=0.15)
+    g.plan_wall((24.0, 0.0), (30.0, 0.0), side=1, thick=0.16)  # body z ∈ ±0.08
     g.box_b(P['wall'], 23.85, 24.0, 0, H, -8.85, -2.6, bevel=0.003)
     g.box_b(P['wall'], 23.85, 24.0, 0, H, 2.6, 8.85, bevel=0.003)
     glass_partition(g, P, (23.92, -2.6), (23.92, 0.0), h=2.9, spacing=1.3, door=(1.1, 2.2), top=H)

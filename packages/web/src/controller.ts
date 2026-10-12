@@ -67,7 +67,8 @@ import { libraryKind } from './app/library.ts'
 import { dialogueVM } from './app/pixel/dialogue-vm.ts'
 import { directoryVM } from './app/pixel/directory-vm.ts'
 import { pixelHudVM } from './app/pixel/hud-vm.ts'
-import { minimapVM } from './app/pixel/minimap.ts'
+import { minimapLabels, minimapVM } from './app/pixel/minimap.ts'
+import { plansOf } from './app/pixel/map.ts'
 import { pixelToWorld, projectionFor } from './app/pixel/project.ts'
 import { placementAt, viewIdOf } from './app/pixel/rooms.ts'
 import {
@@ -75,7 +76,11 @@ import {
   type DialogueAction,
   type DialogueVM,
   type InteractTarget,
+  type MinimapVM,
+  type TileRect,
 } from './app/pixel/types.ts'
+
+type MinimapLabels = NonNullable<MinimapVM['labels']>
 import { PIXEL_COPY } from './app/pixel-copy.ts'
 import type {
   BannerView,
@@ -281,6 +286,10 @@ export function createController(d: ControllerDeps) {
   let room = ''
   /** 2D: the player's world position (minimap marker). */
   let playerPos: { x: number; z: number } | undefined
+  /** 2D: the camera's visible tiles (minimap viewport). */
+  let cameraView: TileRect | undefined
+  /** 2D: minimap labels, recomputed when the layout or manifest changes. */
+  let mapLabels: { key: string; manifest: Manifest; labels: MinimapLabels } | undefined
   let dirQuery = ''
   let dialogueAt: { target: InteractTarget; vm: DialogueVM } | null = null
   let suspended = false
@@ -617,17 +626,15 @@ export function createController(d: ControllerDeps) {
     updateSuspension()
   }
 
-  /** 2D: player input pauses while the dialogue or any panel/drawer/dialog is open. */
+  /**
+   * 2D: player input pauses only for modal UI (the dialogue box, Settings, Connect, New session).
+   * Selected agents, the agent and capability panels and the Library drawer leave the player
+   * walking; typing in a field never moves the player (PixelInput ignores those keys).
+   */
   function updateSuspension() {
     if (!pixelDeps) return
     const on =
-      dialogueAt !== null ||
-      selected !== null ||
-      openCapability !== null ||
-      d.library.isOpen() ||
-      d.settings.isOpen() ||
-      d.connect.isOpen() ||
-      d.newSession.isOpen()
+      dialogueAt !== null || d.settings.isOpen() || d.connect.isOpen() || d.newSession.isOpen()
     if (on === suspended) return
     suspended = on
     d.scene.setInputSuspended?.(on)
@@ -715,7 +722,19 @@ export function createController(d: ControllerDeps) {
         const pose = director?.pose(id, now)
         if (pose?.visible) dots.push({ id, pos: pose.pos, status: p.agent.status })
       }
-      d.pixelHud?.renderMinimap(minimapVM(proj, dots, playerPos))
+      if (manifest && (mapLabels?.key !== layout.key || mapLabels.manifest !== manifest))
+        mapLabels = {
+          key: layout.key,
+          manifest,
+          labels: minimapLabels(layout, plansOf(manifest), proj),
+        }
+      d.pixelHud?.renderMinimap(
+        minimapVM(proj, dots, playerPos, {
+          flags: true,
+          ...(mapLabels && { labels: mapLabels.labels }),
+          ...(cameraView && { viewport: cameraView }),
+        }),
+      )
     }
     d.pixelHud?.renderDirectory(directoryVM(state, layout, d.grouping, dirQuery))
     refreshDialogue()
@@ -1259,6 +1278,7 @@ export function createController(d: ControllerDeps) {
     d.scene.onInteract?.(openDialogue)
     d.scene.onRoom?.((name) => void (room = name))
     d.scene.onPlayerMove?.((pos) => void (playerPos = pos))
+    d.scene.onCamera?.((v) => void (cameraView = v))
     d.dialogue?.onAction(onDialogueAction)
     d.dialogue?.onClose(() => {
       dialogueAt = null
@@ -1277,10 +1297,14 @@ export function createController(d: ControllerDeps) {
       dirQuery = q
       d.pixelHud?.renderDirectory(directoryVM(state, layout, d.grouping, dirQuery))
     })
-    d.pixelHud?.onMinimapPick((tx, ty) => {
-      if (!layout || !manifest) return
+    d.pixelHud?.onMinimapPick((tx, ty, opts) => {
+      if (!layout) return
       const proj = projectionFor(layout.bounds)
       const pos = pixelToWorld((tx + 0.5) * TILE_PX, (ty + 0.5) * TILE_PX, proj)
+      // Shift-click fast-travels the player; a click pans the camera to the exact point.
+      if (opts?.travel && d.scene.travelTo) return d.scene.travelTo({ pos })
+      if (d.scene.panTo) return d.scene.panTo(pos)
+      if (!manifest) return
       const p = placementAt(layout, manifest, pos)
       d.scene.goTo(p ? viewIdOf(p) : 'overview')
     })

@@ -17,7 +17,18 @@ import {
   type InteractTarget,
   type MapObject,
   type PixelMap,
+  type TileRect,
 } from '../../app/pixel/types.ts'
+import {
+  cameraTarget,
+  escapeCancels,
+  nextCameraMode,
+  PLAYER_CAMERA,
+  type CameraEvent,
+  type CameraState,
+} from '../../app/pixel/camera-mode.ts'
+import { minimapLabels } from '../../app/pixel/minimap.ts'
+import { MinimapBase } from './minimap-base.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../../ports.ts'
 import { buildPixelMap, capabilitySlot, plansOf } from '../../app/pixel/map.ts'
@@ -46,6 +57,7 @@ import {
   drawPlayerMarker,
   drawSelection,
   drawShadow,
+  drawSolidOverlay,
   drawStatusIcon,
   drawFx,
   FLAT_KINDS,
@@ -59,6 +71,7 @@ import {
   CHAR_H,
   CHAR_W,
   CharacterSprites,
+  createSpriteFoot,
   loadAtlas,
   lookKey,
   type Atlas,
@@ -77,6 +90,8 @@ export interface PixelSceneElements {
 
 const BACKGROUND = { dark: '#15131b', light: '#2a2733' } as const
 const OPPOSITE: Record<Dir4, Dir4> = { n: 's', s: 'n', e: 'w', w: 'e' }
+/** The overview's title bar (canvas text). */
+const OVERVIEW_TITLE = PIXEL_COPY.overviewTitle
 const debugEnabled = () => new URLSearchParams(location.search).get('debug') === '1'
 
 /** The player's place survives mode switches within a session (plan §6). */
@@ -115,8 +130,11 @@ export class PixelScene implements SceneView {
   private surfaces: SceneSurfaces | null = null
   private highlighted: string | null = null
   private selected: string | null = null
-  private followId: string | null = null
-  private pan: Vec2 | null = null
+  /** Camera mode (app/pixel/camera-mode.ts): player, overview, follow or pan. */
+  private cam: CameraState = PLAYER_CAMERA
+  private minimapBase = new MinimapBase()
+  private labels: NonNullable<ReturnType<typeof minimapLabels>> = []
+  private solidOverlay = false
   private focusObject: string | null = null
   private hoverObject: string | null = null
   private hoverAgent: string | null = null
@@ -149,6 +167,11 @@ export class PixelScene implements SceneView {
   private roomFn: (name: string) => void = () => {}
   private statsFn: (fps: number, preset: string) => void = () => {}
   private playerMoveFn: ((pos: { x: number; z: number }) => void) | null = null
+  private cameraFn: ((view: TileRect) => void) | null = null
+  private baseFn:
+    ((img: CanvasImageSource, widthTiles: number, heightTiles: number) => void) | null = null
+  private lastCam = ''
+  private lastCamAt = -Infinity
   private lastTile = ''
   private lastTileAt = -Infinity
 
@@ -174,14 +197,22 @@ export class PixelScene implements SceneView {
       interact: () => this.interact(),
       overview: () => this.toggleOverview(),
       escape: () => this.escape(),
-      zoom: (d) => {
-        if (this.camera.overview) return
+      zoom: (d, x, y) => {
+        if (this.cam.mode === 'overview') {
+          // Wheel in: leave the overview into the normal view at the pointed spot.
+          if (d > 0 && this.map) {
+            const w = this.renderer.toWorldPx(x, y, this.view())
+            this.setCam({ type: 'wheel-in', at: pixelToWorld(w.x, w.y, this.map) })
+          }
+          return
+        }
         this.camera.setZoom(this.camera.zoom + d)
       },
+      space: () => this.setCam({ type: 'space' }),
       click: (x, y) => this.click(x, y),
       hover: (x, y) => this.hoverAt(x, y),
       leave: () => this.setHover(null, null, 0, 0),
-      moved: () => this.stopCameraOverrides(),
+      moved: () => this.setCam({ type: 'move' }),
     })
     const on = (t: EventTarget, type: string, fn: () => void) => {
       t.addEventListener(type, fn)
@@ -289,18 +320,44 @@ export class PixelScene implements SceneView {
   private updateCamera(dt: number): void {
     const map = this.map
     if (!map) return
-    const follow = this.followId ? this.npcs.npcs.get(this.followId) : undefined
-    const at = follow ? follow.motion.pos : (this.pan ?? this.player.pos)
+    const at = cameraTarget(this.cam, this.player.pos, (id) => {
+      const n = this.npcs.npcs.get(id)
+      return n && n.motion.visible ? n.motion.pos : undefined
+    })
     const o = toPixel(at, map)
     this.camera.target(o.px, o.py)
     this.camera.update(dt)
+    this.emitCamera(map)
   }
 
-  private stopCameraOverrides(): void {
-    this.followId = null
-    this.pan = null
-    if (this.camera.overview) this.camera.overview = false
-    this.currentView = null
+  /** The camera's visible tiles for the minimap viewport, at most 4 Hz and only on change. */
+  private emitCamera(map: PixelMap): void {
+    if (!this.cameraFn || this.time - this.lastCamAt < 0.25) return
+    const v = this.view()
+    const tx = Math.max(0, Math.floor(v.x / 16))
+    const ty = Math.max(0, Math.floor(v.y / 16))
+    const r: TileRect = {
+      tx,
+      ty,
+      tw: Math.min(map.widthTiles, Math.ceil((v.x + v.w) / 16)) - tx,
+      th: Math.min(map.heightTiles, Math.ceil((v.y + v.h) / 16)) - ty,
+    }
+    const k = `${r.tx},${r.ty},${r.tw},${r.th}`
+    if (k === this.lastCam) return
+    this.lastCam = k
+    this.lastCamAt = this.time
+    this.cameraFn(r)
+  }
+
+  /** Applies a camera event; the view bar's current entry follows the mode. */
+  private setCam(e: CameraEvent): void {
+    const before = this.cam
+    this.cam = nextCameraMode(this.cam, e)
+    this.camera.overview = this.cam.mode === 'overview'
+    if (before === this.cam) return
+    if (this.cam.mode === 'overview') this.currentView = 'overview'
+    else if (before.mode === 'overview' || this.cam.mode === 'player') this.currentView = null
+    if (before.mode !== this.cam.mode) this.emitViews()
   }
 
   // ── Drawing ──
@@ -437,11 +494,110 @@ export class PixelScene implements SceneView {
       if (!drawFx(c, this.atlas, 'marker', pp.px, pp.py - CHAR_H, this.time))
         drawPlayerMarker(c, pp.px, pp.py - CHAR_H, this.time)
     }
+    if (this.solidOverlay) this.drawSolid(c, map, v)
     r.screen()
     if (map.key.startsWith('footprint|'))
       drawText(c, PIXEL_COPY.missingPlan, 4, 262, 'rgba(244,241,234,0.7)')
-    if (over) drawText(c, PIXEL_COPY.overview, 4, 4, '#f4f1ea')
+    if (over) this.drawOverview(c, map, v, visible, pp)
+    else if (this.cam.mode === 'follow') this.drawPlayerArrow(c, v, pp)
     r.end()
+  }
+
+  /** World px → logical screen px (after `renderer.screen()`). */
+  private toScreen(v: ViewRect, x: number, y: number): { x: number; y: number } {
+    const k = v.scale / this.renderer.scale
+    return { x: (x - v.x) * k, y: (y - v.y) * k }
+  }
+
+  /** The overview as a labelled floor plan: wing and room labels, big agent markers, the player. */
+  private drawOverview(
+    c: CanvasRenderingContext2D,
+    map: PixelMap,
+    v: ViewRect,
+    visible: { n: Npc; x: number; y: number }[],
+    pp: { px: number; py: number },
+  ): void {
+    const tileCentre = (tx: number, ty: number) =>
+      this.toScreen(v, (tx + 0.5) * 16, (ty + 0.5) * 16)
+    for (const l of this.labels) {
+      const at = tileCentre(l.tx, l.ty)
+      const text = l.text
+      if (l.kind === 'wing') {
+        const w = textWidth(text) * 2
+        c.fillStyle = 'rgba(20,18,28,0.78)'
+        c.fillRect(Math.round(at.x - w / 2) - 3, Math.round(at.y) - 3, w + 6, GLYPH_H * 2 + 6)
+        c.save()
+        c.translate(Math.round(at.x - w / 2), Math.round(at.y))
+        c.scale(2, 2)
+        drawText(c, text, 0, 0, '#ffd23f')
+        c.restore()
+      } else drawTag(c, text, at.x, at.y + GLYPH_H + 2, { bg: 'rgba(20,18,28,0.6)' })
+    }
+    const pulse = Math.floor(this.time * 3) % 2 === 0
+    for (const { n, x, y } of visible) {
+      const s = this.toScreen(v, x, y)
+      const st = n.plan.agent.status
+      const big = (st === 'waiting' || st === 'error') && pulse ? 6 : 4
+      c.fillStyle = '#1c1820'
+      c.fillRect(Math.round(s.x - big / 2) - 1, Math.round(s.y - big / 2) - 1, big + 2, big + 2)
+      c.fillStyle = STATUS_COLORS[st]
+      c.fillRect(Math.round(s.x - big / 2), Math.round(s.y - big / 2), big, big)
+    }
+    const me = this.toScreen(v, pp.px, pp.py)
+    const r = pulse ? 4 : 3
+    c.fillStyle = '#1c1820'
+    c.fillRect(Math.round(me.x) - r - 1, Math.round(me.y) - r - 1, 2 * r + 3, 2 * r + 3)
+    c.fillStyle = '#ffd23f'
+    c.fillRect(Math.round(me.x) - r, Math.round(me.y) - r, 2 * r + 1, 2 * r + 1)
+    drawPlayerMarker(c, me.x, me.y - r - 1, this.time)
+    // Title bar.
+    const title = OVERVIEW_TITLE
+    c.fillStyle = 'rgba(20,18,28,0.85)'
+    c.fillRect(0, 0, 480, GLYPH_H + 6)
+    drawText(c, title, Math.round((480 - textWidth(title)) / 2), 3, '#f4f1ea')
+  }
+
+  /** While following an agent: an edge arrow pointing to the player when they're off-screen. */
+  private drawPlayerArrow(
+    c: CanvasRenderingContext2D,
+    v: ViewRect,
+    pp: { px: number; py: number },
+  ): void {
+    const s = this.toScreen(v, pp.px, pp.py - CHAR_H / 2)
+    const W = 480
+    const H = 270
+    if (s.x >= 0 && s.y >= 0 && s.x <= W && s.y <= H) return
+    const cx = W / 2
+    const cy = H / 2
+    const dx = s.x - cx
+    const dy = s.y - cy
+    const k = Math.min((W / 2 - 10) / Math.abs(dx || 1e-6), (H / 2 - 10) / Math.abs(dy || 1e-6))
+    const ax = cx + dx * k
+    const ay = cy + dy * k
+    const a = Math.atan2(dy, dx)
+    c.save()
+    c.translate(Math.round(ax), Math.round(ay))
+    c.rotate(a)
+    c.fillStyle = '#1c1820'
+    c.beginPath()
+    c.moveTo(7, 0)
+    c.lineTo(-5, -6)
+    c.lineTo(-5, 6)
+    c.closePath()
+    c.fill()
+    c.fillStyle = '#ffd23f'
+    c.beginPath()
+    c.moveTo(5, 0)
+    c.lineTo(-4, -4)
+    c.lineTo(-4, 4)
+    c.closePath()
+    c.fill()
+    c.restore()
+  }
+
+  /** Debug: the solid grid in translucent red over the map (`__aoDebug.pixelSolid(true)`). */
+  private drawSolid(c: CanvasRenderingContext2D, map: PixelMap, v: ViewRect): void {
+    drawSolidOverlay(c, map, v)
   }
 
   private showTag(n: Npc): boolean {
@@ -524,15 +680,15 @@ export class PixelScene implements SceneView {
     else if (t.kind === 'capability') this.pickCapFn(t.ref)
   }
 
+  /** Esc: close the agent panel first (selection), then cancel a camera override. */
   private escape(): void {
-    if (this.followId || this.pan || this.camera.overview) return this.stopCameraOverrides()
+    if (this.selected) return this.pickFn(null)
+    if (escapeCancels(this.cam)) return this.setCam({ type: 'escape' })
     this.pickFn(null)
   }
 
   private toggleOverview(): void {
-    this.camera.overview = !this.camera.overview
-    this.currentView = this.camera.overview ? 'overview' : null
-    this.emitViews()
+    this.setCam({ type: 'toggle-overview' })
   }
 
   private agentAt(wx: number, wy: number): string | null {
@@ -577,8 +733,11 @@ export class PixelScene implements SceneView {
       if (t.kind === 'capability') return this.pickCapFn(t.ref)
       return this.emitInteract(t)
     }
+    if (this.cam.mode === 'overview') {
+      // The floor in the overview: pan the normal view there.
+      return this.setCam({ type: 'floor-click', at: pixelToWorld(w.x, w.y, map) })
+    }
     this.pickFn(null)
-    if (this.camera.overview) return
     // Click on the floor: walk there (straight, 4 directions; capped at 60 m).
     const goal = pixelToWorld(w.x, w.y, map)
     if (
@@ -586,7 +745,7 @@ export class PixelScene implements SceneView {
       Math.hypot(goal.x - this.player.pos.x, goal.z - this.player.pos.z) <= 60
     ) {
       this.player.goal = goal
-      this.stopCameraOverrides()
+      this.setCam({ type: 'move' })
     }
   }
 
@@ -619,11 +778,12 @@ export class PixelScene implements SceneView {
         this.player.pos = at
         this.player.dir = OPPOSITE[d]
         this.player.goal = null
-        this.stopCameraOverrides()
+        this.setCam({ type: 'travel' })
         return
       }
     }
     this.player.pos = nearestFree(map, p)
+    this.setCam({ type: 'travel' })
   }
 
   private spawn(): void {
@@ -744,15 +904,23 @@ export class PixelScene implements SceneView {
     this.layout = layout
     const plans = plansOf(this.manifest)
     const map = Object.keys(plans).length
-      ? buildPixelMap(layout, plans, this.tiles, this.map ?? undefined)
+      ? buildPixelMap(
+          layout,
+          plans,
+          this.tiles,
+          this.map ?? undefined,
+          this.atlas && createSpriteFoot(this.atlas),
+        )
       : footprintMap(layout, this.manifest, this.tiles)
     this.updateResolver()
     if (this.map === map || this.map?.key === map.key) return
     this.map = map
     this.mapDesks(map, layout)
     this.chunks.setMap(map)
+    this.labels = minimapLabels(layout, plans, map)
     this.spawn()
     this.emitViews()
+    this.emitBase()
   }
 
   direct(plans: Map<string, AgentPlan>, departed: string[]): void {
@@ -791,8 +959,7 @@ export class PixelScene implements SceneView {
     })
     if (!ob) return
     this.focusObject = ob.id
-    this.followId = null
-    this.pan = this.centerOf(ob, this.map)
+    this.setCam({ type: 'pan', at: this.centerOf(ob, this.map) })
   }
 
   highlightLinks(capabilityId: string | null): void {
@@ -802,12 +969,14 @@ export class PixelScene implements SceneView {
   select(id: string | null): void {
     this.selected = id
     if (!id || !this.map) return
-    // Bring an off-screen agent into view (until the player moves).
+    // Bring an off-screen agent into view (a pan: the next movement key returns to the player).
+    if (this.cam.mode === 'overview') return
     const n = this.npcs.npcs.get(id)
     if (!n) return
     const v = this.view()
     const { px, py } = toPixel(n.motion.pos, this.map)
-    if (px < v.x || py < v.y || px > v.x + v.w || py > v.y + v.h) this.followId = id
+    if (px < v.x || py < v.y || px > v.x + v.w || py > v.y + v.h)
+      this.setCam({ type: 'pan', at: { ...n.motion.pos } })
   }
 
   setQuality(_q: GraphicsQuality): void {
@@ -819,14 +988,11 @@ export class PixelScene implements SceneView {
   }
 
   goTo(viewId: string): void {
-    if (viewId === 'overview') {
-      this.camera.overview = true
-    } else {
+    if (viewId === 'overview') this.setCam({ type: 'overview' })
+    else {
       const c = this.layout && regionCenter(this.layout, viewId)
       if (!c) return
-      this.camera.overview = false
-      this.followId = null
-      this.pan = c
+      this.setCam({ type: 'pan', at: c })
     }
     this.currentView = viewId
     this.emitViews()
@@ -889,19 +1055,27 @@ export class PixelScene implements SceneView {
   }
 
   follow(agentId: string | null): void {
-    this.followId = agentId
-    if (agentId) this.pan = null
+    this.setCam({ type: 'follow', agentId })
   }
 
-  travelTo(target: { agentId?: string; viewId?: string }): void {
-    if (target.agentId) {
+  /** Pans the camera to a world point (minimap click); a movement key returns it to the player. */
+  panTo(pos: { x: number; z: number }): void {
+    this.setCam({ type: 'pan', at: { x: pos.x, z: pos.z } })
+  }
+
+  travelTo(target: { agentId?: string; viewId?: string; pos?: { x: number; z: number } }): void {
+    if (target.pos && this.map) {
+      this.player.pos = nearestFree(this.map, target.pos)
+      this.player.goal = null
+      this.setCam({ type: 'travel' })
+    } else if (target.agentId) {
       const n = this.npcs.npcs.get(target.agentId)
       if (n) this.placeNear(n.motion.pos)
     } else if (target.viewId && this.layout && this.map) {
       const c = regionCenter(this.layout, target.viewId)
       if (c) {
         this.player.pos = nearestFree(this.map, c)
-        this.stopCameraOverrides()
+        this.setCam({ type: 'travel' })
       }
     }
   }
@@ -910,6 +1084,27 @@ export class PixelScene implements SceneView {
   onPlayerMove(fn: (pos: { x: number; z: number }) => void): void {
     this.playerMoveFn = fn
     this.lastTile = ''
+  }
+
+  /** The camera's visible tiles (minimap viewport), at most 4 Hz and only when they change. */
+  onCamera(fn: (view: TileRect) => void): void {
+    this.cameraFn = fn
+    this.lastCam = ''
+    this.lastCamAt = -Infinity
+  }
+
+  /** The minimap base image, sent now (when the map exists) and again whenever the map changes. */
+  onMinimapBase(
+    fn: (img: CanvasImageSource, widthTiles: number, heightTiles: number) => void,
+  ): void {
+    this.baseFn = fn
+    this.emitBase(true)
+  }
+
+  private emitBase(force = false): void {
+    if (!this.baseFn || !this.map) return
+    const { img, changed } = this.minimapBase.render(this.map, this.atlas)
+    if (changed || force) this.baseFn(img, this.map.widthTiles, this.map.heightTiles)
   }
 
   /** Adapter-level (main.ts): no WebGL in 2D. */
@@ -929,6 +1124,7 @@ export class PixelScene implements SceneView {
     this.raf = 0
     for (const off of this.off.splice(0)) off()
     this.input.dispose()
+    this.minimapBase.dispose()
     this.chunks.dispose()
     this.tiles.dispose()
     this.sprites.clear()
@@ -952,6 +1148,35 @@ export class PixelScene implements SceneView {
           room: this.room,
           zoom: this.camera.zoom,
           overview: this.camera.overview,
+          camera: this.cam.mode,
+          following: this.cam.mode === 'follow' ? this.cam.agentId : null,
+          view: (() => {
+            const v = this.view()
+            const m = this.map
+            if (!m) return null
+            const c = pixelToWorld(v.x + v.w / 2, v.y + v.h / 2, m)
+            return { cx: c.x, cz: c.z, w: v.w / PX_PER_M, h: v.h / PX_PER_M }
+          })(),
+          /** Every map object's rect, orientation, fill and room (tiles). */
+          objects: () =>
+            (this.map?.objects ?? []).map((o) => ({
+              id: o.id,
+              kind: o.kind,
+              rect: { ...o.rect },
+              solid: o.solid,
+              ...(o.room !== undefined && { room: o.room }),
+              ...(o.orientation && { orientation: o.orientation }),
+              ...(o.fill && { fill: o.fill }),
+            })),
+          rooms: () =>
+            (this.map?.rooms ?? []).map((r) => ({
+              id: r.id,
+              name: r.name,
+              rect: { ...r.rect },
+              placement: r.placement,
+            })),
+          originM: this.map ? { ...this.map.originM } : null,
+          tiles: this.map ? { w: this.map.widthTiles, h: this.map.heightTiles } : null,
           entities: [...this.npcs.npcs.values()].map((n) => ({
             id: n.id,
             x: n.motion.pos.x,
@@ -986,8 +1211,14 @@ export class PixelScene implements SceneView {
         if (!this.map) return false
         this.player.pos = nearestFree(this.map, { x, z })
         this.player.dir = dir
-        this.stopCameraOverrides()
+        this.player.goal = null
+        this.setCam({ type: 'travel' })
         return true
+      },
+      /** Debug overlay: the solid grid in translucent red. */
+      pixelSolid: (on: boolean) => {
+        this.solidOverlay = on
+        return on
       },
       views: () => (this.layout ? viewsFor(this.layout).map((v) => v.id) : []),
       bookmark: (id?: string) => (id === undefined ? this.currentView : (this.goTo(id), true)),

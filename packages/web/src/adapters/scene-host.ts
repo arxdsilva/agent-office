@@ -6,7 +6,7 @@ import type { GraphicsQuality, ViewMode } from '@agent-office/shared'
 import type { Effective, GraphicsStats, HardwareInfo } from '../app/graphics-types.ts'
 import type { ViewEntry } from '../app/library-types.ts'
 import type { AgentPlan, BuildingLayout, Link } from '../app/office-types.ts'
-import type { InteractTarget } from '../app/pixel/types.ts'
+import type { InteractTarget, TileRect } from '../app/pixel/types.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../ports.ts'
 
 /** Adapter-level extras some scenes have (ThreeScene: hardware tier input, the FPS readout). */
@@ -41,6 +41,8 @@ const LISTENERS = [
   'onInteract',
   'onRoom',
   'onPlayerMove',
+  'onCamera',
+  'onMinimapBase',
   'onFrameStats',
 ] as const
 type ListenerName = (typeof LISTENERS)[number]
@@ -268,8 +270,22 @@ export class SceneHost implements SceneView {
     this.scene.follow?.(agentId)
   }
 
-  travelTo(target: { agentId?: string; viewId?: string }): void {
+  travelTo(target: { agentId?: string; viewId?: string; pos?: { x: number; z: number } }): void {
     this.scene.travelTo?.(target)
+  }
+
+  panTo(pos: { x: number; z: number }): void {
+    this.scene.panTo?.(pos)
+  }
+
+  onCamera(fn: (view: TileRect) => void): void {
+    this.listen('onCamera', fn)
+  }
+
+  onMinimapBase(
+    fn: (img: CanvasImageSource, widthTiles: number, heightTiles: number) => void,
+  ): void {
+    this.listen('onMinimapBase', fn)
   }
 
   // ── Adapter-level extras (main.ts) ──

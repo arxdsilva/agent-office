@@ -171,7 +171,7 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 ## 11. Floor plan (additive; used by the optional 2D RPG mode)
 - `manifest.modules.<m>.plan` (the wing plan is shared by every theme), in **module-local metres**, written by the Blender build (`lib/geometry.py`, `lib/furniture.py`, module scripts) and merged by `node assets/build.mjs --plan-only` (`make assets-plan`). It doesn't touch the glbs or lightmaps.
 - `rooms: [{ id, name, rect: [x0, z0, x1, z1], floor? }]`: every anchor's `extras.room` names one of these rooms.
-- `walls: [{ a: [x, z], b: [x, z], kind: 'solid' | 'glass' | 'curtain', openings?: [[t0, t1]] }]`: openings are door and gap intervals in metres along a→b. Every nav edge that crosses a wall must pass through an opening.
+- `walls: [{ a: [x, z], b: [x, z], kind: 'solid' | 'glass' | 'curtain', openings?: [[t0, t1]], side?: -1 | 1, thick?: m }]`: `side` is the side of the a→b line the wall body extends to (−1 left, +1 right, module-local), and `thick` is the body thickness. The 2D map uses them to place a wall on the tile its 3D body occupies, the same in mirrored wings. openings are door and gap intervals in metres along a→b. Every nav edge that crosses a wall must pass through an opening.
 - `furniture: [{ kind, x, z, w, d, yaw, ref? }]`: `kind` is from `FURNITURE_KINDS` (`packages/web/src/app/pixel/types.ts`). `ref` links interactive pieces to anchors (`station:<i>`, `book:<i>`, `board:<i>`, `notebook:<i>`, `booth:<i>`). Only furniture that exists in the 3D module is listed.
 - **Optional:** the 3D renderer ignores it, and the 2D mode shows a "map data missing" card without it.
 - **Details (as exported):**

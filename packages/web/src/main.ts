@@ -136,6 +136,9 @@ async function boot(): Promise<void> {
   // Fallback FPS readout in Settings → Graphics until the controller pushes the full stats line.
   scene.onFrameStats((fps, preset) => settings.showFrameRate(fps, preset))
   const toast = new DomToast()
+  const pixelHud = new DomPixelHud()
+  // 2D: the minimap's base image goes straight from the scene to the HUD (composition-root wiring).
+  scene.onMinimapBase((img, w, h) => pixelHud.setBase(img, w, h))
 
   const snippetLang = storedSnippetLang()
   // A variable, not a literal: the Library, tooltip and view-bar views are new ControllerDeps.
@@ -164,7 +167,7 @@ async function boot(): Promise<void> {
     hardware: () => scene.hardwareInfo(),
     // The 2D RPG mode's views (plan §8.2, §9); inert while the 3D office is shown.
     dialogue: new DomDialogue(),
-    pixelHud: new DomPixelHud(),
+    pixelHud,
     modeToggle: new DomModeToggle(),
     onViewMode: (mode: ViewMode) => switchMode(mode),
     devicePixelRatio: () => window.devicePixelRatio,

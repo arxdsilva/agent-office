@@ -1,6 +1,8 @@
 // 2D input: WASD/arrows (the last pressed axis wins, GBA style), Shift to run, E/Enter to interact,
-// O for the overview, Esc, the wheel to zoom, click and hover on the canvas. M and J belong to the
-// HUD (DOM). Keys are ignored while suspended (a dialog or panel is open) or typing in a field.
+// O for the overview, Space to bring the camera back, Esc, the wheel to zoom, click and hover on the
+// canvas. M and J belong to the HUD (DOM). Keys are ignored while suspended (a modal is open), while
+// any <dialog> is open (e.g. the stop confirm), or while typing in a field. Non-modal panels
+// (the agent panel, the Library drawer) don't stop the player.
 import type { Dir4 } from '../../app/pixel/types.ts'
 
 const MOVE: Record<string, Dir4> = {
@@ -18,11 +20,14 @@ export interface InputHandlers {
   interact(): void
   overview(): void
   escape(): void
-  zoom(delta: 1 | -1): void
+  /** The wheel, with where the pointer is (the overview zooms in at that point). */
+  zoom(delta: 1 | -1, clientX: number, clientY: number): void
+  /** Space: the camera returns to the player. */
+  space(): void
   click(clientX: number, clientY: number): void
   hover(clientX: number, clientY: number): void
   leave(): void
-  /** Any movement key pressed (stops following / camera pans). */
+  /** Any movement key pressed (cancels a camera pan; the overview and follow stay). */
   moved(): void
 }
 
@@ -31,6 +36,12 @@ const typing = (t: EventTarget | null) =>
   t instanceof HTMLTextAreaElement ||
   t instanceof HTMLSelectElement ||
   (t instanceof HTMLElement && t.isContentEditable)
+
+/** Space activates a focused button or link; leave it to them. */
+const activates = (t: EventTarget | null) =>
+  t instanceof HTMLElement && !!t.closest('button, a, summary, [role="button"]')
+
+const modalOpen = () => typeof document !== 'undefined' && !!document.querySelector('dialog[open]')
 
 export class PixelInput {
   /** Pressed movement keys, oldest first. */
@@ -66,7 +77,7 @@ export class PixelInput {
       (e) => {
         e.preventDefault()
         this.mark()
-        this.h.zoom(e.deltaY < 0 ? 1 : -1)
+        this.h.zoom(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY)
       },
       { passive: false },
     )
@@ -93,7 +104,7 @@ export class PixelInput {
   private keydown(e: KeyboardEvent): void {
     if (typing(e.target)) return
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.run = true
-    if (this.suspended) return
+    if (this.suspended || modalOpen()) return
     const dir = MOVE[e.code]
     if (dir) {
       e.preventDefault()
@@ -109,12 +120,20 @@ export class PixelInput {
     } else if (e.code === 'KeyO') {
       this.mark()
       this.h.overview()
+    } else if (e.code === 'Space' && !activates(e.target)) {
+      e.preventDefault()
+      this.mark()
+      this.h.space()
     } else if (e.code === 'Escape') this.h.escape()
   }
 
   /** The direction to walk now (null: standing still). */
   direction(): Dir4 | null {
     if (this.suspended) return null
+    if (this.held.length && modalOpen()) {
+      this.release()
+      return null
+    }
     const k = this.held[this.held.length - 1]
     return k ? MOVE[k]! : null
   }

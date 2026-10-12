@@ -133,3 +133,35 @@ describe('player walk (WK)', () => {
     expect(nearestFree(full, c)).toEqual(c)
   })
 })
+
+// Plan §1.4: the player is a 0.22 m circle (not a square), so corridors and doors agents use fit.
+describe('player walk: circle collision (WK-C)', () => {
+  // WK-C1: the radius is 0.22 m (the sprite is one 0.5 m tile wide).
+  it('uses a 0.22 m player radius', () => {
+    expect(PLAYER_RADIUS).toBeCloseTo(0.22)
+  })
+
+  // WK-C2: near a tile corner, only the round distance counts (a square would block here).
+  it('tests a circle against tile boxes', () => {
+    const m = grid([[10, 10]]) // box x, z ∈ [5, 5.5]
+    expect(blocked(m, { x: 4.83, z: 4.83 })).toBe(false) // 0.24 m from the corner
+    expect(blocked(m, { x: 4.86, z: 4.86 })).toBe(true) // 0.198 m from the corner
+    expect(blocked(m, { x: 4.79, z: 5.25 })).toBe(true) // 0.21 m from the face
+  })
+
+  // WK-C3: a 1-tile (0.5 m) door is passable when walking straight through its middle.
+  it('fits through a one-tile doorway', () => {
+    const m = grid(column(10, [6])) // gap z ∈ [3, 3.5)
+    let pos = { x: 4, z: 3.25 }
+    for (let i = 0; i < 60; i++) pos = stepPlayer(m, pos, { x: 1, z: 0 }, WALK_SPEED, 1 / 30)
+    expect(pos.x).toBeGreaterThan(5.5)
+  })
+
+  // WK-C4: approaching a one-tile door 0.3 m off its middle, the assist slides the player in.
+  it('assists through an offset one-tile doorway', () => {
+    const m = grid(column(10, [6]))
+    let pos = { x: 4, z: 3.55 }
+    for (let i = 0; i < 90; i++) pos = stepPlayer(m, pos, { x: 1, z: 0 }, WALK_SPEED, 1 / 30)
+    expect(pos.x).toBeGreaterThan(5.5)
+  })
+})

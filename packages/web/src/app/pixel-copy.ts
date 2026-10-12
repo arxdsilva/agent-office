@@ -47,6 +47,7 @@ export const PIXEL_COPY = {
     toggle: 'J: directory',
   },
   overview: 'overview',
+  overviewTitle: 'Overview · O to close · click to pan',
   following: (name: string) => `Following ${name} · move to stop`,
   missingPlan: '2D map data missing: run make assets-plan',
   noWebgl: 'Switch to 2D RPG',

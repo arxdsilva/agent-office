@@ -1,8 +1,10 @@
 // Small pixel effects drawn in world px: shadows, status icons, selection, the player marker,
 // link beams (adapters: dashes) and page sparkles (skills and rules), plus placeholder furniture.
 import { STATUS_COLORS } from '@agent-office/shared'
-import { TILE_PX, type MapObject, type StatusIcon } from '../../app/pixel/types.ts'
-import type { Atlas } from './sprites.ts'
+import { drawBounds } from '../../app/pixel/map.ts'
+import { TILE_PX, type MapObject, type PixelMap, type StatusIcon } from '../../app/pixel/types.ts'
+import type { ViewRect } from './renderer.ts'
+import type { Atlas, ObjectFrame } from './sprites.ts'
 
 type C = CanvasRenderingContext2D
 
@@ -163,10 +165,27 @@ export function drawObject(
   const y = o.rect.ty * TILE_PX
   const w = o.rect.tw * TILE_PX
   const h = o.rect.th * TILE_PX
-  // Atlas art when AR has drawn it (anchor = the footprint's top-left).
-  const art = atlas?.object(o.kind, o.facing, o.theme)
+  // Atlas art (plan §1.5), drawn by fill and clipped to the rect plus one tile of ¾ overhang, so
+  // what's drawn is what blocks and wall-mounted art never crosses its wall.
+  const named =
+    o.kind === 'booth-lamp'
+      ? lit
+        ? 'on'
+        : 'off'
+      : o.kind === 'elevator-door'
+        ? 'closed'
+        : undefined
+  const art = atlas?.object(o.kind, o.theme, o.facing, o.orientation, named)
   if (art) {
-    c.drawImage(art.image, art.x, art.y, art.w, art.h, x - art.ax, y - art.ay, art.w, art.h)
+    const b = drawBounds(o)
+    c.save()
+    c.beginPath()
+    c.rect(b.tx * TILE_PX, b.ty * TILE_PX, b.tw * TILE_PX, b.th * TILE_PX)
+    c.clip()
+    if (o.fill === 'area') drawArea(c, art, x, y, w, h)
+    else if (o.fill === 'repeat') drawRepeat(c, art, x, y, w, h)
+    else drawSprite(c, art, x, y, true)
+    c.restore()
     if (monitor && o.kind === 'desk') px(c, x + Math.floor(w / 2) - 3, y + 3, monitor, 6, 3)
     if (highlight) {
       c.strokeStyle = '#ffd166'
@@ -310,4 +329,72 @@ export function drawObject(
     c.lineWidth = 1
     c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
   }
+}
+
+/** The art's footprint inside its frame (unrotated source pixels, without the ¾ overhang). */
+const footSrc = (a: ObjectFrame) => {
+  const [fw, fh] = a.rotated ? [a.foot[1], a.foot[0]] : a.foot
+  return {
+    sx: a.x + a.ax,
+    sy: a.y + a.ay,
+    sw: Math.min(fw * TILE_PX, a.w - a.ax),
+    sh: Math.min(fh * TILE_PX, a.h - a.ay),
+  }
+}
+
+/** One copy of the art with its footprint at (x, y); `overhang` adds the ¾ part above it. */
+function drawSprite(c: C, a: ObjectFrame, x: number, y: number, overhang: boolean): void {
+  const { sx, sy, sw, sh } = footSrc(a)
+  if (a.rotated) {
+    // Only `s` art for a vertical piece: the footprint turned 90° clockwise.
+    c.save()
+    c.translate(x + sh, y)
+    c.rotate(Math.PI / 2)
+    c.drawImage(a.image, sx, sy, sw, sh, 0, 0, sw, sh)
+    c.restore()
+  } else if (overhang) c.drawImage(a.image, a.x, a.y, a.w, a.h, x - a.ax, y - a.ay, a.w, a.h)
+  else c.drawImage(a.image, sx, sy, sw, sh, x, y, sw, sh)
+}
+
+/** A strip: the art repeated along the rect's long axis (the last copy is cropped by the clip). */
+function drawRepeat(c: C, a: ObjectFrame, x: number, y: number, w: number, h: number): void {
+  const step = (h > w ? a.foot[1] : a.foot[0]) * TILE_PX
+  if (step <= 0) return
+  if (h > w) for (let k = 0; k * step < h; k++) drawSprite(c, a, x, y + k * step, k === 0)
+  else for (let k = 0; k * step < w; k++) drawSprite(c, a, x + k * step, y, true)
+}
+
+/** An area: a 9-slice of the art's footprint stretched over the whole rect (pool, bleachers…). */
+function drawArea(c: C, a: ObjectFrame, x: number, y: number, w: number, h: number): void {
+  const { sx, sy, sw, sh } = footSrc(a)
+  const s = Math.max(
+    1,
+    Math.min(4, Math.floor(sw / 3), Math.floor(sh / 3), Math.floor(w / 3), Math.floor(h / 3)),
+  )
+  const cols = [
+    [0, s, 0, s],
+    [s, sw - 2 * s, s, w - 2 * s],
+    [sw - s, s, w - s, s],
+  ] as const
+  const rows = [
+    [0, s, 0, s],
+    [s, sh - 2 * s, s, h - 2 * s],
+    [sh - s, s, h - s, s],
+  ] as const
+  for (const [u, uw, dx, dw] of cols)
+    for (const [v, vh, dy, dh] of rows)
+      if (uw > 0 && vh > 0 && dw > 0 && dh > 0)
+        c.drawImage(a.image, sx + u, sy + v, uw, vh, x + dx, y + dy, dw, dh)
+}
+
+/** Debug (`__aoDebug.pixelSolid(true)`): the solid grid in translucent red over the visible map. */
+export function drawSolidOverlay(c: C, map: PixelMap, v: ViewRect): void {
+  c.fillStyle = 'rgba(255,40,40,0.4)'
+  const x0 = Math.max(0, Math.floor(v.x / TILE_PX))
+  const y0 = Math.max(0, Math.floor(v.y / TILE_PX))
+  const x1 = Math.min(map.widthTiles, Math.ceil((v.x + v.w) / TILE_PX))
+  const y1 = Math.min(map.heightTiles, Math.ceil((v.y + v.h) / TILE_PX))
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++)
+      if (map.solid[y * map.widthTiles + x]) c.fillRect(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX)
 }

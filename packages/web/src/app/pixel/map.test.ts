@@ -5,13 +5,15 @@ import type { BuildingLayout } from '../office-types.ts'
 import {
   buildPixelMap,
   capabilitySlot,
+  drawBounds,
   plansOf,
   tileIndex,
+  wallPrefer,
   type TileQuery,
   type TileResolver,
 } from './map.ts'
 import { toTile } from './project.ts'
-import type { ModulePlan, PlanByModule } from './types.ts'
+import type { ModulePlan, PixelMap, PlanByModule, PlanWall, SpriteFoot } from './types.ts'
 
 /** Tile ids from a readable table: every distinct query gets its own id, stable per test. */
 function fakeResolver(): TileResolver & { ids: Map<string, number> } {
@@ -115,7 +117,8 @@ describe('buildPixelMap (MAP)', () => {
     const rug = m.objects.find((o) => o.kind === 'rug')!
     expect(desk.solid).toBe(true)
     expect(rug.solid).toBe(false)
-    expect(desk.rect.tw).toBe(4) // 1.6 m at 0.5 m per tile, rounded out
+    // Size-stable footprints: round(1.6 m / 0.5 m) = 3 tiles wherever the desk sits (no jitter).
+    expect(desk.rect.tw).toBe(3)
     expect(desk.rect.th).toBe(2)
     expect(desk.sortY).toBe((desk.rect.ty + desk.rect.th) * 16)
     expect(desk.facing).toBe('s')
@@ -273,5 +276,171 @@ describe('buildPixelMap with the published manifest', () => {
     expect(m.objects.some((o) => o.kind === 'door')).toBe(true)
     expect(m.objects.filter((o) => capabilitySlot(o)).length).toBeGreaterThan(0)
     expect(blocked(m, spawnPoint(m, layout))).toBe(false)
+  })
+})
+
+// Plan §1: one rect for drawing and collision (size classes, orientation, stable footprints, walls).
+describe('buildPixelMap: render rects (MAP-R)', () => {
+  /** Fake atlas feet: h/v footprints per kind. */
+  const feet: SpriteFoot = {
+    foot(kind, o) {
+      const t: Record<string, [number, number]> = {
+        desk: [3, 2],
+        'kitchen-counter': [4, 1],
+        planter: [2, 1],
+        bookshelf: [3, 1],
+        'booth-lamp': [3, 3],
+      }
+      const f = t[kind]
+      if (!f) return null
+      return o === 'v' ? { tw: f[1], th: f[0] } : { tw: f[0], th: f[1] }
+    },
+  }
+  const solidAt = (m: PixelMap, layout: BuildingLayout, x: number, z: number) =>
+    m.solid[tileIndex(m, tileAt(layout, 'wing:p:0', x, z, m))]
+  const plan = (over: Partial<ModulePlan>): PlanByModule => ({
+    wing: {
+      rooms: [{ id: 'pod-1', name: 'Pod 1', rect: [0, 0, 8, 8] }],
+      walls: [],
+      furniture: [],
+      ...over,
+    },
+  })
+
+  // MAP-R1: fixed pieces take the art's foot, centred; a vertical piece uses the vertical foot.
+  it('sizes fixed pieces by their art and orientation', () => {
+    const layout = layoutFor(['p'])
+    const m = buildPixelMap(
+      layout,
+      plan({
+        furniture: [
+          { kind: 'desk', x: 2, z: 2, w: 1.6, d: 0.8, yaw: 0 },
+          { kind: 'desk', x: 6, z: 5, w: 1.6, d: 0.8, yaw: Math.PI / 2 },
+        ],
+      }),
+      fakeResolver(),
+      undefined,
+      feet,
+    )
+    const [h, v] = m.objects.filter((o) => o.kind === 'desk')
+    expect(h).toMatchObject({ orientation: 'h', fill: 'sprite', rect: { tw: 3, th: 2 } })
+    expect(v).toMatchObject({ orientation: 'v', fill: 'sprite', rect: { tw: 2, th: 3 } })
+    expect(h!.room).toBe('wing:p:0/pod-1')
+    // The solid tiles are exactly the rect.
+    let n = 0
+    for (let i = 0; i < m.solid.length; i++) n += m.solid[i]!
+    expect(n).toBe(12)
+  })
+
+  // MAP-R2: strips repeat their art along the long axis; ≥ 3 tiles both ways become an area.
+  it('makes strips and areas', () => {
+    const layout = layoutFor(['p'])
+    const m = buildPixelMap(
+      layout,
+      plan({
+        furniture: [
+          { kind: 'kitchen-counter', x: 3, z: 4, w: 4.4, d: 0.65, yaw: 0 },
+          { kind: 'planter', x: 7, z: 4, w: 5.84, d: 0.94, yaw: Math.PI / 2 },
+          { kind: 'planter', x: 2, z: 6.5, w: 2, d: 2, yaw: 0 },
+          { kind: 'desk', x: 6, z: 1, w: 1, d: 1, yaw: 0, ref: 'nofoot' },
+        ],
+      }),
+      fakeResolver(),
+      undefined,
+      feet,
+    )
+    const [counter, strip, pool] = m.objects.filter((o) => o.kind !== 'desk')
+    expect(counter).toMatchObject({ fill: 'repeat', rect: { tw: 9, th: 1 } })
+    expect(strip).toMatchObject({ fill: 'repeat', orientation: 'v', rect: { tw: 1 } })
+    expect(strip!.rect.th).toBeGreaterThanOrEqual(10)
+    expect(pool).toMatchObject({ fill: 'area', rect: { tw: 4, th: 4 } })
+  })
+
+  // MAP-R3: size-stable footprints: the same piece keeps its size wherever it sits.
+  it('keeps footprint sizes stable across sub-tile positions', () => {
+    const layout = layoutFor(['p'])
+    const furniture = [0, 0.1, 0.2, 0.3, 0.4].map((dx) => ({
+      kind: 'reading-table' as const,
+      x: 1.5 + dx * 3,
+      z: 2 + dx,
+      w: 1.6,
+      d: 0.8,
+      yaw: 0,
+    }))
+    const m = buildPixelMap(layout, plan({ furniture }), fakeResolver())
+    const sizes = new Set(
+      m.objects.filter((o) => o.kind === 'reading-table').map((o) => `${o.rect.tw}×${o.rect.th}`),
+    )
+    expect([...sizes]).toEqual(['3×2'])
+  })
+
+  // MAP-R4: a wall lands on the tile its 3D body occupies (offset by side · thick / 2).
+  it('offsets walls to their body by side and thickness', () => {
+    const layout = layoutFor(['p'])
+    const thick = (side: -1 | 1) =>
+      buildPixelMap(
+        layout,
+        plan({ walls: [{ a: [0, 3], b: [4, 3], kind: 'solid', side, thick: 0.4 }] }),
+        fakeResolver(),
+      )
+    // (−dz, dx) of a→b is +z: side +1 puts the body on z 3…3.4, side −1 on z 2.6…3.
+    expect(solidAt(thick(1), layout, 1.25, 3.25)).toBe(1)
+    expect(solidAt(thick(1), layout, 1.25, 2.75)).toBe(0)
+    expect(solidAt(thick(-1), layout, 1.25, 2.75)).toBe(1)
+    expect(solidAt(thick(-1), layout, 1.25, 3.25)).toBe(0)
+  })
+
+  // MAP-R5: walls without side (older manifests) or thin ones on a grid line take one tile, inside.
+  it('puts legacy and thin walls on the module-interior tile', () => {
+    const layout = layoutFor(['p'])
+    for (const wall of [
+      { a: [0, 0], b: [4, 0], kind: 'solid' },
+      { a: [0, 0], b: [4, 0], kind: 'solid', side: -1, thick: 0.15 },
+    ] as PlanWall[]) {
+      const m = buildPixelMap(layout, plan({ walls: [wall] }), fakeResolver())
+      expect(solidAt(m, layout, 1.25, 0.25)).toBe(1)
+      expect(solidAt(m, layout, 1.25, -0.25)).toBe(0)
+    }
+    // A partition through the middle keeps the row of the side with pieces against it free.
+    const mid: PlanWall = { a: [0, 4], b: [8, 4], kind: 'glass' }
+    const room8: ModulePlan['rooms'] = [{ id: 'r', name: 'R', rect: [0, 0, 8, 8] }]
+    const shelf = { kind: 'bookshelf' as const, x: 3, z: 4.3, w: 3, d: 0.4, yaw: 0 }
+    expect(wallPrefer(mid, { rooms: room8, walls: [mid], furniture: [shelf] })).toBe(-1)
+    expect(wallPrefer(mid, { rooms: room8, walls: [mid], furniture: [] })).toBe(1)
+  })
+
+  // MAP-R6: wall-mounted pieces sit on the tile next to the wall; pieces never overlap a wall tile.
+  it('snaps wall-mounted pieces against the wall and pushes others off it', () => {
+    const layout = layoutFor(['p'])
+    const m = buildPixelMap(
+      layout,
+      plan({
+        walls: [{ a: [0, 2], b: [8, 2], kind: 'solid', side: 1, thick: 0.15 }],
+        furniture: [
+          { kind: 'bookshelf', x: 2, z: 2.6, w: 3, d: 0.4, yaw: 0 },
+          { kind: 'desk', x: 6, z: 2.3, w: 1.6, d: 0.8, yaw: 0 },
+        ],
+      }),
+      fakeResolver(),
+      undefined,
+      feet,
+    )
+    const wallRow = tileAt(layout, 'wing:p:0', 1, 2.1, m).ty
+    const shelf = m.objects.find((o) => o.kind === 'bookshelf')!
+    const desk = m.objects.find((o) => o.kind === 'desk')!
+    expect(shelf.rect.ty).toBe(wallRow + 1)
+    expect(desk.rect.ty).toBeGreaterThan(wallRow)
+    expect(drawBounds(shelf)).toEqual({ ...shelf.rect, ty: wallRow, th: shelf.rect.th + 1 })
+  })
+
+  // MAP-R7: booth lamps take their art's foot centred on the booth spot.
+  it('sizes anchor objects by their art', () => {
+    const layout = layoutFor(['p'])
+    const m = buildPixelMap(layout, plan({}), fakeResolver(), undefined, feet)
+    const lamp = m.objects.find((o) => o.kind === 'booth-lamp')!
+    expect(lamp.rect).toMatchObject({ tw: 3, th: 3 })
+    expect(buildPixelMap(layout, plan({}), fakeResolver(), undefined, feet).key).not.toBe(
+      buildPixelMap(layout, plan({}), fakeResolver()).key,
+    )
   })
 })

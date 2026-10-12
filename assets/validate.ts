@@ -529,6 +529,8 @@ function checkPlanShape(at: string, plan: unknown): string[] {
     if (!WALL_KINDS.includes(String(w.kind))) out.push(`${p}.kind: must be solid, glass or curtain`)
     if (w.openings !== undefined && !(Array.isArray(w.openings) && w.openings.every(isPair)))
       out.push(`${p}.openings: must be a list of [t0, t1]`)
+    if (w.side !== undefined && w.side !== -1 && w.side !== 1) out.push(`${p}.side: must be -1 or 1`)
+    if (w.thick !== undefined && !(isNum(w.thick) && w.thick > 0)) out.push(`${p}.thick: must be a finite number > 0`)
   })
   ;(plan.furniture as unknown[]).forEach((f, i) => {
     const p = `${at}.furniture[${i}]`
@@ -632,6 +634,22 @@ export function checkPlan(
 /** Contract §11 for the whole manifest: every module has a plan, and each one passes checkPlan. */
 export function checkPlans(m: Manifest): string[] {
   return PLAN_KINDS.flatMap((k) => checkPlan(k, k === 'wing' ? m.modules.wing : m.modules[k]))
+}
+
+/**
+ * Contract §11, PLAN-6: every wall records `side` (the side of a→b its body extends to) and `thick`, so
+ * the 2D map puts the wall on the tile its 3D body occupies. Required of `make assets-plan` output; the
+ * fields stay optional in the schema for older manifests (checkPlan only checks their values).
+ */
+export function checkPlanWallSides(m: Manifest): string[] {
+  return PLAN_KINDS.flatMap((k) => {
+    const plan = (k === 'wing' ? m.modules.wing : m.modules[k]).plan
+    return (plan?.walls ?? []).flatMap((w, i) =>
+      (w.side === 1 || w.side === -1) && isNum(w.thick) && w.thick > 0
+        ? []
+        : [`${k}.plan.walls[${i}]: needs side (−1 or 1) and thick (m)`],
+    )
+  })
 }
 
 // ── Character metadata ──────────────────────────────────────────────────────────────────────────

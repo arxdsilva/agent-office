@@ -178,6 +178,7 @@ def test(spec):
     tris = sum(geometry.triangle_count(o) for o in ship if o not in objs['collider'])
     check(tris <= BUDGET[kind], f'{tag}: {tris} triangles > {BUDGET[kind]:.0f}')
     test_plan(tag, g.plan)
+    test_plan_walls(tag, g.plan)
     print(f'[test] {spec}: {len(anchors)} anchors, {len(nodes)} nav nodes, {tris} tris', flush=True)
     return m
 
@@ -199,6 +200,15 @@ def test_plan(tag, plan):
         check(f['kind'] in kinds, f'{tag}: furniture kind {f["kind"]} is not in FURNITURE_KINDS')
         check(f['w'] > 0 and f['d'] > 0, f'{tag}: {f["kind"]} has an empty footprint')
     check(all(isinstance(v, (int, float)) and math.isfinite(v) for v in nums), f'{tag}: plan has NaN/inf values')
+
+
+
+def test_plan_walls(tag, plan):
+    """BL-py (contract §11): every plan wall records the side its body extends to and its thickness."""
+    for i, w in enumerate(plan['walls']):
+        check(w.get('side') in (-1, 1), f'{tag}: walls[{i}] side {w.get("side")!r} is not -1 or 1')
+        t = w.get('thick')
+        check(isinstance(t, (int, float)) and math.isfinite(t) and t > 0, f'{tag}: walls[{i}] thick {t!r} is not > 0')
 
 
 def main():

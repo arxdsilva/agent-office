@@ -13,8 +13,8 @@ def build(g, A, P, name, t, rng):
         g.plane_y(P['ceiling'], -3, 3, 0, 0.5, H, up=False)
     curtain_wall(g, P, (-3, 0.5), (3, 0.5), H, spacing=1.5, transoms=(2.95,), thick=0.12, side=-1)
     # exterior skin behind the last wings (never seen from inside)
-    g.plan_wall((-33, 0.44), (-3, 0.44))
-    g.plan_wall((3, 0.44), (33, 0.44))
+    g.plan_wall((-33, 0.44), (-3, 0.44), side=1, thick=0.12)  # body z ∈ [0.38, 0.5]
+    g.plan_wall((3, 0.44), (33, 0.44), side=1, thick=0.12)
     for x0, x1 in ((-33, -3), (3, 33)):
         g.box_b(P['concrete'], x0, x1, -0.1, H + 0.4, 0.38, 0.5, bevel=0.01)
     g.box_b(P['concrete'], -33, 33, H, H + 0.4, 0.38, 0.5, bevel=0.01)

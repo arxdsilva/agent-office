@@ -411,13 +411,28 @@ Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same li
 </tr>
 </table>
 
-![The whole 2D office from above: lobby, Main Street and three themed wings](docs/screenshots/pixel-overview.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/pixel-overview.png" width="100%" alt="The whole 2D office from above: lobby, Main Street and three themed wings, labelled"></td>
+<td width="50%"><img src="docs/screenshots/pixel-minimap.png" width="100%" alt="The 2D minimap: rooms, walls, wing and room labels, agents by status, the player and the camera's view"></td>
+</tr>
+<tr>
+<td><b>O</b>: the overview, a labelled floor plan. Click to pan; keep walking while it's open.</td>
+<td><b>M</b>: the minimap. Click to pan there, Shift-click to travel.</td>
+</tr>
+</table>
+
+![The 2D Library: bookshelves for skills and boards for rules](docs/screenshots/pixel-library.png)
 
 - **The same agents, the same places:** agents arrive by elevator, sit at their pod, meet with their subagents, wait in phone booths, visit the Library and the Adapters room, and leave by elevator, exactly as in 3D. The 2D view draws the same decisions.
 - **Talk to agents:** **E** (or a click) opens a dialogue. **Talk** opens the regular chat panel, with history, context, tools, and a managed session's mode, model and permission card. Subagents point you to their parent.
 - **Library and Adapters:** E on a bookshelf, board or station opens its details or the Library browser.
-- **Never miss a request:** alerts at the top right ("! Ada is waiting for you", "needs approval") take you there. **M** opens a minimap, **J** a directory with fast travel, **O** an overview, and the mouse wheel zooms.
+- **Never miss a request:** alerts at the top right ("! Ada is waiting for you", "needs approval") take you there. **M** opens the minimap, **J** a directory with fast travel, **O** the overview, and the mouse wheel zooms.
+- **Walk in every view:** you can keep moving while the overview is open, while following an agent, and with the chat panel or Library open (typing in a text field never moves you). **Space** or **Esc** brings the camera back to you.
+- **What you see is what blocks:** furniture collides exactly where it's drawn, walls sit where they are in 3D, and every corridor and door the agents use is walkable.
 - Original pixel art (no third-party sprites), 16 px tiles, crisp integer scaling. It runs at 120 fps with 36 MB of textures, and works without WebGL.
+
+How it's built (one `SceneView` port, two renderers): [docs/2d-architecture.md](docs/2d-architecture.md).
 
 ## Characters
 

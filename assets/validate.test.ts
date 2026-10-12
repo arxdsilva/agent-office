@@ -37,6 +37,7 @@ import {
   checkNav,
   checkPlan,
   checkPlans,
+  checkPlanWallSides,
   createIO,
   glbStats,
   isSafeRef,
@@ -1031,12 +1032,53 @@ describe('real assets (packages/web/public/assets)', () => {
   }, 180_000)
 })
 
+describe('asset validator: wall side and thickness (contract §11, PLAN-6)', () => {
+  it('PLAN-6: requires side and thick on every wall, naming the path', () => {
+    const m = fixtureManifest()
+    for (const kind of ['atrium', 'street', 'garden', 'cap', 'wing'] as const) {
+      const mod = kind === 'wing' ? m.modules.wing : m.modules[kind]
+      mod.plan = planFor(kind, mod.anchors)
+    }
+    // planFor's walls predate side/thick: each one is reported
+    expect(checkPlanWallSides(m)).toHaveLength(10)
+    expect(checkPlanWallSides(m)[0]).toBe('atrium.plan.walls[0]: needs side (−1 or 1) and thick (m)')
+    for (const kind of ['atrium', 'street', 'garden', 'cap', 'wing'] as const) {
+      const mod = kind === 'wing' ? m.modules.wing : m.modules[kind]
+      for (const w of mod.plan!.walls) Object.assign(w, { side: 1, thick: 0.15 })
+    }
+    expect(checkPlanWallSides(m)).toEqual([])
+    expect(checkPlans(m)).toEqual([])
+  })
+
+  it('PLAN-6: rejects a side other than ±1 and a non-positive thickness', () => {
+    const mod = moduleWithPlan('garden')
+    const plan = mod.plan as any
+    plan.walls.push({ a: [1, 1], b: [2, 1], kind: 'solid', side: 0, thick: 0.15 })
+    plan.walls.push({ a: [1, 2], b: [2, 2], kind: 'solid', side: -1, thick: 0 })
+    plan.walls.push({ a: [1, 3], b: [2, 3], kind: 'glass', side: 1, thick: 0.06 })
+    expect(checkPlan('garden', mod)).toEqual([
+      'garden.plan.walls[2].side: must be -1 or 1',
+      'garden.plan.walls[3].thick: must be a finite number > 0',
+    ])
+  })
+})
+
 describe('real assets: floor plan (contract §11)', () => {
   it('PLAN-1..5: every module has a plan that matches its bounds, anchors and nav', async () => {
     const file = join(REAL_ASSETS, 'manifest.json')
     if (!existsSync(file)) return // reported by the real-assets test above
     const m = JSON.parse(await readFile(file, 'utf8')) as Manifest
     const p = checkPlans(m)
+    expect(p, p.join('\n')).toEqual([])
+  })
+})
+
+describe('real assets: wall side and thickness (contract §11)', () => {
+  it('PLAN-6: every published wall says which side its body is on and how thick it is', async () => {
+    const file = join(REAL_ASSETS, 'manifest.json')
+    if (!existsSync(file)) return // reported by the real-assets test above
+    const m = JSON.parse(await readFile(file, 'utf8')) as Manifest
+    const p = checkPlanWallSides(m)
     expect(p, p.join('\n')).toEqual([])
   })
 })

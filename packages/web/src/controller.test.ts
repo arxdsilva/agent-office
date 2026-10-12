@@ -1865,6 +1865,7 @@ import type {
   InteractTarget,
   MinimapVM,
   PixelHudVM,
+  TileRect,
 } from './app/pixel/types.ts'
 import type { ViewMode } from '@agent-office/shared'
 import { PIXEL_COPY } from './app/pixel-copy.ts'
@@ -1941,6 +1942,7 @@ function pixelScene(v: ReturnType<typeof fakeViews>) {
   s.onInteract = (fn) => void (v.handlers.interact = fn)
   s.onRoom = (fn) => void (v.handlers.room = fn)
   s.onPlayerMove = (fn) => void ((v.handlers as Record<string, unknown>).playerMove = fn)
+  s.onCamera = (fn) => void ((v.handlers as Record<string, unknown>).camera = fn)
   s.setInputSuspended = (on) => void s.suspended.push(on)
   s.follow = (id) => void s.followed.push(id)
   s.travelTo = (t) => void s.travels.push(t)
@@ -2031,8 +2033,8 @@ describe('controller: 2D RPG mode (C-mode)', () => {
     expect(t.dialogue.vm).toBeNull()
     expect(t.panel.vm?.id).toBe('a')
     expect(t.scene.selected).toBe('a')
-    // Still suspended while the panel is open; closing it gives control back.
-    expect(t.scene.suspended.at(-1)).toBe(true)
+    // The panel doesn't suspend input: the player can walk while chatting (keys typed in the composer never move the player)
+    expect(t.scene.suspended.at(-1)).toBe(false)
     t.handlers.close!()
     expect(t.scene.suspended.at(-1)).toBe(false)
     // Unknown agents open nothing.
@@ -2173,5 +2175,79 @@ describe('controller: 2D RPG mode (C-mode)', () => {
     expect(scene.suspended).toEqual([])
     expect(s.handlers.interact).toBeUndefined()
     expect(s.c.resync().size).toBe(1)
+  })
+})
+
+describe('controller: 2D movement in every view and the minimap (C-move, C-map)', () => {
+  // C-move-1: selecting an agent (the panel opens) never freezes the player.
+  it('does not suspend input when an agent is selected', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.c.select('a')
+    t.tick(500)
+    expect(t.panel.vm?.id).toBe('a')
+    expect(t.scene.suspended).not.toContain(true)
+  })
+
+  // C-move-2: the RPG dialogue box is modal: input pauses until it closes.
+  it('suspends input while the dialogue box is open', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.interact({ kind: 'agent', id: 'a' })
+    expect(t.scene.suspended.at(-1)).toBe(true)
+    t.handlers.dialogueClose!()
+    expect(t.scene.suspended.at(-1)).toBe(false)
+  })
+
+  // C-move-3: the Library drawer is not modal (the player walks); Settings is.
+  it('keeps walking with the Library open but not with Settings open', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.handlers.library!()
+    t.tick(500)
+    expect(t.library.isOpen()).toBe(true)
+    expect(t.scene.suspended).not.toContain(true)
+    await t.handlers.openSettings!()
+    t.tick(500)
+    expect(t.scene.suspended.at(-1)).toBe(true)
+  })
+
+  // C-map-1: the minimap VM carries labels, the camera viewport and waiting/error flags.
+  it('wires minimap labels, the viewport and dot flags', async () => {
+    const wing = fixtureManifest.modules.wing as { plan?: unknown }
+    const before = wing.plan
+    wing.plan = {
+      rooms: [{ id: 'kitchen', name: 'Kitchen', rect: [2, 2, 6, 6] }],
+      walls: [],
+      furniture: [],
+    }
+    try {
+      const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, [
+        agent('a', { name: 'Ada', status: 'waiting' }),
+        agent('b', { name: 'Bo', status: 'error' }),
+      ])
+      const camera = (t.handlers as Record<string, unknown>).camera as (v: TileRect) => void
+      camera({ tx: 1, ty: 2, tw: 30, th: 17 })
+      t.tick(500)
+      const m = t.pixelHud.minimap!
+      expect(m.viewport).toEqual({ tx: 1, ty: 2, tw: 30, th: 17 })
+      expect(m.labels?.map((l) => l.text)).toEqual(expect.arrayContaining(['p', 'Kitchen']))
+      expect(m.dots.find((d) => d.id === 'a')?.waiting).toBe(true)
+      expect(m.dots.find((d) => d.id === 'b')?.error).toBe(true)
+    } finally {
+      wing.plan = before
+    }
+  })
+
+  // C-map-2: a minimap click pans to the exact point; shift-click travels the player there.
+  it('pans to a minimap click and travels on shift-click', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    const s = t.scene as typeof t.scene & { pans: { x: number; z: number }[] }
+    s.pans = []
+    s.panTo = (p) => void s.pans.push(p)
+    t.tick(500)
+    t.handlers.minimapPick!(4, 6)
+    expect(s.pans).toHaveLength(1)
+    t.handlers.minimapPick!(4, 6, { travel: true })
+    expect(s.pans).toHaveLength(1)
+    expect(t.scene.travels.at(-1)).toEqual({ pos: s.pans[0] })
+    expect(t.scene.wentTo).toEqual([])
   })
 })

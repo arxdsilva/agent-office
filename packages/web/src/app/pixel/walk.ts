@@ -5,14 +5,15 @@ import type { BuildingLayout, Vec2 } from '../office-types.ts'
 import { dirVector, tileCenter, toTile } from './project.ts'
 import { TILE_M, type Dir4, type PixelMap } from './types.ts'
 
-export const PLAYER_RADIUS = 0.3
+/** The 2D player's collision circle (m): the sprite is one 0.5 m tile wide (plan §1.4). */
+export const PLAYER_RADIUS = 0.22
 /** m/s: walking (4.5 tiles/s) and with Shift. */
 export const WALK_SPEED = 1.4
 export const SPRINT_SPEED = 2.4
 /** Longest sub-step (m), well under the radius. */
 const SUB_STEP = 0.1
-/** Doorway assist: sideways probes up to half a tile. */
-const ASSIST_OFFSETS = [0.05, 0.1, 0.15, 0.2, 0.25]
+/** Doorway assist: sideways probes up to 0.35 m (a one-tile door approached off-centre). */
+const ASSIST_OFFSETS = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
 
 /** Movement direction from held keys in press order: the last pressed one wins (GBA style). */
 export function moveFromKeys(held: readonly Dir4[]): Vec2 {
@@ -20,17 +21,21 @@ export function moveFromKeys(held: readonly Dir4[]): Vec2 {
   return last ? dirVector(last) : { x: 0, z: 0 }
 }
 
-/** True when a player circle at `p` overlaps a solid tile or leaves the map. */
+/** True when a player circle at `p` overlaps a solid tile or leaves the map (circle vs tile box). */
 export function blocked(map: PixelMap, p: Vec2, r = PLAYER_RADIUS): boolean {
-  const x0 = (p.x - r - map.originM.x) / TILE_M
-  const x1 = (p.x + r - map.originM.x) / TILE_M
-  const z0 = (p.z - r - map.originM.z) / TILE_M
-  const z1 = (p.z + r - map.originM.z) / TILE_M
-  if (x0 < 0 || z0 < 0 || x1 > map.widthTiles || z1 > map.heightTiles) return true
-  // Strict overlap: touching a tile edge doesn't block.
-  for (let ty = Math.floor(z0); ty < Math.ceil(z1); ty++)
-    for (let tx = Math.floor(x0); tx < Math.ceil(x1); tx++)
-      if (map.solid[ty * map.widthTiles + tx]) return true
+  const lx = (p.x - map.originM.x) / TILE_M
+  const lz = (p.z - map.originM.z) / TILE_M
+  const rt = r / TILE_M
+  if (lx - rt < 0 || lz - rt < 0 || lx + rt > map.widthTiles || lz + rt > map.heightTiles)
+    return true
+  const r2 = rt * rt - 1e-9 // strict overlap: touching a tile edge doesn't block
+  for (let ty = Math.floor(lz - rt); ty < Math.ceil(lz + rt); ty++)
+    for (let tx = Math.floor(lx - rt); tx < Math.ceil(lx + rt); tx++) {
+      if (!map.solid[ty * map.widthTiles + tx]) continue
+      const dx = lx - Math.max(tx, Math.min(lx, tx + 1))
+      const dz = lz - Math.max(ty, Math.min(lz, ty + 1))
+      if (dx * dx + dz * dz < r2) return true
+    }
   return false
 }
 

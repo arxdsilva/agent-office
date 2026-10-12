@@ -679,14 +679,14 @@ async function planOnly(args) {
     const openings = plan.walls.reduce((n, w) => n + (w.openings?.length ?? 0), 0);
     console.log(`[asset] ${id}: ${plan.rooms.length} rooms, ${plan.walls.length} walls (${openings} openings), ${plan.furniture.length} furniture ${JSON.stringify(kinds)}`);
   }
-  const { checkPlans } = await import('./validate.ts');
+  const { checkPlans, checkPlanWallSides } = await import('./validate.ts');
   for (const file of targets) {
     const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
     for (const [id, plan] of Object.entries(plans)) {
       if (!manifest.modules[id]) throw new Error(`${path.relative(ROOT, file)} has no module ${id}`);
       manifest.modules[id].plan = plan;
     }
-    const problems = Object.keys(plans).length === 5 ? checkPlans(manifest) : [];
+    const problems = Object.keys(plans).length === 5 ? [...checkPlans(manifest), ...checkPlanWallSides(manifest)] : [];
     if (problems.length) {
       for (const p of problems) console.error(`[asset] FAIL ${p}`);
       throw new Error(`${problems.length} floor-plan problem(s); ${path.relative(ROOT, file)} not written`);
