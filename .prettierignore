@@ -5,3 +5,6 @@ coverage/
 docs/
 playwright-report/
 test-results/
+assets/
+packages/web/public/
+docs/graphics-contract.md

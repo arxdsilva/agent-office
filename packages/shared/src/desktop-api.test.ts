@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  GRAPHICS_QUALITIES,
   IPC,
   SendMessageArgsSchema,
   SettingsPatchSchema,
@@ -21,6 +22,16 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.safeParse({ port: 80 }).success).toBe(false)
     expect(SettingsSchema.safeParse({ port: 70000 }).success).toBe(false)
     expect(SettingsSchema.safeParse({ port: 4318 }).success).toBe(true)
+  })
+
+  it('graphicsQuality defaults to auto and accepts only the presets', () => {
+    expect(DEFAULT_SETTINGS.graphicsQuality).toBe('auto')
+    expect(GRAPHICS_QUALITIES).toEqual(['auto', 'low', 'medium', 'high', 'ultra'])
+    for (const q of GRAPHICS_QUALITIES)
+      expect(SettingsSchema.parse({ graphicsQuality: q }).graphicsQuality).toBe(q)
+    expect(SettingsSchema.safeParse({ graphicsQuality: 'max' }).success).toBe(false)
+    expect(SettingsPatchSchema.safeParse({ graphicsQuality: 'low' }).success).toBe(true)
+    expect(SettingsPatchSchema.safeParse({ graphicsQuality: 3 }).success).toBe(false)
   })
 
   it('patches are partial and strict about types', () => {

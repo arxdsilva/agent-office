@@ -1,4 +1,4 @@
-import type { SettingsPatch } from '@agent-office/shared'
+import { GraphicsQualitySchema, type SettingsPatch } from '@agent-office/shared'
 import type { SettingsVM } from '../../app/view-models.ts'
 import type { SettingsView } from '../../ports.ts'
 import { byId } from './el.ts'
@@ -22,6 +22,10 @@ export class DomSettings implements SettingsView {
         (e) => void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
       )
     }
+    byId<HTMLSelectElement>('s-graphicsQuality').addEventListener('change', (e) => {
+      const q = GraphicsQualitySchema.safeParse((e.target as HTMLSelectElement).value)
+      if (q.success) void this.changeFn({ graphicsQuality: q.data })
+    })
     byId<HTMLFormElement>('s-port-form').addEventListener('submit', (e) => {
       e.preventDefault()
       void this.changeFn({ port: Number(byId<HTMLInputElement>('s-port').value) })
@@ -69,6 +73,7 @@ export class DomSettings implements SettingsView {
     for (const key of CHECKBOXES) byId<HTMLInputElement>(`s-${key}`).checked = vm[key]
     const port = byId<HTMLInputElement>('s-port')
     if (document.activeElement !== port) port.value = String(vm.port)
+    byId<HTMLSelectElement>('s-graphicsQuality').value = vm.graphicsQuality
     byId('s-restart').hidden = !vm.restartNote
     byId('s-hook-label').textContent = vm.hook.label
     this.hookAction = vm.hook.action

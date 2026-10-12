@@ -1,4 +1,4 @@
-import type { Agent } from '@agent-office/shared'
+import type { Agent, GraphicsQuality } from '@agent-office/shared'
 import * as THREE from 'three'
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import type { OfficeLayout, SceneView } from '../../ports.ts'
@@ -72,6 +72,9 @@ export class ThreeScene implements SceneView {
       this.labels.render(this.scene, this.camera)
     })
   }
+
+  // Temporary no-op: the phase-B render pipeline implements the presets.
+  setQuality(_q: GraphicsQuality): void {}
 
   onPick(fn: (id: string | null) => void): void {
     this.pickFn = fn

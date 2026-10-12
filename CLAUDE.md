@@ -22,6 +22,7 @@
 | `/add-event-source`   | A new agent provider or source (a driving adapter)                       |
 | `/protocol-change`    | Changing `AgentEvent`, the HTTP inbox/reply APIs, or the IPC contract    |
 | `/scene-change`       | The 3D scene, layout, controls or labels                                 |
+| `/asset-change`       | Blender assets: building modules, furniture, characters, clips, themes   |
 | `/interaction-change` | The inbox, chat panel, Claude Code hook or hook setup                    |
 | `/desktop-change`     | Tray, notifications, settings, IPC, updater, windows, packaging          |
 

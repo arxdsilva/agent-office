@@ -1,14 +1,21 @@
 // Electron entry (part of the composition root): lifecycle, native shell objects, then compose().
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { ConsoleLogger, loadEnv } from '@agent-office/adapters'
-import { app, BrowserWindow, Menu, nativeImage, Notification, session } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, Notification, protocol, session } from 'electron'
 import { ElectronNotifier } from './adapters/electron-notifier.ts'
 import { ElectronTray } from './adapters/electron-tray.ts'
 import { ElectronUpdater } from './adapters/electron-updater.ts'
 import { electronIpc, ElectronLoginItem, electronPlatform } from './adapters/electron-system.ts'
 import { compose, type App } from './composition.ts'
+import {
+  APP_SCHEME,
+  APP_SCHEME_PRIVILEGES,
+  createRendererHandler,
+  RENDERER_URL,
+} from './renderer-protocol.ts'
 import { contentSecurityPolicy, isAllowedPermission } from './security.ts'
 import { createMainWindow } from './window.ts'
 
@@ -18,6 +25,8 @@ const RELEASES = 'https://github.com/arxdsilva/agent-office/releases/latest'
 // Tests and side-by-side dev instances use their own profile.
 if (process.env.AGENT_OFFICE_USER_DATA) app.setPath('userData', process.env.AGENT_OFFICE_USER_DATA)
 if (!app.requestSingleInstanceLock()) app.exit(0)
+// The production renderer is served from app://renderer (a real origin for the CSP). Must precede `ready`.
+protocol.registerSchemesAsPrivileged([APP_SCHEME_PRIVILEGES])
 
 /** Paths differ between `electron-vite dev` (repo layout) and the packaged app (resources/). */
 function resources() {
@@ -37,8 +46,8 @@ let quitting = false
 
 async function main(): Promise<void> {
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
-  const rendererFile = join(here, '..', 'renderer', 'index.html')
-  const rendererUrl = devServerUrl ?? pathToFileURL(rendererFile).href
+  const rendererRoot = join(here, '..', 'renderer')
+  const rendererUrl = devServerUrl ?? RENDERER_URL
   const paths = resources()
 
   // Deny every permission except the ones the office needs (walk mode, notifications).
@@ -48,8 +57,15 @@ async function main(): Promise<void> {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
     isAllowedPermission(permission),
   )
-  if (devServerUrl) {
-    // Production CSP is a <meta> tag in the built index.html; dev responses get it as a header.
+  if (!devServerUrl) {
+    // Read-only, GET/HEAD, contained in out/renderer (path traversal is refused with 403).
+    protocol.handle(
+      APP_SCHEME,
+      createRendererHandler({ root: rendererRoot, readFile, csp: contentSecurityPolicy() }),
+    )
+  } else {
+    // Production CSP is a <meta> tag in the built index.html (plus a header from the app:// handler);
+    // dev responses get it as a header.
     session.defaultSession.webRequest.onHeadersReceived((details, cb) =>
       cb({
         responseHeaders: {
@@ -127,8 +143,7 @@ async function main(): Promise<void> {
 
   const saved = (await instance.office.settings.get()).windowBounds
   if (saved) win.setBounds(saved)
-  if (devServerUrl) await win.loadURL(devServerUrl)
-  else await win.loadFile(rendererFile)
+  await win.loadURL(rendererUrl)
 }
 
 app.on('second-instance', () => {

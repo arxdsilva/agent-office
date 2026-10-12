@@ -24,15 +24,16 @@ Render API-provided text with `textContent` and elements built with `document.cr
 
 ## Electron checklist (`desktop/src/main/security.ts`, unit-tested + `shell.spec.ts`)
 
-| Do                                                                                                                  | Don't                                               |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`, `webviewTag: false`       | Relax any of these "temporarily"                    |
-| CSP: `script-src 'self'`, `connect-src 'none'` in production (meta tag); the dev server origin only in dev (header) | Add `unsafe-eval` or remote origins                 |
-| Deny `will-navigate` and every `window.open`; open only `https:` links externally                                   | Load remote content in the app window               |
-| Allow only the `pointerLock` (walk mode) and `notifications` permissions                                            | Grant camera, mic, geolocation, clipboard and so on |
-| Validate every IPC payload with the shared zod schemas and check the sender URL (`isTrustedSender`)                 | Trust anything coming from the renderer             |
-| Expose a typed bridge (`window.agentOffice`) from a preload that imports only `electron` + `shared/ipc`             | Expose `ipcRenderer`, `require` or Node APIs        |
-| Write the hook wrapper with mode 0755 into the app's own `userData`                                                 | Write executables anywhere else                     |
+| Do                                                                                                                                                                            | Don't                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`, `webviewTag: false`                                                                 | Relax any of these "temporarily"                              |
+| Serve production from `app://renderer` (`renderer-protocol.ts`: GET/HEAD only, contained in `out/renderer`, traversal → 403)                                                  | Load the app from `file://` or add a write path to the scheme |
+| CSP: `'self'` only (`script-src 'self' 'wasm-unsafe-eval'`, `connect-src 'self'`, `img-src`/`worker-src` add `blob:`) as meta tag + header; the dev server origin only in dev | Add `unsafe-eval` (JS eval) or any remote origin              |
+| Deny `will-navigate` and every `window.open`; open only `https:` links externally                                                                                             | Load remote content in the app window                         |
+| Allow only the `pointerLock` (walk mode) and `notifications` permissions                                                                                                      | Grant camera, mic, geolocation, clipboard and so on           |
+| Validate every IPC payload with the shared zod schemas and check the sender URL (`isTrustedSender`)                                                                           | Trust anything coming from the renderer                       |
+| Expose a typed bridge (`window.agentOffice`) from a preload that imports only `electron` + `shared/ipc`                                                                       | Expose `ipcRenderer`, `require` or Node APIs                  |
+| Write the hook wrapper with mode 0755 into the app's own `userData`                                                                                                           | Write executables anywhere else                               |
 
 ## Hook
 

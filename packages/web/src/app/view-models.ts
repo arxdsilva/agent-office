@@ -5,10 +5,12 @@ import {
   type Agent,
   type AgentStatus,
   type ChatMessage,
+  type GraphicsQuality,
   type HookStatus,
   type Settings,
   type UpdateState,
 } from '@agent-office/shared'
+import type { Activity } from './office-types.ts'
 import type { OfficeState } from './state.ts'
 
 const STATE_LABEL: Record<ChatMessage['state'], string> = {
@@ -48,18 +50,77 @@ export function hintFor(a: Agent): Hint | null {
   return null
 }
 
+/** What the director knows about an agent's whereabouts (from its intent and target anchor). */
+export interface ActivityInfo {
+  activity: Activity
+  /** Room id from the anchor (`meeting-A`, `booth-3`, `pod-2`, …). */
+  room?: string
+  /** For a parent in a meeting: how many of its subagents are with it. */
+  subagents?: number
+  /** For a subagent in a meeting: the parent's name. */
+  with?: string
+}
+
+const ROOM_SUFFIX = (room: string | undefined, prefix: string) =>
+  room?.startsWith(prefix) ? room.slice(prefix.length) : undefined
+
+const DESK_LABEL: Record<'desk-work' | 'desk-think' | 'desk-error' | 'desk-idle', string> = {
+  'desk-work': 'Working at their desk',
+  'desk-think': 'Thinking at their desk',
+  'desk-error': 'Stuck on an error at their desk',
+  'desk-idle': 'Idle at their desk',
+}
+
+/** Human-readable sentence for an activity, e.g. "In meeting room A with 2 subagents". */
+export function activityLabel(
+  activity: Activity,
+  details: Omit<ActivityInfo, 'activity'> = {},
+): string {
+  switch (activity) {
+    case 'arriving':
+      return 'Arriving'
+    case 'leaving':
+      return 'Leaving'
+    case 'kitchen':
+      return 'Getting coffee'
+    case 'lounge':
+      return 'Relaxing in the lounge'
+    case 'cafe':
+      return 'Taking a break at the cafe'
+    case 'pingpong':
+      return 'Playing ping-pong'
+    case 'meeting': {
+      const room = ROOM_SUFFIX(details.room, 'meeting-')
+      const where = room ? `In meeting room ${room}` : 'In a meeting'
+      if (details.with) return `${where} with ${details.with}'s team`
+      const n = details.subagents ?? 0
+      return n > 0 ? `${where} with ${n} subagent${n === 1 ? '' : 's'}` : where
+    }
+    case 'booth': {
+      const booth = ROOM_SUFFIX(details.room, 'booth-')
+      return `Waiting for you in ${booth ? `booth ${booth}` : 'a phone booth'}`
+    }
+    default: {
+      const pod = ROOM_SUFFIX(details.room, 'pod-')
+      return DESK_LABEL[activity] + (pod ? ` in pod ${pod}` : '')
+    }
+  }
+}
+
 export interface PanelVM {
   id: string
   present: boolean
   name: string
   subtitle: string
+  /** Where the agent is in the office and what it is doing there (when the director knows). */
+  activity?: string
   meta: [string, string][]
   parent?: { id: string; name: string }
   hint: Hint | null
   thread: { id: string; from: 'user' | 'agent'; text: string; stateLabel?: string }[]
 }
 
-export function panelVM(state: OfficeState, id: string, now: number): PanelVM {
+export function panelVM(state: OfficeState, id: string, now: number, info?: ActivityInfo): PanelVM {
   const a = state.agents.get(id)
   if (!a)
     return {
@@ -72,14 +133,17 @@ export function panelVM(state: OfficeState, id: string, now: number): PanelVM {
       thread: [],
     }
   const parent = a.parentId ? state.agents.get(a.parentId) : undefined
+  const activity = info ? activityLabel(info.activity, info) : undefined
   return {
     id,
     present: true,
     name: a.name,
     subtitle: [a.kind, a.provider, a.model].filter(Boolean).join(' · '),
+    ...(activity ? { activity } : {}),
     meta: [
       ['Topic', a.topic],
       ['Status', a.status + (a.tool ? ` (${a.tool})` : '')],
+      ...(activity ? [['Now', activity] as [string, string]] : []),
       ['Activity', a.text || '—'],
       ['Active', `for ${ago(a.since, now).replace(' ago', '')}`],
       ['Last seen', ago(a.lastSeen, now)],
@@ -120,6 +184,7 @@ export interface SettingsVM {
   launchAtLogin: boolean
   claudeAdapter: boolean
   autoUpdate: boolean
+  graphicsQuality: GraphicsQuality
   version: string
   restartNote: boolean
   hook: { label: string; action: 'install' | 'uninstall' }
@@ -145,6 +210,7 @@ export function settingsVM(i: {
     launchAtLogin: i.settings.launchAtLogin,
     claudeAdapter: i.settings.claudeAdapter,
     autoUpdate: i.settings.autoUpdate,
+    graphicsQuality: i.settings.graphicsQuality,
     version: `v${i.version}`,
     restartNote: !!i.restartNote,
     hook,

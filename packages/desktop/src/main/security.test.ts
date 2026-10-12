@@ -24,18 +24,32 @@ describe('secureWebPreferences', () => {
 })
 
 describe('contentSecurityPolicy', () => {
-  it('locks production down to the app itself', () => {
-    const csp = contentSecurityPolicy()
-    expect(csp).toContain("default-src 'self'")
-    expect(csp).toContain("script-src 'self'")
-    expect(csp).toContain("connect-src 'none'")
-    expect(csp).not.toContain('unsafe-eval')
+  it('locks production down to the app:// origin, allowing only WASM compilation', () => {
+    expect(contentSecurityPolicy()).toBe(
+      [
+        "default-src 'self'",
+        "script-src 'self' 'wasm-unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "font-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+      ].join('; '),
+    )
+    // JS eval stays forbidden; only WebAssembly compilation (meshopt decoder) is allowed.
+    expect(contentSecurityPolicy()).not.toMatch(/(?<!wasm-)unsafe-eval/)
+    expect(contentSecurityPolicy()).not.toMatch(/https?:|\*/)
   })
 
-  it('allows only the Vite dev server origin in development', () => {
+  it('adds only the Vite dev server origin (and its websocket) in development', () => {
     const csp = contentSecurityPolicy('http://localhost:5173/')
-    expect(csp).toContain('connect-src http://localhost:5173 ws://localhost:5173')
-    expect(csp).toContain("script-src 'self' http://localhost:5173")
+    expect(csp).toContain("connect-src 'self' http://localhost:5173 ws://localhost:5173")
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' http://localhost:5173")
+    expect(csp).toContain("img-src 'self' data: blob:")
+    expect(csp).not.toMatch(/(?<!wasm-)unsafe-eval/)
   })
 })
 
@@ -45,6 +59,17 @@ describe('permissions and senders', () => {
     expect(isAllowedPermission('notifications')).toBe(true)
     for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal'])
       expect(isAllowedPermission(p)).toBe(false)
+  })
+
+  it('trusts only the app://renderer origin in production', () => {
+    const want = 'app://renderer/index.html'
+    expect(isTrustedSender('app://renderer/index.html', want)).toBe(true)
+    expect(isTrustedSender('app://renderer/index.html#x', want)).toBe(true)
+    // Custom schemes have an opaque ("null") origin in WHATWG URL: compare scheme + host instead.
+    expect(isTrustedSender('app://evil/index.html', want)).toBe(false)
+    expect(isTrustedSender('file:///app/out/renderer/index.html', want)).toBe(false)
+    expect(isTrustedSender('https://renderer/index.html', want)).toBe(false)
+    expect(isTrustedSender('other://renderer/index.html', want)).toBe(false)
   })
 
   it('trusts only the app renderer URL', () => {

@@ -1,5 +1,11 @@
 // Renderer ports: the controller talks to the app (gateway) and to the views only through these.
-import type { Agent, AgentOfficeApi, Banner, SettingsPatch } from '@agent-office/shared'
+import type {
+  Agent,
+  AgentOfficeApi,
+  Banner,
+  GraphicsQuality,
+  SettingsPatch,
+} from '@agent-office/shared'
 import type { layoutOffice } from './app/layout.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 
@@ -11,6 +17,8 @@ export type OfficeLayout = Pick<ReturnType<typeof layoutOffice>, 'zones' | 'slot
 export interface SceneView {
   sync(agents: Agent[], layout: OfficeLayout): void
   select(id: string | null): void
+  /** Apply a render quality preset live (`auto` lets the scene's FPS governor pick). */
+  setQuality(q: GraphicsQuality): void
   /** The user clicked an agent (id) or empty space (null). */
   onPick(fn: (id: string | null) => void): void
 }

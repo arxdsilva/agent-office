@@ -11,7 +11,7 @@ UNSIGNED := CSC_IDENTITY_AUTO_DISCOVERY=$${CSC_IDENTITY_AUTO_DISCOVERY:-$$([ -n 
 # Headless Linux (CI) needs a virtual display for Electron.
 XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null && echo "xvfb-run -a")
 
-.PHONY: help install dev dev-mock build package package-dist icons test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean
+.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,24 @@ package-dist: build ## Installers for this OS (.dmg/.zip, .exe, .AppImage/.deb) 
 
 icons: ## Render app and tray icons from build/*.svg
 	pnpm icons
+
+assets: ## Build all 3D assets with Blender (final quality bake) → packages/web/public/assets
+	node assets/build.mjs --quality final
+
+assets-draft: ## Fast asset build for iteration (low bake samples, small lightmaps)
+	node assets/build.mjs --quality draft
+
+assets-test: ## Run the Blender-side asset tests (naming, counts, loops, budgets)
+	node assets/build.mjs --test
+
+asset-previews: ## Render Eevee preview stills of every module → assets/previews
+	node assets/build.mjs --previews
+
+screenshots: ## Capture in-app screenshots from fixed camera bookmarks → docs/screenshots (needs make build)
+	$(ELECTRON_ENV) node scripts/screenshots.mjs
+
+perf: ## Measure FPS with 150 mock agents (needs make build)
+	$(ELECTRON_ENV) node scripts/perf.mjs
 
 test: ## Run unit tests
 	pnpm test

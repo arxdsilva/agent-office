@@ -440,6 +440,14 @@ textarea:focus-visible {
 #settings label.row {
   justify-content: flex-start;
 }
+#settings select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
 #settings input[type='number'] {
   width: 100px;
   font: inherit;

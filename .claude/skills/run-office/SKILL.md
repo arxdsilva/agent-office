@@ -14,12 +14,14 @@ description: Launch the agent-office desktop app locally and verify a change in 
    - `make demo-event` adds a `custom` zone with a "Demo" agent.
    - `make demo-message` messages the first agent.
 3. **Check:**
-   - One zone sign per provider and one labelled row per topic; name tags readable.
+   - The atrium (elevators, reception, cafe) and Main Street load; there is one themed wing per provider with its id on the sign.
+   - Agents sit exactly at desks, one desk pod per topic, subagents next to their parent. Parents with subagents walk into a meeting room; waiting agents go to a glowing phone booth; idle agents drift to the kitchen, lounge or cafe; new agents arrive by elevator and finished ones leave by it. No snapping or foot sliding.
+   - Name tags readable; the panel's "Now" line says where the agent is ("Waiting for you in booth 3").
    - Status colors match the legend.
    - Clicking a tag opens the chat; sending goes ⏳ → ✓ → ✓✓ with a reply from mock agents.
-   - ⚙ Settings shows the hook state.
+   - ⚙ Settings shows the hook state, and Graphics → quality applies immediately.
    - Closing the window keeps the tray icon.
-   - No errors in the console.
+   - No errors in the console (CSP violations show up here: assets load from `app://renderer/assets/`).
 4. **Stop** every app instance you started (`app.close()` or tray → Quit). Never kill processes you didn't start.
 
 ## Troubleshooting
@@ -29,5 +31,7 @@ description: Launch the agent-office desktop app locally and verify a change in 
 | `SyntaxError: … 'electron' does not provide an export named …`, "Node.js vXX" in the output | `ELECTRON_RUN_AS_NODE=1` inherited from VS Code/Cursor. Use `make` targets or strip `ELECTRON_*` from the env. |
 | Red "Port … is busy" banner                                                                 | Another instance or process owns the port. Change it in Settings or use `PORT=` for this run.                  |
 | Window opens but shows nothing                                                              | Run `make build` again (stale `out/`), or check the devtools console for CSP errors.                           |
+| Office shell renders but no building/characters                                             | Assets missing or LFS pointers: `git lfs pull`, or build them with `make assets` (see `/asset-change`).        |
+| Low FPS in the headless/CI run                                                              | Expected with software GL. Pick Settings → Graphics → Low, or measure locally with `make perf`.                |
 | No Claude Code sessions                                                                     | The adapter is off, or no transcript was modified in the last 10 minutes.                                      |
 | Messages to a Claude Code session stay ⏳                                                   | The hook isn't installed (Settings), or the session is idle. Delivery happens at the next turn boundary.       |

@@ -1,7 +1,7 @@
 import { DEFAULT_SETTINGS, type Agent, type ChatMessage } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import { applyMessage, emptyState } from './state.ts'
-import { hudVM, panelVM, settingsVM } from './view-models.ts'
+import { activityLabel, hudVM, panelVM, settingsVM } from './view-models.ts'
 
 const agent = (over: Partial<Agent> = {}): Agent => ({
   id: 'a',
@@ -84,6 +84,48 @@ describe('panelVM', () => {
         ?.text,
     ).toMatch(/Inbox API/)
     expect(panelVM(stateWith([agent({ provider: 'langgraph' })]), 'a', 0)!.hint).toBeNull()
+  })
+})
+
+describe('activityLabel', () => {
+  it('says where the agent is and what it is doing', () => {
+    expect(activityLabel('arriving')).toBe('Arriving')
+    expect(activityLabel('leaving')).toBe('Leaving')
+    expect(activityLabel('kitchen')).toBe('Getting coffee')
+    expect(activityLabel('lounge')).toBe('Relaxing in the lounge')
+    expect(activityLabel('cafe')).toBe('Taking a break at the cafe')
+    expect(activityLabel('pingpong')).toBe('Playing ping-pong')
+    expect(activityLabel('desk-work')).toBe('Working at their desk')
+    expect(activityLabel('desk-think')).toBe('Thinking at their desk')
+    expect(activityLabel('desk-error')).toBe('Stuck on an error at their desk')
+    expect(activityLabel('desk-idle')).toBe('Idle at their desk')
+    expect(activityLabel('desk-work', { room: 'pod-3' })).toBe('Working at their desk in pod 3')
+  })
+
+  it('names meeting rooms and booths, and counts the team', () => {
+    expect(activityLabel('meeting', { room: 'meeting-A', subagents: 2 })).toBe(
+      'In meeting room A with 2 subagents',
+    )
+    expect(activityLabel('meeting', { room: 'meeting-B', subagents: 1 })).toBe(
+      'In meeting room B with 1 subagent',
+    )
+    expect(activityLabel('meeting', { room: 'meeting-A', with: 'Ada' })).toBe(
+      "In meeting room A with Ada's team",
+    )
+    expect(activityLabel('meeting')).toBe('In a meeting')
+    expect(activityLabel('booth', { room: 'booth-3' })).toBe('Waiting for you in booth 3')
+    expect(activityLabel('booth')).toBe('Waiting for you in a phone booth')
+  })
+})
+
+describe('panelVM activity', () => {
+  it('adds an activity line only when the director knows the activity', () => {
+    const s = stateWith([agent()])
+    expect(panelVM(s, 'a', 0).activity).toBeUndefined()
+    const vm = panelVM(s, 'a', 0, { activity: 'booth', room: 'booth-3' })
+    expect(vm.activity).toBe('Waiting for you in booth 3')
+    expect(vm.meta[2]).toEqual(['Now', 'Waiting for you in booth 3'])
+    expect(panelVM(s, 'gone', 0, { activity: 'leaving' }).activity).toBeUndefined()
   })
 })
 
@@ -172,6 +214,11 @@ describe('settingsVM', () => {
       claudeAdapter: true,
       autoUpdate: true,
       version: 'v1.0.0',
+      graphicsQuality: 'auto',
     })
+    expect(
+      settingsVM({ ...base, settings: { ...DEFAULT_SETTINGS, graphicsQuality: 'ultra' } })
+        .graphicsQuality,
+    ).toBe('ultra')
   })
 })

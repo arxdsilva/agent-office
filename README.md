@@ -3,7 +3,7 @@
 **Walk through your AI agents like an office.** agent-office is a desktop app (macOS, Windows,
 Linux) that shows every running AI agent as a worker at a desk in a 3D office:
 
-- Agents are grouped into **zones by provider** and **rows by conversation topic**.
+- Agents are grouped into **wings by provider** and **desk pods by conversation topic**.
 - You see at a glance who is thinking, who is running a tool and who is waiting for you.
 - You can **message them** without leaving the app.
 
@@ -11,7 +11,7 @@ Linux) that shows every running AI agent as a worker at a desk in a 3D office:
 
 ## Features
 
-- **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a zone. Every conversation topic gets a row, and subagents sit next to their parent.
+- **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every conversation topic gets a desk pod, and subagents sit next to their parent. Agents walk to meeting rooms, phone booths and the kitchen to act out what they are doing (see [The office](#the-office)).
 - **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP.
 - **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error.
 - **Zero-config Claude Code.** Running sessions and their subagents appear automatically, read from the transcripts Claude Code already writes.
@@ -126,7 +126,7 @@ The app can inject text into live agent sessions, so it is locked down:
   - The API serves no web page and no WebSocket.
 - **Electron**
   - The renderer is sandboxed and context-isolated, with no Node integration.
-  - The production CSP is `script-src 'self'; connect-src 'none'`.
+  - The production renderer is served from a privileged `app://renderer` scheme (read-only, contained in the bundled files, path traversal refused), so the CSP can stay `'self'`-only: `script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`. WebAssembly may compile (the mesh decoder); JavaScript `eval` and every remote origin stay blocked.
   - Navigation and popups are blocked, and only the pointer-lock and notifications permissions are allowed.
   - Every IPC payload is validated and its sender is checked.
 - **Agent text** is always rendered as text, never as HTML.
@@ -141,8 +141,35 @@ The token protects you from websites. It does not protect you from other program
 | Click a name tag or agent | Open the chat and focus the camera                                           |
 | `⤢ Fit`                   | Frame the whole office                                                       |
 | `F` or `🚶 Walk`          | First-person mode: WASD to move, Shift to sprint, `E` to talk, `Esc` to exit |
-| `⚙`                       | Settings: hook, notifications, open at login, API port, updates              |
+| `⚙`                       | Settings: hook, notifications, open at login, API port, graphics, updates    |
 | Closing the window        | Keeps running in the tray. Quit from the tray menu or with ⌘Q.               |
+
+## The office
+
+The office is one floor of a big-tech-style headquarters. Where an agent is tells you what it is doing:
+
+| Place                                             | Meaning                                                                                                                |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Wings** off Main Street                         | One themed wing per provider (`claude-code`, `langgraph`, …). A provider with more than 24 agents gets an annex wing.  |
+| **Desk pods** in a wing                           | One pod per conversation topic. Agents work, think or get stuck at their desk; subagents sit next to their parent.     |
+| **Meeting rooms** A and B                         | A parent agent and its active subagents work as a team.                                                                |
+| **Phone booths** (glowing ring)                   | The agent finished its turn and is **waiting for you**. Click it to reply.                                             |
+| **Kitchen, lounge, cafe, ping-pong**              | The agent has been idle for a while.                                                                                   |
+| **Reception** and the **elevators** in the atrium | New agents arrive through the elevator and check in at reception; finished agents walk back to the elevator and leave. |
+
+Name tags and the chat panel say what the agent is doing in words, for example "In meeting room A with 2 subagents" or "Waiting for you in booth 3".
+
+## Graphics
+
+⚙ Settings → **Graphics** picks a quality preset. It applies immediately and is saved with your settings.
+
+| Preset | For                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------ |
+| Auto   | The default. Starts at High and steps down or up to keep the frame rate smooth.                        |
+| Low    | Older or battery-powered machines: no real-time shadows or post-processing, fewer animated characters. |
+| Medium | Balanced: soft shadows, ambient occlusion at half resolution, bloom and anti-aliasing.                 |
+| High   | Full-resolution ambient occlusion and sharper shadows, up to Retina pixel density.                     |
+| Ultra  | Native pixel density, the largest shadow maps and more animated characters at full detail.             |
 
 ## Architecture
 
@@ -188,7 +215,26 @@ make package-dist    # installers for this OS
   2. Pushing the tag builds installers on macOS, Windows and Linux into a **draft** GitHub release.
   3. Signing is used automatically when the `CSC_*` and `APPLE_*` secrets exist.
 
-Working with an AI assistant? Start from [`AGENTS.md`](AGENTS.md), which has the architecture, glossary, rules and definition of done. Claude Code users also get project skills: `/run-office`, `/add-port-adapter`, `/add-event-source`, `/protocol-change`, `/scene-change`, `/interaction-change` and `/desktop-change`.
+## Building the assets
+
+The building, furniture and characters are made in **Blender 5.2** by committed Python scripts (`assets/blender/`). Nothing that ships is edited by hand; every `.glb` comes out of the pipeline.
+
+```sh
+brew install git-lfs && git lfs install   # binary assets are stored with Git LFS (once per machine)
+git lfs pull                              # fetch the committed assets
+make assets-draft    # fast build for iteration (low bake samples, small lightmaps; gitignored output)
+make asset-previews  # Eevee stills of every module → assets/previews/
+make assets-test     # Blender-side tests: naming, counts, loop continuity, budgets, no logos
+make assets          # final build → packages/web/public/assets/ (validated by assets/validate.test.ts in CI)
+```
+
+- The Blender binary comes from `$BLENDER`, falling back to `/Applications/Blender.app/Contents/MacOS/Blender`. The build refuses any Blender other than 5.2.
+- `docs/graphics-contract.md` is the contract between the assets and the renderer: coordinates, anchors, nav graphs, clip names and budgets (≤ 45 MB in total).
+- CI does not run Blender. It checks out the LFS files and validates them (`gltf-validator`, budgets, anchors, nav connectivity, character clips).
+- Optional, for art direction: the [Blender MCP](https://github.com/ahujasid/blender-mcp) lets Claude Code inspect the scene and take viewport screenshots. Register it with `claude mcp add blender --scope user -- uvx blender-mcp`, then click **Connect** in Blender's MCP sidebar. Enable only the Poly Haven integration.
+- Textures and HDRIs are CC0 from Poly Haven, listed in `assets/LICENSES.md`. No logos or trademarks appear in any asset; wing signs show the provider id as plain text drawn at runtime.
+
+Working with an AI assistant? Start from [`AGENTS.md`](AGENTS.md), which has the architecture, glossary, rules and definition of done. Claude Code users also get project skills: `/run-office`, `/add-port-adapter`, `/add-event-source`, `/protocol-change`, `/scene-change`, `/asset-change`, `/interaction-change` and `/desktop-change`.
 
 ## Roadmap
 

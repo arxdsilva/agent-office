@@ -2,7 +2,9 @@ import {
   DEFAULT_SETTINGS,
   type AgentOfficeApi,
   type Banner,
+  type GraphicsQuality,
   type ServerMessage,
+  type Settings,
   type SettingsPatch,
   type UpdateState,
 } from '@agent-office/shared'
@@ -12,7 +14,8 @@ import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 import { createController } from './controller.ts'
 import type { BannerView, HudView, PanelView, SceneView, SettingsView } from './ports.ts'
 
-function fakeGateway() {
+function fakeGateway(initial: Settings = DEFAULT_SETTINGS) {
+  let current = initial
   const listeners = {
     message: [] as ((m: ServerMessage) => void)[],
     select: [] as ((id: string) => void)[],
@@ -59,11 +62,11 @@ function fakeGateway() {
           },
     ),
     settings: {
-      get: vi.fn(async () => DEFAULT_SETTINGS),
-      set: vi.fn(async (p: SettingsPatch) => ({
-        settings: { ...DEFAULT_SETTINGS, ...p },
-        restartRequired: 'port' in p,
-      })),
+      get: vi.fn(async () => current),
+      set: vi.fn(async (p: SettingsPatch) => {
+        current = { ...current, ...p }
+        return { settings: current, restartRequired: 'port' in p }
+      }),
     },
     hook: {
       status: vi.fn(async () => 'not-installed' as const),
@@ -87,11 +90,19 @@ function fakeGateway() {
 function fakeViews() {
   const handlers: Record<string, (...a: any[]) => void> = {}
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
-  const scene: SceneView & { synced: number; selected: string | null } = {
+  const scene: SceneView & {
+    synced: number
+    selected: string | null
+    qualities: GraphicsQuality[]
+  } = {
     synced: 0,
     selected: null,
+    qualities: [],
     sync() {
       this.synced++
+    },
+    setQuality(q) {
+      this.qualities.push(q)
     },
     select(id) {
       this.selected = id
@@ -161,8 +172,8 @@ function fakeViews() {
   return { scene, panel, hud, settings, banner, handlers }
 }
 
-async function setup() {
-  const g = fakeGateway()
+async function setup(initial?: Settings) {
+  const g = fakeGateway(initial)
   const v = fakeViews()
   const ticks: (() => void)[] = []
   const c = createController({
@@ -280,6 +291,36 @@ describe('controller', () => {
     expect(settings.vm?.update.action).toBe('install')
     await handlers.installUpdate!()
     expect(api.updates.install).toHaveBeenCalled()
+  })
+
+  it('forwards the saved graphics quality to the scene on start, then on every change', async () => {
+    const { scene, handlers } = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'medium' })
+    expect(scene.qualities).toEqual(['medium'])
+
+    // Changing the preset in Settings applies it live (no restart).
+    await handlers.settingsChange!({ graphicsQuality: 'low' })
+    expect(scene.qualities).toEqual(['medium', 'low'])
+
+    // Unrelated changes and re-opening the dialog do not re-apply the same preset.
+    await handlers.settingsChange!({ notifications: false })
+    await handlers.openSettings!()
+    expect(scene.qualities).toEqual(['medium', 'low'])
+  })
+
+  it('falls back to auto quality when settings cannot be read at start', async () => {
+    const g = fakeGateway()
+    g.api.settings.get.mockRejectedValueOnce(new Error('ipc down'))
+    const v = fakeViews()
+    const c = createController({
+      gateway: g.api,
+      ...v,
+      grouping: byProviderAndTopic,
+      clock: { now: () => 0 },
+      every: () => () => {},
+    })
+    await c.start()
+    expect(v.scene.qualities).toEqual(['auto'])
+    expect(v.scene.synced).toBe(1)
   })
 
   it('stop unsubscribes from the gateway', async () => {

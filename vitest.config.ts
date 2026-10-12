@@ -13,6 +13,7 @@ export default defineConfig({
             'packages/core/test/**/*.test.ts',
             'hooks/**/*.test.ts',
             'scripts/**/*.test.ts',
+            'assets/**/*.test.ts',
           ],
         },
       },

@@ -1,9 +1,11 @@
-import type {
-  Grouping,
-  HookStatus,
-  Settings,
-  SettingsPatch,
-  UpdateState,
+import {
+  DEFAULT_SETTINGS,
+  type GraphicsQuality,
+  type Grouping,
+  type HookStatus,
+  type Settings,
+  type SettingsPatch,
+  type UpdateState,
 } from '@agent-office/shared'
 import { layoutOffice, type LayoutState } from './app/layout.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
@@ -37,7 +39,15 @@ export function createController(d: ControllerDeps) {
   let update: UpdateState = { policy: 'off', status: 'idle' }
   let hook: HookStatus = 'not-installed'
   let restartNote = false
+  let quality: GraphicsQuality | null = null
   const stops: (() => void)[] = []
+
+  /** The scene applies presets live; forward only actual changes. */
+  const applyQuality = (q: GraphicsQuality) => {
+    if (q === quality) return
+    quality = q
+    d.scene.setQuality(q)
+  }
 
   const render = () => {
     const agents = [...state.agents.values()]
@@ -60,6 +70,7 @@ export function createController(d: ControllerDeps) {
       known ?? d.gateway.settings.get(),
       d.gateway.app.version(),
     ])
+    applyQuality(settings.graphicsQuality)
     hook = await d.gateway.hook.status()
     const vm = settingsVM({ settings, hook, version, update, restartNote })
     if (open) d.settings.open(vm)
@@ -127,7 +138,11 @@ export function createController(d: ControllerDeps) {
         }),
         d.every(1000, () => selected && d.panel.render(panelVM(state, selected, d.clock.now()))),
       )
-      const snapshot = await d.gateway.ready()
+      const [snapshot, settings] = await Promise.all([
+        d.gateway.ready(),
+        d.gateway.settings.get().catch(() => DEFAULT_SETTINGS),
+      ])
+      applyQuality(settings.graphicsQuality)
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       render()
     },

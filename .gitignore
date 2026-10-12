@@ -1,6 +1,8 @@
 node_modules/
 dist/
 out/
+# Built 3D assets are committed (Git LFS, see .gitattributes)
+!assets/out/
 coverage/
 *.log
 .env
@@ -10,3 +12,7 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+assets/cache/
+assets/draft/
+__pycache__/
+*.blend1

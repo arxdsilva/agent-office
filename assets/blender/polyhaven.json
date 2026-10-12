@@ -1,0 +1,139 @@
+{
+  "comment": "Poly Haven CC0 sources (https://polyhaven.com/license). Downloaded by assets/build.mjs into assets/cache/ and verified against sha256. Run `node assets/build.mjs --pin` after changing this list.",
+  "textures": {
+    "laminate_floor_02": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "arm"
+      ]
+    },
+    "herringbone_parquet": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "arm"
+      ]
+    },
+    "wood_floor": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "arm"
+      ]
+    },
+    "smooth_concrete_floor": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "arm"
+      ]
+    },
+    "terrazzo_tiles": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "arm"
+      ]
+    },
+    "poly_wool_herringbone": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "white_plaster_02": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "concrete_wall_008": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "oak_veneer_01": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "walnut_veneer": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "cotton_jersey": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "leather_white": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    },
+    "long_white_tiles": {
+      "res": "1k",
+      "maps": [
+        "diff",
+        "nor_gl"
+      ]
+    }
+  },
+  "hdri": {
+    "id": "unfinished_office",
+    "res": "1k"
+  },
+  "sha256": {
+    "hdri/unfinished_office_1k.hdr": "49066c90ac8f4a64ce9a0480f061cdf6be79802be8946dae196a9a5d1e454ae4",
+    "textures/concrete_wall_008_diff_1k.jpg": "a203166d280d3cfc6a91bbc9ffdae406eb9555b4a4f658cd92619063eb17c147",
+    "textures/concrete_wall_008_nor_gl_1k.jpg": "83cd3fa2c7cbf4c81402386065daf8fa6f72e1f1f77e02ccb1eedb28496909ae",
+    "textures/cotton_jersey_diff_1k.jpg": "0f1b790e4087223275aaa6fdffdd46a556a26d2af72cd811acf72ba9c21ec1f6",
+    "textures/cotton_jersey_nor_gl_1k.jpg": "9b79709806511b62567fb007ff61009c3b194bb0d0821fbaee3faf1b2bff0318",
+    "textures/herringbone_parquet_arm_1k.jpg": "64ded181ebe84df02998929e95b5a9a4b613f268a5355f7ef56cd91da879b207",
+    "textures/herringbone_parquet_diff_1k.jpg": "d6c66492a6c4cfd4e8ed18c9cdd4e0303f3de4e04613d2adca8bc2b8f2dd2350",
+    "textures/herringbone_parquet_nor_gl_1k.jpg": "af6a822100fd6369bb75e43bb764f4a71ca41f521538ac796e92e681e3ad38f5",
+    "textures/laminate_floor_02_arm_1k.jpg": "92b006e3cb98766cb904b5b373d1264290e1cd10fe4ab7a85425db33f0313a75",
+    "textures/laminate_floor_02_diff_1k.jpg": "c112a8fb107d8600a2974af2f9fa9b595c491a33a59982e22706e9650990bf8f",
+    "textures/laminate_floor_02_nor_gl_1k.jpg": "ec501e1c76269cabc1648ab0e3f38db1b062ffef7ff4ce037fdc369383afd005",
+    "textures/leather_white_diff_1k.jpg": "4d916dfe89c9d2b88bf52e0c70c6a9798a5c29c8c2fcb6ba1ab7b7ded9ef3ed5",
+    "textures/leather_white_nor_gl_1k.jpg": "51bdac4b76da70dc54c288cffea4ecaf837ebb6ed9264664bf5c9a1fc79aa074",
+    "textures/long_white_tiles_diff_1k.jpg": "0aa70e14117e9b1fbf726868675f6afa8fd62a2691f7ba3964f47796df06cd9c",
+    "textures/long_white_tiles_nor_gl_1k.jpg": "a488ee3a2dbb81f334e191b51a43567f4ee6bb8adce5fd3ed85d5a6958fddfc1",
+    "textures/oak_veneer_01_diff_1k.jpg": "c14681f72f59f17bff568cae7a837641443b607b899f0c279cd64a5638f877a7",
+    "textures/oak_veneer_01_nor_gl_1k.jpg": "1297acf7b4476d5ccd83cc8b27be96aa6110f7a9c3a40be0bd767bf81b17db01",
+    "textures/poly_wool_herringbone_diff_1k.jpg": "fd889a46f617efd331e522e36b8ad2548e16e1cb018c001872f17537d7666af5",
+    "textures/poly_wool_herringbone_nor_gl_1k.jpg": "314ac7c1b7c101a48106e05199bfdb24e33671e58a6ccb334249b441d8e8ac98",
+    "textures/smooth_concrete_floor_arm_1k.jpg": "236d1bb6b8a1fb799adad69369f3133d1e9ce564a59c934d54852a4bde80b691",
+    "textures/smooth_concrete_floor_diff_1k.jpg": "079587ae48fb3e2bfb0d0f9209eb75dc26ee30e213403d96377a30f6f6955092",
+    "textures/smooth_concrete_floor_nor_gl_1k.jpg": "588bdbcc16b8dfa2869a2c154c076a419abb8ed83284691c2dffdddfcf20cc0c",
+    "textures/terrazzo_tiles_arm_1k.jpg": "f6bc98a79c33010b54759c5dba5f915179a74b78d46f7b0d03ecf4feb6347c0e",
+    "textures/terrazzo_tiles_diff_1k.jpg": "462e3e719cda0472a33152523cf5ca2fc660e1c5869348be1609ba3dca12a2ef",
+    "textures/terrazzo_tiles_nor_gl_1k.jpg": "56bbe2d960b47ddb2dc538be2953a1ad07083b017cdada1cdc7958421a6cfcd9",
+    "textures/walnut_veneer_diff_1k.jpg": "d8c971e403b185b5c350d1e6fa75c3e7fcc36130781c7686263f6bcd23ac4db1",
+    "textures/walnut_veneer_nor_gl_1k.jpg": "de823c2e9942ea77caeddab08add49688a9792b79aac496640fecaee9fbcb5c4",
+    "textures/white_plaster_02_diff_1k.jpg": "a1ebbe091bd1ae93d2abd5de8d69f9003a8d0ee6532bcf9a87c2492c97051f23",
+    "textures/white_plaster_02_nor_gl_1k.jpg": "eb572ca3630d5bfde72e2601b1f02412da23ca005cd19384dced8690be4cb783",
+    "textures/wood_floor_arm_1k.jpg": "a84d9457fa35a76cf8a41da8bcef55387230c6b236819de878799585eda76059",
+    "textures/wood_floor_diff_1k.jpg": "2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789",
+    "textures/wood_floor_nor_gl_1k.jpg": "452247f0d0d1b7fc7f8324ff3b6ed60bcc6de1405f4284eeb8d9bce90d4939c2"
+  }
+}

@@ -14,6 +14,11 @@ export const WindowBoundsSchema = z.object({
   height: z.number().int().min(300),
 })
 
+/** Renderer quality presets. `auto` starts at `high` and lets the renderer step down/up by FPS. */
+export const GRAPHICS_QUALITIES = ['auto', 'low', 'medium', 'high', 'ultra'] as const
+export const GraphicsQualitySchema = z.enum(GRAPHICS_QUALITIES)
+export type GraphicsQuality = z.infer<typeof GraphicsQualitySchema>
+
 export const SettingsSchema = z.object({
   /** Local HTTP API port used by the Claude Code hook and external agents. */
   port: z.number().int().min(1024).max(65535).default(4317),
@@ -24,6 +29,8 @@ export const SettingsSchema = z.object({
   autoUpdate: z.boolean().default(true),
   /** Simulated agents (development and demos). */
   mock: z.boolean().default(false),
+  /** 3D render quality preset. Applied live by the renderer (no backend restart). */
+  graphicsQuality: GraphicsQualitySchema.default('auto'),
   windowBounds: WindowBoundsSchema.optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
