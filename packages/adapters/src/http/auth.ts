@@ -2,7 +2,8 @@ import { timingSafeEqual } from 'node:crypto'
 
 export interface AuthOptions {
   token: string
-  port: number
+  /** The API port, or a getter when it is only known after listen (port 0). */
+  port: number | (() => number)
   /** Extra `host:port` values accepted when binding beyond localhost. */
   allowedHosts?: string[]
   /** Extra browser origins allowed to call the API (none by default: the desktop UI uses IPC). */
@@ -19,13 +20,12 @@ export interface Auth {
 
 export function createAuth(opts: AuthOptions): Auth {
   const devHosts = (opts.devOrigins ?? []).map((o) => new URL(o).host)
-  const hosts = new Set([
-    `localhost:${opts.port}`,
-    `127.0.0.1:${opts.port}`,
-    ...devHosts,
-    ...(opts.allowedHosts ?? []),
-  ])
-  const origins = new Set([...[...hosts].map((h) => `http://${h}`), ...(opts.devOrigins ?? [])])
+  const portOf = typeof opts.port === 'function' ? opts.port : () => opts.port as number
+  const hosts = () => {
+    const port = portOf()
+    return new Set([`localhost:${port}`, `127.0.0.1:${port}`, ...devHosts, ...(opts.allowedHosts ?? [])])
+  }
+  const origins = () => new Set([...[...hosts()].map((h) => `http://${h}`), ...(opts.devOrigins ?? [])])
   const expected = Buffer.from(opts.token)
 
   const tokenOk = (t: string | undefined) => {
@@ -37,9 +37,9 @@ export function createAuth(opts: AuthOptions): Auth {
   return {
     token: opts.token,
     // Host allowlist blocks DNS rebinding: a foreign domain resolving to 127.0.0.1 still sends its own Host.
-    hostAllowed: (host) => !!host && hosts.has(host),
+    hostAllowed: (host) => !!host && hosts().has(host),
     // No Origin means a non-browser client (curl, hook); those still need the token to write.
-    originAllowed: (origin) => origin === undefined || origins.has(origin),
+    originAllowed: (origin) => origin === undefined || origins().has(origin),
     bearerOk: (header) => tokenOk(header?.startsWith('Bearer ') ? header.slice(7) : undefined),
     tokenOk,
   }

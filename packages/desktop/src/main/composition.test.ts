@@ -27,7 +27,7 @@ function fakeShell() {
     tray: new RecordingTray(),
     loginItem: new RecordingLoginItem(),
     updater: new ScriptedUpdater(),
-    platform: fakePlatform({ packaged: false }),
+    platform: fakePlatform({ packaged: false, platform: 'darwin' }),
     window: new FakeShellWindow(),
     ipc: { handle: (c, fn) => handlers.set(c, fn), removeAll: () => handlers.clear() },
     rendererUrl: 'app://renderer/index.html',

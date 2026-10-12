@@ -72,6 +72,7 @@ export function compose(o: ComposeOptions) {
   const scheduler = new TimerScheduler()
   const bus = new InMemoryEventBus(logger)
   const settingsRepo = new JsonFileSettingsRepository(join(o.userDataDir, 'settings.json'), logger)
+  const sweepPolicy = { ...DEFAULT_SWEEP_POLICY, ...env.sweep }
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
     messages: new InMemoryMessageRepository(),
@@ -95,7 +96,7 @@ export function compose(o: ComposeOptions) {
     updater: shell.updater,
     platform: shell.platform,
     releaseUrl: o.releaseUrl,
-    policy: { ...DEFAULT_SWEEP_POLICY, ...env.sweep },
+    policy: sweepPolicy,
   })
 
   /** Env overrides (dev/test) win over saved settings for this run only. */
@@ -136,7 +137,7 @@ export function compose(o: ComposeOptions) {
         activity: office.activity,
         clock: new SystemClock(),
         scheduler,
-        expireAfterMs: office.policy.expireAfterMs,
+        expireAfterMs: sweepPolicy.expireAfterMs,
         log: logger,
       })
       tailer.start()
@@ -145,23 +146,15 @@ export function compose(o: ComposeOptions) {
     b.stops.push(scheduler.every(SWEEP_MS, () => office.activity.sweep()))
 
     const token = loadOrCreateToken(env.home)
+    let listening = s.port
     const api = buildHttpApi(
       { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query, ...(mock ? { mock } : {}) },
-      createAuth({ token, port: s.port, allowedHosts: env.allowedHosts }),
+      // Port getter: with port 0 (tests) the Host allowlist must follow the real port.
+      createAuth({ token, port: () => listening, allowedHosts: env.allowedHosts }),
     )
     try {
-      const server = await startHttpServer(api, { host: env.host, port: s.port })
-      // Port 0 (tests) resolves to a real port; the Host allowlist must follow it.
-      if (server.port !== s.port) {
-        await server.close()
-        const fixed = buildHttpApi(
-          { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query, ...(mock ? { mock } : {}) },
-          createAuth({ token, port: server.port, allowedHosts: env.allowedHosts }),
-        )
-        b.server = await startHttpServer(fixed, { host: env.host, port: server.port })
-      } else {
-        b.server = server
-      }
+      b.server = await startHttpServer(api, { host: env.host, port: s.port })
+      listening = b.server.port
       if (banner) setBanner(null)
       logger.info(`API listening on http://${env.host}:${b.server.port}`)
     } catch (err) {

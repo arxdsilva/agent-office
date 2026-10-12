@@ -38,3 +38,14 @@ describe('createAuth', () => {
     expect(auth.tokenOk('nope')).toBe(false)
   })
 })
+
+describe('createAuth with a port getter', () => {
+  it('follows the port it is given at request time (port 0 → real port after listen)', () => {
+    let port = 0
+    const a = createAuth({ token: 't', port: () => port })
+    expect(a.hostAllowed('localhost:5000')).toBe(false)
+    port = 5000
+    expect(a.hostAllowed('localhost:5000')).toBe(true)
+    expect(a.originAllowed('http://127.0.0.1:5000')).toBe(true)
+  })
+})
