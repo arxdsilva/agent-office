@@ -1,0 +1,16 @@
+{
+  "name": "@agent-office/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./test/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@agent-office/shared": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

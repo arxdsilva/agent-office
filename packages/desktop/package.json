@@ -1,0 +1,30 @@
+{
+  "name": "@agent-office/desktop",
+  "productName": "agent-office",
+  "version": "0.1.0",
+  "description": "Walk through your AI agents like an office",
+  "author": "arxdsilva",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p .",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "@agent-office/adapters": "workspace:*",
+    "@agent-office/core": "workspace:*",
+    "@agent-office/shared": "workspace:*",
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0"
+  }
+}

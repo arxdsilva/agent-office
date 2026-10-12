@@ -1,4 +1,4 @@
-import type { Agent } from './index.ts'
+import type { Agent } from './protocol.ts'
 
 /**
  * Decides where an agent sits: which zone (area of the office) and which row of desks.

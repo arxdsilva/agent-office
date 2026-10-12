@@ -8,13 +8,13 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['packages/*/src/**/*.test.ts', 'hooks/**/*.test.ts', 'scripts/**/*.test.ts'],
+          include: ['packages/*/src/**/*.test.ts', 'packages/core/test/**/*.test.ts', 'hooks/**/*.test.ts', 'scripts/**/*.test.ts'],
         },
       },
       {
         test: {
           name: 'e2e',
-          include: ['packages/server/test/**/*.test.ts'],
+          include: ['packages/adapters/test/**/*.test.ts'],
           testTimeout: 20_000,
         },
       },

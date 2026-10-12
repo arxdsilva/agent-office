@@ -1,0 +1,21 @@
+{
+  "name": "@agent-office/adapters",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "ws": "^8.22.0"
+  },
+  "dependencies": {
+    "@agent-office/core": "workspace:*",
+    "@agent-office/shared": "workspace:*",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

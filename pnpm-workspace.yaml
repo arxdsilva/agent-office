@@ -2,3 +2,6 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+  electron: true
+  # Squirrel.Windows tooling; we ship NSIS installers instead.
+  electron-winstaller: false

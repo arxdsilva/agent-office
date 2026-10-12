@@ -1,4 +1,4 @@
-import type { AgentStatus } from './index.ts'
+import type { AgentStatus } from './protocol.ts'
 
 /** Single source of status colors for the legend, avatars and monitors. */
 export const STATUS_COLORS: Record<AgentStatus, string> = {
