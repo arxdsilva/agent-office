@@ -6,6 +6,7 @@ export interface FileStat {
   size: number
   mtimeMs: number
   isFile: boolean
+  isDir: boolean
 }
 
 /**
@@ -31,7 +32,7 @@ export class NodeTranscriptFiles implements TranscriptFiles {
 
   async stat(path: string): Promise<FileStat | undefined> {
     const s = await stat(path).catch(() => undefined)
-    return s && { size: s.size, mtimeMs: s.mtimeMs, isFile: s.isFile() }
+    return s && { size: s.size, mtimeMs: s.mtimeMs, isFile: s.isFile(), isDir: s.isDirectory() }
   }
 
   async readRange(path: string, from: number, to: number): Promise<string> {
@@ -81,8 +82,11 @@ export class MemoryTranscriptFiles implements TranscriptFiles {
 
   async stat(path: string): Promise<FileStat | undefined> {
     const f = this.files.get(path)
-    if (f) return { size: Buffer.byteLength(f.content), mtimeMs: f.mtimeMs, isFile: true }
-    return (await this.list(path)).length ? { size: 0, mtimeMs: 0, isFile: false } : undefined
+    if (f)
+      return { size: Buffer.byteLength(f.content), mtimeMs: f.mtimeMs, isFile: true, isDir: false }
+    return (await this.list(path)).length
+      ? { size: 0, mtimeMs: 0, isFile: false, isDir: true }
+      : undefined
   }
 
   async readRange(path: string, from: number, to: number): Promise<string> {

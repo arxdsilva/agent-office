@@ -173,10 +173,29 @@ export class CameraDirector {
     this.walk = new PointerLockControls(camera, document.body)
     this.walk.addEventListener('unlock', () => this.setMode('orbit'))
     // A drag that pans stops following; rotating around the followed agent keeps it.
-    this.orbit.addEventListener('start', () => (this.flight = null))
-    addEventListener('keydown', (e) => this.keys.add(e.code))
+    this.orbit.addEventListener('start', () => {
+      this.flight = null
+      this.markInput()
+    })
+    addEventListener('keydown', (e) => {
+      this.keys.add(e.code)
+      if (this.mode === 'walk') this.markInput()
+    })
     addEventListener('keyup', (e) => this.keys.delete(e.code))
     addEventListener('blur', () => this.keys.clear())
+  }
+
+  /** When the user last moved the camera (orbit, zoom, walk, view buttons); -∞ until then. */
+  private lastInputAt = -Infinity
+
+  /** Records a user camera input (for the "don't fly while they're looking around" rule). */
+  markInput(): void {
+    this.lastInputAt = performance.now()
+  }
+
+  /** Milliseconds since the last user camera input (Infinity if none yet). */
+  idleMs(): number {
+    return performance.now() - this.lastInputAt
   }
 
   /** Eases to a bookmark (0.8 s, ease-in-out cubic) and stops following. */

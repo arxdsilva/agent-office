@@ -74,7 +74,45 @@ export interface UpdateState {
 export interface Banner {
   kind: 'error' | 'info'
   text: string
+  /** Optional follow-up the UI offers next to the text (e.g. "Fix in Connect" for a busy port). */
+  action?: 'open-connect'
 }
+
+/**
+ * Live connection facts for the Connect panel and the empty state. Paths are '~'-abbreviated
+ * fixed locations; counts only. **Never contains the token.**
+ */
+export interface ConnectionInfo {
+  api: {
+    /** Bind host, usually 127.0.0.1. */
+    host: string
+    /** Listening port, else the effective configured port. */
+    port: number
+    listening: boolean
+    /** The last start failed because the port was in use. */
+    portBusy: boolean
+    /** e.g. '~/.agent-office/token'. */
+    tokenFile: string
+  }
+  claude: {
+    /** Effective `claudeAdapter` (after env overrides). */
+    enabled: boolean
+    /** Set when AGENT_OFFICE_CLAUDE forces it for this run. */
+    override?: 'on' | 'off'
+    /** e.g. '~/.claude/projects'. */
+    projectsDir: string
+    projectsDirFound: boolean
+    /** Top-level session transcripts changed within the expiry window (subagents excluded). */
+    activeSessions: number
+  }
+  hook: HookStatus
+  mock: { enabled: boolean; override?: 'on' | 'off' }
+}
+
+export type TestEventResult = { ok: true } | { ok: false; error: string }
+
+/** Text the renderer may put on the clipboard (written by main; the renderer permission stays denied). */
+export const CopyTextSchema = z.string().min(1).max(4000)
 
 export interface Snapshot {
   agents: Agent[]
@@ -103,6 +141,17 @@ export interface AgentOfficeApi {
     onBanner(cb: (b: Banner | null) => void): () => void
     /** Main asks the UI to open the settings dialog (tray menu). */
     onOpenSettings(cb: () => void): () => void
+    /** Writes text to the system clipboard (validated by CopyTextSchema in main). */
+    copyText(text: string): Promise<void>
+    /** Main asks the UI to open the Connect panel (tray menu). */
+    onOpenConnect(cb: () => void): () => void
+  }
+  connections: {
+    info(): Promise<ConnectionInfo>
+    /** Pushed (≤ 1/s) after backend restarts, settings or hook changes, and session-count changes. */
+    onChange(cb: (i: ConnectionInfo) => void): () => void
+    /** Posts a fixed test agent through the real HTTP API (auth included); it leaves after 20 s. */
+    test(): Promise<TestEventResult>
   }
   updates: {
     check(): Promise<UpdateState>

@@ -405,6 +405,15 @@ export class ThreeScene implements SceneView {
     this.pickFn = fn
   }
 
+  /** Same path as the view buttons, but not a user input (the controller flies to new wings). */
+  goTo(viewId: string): void {
+    this.flyTo(viewId)
+  }
+
+  cameraIdleMs(): number {
+    return this.cam.idleMs()
+  }
+
   select(id: string | null): void {
     this.selected = id
     if (id) {
@@ -500,7 +509,10 @@ export class ThreeScene implements SceneView {
         b.className = 'view-btn'
         b.dataset.view = v.id
         b.textContent = v.label
-        b.addEventListener('click', () => this.flyTo(v.id))
+        b.addEventListener('click', () => {
+          this.cam.markInput()
+          this.flyTo(v.id)
+        })
         return b
       }),
     )
@@ -594,8 +606,14 @@ export class ThreeScene implements SceneView {
       if (moved > 5) return // it was a drag
       this.pickAt((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
     })
-    this.el.walkButton.addEventListener('click', () => this.cam.enterWalk(this.walkStart()))
-    this.el.fitButton.addEventListener('click', () => this.flyTo('overview'))
+    this.el.walkButton.addEventListener('click', () => {
+      this.cam.markInput()
+      this.cam.enterWalk(this.walkStart())
+    })
+    this.el.fitButton.addEventListener('click', () => {
+      this.cam.markInput()
+      this.flyTo('overview')
+    })
     this.cam.onModeChange = (mode) => {
       this.el.crosshair.hidden = mode !== 'walk'
       this.el.walkHelp.hidden = mode !== 'walk'

@@ -45,6 +45,20 @@ describe('trayModel', () => {
     expect(m.items.at(-1)).toEqual({ label: 'Quit agent-office', action: { type: 'quit' } })
   })
 
+  it('offers "Connect agents…" right above Settings', () => {
+    const m = trayModel([agent('a', 'idle')], true)
+    const labels = m.items.flatMap((i) => (i === 'separator' ? [] : [i.label]))
+    const at = labels.indexOf('Connect agents…')
+    expect(at).toBeGreaterThan(-1)
+    expect(labels[at + 1]).toBe('Settings…')
+    expect(m.items).toContainEqual({ label: 'Connect agents…', action: { type: 'connect' } })
+  })
+
+  it('says "No agents yet" when the office is empty', () => {
+    const m = trayModel([], false)
+    expect(m.items).toContainEqual({ label: 'No agents yet', enabled: false })
+  })
+
   it('caps the waiting list', () => {
     const many = Array.from({ length: 10 }, (_, i) => agent(`w${i}`, 'waiting', i))
     const m = trayModel(many, true)

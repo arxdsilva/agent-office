@@ -1,8 +1,31 @@
-import { DEFAULT_SETTINGS, IPC, type ServerMessage } from '@agent-office/shared'
+import {
+  DEFAULT_SETTINGS,
+  IPC,
+  type ConnectionInfo,
+  type ServerMessage,
+} from '@agent-office/shared'
 import { ManualScheduler } from '@agent-office/core/testing'
 import { UnknownAgentError, ValidationError } from '@agent-office/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createIpcHandlers, createPushBridge, registerIpc, type IpcPorts } from './ipc-api.ts'
+
+const INFO: ConnectionInfo = {
+  api: {
+    host: '127.0.0.1',
+    port: 4317,
+    listening: true,
+    portBusy: false,
+    tokenFile: '~/.agent-office/token',
+  },
+  claude: {
+    enabled: true,
+    projectsDir: '~/.claude/projects',
+    projectsDirFound: true,
+    activeSessions: 1,
+  },
+  hook: 'installed',
+  mock: { enabled: false },
+}
 
 function ports(over: Partial<IpcPorts> = {}): IpcPorts {
   return {
@@ -39,6 +62,11 @@ function ports(over: Partial<IpcPorts> = {}): IpcPorts {
       onChange: () => () => {},
     },
     version: '1.2.3',
+    connections: {
+      info: async () => INFO,
+      test: async () => ({ ok: false, error: 'API not listening' }),
+    },
+    copyText: vi.fn(),
     onHookChanged: vi.fn(),
     onReady: vi.fn(),
     ...over,
@@ -93,6 +121,24 @@ describe('createIpcHandlers', () => {
     expect(await h[IPC.updateCheck]!()).toEqual({ policy: 'off', status: 'idle' })
     await h[IPC.updateInstall]!()
     expect(p.updates.install).toHaveBeenCalled()
+  })
+})
+
+describe('connections and clipboard', () => {
+  it('passes connection info and the test result through', async () => {
+    const h = createIpcHandlers(ports())
+    expect(await h[IPC.connInfo]!()).toEqual(INFO)
+    expect(await h[IPC.connTest]!()).toEqual({ ok: false, error: 'API not listening' })
+  })
+
+  it('copies validated text only', async () => {
+    const p = ports()
+    const h = createIpcHandlers(p)
+    await h[IPC.copyText]!('curl http://127.0.0.1:4317/api/events')
+    expect(p.copyText).toHaveBeenCalledWith('curl http://127.0.0.1:4317/api/events')
+    for (const bad of ['', 'x'.repeat(4001), 42, undefined])
+      await expect(async () => h[IPC.copyText]!(bad)).rejects.toThrow('invalid text')
+    expect(p.copyText).toHaveBeenCalledTimes(1)
   })
 })
 

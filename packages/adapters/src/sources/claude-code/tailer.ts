@@ -21,6 +21,15 @@ export interface ClaudeCodeTailerOptions {
   claudeHome?: string
   /** Called once per session cwd the first time it appears (capability discovery). */
   onNewCwd?: (cwd: string) => void
+  /** Called after a polling pass when `stats()` changed (Connect panel). */
+  onStats?: (s: TailerStats) => void
+}
+
+/** Counts only: no project or file names leave the adapter. */
+export interface TailerStats {
+  projectsDirFound: boolean
+  /** Top-level session transcripts changed within `expireAfterMs` (subagents excluded). */
+  activeSessions: number
 }
 
 interface Tail {
@@ -39,6 +48,7 @@ export class ClaudeCodeTailer {
   private announced = new Set<string>()
   private running = false
   private cancel: (() => void) | undefined
+  private current: TailerStats = { projectsDirFound: false, activeSessions: 0 }
 
   constructor(private o: ClaudeCodeTailerOptions) {
     this.ctx = newParseContext({ claudeHome: o.claudeHome ?? dirname(o.dir), projectsDir: o.dir })
@@ -48,6 +58,10 @@ export class ClaudeCodeTailer {
   activeCwds(): string[] {
     const cutoff = this.o.clock.now() - this.o.expireAfterMs
     return [...this.ctx.cwds].filter(([, ts]) => ts >= cutoff).map(([cwd]) => cwd)
+  }
+
+  stats(): TailerStats {
+    return { ...this.current }
   }
 
   start(pollMs = 1000): void {
@@ -65,30 +79,42 @@ export class ClaudeCodeTailer {
     if (this.running) return
     this.running = true
     try {
-      for (const file of await this.activeFiles()) await this.readFile(file)
+      const active = await this.activeFiles()
+      await this.updateStats(active.filter((f) => f.topLevel).length)
+      for (const { path } of active) await this.readFile(path)
     } finally {
       this.running = false
     }
   }
 
-  private async activeFiles(): Promise<string[]> {
+  private async updateStats(activeSessions: number): Promise<void> {
+    const projectsDirFound = (await this.o.files.stat(this.o.dir))?.isDir ?? false
+    const prev = this.current
+    if (prev.projectsDirFound === projectsDirFound && prev.activeSessions === activeSessions) return
+    this.current = { projectsDirFound, activeSessions }
+    this.o.onStats?.(this.stats())
+  }
+
+  private async activeFiles(): Promise<{ path: string; topLevel: boolean }[]> {
     const { files, dir } = this.o
     const cutoff = this.o.clock.now() - this.o.expireAfterMs
-    const candidates: string[] = []
+    const candidates: { path: string; topLevel: boolean }[] = []
     for (const project of await files.list(dir)) {
       const projectDir = join(dir, project)
       for (const entry of await files.list(projectDir)) {
-        if (entry.endsWith('.jsonl')) candidates.push(join(projectDir, entry))
+        if (entry.endsWith('.jsonl'))
+          candidates.push({ path: join(projectDir, entry), topLevel: true })
         else {
           const subDir = join(projectDir, entry, 'subagents')
           for (const sub of await files.list(subDir))
-            if (sub.endsWith('.jsonl')) candidates.push(join(subDir, sub))
+            if (sub.endsWith('.jsonl'))
+              candidates.push({ path: join(subDir, sub), topLevel: false })
         }
       }
     }
-    const active: string[] = []
+    const active: { path: string; topLevel: boolean }[] = []
     for (const f of candidates) {
-      const s = await files.stat(f)
+      const s = await files.stat(f.path)
       if (s?.isFile && s.mtimeMs >= cutoff) active.push(f)
     }
     return active

@@ -1,4 +1,5 @@
 import { GraphicsQualitySchema, type SettingsPatch } from '@agent-office/shared'
+import { COPY } from '../../app/connect-copy.ts'
 import type { SettingsVM } from '../../app/view-models.ts'
 import type { SettingsView } from '../../ports.ts'
 import { byId } from './el.ts'
@@ -18,6 +19,7 @@ export class DomSettings implements SettingsView {
   private hookFn: (a: 'install' | 'uninstall') => void | Promise<void> = () => {}
   private checkFn: () => void | Promise<void> = () => {}
   private installFn: () => void | Promise<void> = () => {}
+  private connectFn: () => void = () => {}
   private hookAction: 'install' | 'uninstall' = 'install'
   private updateAction: SettingsVM['update']['action'] = null
 
@@ -42,6 +44,12 @@ export class DomSettings implements SettingsView {
       if (this.updateAction === 'install') void this.installFn()
     })
     byId('s-close').addEventListener('click', () => this.close())
+    byId('s-connect').textContent = COPY.settings.more
+    byId('s-connect').addEventListener('click', () => this.connectFn())
+  }
+
+  onOpenConnect(fn: () => void) {
+    this.connectFn = fn
   }
 
   onChange(fn: (patch: SettingsPatch) => void | Promise<void>) {

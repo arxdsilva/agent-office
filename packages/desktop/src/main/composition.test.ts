@@ -6,12 +6,13 @@ import { loadEnv } from '@agent-office/adapters'
 import {
   FakeWindow,
   fakePlatform,
+  ManualScheduler,
   RecordingLoginItem,
   RecordingNotifier,
   RecordingTray,
   ScriptedUpdater,
 } from '@agent-office/core/testing'
-import { IPC, type ServerMessage } from '@agent-office/shared'
+import { IPC, type ConnectionInfo, type ServerMessage } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import { compose, type Shell } from './composition.ts'
 
@@ -29,7 +30,9 @@ class FakeShellWindow extends FakeWindow {
 function fakeShell() {
   const handlers = new Map<string, (senderUrl: string | undefined, ...args: unknown[]) => unknown>()
   let quit = 0
+  const copied: string[] = []
   const shell: Shell = {
+    clipboard: { writeText: (t) => copied.push(t) },
     notifier: new RecordingNotifier(),
     tray: new RecordingTray(),
     loginItem: new RecordingLoginItem(),
@@ -49,6 +52,7 @@ function fakeShell() {
     window: shell.window as FakeShellWindow,
     tray: shell.tray as RecordingTray,
     quits: () => quit,
+    copied,
   }
 }
 
@@ -57,7 +61,10 @@ afterEach(async () => {
   for (const a of apps.splice(0)) await a.stop()
 })
 
-function setup(envVars: Record<string, string> = {}) {
+function setup(
+  envVars: Record<string, string | undefined> = {},
+  opts: { scheduler?: ManualScheduler; homeDir?: string } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'ao-comp-'))
   const env = loadEnv(
     {
@@ -80,6 +87,7 @@ function setup(envVars: Record<string, string> = {}) {
     runAsNode: true,
     releaseUrl: 'https://example.invalid/releases',
     logger: { info: () => {}, warn: () => {} },
+    ...opts,
   })
   apps.push(app)
   return { app, dir, ...fake }
@@ -173,8 +181,14 @@ describe('compose', () => {
     expect(app.apiPort()).toBeUndefined()
     expect(app.banner()).toEqual({
       kind: 'error',
-      text: `Port ${port} is busy — change it in Settings.`,
+      text: `Port ${port} is busy.`,
+      action: 'open-connect',
     })
+    // The Connect panel learns the port is busy and the API is not listening.
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info.api).toMatchObject({ port: Number(port), listening: false, portBusy: true })
+    // The self-test reports it plainly.
+    expect(await call(IPC.connTest)).toEqual({ ok: false, error: 'API not listening' })
     // A renderer that loads later still gets the banner.
     window.sent = []
     await call(IPC.ready)
@@ -219,6 +233,153 @@ describe('compose', () => {
     })
     await app.onTrayAction({ type: 'quit' })
     expect(quits()).toBe(1)
+  })
+
+  it('describes connections with abbreviated paths, overrides and never the token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-conn-'))
+    const { app, call } = setup(
+      {
+        AGENT_OFFICE_HOME: join(dir, '.agent-office'),
+        CLAUDE_PROJECTS_DIR: join(dir, '.claude', 'projects'),
+        AGENT_OFFICE_MOCK: '1',
+      },
+      { homeDir: dir },
+    )
+    await app.start()
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info).toEqual({
+      api: {
+        host: '127.0.0.1',
+        port: app.apiPort(),
+        listening: true,
+        portBusy: false,
+        tokenFile: join('~', '.agent-office', 'token'),
+      },
+      claude: {
+        enabled: false,
+        override: 'off',
+        projectsDir: join('~', '.claude', 'projects'),
+        projectsDirFound: false,
+        activeSessions: 0,
+      },
+      hook: 'not-installed',
+      mock: { enabled: true, override: 'on' },
+    })
+    const token = readFileSync(join(dir, '.agent-office', 'token'), 'utf8').trim()
+    expect(JSON.stringify(info)).not.toContain(token)
+  })
+
+  // A data folder outside home (AGENT_OFFICE_HOME) keeps its full path: the snippets `cat` it, so a
+  // basename would produce a command that cannot work. It is the user's own configured location.
+  it('keeps the full path of folders outside home, omits absent overrides, and survives a hook error', async () => {
+    const { app, call, dir } = setup(
+      { AGENT_OFFICE_CLAUDE: undefined },
+      { homeDir: '/nowhere-home' },
+    )
+    mkdirSync(join(dir, 'claude'), { recursive: true })
+    writeFileSync(join(dir, 'claude', 'settings.json'), '{not json')
+    await app.start()
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info.api.tokenFile).toBe(join(dir, 'home', 'token'))
+    expect(info.claude.projectsDir).toBe(join(dir, 'projects'))
+    expect(info.claude).not.toHaveProperty('override')
+    expect(info.mock).not.toHaveProperty('override')
+    expect(info.hook).toBe('not-installed')
+  })
+
+  it('reports Claude Code session counts from the tailer', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-conn-cc-'))
+    mkdirSync(join(dir, 'projects', 'p'), { recursive: true })
+    writeFileSync(join(dir, 'projects', 'p', 's.jsonl'), '\n')
+    const { app, call, window } = setup({
+      AGENT_OFFICE_CLAUDE: '1',
+      CLAUDE_PROJECTS_DIR: join(dir, 'projects'),
+    })
+    await app.office.settings.update({ discoverCapabilities: false })
+    await app.start()
+    await wait(1200)
+    const info = (await call(IPC.connInfo)) as ConnectionInfo
+    expect(info.claude).toMatchObject({ enabled: true, projectsDirFound: true, activeSessions: 1 })
+    // The session count change was pushed to the window.
+    const pushed = window.sent.filter(([c]) => c === IPC.connChanged).map(([, p]) => p)
+    expect(pushed.at(-1)).toMatchObject({ claude: { activeSessions: 1 } })
+  })
+
+  it('pushes connection changes at most once per throttle window', async () => {
+    const scheduler = new ManualScheduler()
+    const { app, call, window } = setup({}, { scheduler })
+    await app.start()
+    scheduler.fireTimers()
+    await wait(20)
+    window.sent = []
+    // Three quick settings changes collapse into one push.
+    await call(IPC.settingsSet, { notifications: false })
+    await call(IPC.settingsSet, { notifications: true })
+    await call(IPC.settingsSet, { notifications: false })
+    expect(scheduler.timers.filter((t) => t.ms === 1000 && !t.cancelled)).toHaveLength(1)
+    scheduler.fireTimers()
+    await wait(20)
+    expect(window.sent.filter(([c]) => c === IPC.connChanged)).toHaveLength(1)
+  })
+
+  it('rewrites the hook wrapper with the new port when the port changes', async () => {
+    const free = async () => {
+      const s = createServer()
+      await new Promise<void>((r) => s.listen(0, '127.0.0.1', r))
+      const port = (s.address() as { port: number }).port
+      await new Promise((r) => s.close(r))
+      return port
+    }
+    const [p1, p2] = [await free(), await free()]
+    const { app, call, dir } = setup({ PORT: '' })
+    await app.office.settings.update({ port: p1 })
+    await app.start()
+    await app.onTrayAction({ type: 'install-hook' })
+    const wrapper = join(dir, 'userData', 'hook', 'agent-office-hook.sh')
+    expect(readFileSync(wrapper, 'utf8')).toContain(`http://127.0.0.1:${p1}}`)
+    // The user picks another port: the backend restarts there and the wrapper follows.
+    await call(IPC.settingsSet, { port: p2 })
+    for (let i = 0; i < 50 && !readFileSync(wrapper, 'utf8').includes(`:${p2}}`); i++)
+      await wait(20)
+    expect(readFileSync(wrapper, 'utf8')).toContain(`http://127.0.0.1:${p2}}`)
+    expect(app.apiPort()).toBe(p2)
+  })
+
+  it('tray "Connect agents…" shows the window and opens the Connect panel', async () => {
+    const { app, window } = setup()
+    await app.start()
+    await app.onTrayAction({ type: 'connect' })
+    expect(window.shown).toBe(1)
+    expect(window.sent).toContainEqual([IPC.openConnect, null])
+  })
+
+  it('copies validated text to the clipboard through the shell', async () => {
+    const { app, call, copied } = setup()
+    await app.start()
+    await call(IPC.copyText, 'curl …')
+    await expect(call(IPC.copyText, '')).rejects.toThrow('invalid text')
+    expect(copied).toEqual(['curl …'])
+  })
+
+  it('the test event posts a test agent through the API, refreshes on repeat and leaves after 20 s', async () => {
+    const scheduler = new ManualScheduler()
+    const { app, call } = setup({}, { scheduler })
+    await app.start()
+    // A click sends a fixed test agent through the authenticated HTTP route.
+    expect(await call(IPC.connTest)).toEqual({ ok: true })
+    expect(app.office.query.agent('agent-office-test')).toMatchObject({
+      provider: 'agent-office-test',
+      topic: 'Connection test',
+      name: 'Test agent',
+      status: 'thinking',
+    })
+    // A second click refreshes the same agent and only one goodbye stays scheduled.
+    expect(await call(IPC.connTest)).toEqual({ ok: true })
+    expect(app.office.query.agents().filter((a) => a.id === 'agent-office-test')).toHaveLength(1)
+    expect(scheduler.timers.filter((t) => t.ms === 20_000 && !t.cancelled)).toHaveLength(1)
+    // 20 s later it is marked done.
+    scheduler.fireTimers()
+    expect(app.office.query.agent('agent-office-test')?.status).toBe('done')
   })
 
   it('stop closes the API and unregisters IPC', async () => {

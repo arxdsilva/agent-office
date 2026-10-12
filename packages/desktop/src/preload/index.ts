@@ -1,5 +1,5 @@
 // Sandboxed preload: exposes exactly the typed AgentOfficeApi; ipcRenderer itself never reaches the page.
-import type { AgentOfficeApi, ServerMessage } from '@agent-office/shared'
+import type { AgentOfficeApi, ConnectionInfo, ServerMessage } from '@agent-office/shared'
 import { IPC } from '@agent-office/shared/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 
@@ -27,6 +27,13 @@ const api: AgentOfficeApi = {
     version: () => ipcRenderer.invoke(IPC.version),
     onBanner: (cb) => listen(IPC.banner, cb),
     onOpenSettings: (cb) => listen(IPC.openSettings, () => cb()),
+    copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
+    onOpenConnect: (cb) => listen(IPC.openConnect, () => cb()),
+  },
+  connections: {
+    info: () => ipcRenderer.invoke(IPC.connInfo),
+    onChange: (cb) => listen<ConnectionInfo>(IPC.connChanged, cb),
+    test: () => ipcRenderer.invoke(IPC.connTest),
   },
   updates: {
     check: () => ipcRenderer.invoke(IPC.updateCheck),

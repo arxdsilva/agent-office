@@ -1,6 +1,7 @@
 // Composition root: the only module (with the Electron entry index.ts) that knows concrete adapters.
 // Everything it builds talks to the rest through core ports.
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, join, sep } from 'node:path'
 import {
   buildHttpApi,
   ClaudeCapabilityDiscovery,
@@ -24,6 +25,7 @@ import {
   TimerScheduler,
   type EnvConfig,
   type RunningServer,
+  type TailerStats,
 } from '@agent-office/adapters'
 import {
   createOffice,
@@ -33,12 +35,21 @@ import {
   type Logger,
   type Notifier,
   type PlatformInfo,
+  type Scheduler,
   type TrayAction,
   type TrayView,
   type Updater,
   type WindowState,
 } from '@agent-office/core'
-import { IPC, type Banner, type Settings } from '@agent-office/shared'
+import {
+  DEFAULT_SETTINGS,
+  IPC,
+  type Banner,
+  type ConnectionInfo,
+  type HookStatus,
+  type Settings,
+  type TestEventResult,
+} from '@agent-office/shared'
 import { createIpcHandlers, createPushBridge, registerIpc, type IpcRegistrar } from './ipc-api.ts'
 import { isTrustedSender } from './security.ts'
 
@@ -50,6 +61,7 @@ export interface Shell {
   updater: Updater
   platform: PlatformInfo
   window: WindowState & { show(): void; send(channel: string, payload: unknown): void }
+  clipboard: { writeText(text: string): void }
   ipc: IpcRegistrar & { removeAll(): void }
   /** URL of the renderer document; IPC from anything else is refused. */
   rendererUrl: string
@@ -67,13 +79,51 @@ export interface ComposeOptions {
   runAsNode: boolean
   releaseUrl: string
   logger: Logger
+  /** Tests inject a ManualScheduler; defaults to real timers. */
+  scheduler?: Scheduler & { dispose?(): void }
+  /** For '~' abbreviation of displayed paths; defaults to os.homedir(). */
+  homeDir?: string
 }
 
 const SWEEP_MS = 2000
+const CONN_PUSH_MS = 1000
+/** Same id as the renderer's TEST_AGENT_ID (web/src/app/connect-types.ts). */
+const TEST_AGENT_ID = 'agent-office-test'
+const TEST_AGENT_TTL_MS = 20_000
+const TEST_EVENT = {
+  agentId: TEST_AGENT_ID,
+  provider: TEST_AGENT_ID,
+  topic: 'Connection test',
+  name: 'Test agent',
+  status: 'thinking',
+} as const
+const NO_STATS: TailerStats = { projectsDirFound: false, activeSessions: 0 }
+
+/** Shows fixed locations as '~/…'; anything outside home only by its basename. */
+/** `~`-abbreviates paths under home; others (a user-configured AGENT_OFFICE_HOME) stay whole so snippets work. */
+function abbreviate(path: string, home: string): string {
+  return path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path
+}
+
+/** Loopback host the hook should call: the bind host when it is loopback, else 127.0.0.1. */
+function hookHost(host: string): string {
+  if (host === 'localhost' || host === '127.0.0.1') return host
+  return host === '::1' ? '[::1]' : '127.0.0.1'
+}
+
+/** Maps a failed self-test to a short, path-free message. */
+function testError(err: unknown): string {
+  const code = (err as { cause?: { code?: string } }).cause?.code
+  if (code === 'ECONNREFUSED') return 'API not listening'
+  return 'no response'
+}
 
 export function compose(o: ComposeOptions) {
   const { shell, env, logger } = o
-  const scheduler = new TimerScheduler()
+  const scheduler = o.scheduler ?? new TimerScheduler()
+  const home = o.homeDir ?? homedir()
+  let backend: { server?: RunningServer; stops: (() => void)[] } | undefined
+  let lastPort = env.overrides.port ?? DEFAULT_SETTINGS.port
   const bus = new InMemoryEventBus(logger)
   const settingsRepo = new JsonFileSettingsRepository(join(o.userDataDir, 'settings.json'), logger)
   const sweepPolicy = { ...DEFAULT_SWEEP_POLICY, ...env.sweep }
@@ -94,6 +144,7 @@ export function compose(o: ComposeOptions) {
       script: o.hookScript,
       platform: shell.platform.platform,
       runAsNode: o.runAsNode,
+      url: () => `http://${hookHost(env.host)}:${backend?.server?.port ?? lastPort}`,
     }),
     notifier: shell.notifier,
     tray: shell.tray,
@@ -107,8 +158,12 @@ export function compose(o: ComposeOptions) {
   /** Env overrides (dev/test) win over saved settings for this run only. */
   const effective = (s: Settings): Settings => ({ ...s, ...env.overrides })
 
-  let backend: { server?: RunningServer; stops: (() => void)[] } | undefined
   let banner: Banner | null = null
+  let stats: TailerStats = NO_STATS
+  let portBusy = false
+  let currentToken: string | undefined
+  let cancelTestAgent: (() => void) | undefined
+  let cancelPush: (() => void) | undefined
   const stops: (() => void)[] = []
   let started = false
 
@@ -123,6 +178,79 @@ export function compose(o: ComposeOptions) {
     } catch (err) {
       logger.warn(`hook status unavailable: ${(err as Error).message}`)
     }
+    pushConnections()
+  }
+
+  /** Connection facts for the renderer. Never includes the token itself. */
+  async function connectionInfo(): Promise<ConnectionInfo> {
+    const s = effective(await office.settings.get())
+    const over = env.overrides
+    const hook: HookStatus = await office.hooks.status().catch(() => 'not-installed' as const)
+    return {
+      api: {
+        host: env.host,
+        port: backend?.server?.port ?? s.port,
+        listening: !!backend?.server,
+        portBusy,
+        tokenFile: abbreviate(join(env.home, 'token'), home),
+      },
+      claude: {
+        enabled: s.claudeAdapter,
+        ...(over.claudeAdapter !== undefined && {
+          override: over.claudeAdapter ? ('on' as const) : ('off' as const),
+        }),
+        projectsDir: abbreviate(env.claudeProjectsDir, home),
+        ...stats,
+      },
+      hook,
+      mock: {
+        enabled: s.mock,
+        ...(over.mock !== undefined && {
+          override: over.mock ? ('on' as const) : ('off' as const),
+        }),
+      },
+    }
+  }
+
+  /** Trailing throttle: at most one conn:changed push per CONN_PUSH_MS, with the latest facts. */
+  function pushConnections(): void {
+    cancelPush ??= scheduler.after(CONN_PUSH_MS, () => {
+      cancelPush = undefined
+      connectionInfo().then(
+        (info) => shell.window.send(IPC.connChanged, info),
+        (err: Error) => logger.warn(`connection info unavailable: ${err.message}`),
+      )
+    })
+  }
+
+  /** Posts a fixed test agent to our own API, exactly as an external agent would. */
+  async function testEvent(): Promise<TestEventResult> {
+    const port = backend?.server?.port
+    if (port === undefined || !currentToken) return { ok: false, error: 'API not listening' }
+    const host = hookHost(env.host)
+    try {
+      const res = await fetch(`http://${host}:${port}/api/events`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${currentToken}`,
+          'content-type': 'application/json',
+          host: `${host}:${port}`,
+        },
+        body: JSON.stringify(TEST_EVENT),
+        signal: AbortSignal.timeout(1500),
+      })
+      if (res.status === 401) return { ok: false, error: 'token mismatch' }
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    } catch (err) {
+      return { ok: false, error: testError(err) }
+    }
+    // A repeat click refreshes the same agent; only the latest goodbye stays scheduled.
+    cancelTestAgent?.()
+    cancelTestAgent = scheduler.after(TEST_AGENT_TTL_MS, () => {
+      cancelTestAgent = undefined
+      office.activity.report([{ agentId: TEST_AGENT_ID, status: 'done' }])
+    })
+    return { ok: true }
   }
 
   async function startBackend(s: Settings): Promise<void> {
@@ -155,6 +283,11 @@ export function compose(o: ComposeOptions) {
         expireAfterMs: sweepPolicy.expireAfterMs,
         log: logger,
         onNewCwd: () => discovery?.refresh(),
+        onStats: (next) => {
+          if (backend !== b) return // a late tick from a stopped backend
+          stats = next
+          pushConnections()
+        },
       })
       if (s.discoverCapabilities) {
         discovery = new ClaudeCapabilityDiscovery({
@@ -172,11 +305,16 @@ export function compose(o: ComposeOptions) {
         b.stops.push(() => discovery!.stop())
       }
       tailer.start()
-      b.stops.push(() => tailer.stop())
+      b.stops.push(() => {
+        tailer.stop()
+        stats = NO_STATS
+      })
     }
     b.stops.push(scheduler.every(SWEEP_MS, () => office.activity.sweep()))
 
     const token = loadOrCreateToken(env.home)
+    currentToken = token
+    lastPort = s.port
     let listening = s.port
     const api = buildHttpApi(
       {
@@ -193,12 +331,15 @@ export function compose(o: ComposeOptions) {
     try {
       b.server = await startHttpServer(api, { host: env.host, port: s.port })
       listening = b.server.port
+      portBusy = false
       if (banner) setBanner(null)
       logger.info(`API listening on http://${env.host}:${b.server.port}`)
     } catch (err) {
       if (!(err instanceof PortInUseError)) throw err
-      setBanner({ kind: 'error', text: `Port ${s.port} is busy — change it in Settings.` })
+      portBusy = true
+      setBanner({ kind: 'error', text: `Port ${s.port} is busy.`, action: 'open-connect' })
     }
+    pushConnections()
   }
 
   async function stopBackend(): Promise<void> {
@@ -207,11 +348,20 @@ export function compose(o: ComposeOptions) {
     if (!b) return
     for (const s of b.stops.splice(0)) s()
     await b.server?.close()
+    pushConnections()
   }
 
   async function restartBackend(): Promise<void> {
+    const before = lastPort
     await stopBackend()
     await startBackend(effective(await office.settings.get()))
+    // The hook wrapper carries the API url: rewrite it (only if installed) when the port moved.
+    if (lastPort !== before) {
+      await office.hooks
+        .heal()
+        .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
+      await refreshHookStatus()
+    }
   }
 
   return {
@@ -223,10 +373,6 @@ export function compose(o: ComposeOptions) {
       const settings = effective(await office.settings.get())
       office.attention.setNotificationsEnabled(settings.notifications)
       office.updates.setEnabled(settings.autoUpdate)
-      await office.hooks
-        .heal()
-        .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
-      await refreshHookStatus()
 
       registerIpc(
         shell.ipc,
@@ -237,6 +383,8 @@ export function compose(o: ComposeOptions) {
           hooks: office.hooks,
           updates: office.updates,
           version: shell.platform.version,
+          connections: { info: connectionInfo, test: testEvent },
+          copyText: (text) => shell.clipboard.writeText(text),
           onHookChanged: () => void refreshHookStatus(),
           onReady: () => {
             scheduler.after(0, () => {
@@ -258,10 +406,16 @@ export function compose(o: ComposeOptions) {
           office.attention.setNotificationsEnabled(s.notifications)
           office.updates.setEnabled(s.autoUpdate)
           if (restartRequired) void restartBackend()
+          pushConnections()
         }),
       )
 
       await startBackend(settings)
+      // After the backend is up, so the wrapper is written with the port the API really listens on.
+      await office.hooks
+        .heal()
+        .catch((err: Error) => logger.warn(`hook heal failed: ${err.message}`))
+      await refreshHookStatus()
       office.attention.start()
       void office.updates.start()
     },
@@ -270,12 +424,15 @@ export function compose(o: ComposeOptions) {
       if (!started) return
       started = false
       for (const s of stops.splice(0)) s()
+      cancelTestAgent?.()
       office.attention.stop()
       office.updates.stop()
       office.capabilities.stop()
       await stopBackend()
       shell.ipc.removeAll()
-      scheduler.dispose()
+      cancelPush?.()
+      cancelPush = undefined
+      scheduler.dispose?.()
     },
 
     restartBackend,
@@ -290,6 +447,9 @@ export function compose(o: ComposeOptions) {
         case 'settings':
           shell.window.show()
           return shell.window.send(IPC.openSettings, null)
+        case 'connect':
+          shell.window.show()
+          return shell.window.send(IPC.openConnect, null)
         case 'install-hook':
           await office.hooks.install()
           return refreshHookStatus()

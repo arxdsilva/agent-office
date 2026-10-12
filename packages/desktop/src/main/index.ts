@@ -8,7 +8,12 @@ import { app, BrowserWindow, Menu, nativeImage, Notification, protocol, session 
 import { ElectronNotifier } from './adapters/electron-notifier.ts'
 import { ElectronTray } from './adapters/electron-tray.ts'
 import { ElectronUpdater } from './adapters/electron-updater.ts'
-import { electronIpc, ElectronLoginItem, electronPlatform } from './adapters/electron-system.ts'
+import {
+  electronClipboard,
+  electronIpc,
+  ElectronLoginItem,
+  electronPlatform,
+} from './adapters/electron-system.ts'
 import { compose, type App } from './composition.ts'
 import {
   APP_SCHEME,
@@ -127,6 +132,7 @@ async function main(): Promise<void> {
           if (!win.isDestroyed()) win.webContents.send(channel, payload)
         },
       },
+      clipboard: electronClipboard(),
       ipc: electronIpc(),
       rendererUrl,
       quit: () => app.quit(),

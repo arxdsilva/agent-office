@@ -16,7 +16,7 @@ Rules: `PRIVACY_SECURITY.md` (the hook fails open; auth fails closed), `ARCHITEC
    - Message text is only ever passed to Claude as text — never to a shell.
 4. **Install** — `core/src/domain/hook-config.test.ts` + `hook-service.test.ts` (idempotent, outdated → heal, foreign hooks untouched), `FsHookRunner` contract (wrapper runs the app binary with `ELECTRON_RUN_AS_NODE=1`), `scripts/hook-install.test.ts` (dev CLI).
 5. **E2E** — `packages/adapters/test/e2e.chat.test.ts` (generic agent) and `e2e.claude-code.test.ts` (tailer + real hook script); `e2e.security.test.ts` stays green; app specs `desktop/e2e/{chat,settings}.spec.ts`.
-6. **UI** — `web/src/app/view-models.ts` (`panelVM`, `hintFor`) tests, then `adapters/dom/panel.ts` with `textContent` only.
+6. **UI** — `web/src/app/view-models.ts` (`panelVM`, `hintFor`, `connectVM`, `emptyStateVM`) tests, then `adapters/dom/{panel,connect-panel,empty-state}.ts` with `textContent` only. Strings live in `web/src/app/connect-copy.ts`. Connection status reaches the UI as `ConnectionInfo` (`shared/src/desktop-api.ts`, built in `desktop/src/main/composition.ts`); it must never carry the token. The hook wrapper sets `AGENT_OFFICE_URL` from the live port (`FsHookRunner`), and a port change heals it.
 7. **Manual check with a real session** (ask the user first — it edits their real `~/.claude/settings.json`): `make dev`, Settings → Install hook, message a working Claude Code session; the reply should appear when its turn ends. Uninstall afterwards if it was only for testing.
 
 Known limit: Claude Code has no hook that can wake an idle session; messages to a waiting session arrive on the user's next prompt. Keep the UI hint honest about this.

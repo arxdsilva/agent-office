@@ -13,6 +13,23 @@ Linux) that shows every running AI agent as a worker in a 3D office:
 
 <img src="docs/screenshots/walkthrough.webp" width="100%" alt="A camera fly-through: the atrium, Main Street, then the claude-code wing with its desks, meeting room, Adapters room and Library">
 
+## Connect your agents
+
+Open the app. If the office is empty, a card offers three ways in. The **🔌 Connect** button (next to ⚙) shows the same choices at any time, with live status for each:
+
+| Way in            | What you do                                                                                                                                                                              | You'll see                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Claude Code**   | Nothing: run `claude` in any project. To message sessions from the app, click **Install** under "Let me message agents".                                                                 | "● 1 active session". The agent walks in through the elevator to the `claude-code` wing.                                      |
+| **Any framework** | Copy the ready-made curl, Python or JavaScript snippet from **Connect → Any framework** into your agent. It already has the right port and reads the token from `~/.agent-office/token`. | "✓ Received from `<provider>`". The provider's wing appears. **Send a test agent** checks the whole path from inside the app. |
+| **Demo**          | **Try the demo**                                                                                                                                                                         | 9 sample agents across 3 providers, to explore the rooms, links and chat                                                      |
+
+<table><tr>
+<td><img src="docs/screenshots/empty-state.png" alt="An empty office: a card offers Claude Code, any framework over HTTP, or a demo, each with live status" width="100%"></td>
+<td><img src="docs/screenshots/connect-panel.png" alt="The Connect panel on the Any framework tab: endpoint, token location, a copyable curl snippet and a received-event confirmation" width="100%"></td>
+</tr></table>
+
+The **Connected** tab lists every provider, its agent count and how it's connected (transcripts, hook, HTTP or demo), with a button to fly to its wing. If port 4317 is taken, the Any framework tab says so and lets you pick another port. The Claude Code hook follows the new port automatically.
+
 ## Features
 
 - **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they are doing ([Tour](#tour)).
@@ -20,6 +37,7 @@ Linux) that shows every running AI agent as a worker in a 3D office:
 - **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
 - **Library.** Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
 - **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error ([Tray and notifications](#tray-and-notifications)).
+- **Obvious setup.** An empty office shows how to connect Claude Code, any framework or a demo; the 🔌 Connect panel has live status, copy-ready snippets and a test button ([Connect your agents](#connect-your-agents)).
 - **Zero-config Claude Code.** Running sessions, their subagents, configured MCP servers, skills and rules appear automatically ([Using it with Claude Code](#using-it-with-claude-code)).
 - **Any agent framework.** A local HTTP API takes status events, capability declarations and chat replies ([Adapters](#adapters), [HTTP API](#http-api-for-any-agent-framework)).
 - **Walk mode.** First-person WASD through the office. Press `E` to talk to the agent you're looking at ([Walk mode](#walk-mode)).
@@ -344,7 +362,7 @@ Get the latest installer from [Releases](https://github.com/arxdsilva/agent-offi
 ## Using it with Claude Code
 
 1. Open agent-office. Any Claude Code session active in the last 10 minutes appears in the `claude-code` wing, at a desk pod named after the session title. Its subagents sit next to it, and join it in a meeting room while they work.
-2. **To message sessions:** ⚙ Settings → **Install hook**. You can also use the tray menu, or the button shown in the chat panel.
+2. **To message sessions:** 🔌 Connect → Claude Code → **Install**. You can also use ⚙ Settings, the tray menu, or the button shown in the chat panel.
 
 When you send a message:
 
@@ -368,7 +386,7 @@ How the hook works:
 
 ## HTTP API (for any agent framework)
 
-While the app runs, it serves a local API on `127.0.0.1:4317`; the port can be changed in Settings. Every write needs the token in `~/.agent-office/token` (created on first start, mode `0600`).
+While the app runs, it serves a local API on `127.0.0.1:4317`; the port can be changed in Settings or in **Connect → Any framework**, which also has a ready-made snippet for curl, Python and JavaScript. Every write needs the token in `~/.agent-office/token` (created on first start, mode `0600`).
 
 ```sh
 TOKEN=$(cat ~/.agent-office/token)

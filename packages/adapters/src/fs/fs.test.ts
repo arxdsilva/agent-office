@@ -106,6 +106,55 @@ describe('FsHookRunner details', () => {
   })
 })
 
+describe('FsHookRunner url (custom port)', () => {
+  const base = (platform: string, url: () => string) => ({
+    dir: join(tmp(), 'hook'),
+    execPath: '/usr/bin/node',
+    script: '/r/hook.mjs',
+    platform,
+    runAsNode: false,
+    url,
+  })
+
+  it('the sh wrapper defaults AGENT_OFFICE_URL to the live API url', async () => {
+    const runner = new FsHookRunner(base('darwin', () => 'http://127.0.0.1:4320'))
+    await runner.ensureInstalled()
+    const body = readFileSync(runner.wrapperPath, 'utf8')
+    expect(body).toContain(
+      'AGENT_OFFICE_URL="${AGENT_OFFICE_URL:-http://127.0.0.1:4320}" exec "/usr/bin/node" "/r/hook.mjs"',
+    )
+  })
+
+  it('the cmd wrapper sets AGENT_OFFICE_URL only when it is not defined', async () => {
+    const runner = new FsHookRunner(base('win32', () => 'http://localhost:5000'))
+    await runner.ensureInstalled()
+    const body = readFileSync(runner.wrapperPath, 'utf8')
+    expect(body).toContain(
+      'if not defined AGENT_OFFICE_URL set "AGENT_OFFICE_URL=http://localhost:5000"\r\n',
+    )
+  })
+
+  it('reads the url on every write, so heal picks up a new port', async () => {
+    let port = 4317
+    const runner = new FsHookRunner(base('linux', () => `http://[::1]:${port}`))
+    await runner.ensureInstalled()
+    port = 4400
+    await runner.ensureInstalled()
+    expect(readFileSync(runner.wrapperPath, 'utf8')).toContain('http://[::1]:4400}')
+  })
+
+  it.each([
+    'http://evil.com',
+    'http://127.0.0.1:4317`rm -rf ~`',
+    'http://127.0.0.1:4317"; x',
+    'https://127.0.0.1:4317',
+  ])('refuses an unsafe url (%s) and writes nothing', async (url) => {
+    const runner = new FsHookRunner(base('darwin', () => url))
+    await expect(runner.ensureInstalled()).rejects.toThrow('unsafe hook url')
+    expect(existsSync(runner.wrapperPath)).toBe(false)
+  })
+})
+
 describe('JsonFileSettingsRepository details', () => {
   it('falls back to defaults on a corrupt file and writes atomically', async () => {
     const file = join(tmp(), 'settings.json')

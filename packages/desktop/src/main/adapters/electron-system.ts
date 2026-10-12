@@ -1,7 +1,7 @@
 import type { LoginItem, PlatformInfo } from '@agent-office/core'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, ipcMain } from 'electron'
+import { app, clipboard, ipcMain } from 'electron'
 import type { IpcRegistrar } from '../ipc-api.ts'
 
 /** Baked in at build time: true when the release was code-signed (CSC_LINK set). */
@@ -37,4 +37,9 @@ export function electronIpc(): IpcRegistrar & { removeAll(): void } {
       channels.clear()
     },
   }
+}
+
+/** Main-process clipboard (the renderer's clipboard permission stays denied). */
+export function electronClipboard(): { writeText(text: string): void } {
+  return { writeText: (text) => clipboard.writeText(text) }
 }

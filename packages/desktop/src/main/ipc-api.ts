@@ -8,11 +8,14 @@ import {
   type UserChat,
 } from '@agent-office/core'
 import {
+  CopyTextSchema,
   IPC,
   SendMessageArgsSchema,
   SettingsPatchSchema,
+  type ConnectionInfo,
   type SendResult,
   type ServerMessage,
+  type TestEventResult,
 } from '@agent-office/shared'
 
 /** The driving ports the renderer may reach through IPC — nothing concrete. */
@@ -23,6 +26,10 @@ export interface IpcPorts {
   hooks: HookManagement
   updates: UpdateManagement
   version: string
+  /** Live connection facts (never the token) and the self-test, built by the composition root. */
+  connections: { info(): Promise<ConnectionInfo>; test(): Promise<TestEventResult> }
+  /** Writes to the system clipboard (main side; the renderer permission stays denied). */
+  copyText(text: string): void
   /** Called after hook install/uninstall (tray refresh). */
   onHookChanged: () => void
   /** Called when a renderer (re)loads and asks for the snapshot. */
@@ -74,6 +81,13 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     [IPC.version]: () => p.version,
     [IPC.updateCheck]: () => p.updates.check(),
     [IPC.updateInstall]: () => p.updates.install(),
+    [IPC.connInfo]: () => p.connections.info(),
+    [IPC.connTest]: () => p.connections.test(),
+    [IPC.copyText]: (text: unknown) => {
+      const parsed = CopyTextSchema.safeParse(text)
+      if (!parsed.success) throw new Error('invalid text')
+      p.copyText(parsed.data)
+    },
   }
 }
 

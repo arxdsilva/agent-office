@@ -274,3 +274,65 @@ describe('ClaudeCodeTailer: stale cwds', () => {
     expect(t.activeCwds()).toEqual([])
   })
 })
+
+describe('ClaudeCodeTailer: stats (Connect panel)', () => {
+  function setup(onStats?: (s: { projectsDirFound: boolean; activeSessions: number }) => void) {
+    const files = new MemoryTranscriptFiles()
+    const t = new ClaudeCodeTailer({
+      dir: '/h/.claude/projects',
+      files,
+      activity: { report: () => 0 },
+      clock: new FakeClock(T0 + 10_000),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 5_000,
+      ...(onStats ? { onStats } : {}),
+    })
+    return { files, t }
+  }
+
+  it('reports nothing before the first tick', () => {
+    expect(setup().t.stats()).toEqual({ projectsDirFound: false, activeSessions: 0 })
+  })
+
+  it('reports a missing projects dir', async () => {
+    const { t } = setup()
+    await t.tick()
+    expect(t.stats()).toEqual({ projectsDirFound: false, activeSessions: 0 })
+  })
+
+  it('counts fresh top-level sessions only (stale and subagent files are excluded)', async () => {
+    const { files, t } = setup()
+    files.write('/h/.claude/projects/a/s1.jsonl', user('hi') + '\n', T0 + 9_000)
+    files.write('/h/.claude/projects/b/s2.jsonl', user('hi') + '\n', T0 + 9_500)
+    files.write('/h/.claude/projects/b/old.jsonl', user('hi') + '\n', T0)
+    files.write('/h/.claude/projects/b/s2/subagents/agent-x.jsonl', user('hi') + '\n', T0 + 9_500)
+    await t.tick()
+    expect(t.stats()).toEqual({ projectsDirFound: true, activeSessions: 2 })
+  })
+
+  it('fires onStats only when the stats change', async () => {
+    const seen: unknown[] = []
+    const { files, t } = setup((s) => seen.push(s))
+    await t.tick()
+    await t.tick()
+    expect(seen).toEqual([])
+    files.write('/h/.claude/projects/a/s1.jsonl', user('hi') + '\n', T0 + 9_000)
+    await t.tick()
+    await t.tick()
+    expect(seen).toEqual([{ projectsDirFound: true, activeSessions: 1 }])
+  })
+})
+
+describe('TranscriptFiles.stat isDir', () => {
+  it('reports directories on the node and in-memory implementations', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-cc-dir-'))
+    writeFileSync(join(dir, 'f.jsonl'), 'x')
+    const node = new NodeTranscriptFiles()
+    expect((await node.stat(dir))?.isDir).toBe(true)
+    expect((await node.stat(join(dir, 'f.jsonl')))?.isDir).toBe(false)
+    const mem = new MemoryTranscriptFiles()
+    mem.write('/d/f.jsonl', 'x', T0)
+    expect((await mem.stat('/d'))?.isDir).toBe(true)
+    expect((await mem.stat('/d/f.jsonl'))?.isDir).toBe(false)
+  })
+})

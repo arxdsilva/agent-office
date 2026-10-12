@@ -5,6 +5,7 @@ export type TrayAction =
   | { type: 'select'; agentId: string }
   | { type: 'settings' }
   | { type: 'install-hook' }
+  | { type: 'connect' }
   | { type: 'quit' }
 
 export interface TrayItem {
@@ -48,7 +49,9 @@ export function trayModel(agents: Agent[], hookInstalled: boolean): TrayModel {
     { label: 'Open agent-office', action: { type: 'open' } },
     'separator',
     {
-      label: `${agents.length} agent${agents.length === 1 ? '' : 's'}${summary.length ? ` — ${summary.join(', ')}` : ''}`,
+      label: agents.length
+        ? `${agents.length} agent${agents.length === 1 ? '' : 's'}${summary.length ? ` — ${summary.join(', ')}` : ''}`
+        : 'No agents yet',
       enabled: false,
     },
   ]
@@ -64,6 +67,7 @@ export function trayModel(agents: Agent[], hookInstalled: boolean): TrayModel {
     hookInstalled
       ? { label: 'Claude Code hook: installed ✓', enabled: false }
       : { label: 'Install Claude Code hook…', action: { type: 'install-hook' } },
+    { label: 'Connect agents…', action: { type: 'connect' } },
     { label: 'Settings…', action: { type: 'settings' } },
     'separator',
     { label: 'Quit agent-office', action: { type: 'quit' } },

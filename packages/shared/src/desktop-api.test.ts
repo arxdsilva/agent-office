@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CopyTextSchema,
   DEFAULT_SETTINGS,
   GRAPHICS_QUALITIES,
   IPC,
@@ -53,6 +54,14 @@ describe('IPC payloads', () => {
     expect(SendMessageArgsSchema.safeParse({ agentId: 'a', text: 'x'.repeat(4001) }).success).toBe(
       false,
     )
+  })
+
+  it('limits clipboard text to 1–4000 characters', () => {
+    expect(CopyTextSchema.safeParse('curl …').success).toBe(true)
+    expect(CopyTextSchema.safeParse('x'.repeat(4000)).success).toBe(true)
+    expect(CopyTextSchema.safeParse('').success).toBe(false)
+    expect(CopyTextSchema.safeParse('x'.repeat(4001)).success).toBe(false)
+    expect(CopyTextSchema.safeParse(42).success).toBe(false)
   })
 
   it('channel names are unique', () => {

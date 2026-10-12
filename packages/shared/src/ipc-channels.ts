@@ -15,4 +15,9 @@ export const IPC = {
   updateCheck: 'update:check',
   updateInstall: 'update:install',
   updateState: 'update:state',
+  connInfo: 'conn:info',
+  connChanged: 'conn:changed',
+  connTest: 'conn:test',
+  copyText: 'app:copy-text',
+  openConnect: 'app:open-connect',
 } as const

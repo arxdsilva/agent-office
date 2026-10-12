@@ -34,6 +34,16 @@ The UI can inject text into live agent sessions. Treat the server like a remote 
 
 Render API-provided text with `textContent` and elements built with `document.createElement` (see `web/src/adapters/dom/el.ts`). **Never use `innerHTML`**, never `eval`, and never import dynamically from data.
 
+## Connect panel (`ConnectionInfo`, snippets, clipboard)
+
+| Do                                                                                                                                                                                                  | Don't                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Send only the two data locations (`~`-abbreviated under home; a user-set `AGENT_OFFICE_HOME`/`CLAUDE_PROJECTS_DIR` elsewhere stays whole so snippets work), counts and statuses in `ConnectionInfo` | Send the token, project names, transcript file names or any other path over IPC |
+| Make snippets read the token at run time (`$(cat ~/.agent-office/token)`); prove it with a sentinel token in tests                                                                                  | Paste or display the token anywhere in the UI                                   |
+| Write the clipboard in main via `app.copyText` (zod, ≤ 4000 chars, trusted sender only)                                                                                                             | Grant the renderer clipboard permission                                         |
+| Validate the hook wrapper URL (`127.0.0.1`/`localhost`/`[::1]` + port) before writing it into a script                                                                                              | Interpolate any other value into the wrapper                                    |
+| Send the test agent as a fixed payload through the real authenticated route                                                                                                                         | Let renderer input reach the test event                                         |
+
 ## Electron checklist (`desktop/src/main/security.ts`, unit-tested + `shell.spec.ts`)
 
 | Do                                                                                                                                                                                              | Don't                                                         |

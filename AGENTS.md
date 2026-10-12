@@ -83,6 +83,9 @@ Those ports are implemented by the preload gateway, the three.js scene and the D
 | **Step**                              | One unit of a choreography: `clip`, `move` (a timed path), `face`, `prop`, `teleport` or `fade`.                                                                                |
 | **Quality preset**                    | The `graphicsQuality` setting: `auto`, `low`, `medium`, `high`, `ultra`. Applied live through `SceneView.setQuality`.                                                           |
 | **Lightmap**                          | Baked indirect + direct lighting per module (a PNG on UV1), applied by the renderer to `baked` meshes.                                                                          |
+| **Connect panel**                     | The 🔌 dialog (`web/src/adapters/dom/connect-panel.ts`) with live status and setup for each way in: Claude Code, any framework (HTTP), demo, and what's connected.              |
+| **Empty state**                       | The card shown over an empty office on first run (`emptyStateVM`): one tile per way in. Hides when the first agent arrives.                                                     |
+| **Connection info**                   | `ConnectionInfo` (`shared/src/desktop-api.ts`): live port, port busy, session count, hook status and env overrides pushed to the renderer. Never contains the token.            |
 
 ## Commands
 

@@ -13,7 +13,15 @@ export interface HookRunnerOptions {
   platform: string
   /** true when execPath is Electron and must behave as plain Node. */
   runAsNode: boolean
+  /**
+   * Live API base url (e.g. http://127.0.0.1:4317), read on every write so a port change reaches
+   * the hook after heal(). Omitted: the hook uses its built-in default.
+   */
+  url?: () => string
 }
+
+/** Loopback http only; validated before it is interpolated into a shell or cmd script. */
+const SAFE_URL = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/
 
 /**
  * Claude Code runs our hook through a small wrapper so users don't need Node on PATH: the wrapper
@@ -36,15 +44,22 @@ export class FsHookRunner implements HookRunner {
 
   async ensureInstalled(): Promise<void> {
     const { execPath, script, runAsNode } = this.o
+    const url = this.o.url?.()
+    if (url !== undefined && !SAFE_URL.test(url)) throw new Error('unsafe hook url')
     if (this.o.platform === 'win32') {
+      const setUrl = url ? `if not defined AGENT_OFFICE_URL set "AGENT_OFFICE_URL=${url}"\r\n` : ''
       const env = runAsNode ? 'set ELECTRON_RUN_AS_NODE=1\r\n' : ''
-      await writeFileAtomic(this.wrapperPath, `@echo off\r\n${env}"${execPath}" "${script}"\r\n`)
+      await writeFileAtomic(
+        this.wrapperPath,
+        `@echo off\r\n${setUrl}${env}"${execPath}" "${script}"\r\n`,
+      )
       return
     }
+    const setUrl = url ? `AGENT_OFFICE_URL="\${AGENT_OFFICE_URL:-${url}}" ` : ''
     const env = runAsNode ? 'ELECTRON_RUN_AS_NODE=1 ' : ''
     await writeFileAtomic(
       this.wrapperPath,
-      `#!/bin/sh\n# agent-office hook wrapper (generated)\n${env}exec "${execPath}" "${script}"\n`,
+      `#!/bin/sh\n# agent-office hook wrapper (generated)\n${setUrl}${env}exec "${execPath}" "${script}"\n`,
     )
     await chmod(this.wrapperPath, 0o755)
   }

@@ -1,4 +1,5 @@
 import { MAX_MESSAGE_CHARS } from '@agent-office/shared'
+import { COPY } from '../../app/connect-copy.ts'
 import type { PanelVM } from '../../app/view-models.ts'
 import type { PanelView } from '../../ports.ts'
 import { byId, el } from './el.ts'
@@ -14,6 +15,7 @@ export class DomPanel implements PanelView {
   private closeFn: () => void = () => {}
   private parentFn: (id: string) => void = () => {}
   private installFn: () => void | Promise<void> = () => {}
+  private connectFn: () => void = () => {}
 
   constructor() {
     byId('p-close').addEventListener('click', () => this.closeFn())
@@ -45,6 +47,9 @@ export class DomPanel implements PanelView {
   }
   onInstallHook(fn: () => void | Promise<void>) {
     this.installFn = fn
+  }
+  onOpenConnect(fn: () => void) {
+    this.connectFn = fn
   }
 
   open(vm: PanelVM): void {
@@ -97,6 +102,12 @@ export class DomPanel implements PanelView {
         btn.type = 'button'
         btn.addEventListener('click', () => void this.installFn())
         hint.append(btn)
+      }
+      if (vm.hint.action === 'open-connect') {
+        const btn = el('button', COPY.hint.howTo, 'link')
+        btn.type = 'button'
+        btn.addEventListener('click', () => this.connectFn())
+        hint.append(' ', btn)
       }
     }
 

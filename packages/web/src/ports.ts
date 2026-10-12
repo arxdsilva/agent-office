@@ -4,6 +4,13 @@ import type { Manifest } from './app/manifest.ts'
 import type { CapabilityPanelVM, ProviderSurfaces } from './app/capability-vm.ts'
 import type { AgentPlan, BuildingLayout, ClipName, Link } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
+import type {
+  ConnectTab,
+  ConnectVM,
+  EmptyStateVM,
+  EmptyTileId,
+  SnippetLang,
+} from './app/connect-types.ts'
 
 /** Everything the renderer can ask of the main process (implemented by the preload bridge). */
 export type OfficeGateway = AgentOfficeApi
@@ -38,6 +45,10 @@ export interface SceneView {
   setQuality(q: GraphicsQuality): void
   /** The user clicked an agent (id) or empty space (null). */
   onPick(fn: (id: string | null) => void): void
+  /** Ease the camera to a bookmark by id (same ids as the view bar: 'wing:<provider>:0', 'atrium', …). */
+  goTo(viewId: string): void
+  /** Milliseconds since the user last moved the camera (orbit, zoom, walk, view button). */
+  cameraIdleMs(): number
 }
 
 export interface SceneSurfaces {
@@ -75,11 +86,49 @@ export interface PanelView {
   onClose(fn: () => void): void
   onSelectParent(fn: (id: string) => void): void
   onInstallHook(fn: () => void | Promise<void>): void
+  /** The hint's "How to connect it →" action (non-Claude agents not reading their inbox). */
+  onOpenConnect(fn: () => void): void
 }
 
 export interface HudView {
   render(vm: HudVM): void
   onOpenSettings(fn: () => void | Promise<void>): void
+  /** The 🔌 Connect button and the "No agents right now · Connect…" hint link. */
+  onConnect(fn: () => void): void
+  /** Badge on the 🔌 button while nothing has been seen this session. */
+  setConnectBadge(on: boolean): void
+}
+
+/** The Connect panel (`<dialog id="connect">`), plan §2.2. */
+export interface ConnectView {
+  open(vm: ConnectVM): void
+  render(vm: ConnectVM): void
+  close(): void
+  isOpen(): boolean
+  onClose(fn: () => void): void
+  onTab(fn: (t: ConnectTab) => void): void
+  onToggle(fn: (key: 'claudeAdapter' | 'mock', on: boolean) => void | Promise<void>): void
+  onHookAction(fn: (action: 'install' | 'uninstall') => void | Promise<void>): void
+  onPort(fn: (port: number) => void | Promise<void>): void
+  onSnippetLang(fn: (lang: SnippetLang) => void): void
+  onCopy(fn: (text: string, target: 'endpoint' | 'snippet') => void | Promise<void>): void
+  onTest(fn: () => void | Promise<void>): void
+  onGoToWing(fn: (provider: string) => void): void
+  showError(message: string | null): void
+  flashCopied(target: 'endpoint' | 'snippet'): void
+}
+
+/** The empty-office card (`#empty`), plan §2.1. `null` hides it. */
+export interface EmptyStateView {
+  render(vm: EmptyStateVM | null): void
+  onTile(fn: (t: EmptyTileId) => void): void
+  onDemo(fn: () => void | Promise<void>): void
+  onDismiss(fn: () => void): void
+}
+
+/** Short status toast (`#toast`, role=status). */
+export interface ToastView {
+  show(text: string, action?: { label: string; run: () => void }): void
 }
 
 export interface SettingsView {
@@ -92,8 +141,12 @@ export interface SettingsView {
   onHookAction(fn: (action: 'install' | 'uninstall') => void | Promise<void>): void
   onCheckUpdates(fn: () => void | Promise<void>): void
   onInstallUpdate(fn: () => void | Promise<void>): void
+  /** "More ways to connect agents…" link in the Claude Code section. */
+  onOpenConnect(fn: () => void): void
 }
 
 export interface BannerView {
   show(b: Banner | null): void
+  /** The banner's action button (e.g. "Fix in Connect"). */
+  onAction(fn: (action: NonNullable<Banner['action']>) => void): void
 }

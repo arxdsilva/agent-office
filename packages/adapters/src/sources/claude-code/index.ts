@@ -1,5 +1,5 @@
 export { lineToEvent, newParseContext, type ClaudePaths, type ParseContext } from './line-mapper.ts'
-export { ClaudeCodeTailer, type ClaudeCodeTailerOptions } from './tailer.ts'
+export { ClaudeCodeTailer, type ClaudeCodeTailerOptions, type TailerStats } from './tailer.ts'
 export {
   MemoryTranscriptFiles,
   NodeTranscriptFiles,

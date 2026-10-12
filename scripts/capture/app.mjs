@@ -53,6 +53,8 @@ export async function launchApp({
   const dir = mkdtempSync(join(tmpdir(), 'ao-shots-'))
   const userData = join(dir, 'userData')
   mkdirSync(userData, { recursive: true })
+  // An empty projects folder: the Claude adapter is on but sees no sessions ("No sessions yet").
+  if (claude) mkdirSync(join(dir, '.claude', 'projects'), { recursive: true })
   writeFileSync(
     join(userData, 'settings.json'),
     JSON.stringify({ graphicsQuality: quality, notifications, claudeAdapter: claude }),
@@ -61,14 +63,17 @@ export async function launchApp({
     args: ['.'],
     cwd: new URL('../../packages/desktop/', import.meta.url).pathname,
     env: cleanEnv({
+      // The temp dir is the app's home too, so the UI shows ~/.agent-office/token like a real install
+      // (and nothing can resolve to the real home).
+      HOME: dir,
       AGENT_OFFICE_USER_DATA: userData,
-      AGENT_OFFICE_HOME: join(dir, 'home'),
-      CLAUDE_SETTINGS_FILE: join(dir, 'claude', 'settings.json'),
+      AGENT_OFFICE_HOME: join(dir, '.agent-office'),
+      CLAUDE_SETTINGS_FILE: join(dir, '.claude', 'settings.json'),
       AGENT_OFFICE_MOCK: mock ? '1' : '0',
       // Claude Code discovery (when on) only ever sees these empty temp locations.
-      CLAUDE_PROJECTS_DIR: join(dir, 'claude', 'projects'),
-      CLAUDE_HOME: join(dir, 'claude'),
-      CLAUDE_CONFIG_FILE: join(dir, 'claude.json'),
+      CLAUDE_PROJECTS_DIR: join(dir, '.claude', 'projects'),
+      CLAUDE_HOME: join(dir, '.claude'),
+      CLAUDE_CONFIG_FILE: join(dir, '.claude.json'),
       ...(claude ? {} : { AGENT_OFFICE_CLAUDE: '0' }),
       AGENT_OFFICE_DEBUG: '1',
       PORT: String(port),
@@ -98,6 +103,6 @@ export async function launchApp({
     port,
     errors,
     close,
-    token: () => readFileSync(join(dir, 'home', 'token'), 'utf8').trim(),
+    token: () => readFileSync(join(dir, '.agent-office', 'token'), 'utf8').trim(),
   }
 }

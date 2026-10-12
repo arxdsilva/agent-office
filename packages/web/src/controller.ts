@@ -1,26 +1,50 @@
 import {
   DEFAULT_SETTINGS,
+  type ConnectionInfo,
   type GraphicsQuality,
   type Grouping,
   type HookStatus,
   type Settings,
   type SettingsPatch,
+  type TestEventResult,
   type UpdateState,
 } from '@agent-office/shared'
 import { capabilityBubbles, capabilityPanelVM, surfacesVM, usedChips } from './app/capability-vm.ts'
 import { createDirector, type Director } from './app/director.ts'
 import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
-import { hudVM, panelVM, settingsVM, type ActivityInfo } from './app/view-models.ts'
+import { COPY } from './app/connect-copy.ts'
+import {
+  DEMO_START_TIMEOUT_MS,
+  EMPTY_GRACE_MS,
+  FLY_TO_IDLE_MS,
+  TEST_AGENT_ID,
+  type ConnectTab,
+  type EmptyPhase,
+  type SnippetLang,
+} from './app/connect-types.ts'
+import {
+  connectVM,
+  emptyPhase,
+  emptyStateVM,
+  hudVM,
+  panelVM,
+  settingsVM,
+  type ActivityInfo,
+  type DemoStart,
+} from './app/view-models.ts'
 import type {
   BannerView,
   CapabilityPanelView,
   CapabilityRef,
+  ConnectView,
+  EmptyStateView,
   HudView,
   OfficeGateway,
   PanelView,
   SceneView,
   SettingsView,
+  ToastView,
 } from './ports.ts'
 
 export interface ControllerDeps {
@@ -31,9 +55,18 @@ export interface ControllerDeps {
   settings: SettingsView
   banner: BannerView
   capabilityPanel: CapabilityPanelView
+  connect: ConnectView
+  empty: EmptyStateView
+  toast: ToastView
   grouping: Grouping
   clock: { now(): number }
   every: (ms: number, fn: () => void) => () => void
+  /** One-shot timer (grace period, demo timeout); returns a cancel function. */
+  after: (ms: number, fn: () => void) => () => void
+  /** Windows: the curl snippet gets the PowerShell note. */
+  isWindows?: boolean
+  /** Snippet language remembered from last time (the DOM adapter keeps it). */
+  snippetLang?: SnippetLang
 }
 
 export const MANIFEST_URL = 'assets/manifest.json'
@@ -59,6 +92,25 @@ export function createController(d: ControllerDeps) {
   let restartNote = false
   let quality: GraphicsQuality | null = null
   const stops: (() => void)[] = []
+
+  // Connecting agents (plan §2): live facts from main, the empty card's phase, first arrivals.
+  let connInfo: ConnectionInfo | undefined
+  let ready = false
+  let pushReceived = false
+  let graceElapsed = false
+  let phase: EmptyPhase = 'loading'
+  let dismissed = false
+  let seenAny = false
+  /** provider → when its first agent arrived this session (the test agent excluded). */
+  const firstSeen = new Map<string, number>()
+  let announcedAny = false
+  let pendingGoTo: string | null = null
+  let lastHttp: { provider: string; ts: number } | undefined
+  let connectTab: ConnectTab = 'claude'
+  let snippetLang: SnippetLang = d.snippetLang ?? 'curl'
+  let lastTest: TestEventResult | undefined
+  let demo: DemoStart = 'idle'
+  let cancelDemoTimer = () => {}
 
   /** The scene applies presets live; forward only actual changes. */
   const applyQuality = (q: GraphicsQuality) => {
@@ -173,6 +225,11 @@ export function createController(d: ControllerDeps) {
       bubbles: capabilityBubbles(u.plans, state.capabilities),
     })
     trackUses()
+    if (pendingGoTo) {
+      // After the director placed the new wing, so its bookmark exists.
+      d.scene.goTo(pendingGoTo)
+      pendingGoTo = null
+    }
     renderCapability()
     if (selected && vmFor(selected).activity !== shownActivity) renderPanel()
   }
@@ -184,7 +241,7 @@ export function createController(d: ControllerDeps) {
       messageDirected = true
       direct()
     }
-    d.hud.render(hudVM(state))
+    refreshConnect()
     renderPanel()
   }
 
@@ -226,6 +283,109 @@ export function createController(d: ControllerDeps) {
     const vm = settingsVM({ settings, hook, version, update, restartNote })
     if (open) d.settings.open(vm)
     else if (d.settings.isOpen()) d.settings.render(vm)
+  }
+
+  const connectVMNow = (info: ConnectionInfo) =>
+    connectVM({
+      info,
+      state,
+      tab: connectTab,
+      lang: snippetLang,
+      now: d.clock.now(),
+      ...(lastHttp && { lastHttp }),
+      ...(lastTest && { test: lastTest }),
+      ...(d.isWindows && { isWindows: true }),
+    })
+
+  /** Empty card, HUD (hint + badge) and an open Connect panel, from the current facts. */
+  function refreshConnect() {
+    phase = emptyPhase({
+      prev: phase,
+      ready,
+      infoReceived: pushReceived,
+      graceElapsed,
+      agents: state.agents.size,
+      dismissed,
+    })
+    d.empty.render(phase === 'first-run' && connInfo ? emptyStateVM(connInfo, demo) : null)
+    d.hud.render(hudVM(state, phase))
+    d.hud.setConnectBadge(!seenAny)
+    if (connInfo && d.connect.isOpen()) d.connect.render(connectVMNow(connInfo))
+  }
+
+  /** Before rendering a state change: who is new, and does anyone deserve a toast. */
+  const noteArrivals = () => {
+    if (state.agents.size) seenAny = true
+    // Sessions read during the grace period (or before the first push) were already there.
+    const announce = ready && (pushReceived || graceElapsed)
+    for (const a of state.agents.values()) {
+      if (a.source === 'mock' && demo === 'starting') {
+        demo = 'idle'
+        cancelDemoTimer()
+      }
+      if (a.provider === TEST_AGENT_ID) continue
+      if (
+        a.source === 'http' &&
+        (!lastHttp || a.lastSeen > lastHttp.ts || lastHttp.provider === a.provider)
+      )
+        lastHttp = { provider: a.provider, ts: Math.max(a.lastSeen, d.clock.now()) }
+      if (firstSeen.has(a.provider)) continue
+      firstSeen.set(a.provider, d.clock.now())
+      if (announce) arrived(a.provider)
+    }
+  }
+
+  const arrived = (provider: string) => {
+    const hook = connInfo?.hook ?? hookStatusNow()
+    if (provider === 'claude-code' && hook !== 'installed')
+      d.toast.show(COPY.toast.connected(provider) + COPY.toast.hookHint, {
+        label: COPY.hud.connect,
+        run: () => void openConnect('claude'),
+      })
+    else d.toast.show(COPY.toast.connected(provider))
+    if (!announcedAny || d.scene.cameraIdleMs() > FLY_TO_IDLE_MS) pendingGoTo = `wing:${provider}:0`
+    announcedAny = true
+  }
+  const hookStatusNow = () => hook
+
+  const loadInfo = async (): Promise<ConnectionInfo | undefined> => {
+    try {
+      connInfo = await d.gateway.connections.info()
+    } catch {
+      // Older or failing main process: the panel and the card simply stay unavailable.
+    }
+    return connInfo
+  }
+
+  async function openConnect(tab?: ConnectTab) {
+    connectTab = tab ?? (seenAny ? 'connected' : 'claude')
+    const info = connInfo ?? (await loadInfo())
+    if (!info) return
+    d.connect.showError(null)
+    d.connect.open(connectVMNow(info))
+  }
+
+  /** Runs a Connect action, refreshes the facts, re-renders; errors show inside the panel. */
+  const inConnect = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      await loadInfo()
+    } catch (err) {
+      d.connect.showError((err as Error).message)
+    }
+    refreshConnect()
+  }
+
+  const startDemo = () => {
+    demo = 'starting'
+    cancelDemoTimer()
+    cancelDemoTimer = d.after(DEMO_START_TIMEOUT_MS, () => {
+      if (demo !== 'starting') return
+      demo = 'failed'
+      d.connect.showError(COPY.empty.demo.failed)
+      refreshConnect()
+    })
+    refreshConnect()
   }
 
   const guarded = (fn: () => Promise<unknown>) => async () => {
@@ -281,17 +441,93 @@ export function createController(d: ControllerDeps) {
     })()
   })
   d.settings.onInstallUpdate(() => d.gateway.updates.install())
+  d.settings.onOpenConnect(() => {
+    d.settings.close()
+    void openConnect('claude')
+  })
+
+  // Connect entry points (plan §2.2)
+  d.hud.onConnect(() => void openConnect())
+  d.panel.onOpenConnect(() => void openConnect('http'))
+  d.banner.onAction((a) => {
+    if (a === 'open-connect') void openConnect('http')
+  })
+  d.empty.onTile((t) => void openConnect(t))
+  d.empty.onDismiss(() => {
+    dismissed = true
+    refreshConnect()
+  })
+  d.empty.onDemo(async () => {
+    startDemo()
+    await inConnect(() => d.gateway.settings.set({ mock: true }))
+  })
+
+  // Connect panel
+  d.connect.onClose(() => d.connect.showError(null))
+  d.connect.onTab((t) => {
+    connectTab = t
+    refreshConnect()
+  })
+  d.connect.onSnippetLang((l) => {
+    snippetLang = l
+    refreshConnect()
+  })
+  d.connect.onToggle(async (key, on) => {
+    if (key === 'mock' && on) startDemo()
+    await inConnect(() => d.gateway.settings.set({ [key]: on }))
+  })
+  d.connect.onHookAction(async (action) => {
+    await inConnect(async () => {
+      hook =
+        action === 'install' ? await d.gateway.hook.install() : await d.gateway.hook.uninstall()
+    })
+    if (d.settings.isOpen()) await renderSettings(false)
+  })
+  d.connect.onPort(async (port) => {
+    // Same path as the Settings port form.
+    await inConnect(async () => {
+      const r = await d.gateway.settings.set({ port })
+      restartNote = restartNote || r.restartRequired
+    })
+  })
+  d.connect.onCopy(async (text, target) => {
+    try {
+      await d.gateway.app.copyText(text)
+      d.connect.flashCopied(target)
+    } catch (err) {
+      d.connect.showError((err as Error).message)
+    }
+  })
+  d.connect.onTest(async () => {
+    try {
+      lastTest = await d.gateway.connections.test()
+    } catch (err) {
+      lastTest = { ok: false, error: (err as Error).message }
+    }
+    refreshConnect()
+  })
+  d.connect.onGoToWing((provider) => {
+    d.connect.close()
+    d.scene.goTo(`wing:${provider}:0`)
+  })
 
   return {
     async start(): Promise<void> {
       stops.push(
         d.gateway.onMessage((m) => {
           state = applyMessage(state, m)
+          noteArrivals()
           render()
         }),
         d.gateway.onSelect(select),
         d.gateway.app.onBanner((b) => d.banner.show(b)),
         d.gateway.app.onOpenSettings(() => renderSettings(true)),
+        d.gateway.app.onOpenConnect(() => void openConnect()),
+        d.gateway.connections.onChange((i) => {
+          connInfo = i
+          pushReceived = true
+          refreshConnect()
+        }),
         d.gateway.updates.onState((s) => {
           update = s
           void renderSettings(false)
@@ -308,9 +544,18 @@ export function createController(d: ControllerDeps) {
       ])
       applyQuality(settings.graphicsQuality)
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
+      noteArrivals()
+      ready = true
+      stops.push(
+        d.after(EMPTY_GRACE_MS, () => {
+          graceElapsed = true
+          refreshConnect()
+        }),
+      )
+      await loadInfo()
       await loadScene()
       direct()
-      d.hud.render(hudVM(state))
+      refreshConnect()
       renderPanel()
     },
 

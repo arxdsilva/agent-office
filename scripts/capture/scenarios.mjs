@@ -742,6 +742,35 @@ export const SCENARIOS = [
       }
     },
   },
+  {
+    // First run with nothing connected, then the Connect panel confirming a framework's first event.
+    name: 'connect',
+    empty: true,
+    // Claude on, pointed at an empty temp folder (never the real ~/.claude).
+    launch: { claude: true },
+    shots: ['empty-state', 'connect-panel'],
+    clips: [],
+    async run(c, want) {
+      // The empty card shows after the 2 s grace period (no agents at all in this profile).
+      await c.win.locator('#empty').waitFor({ state: 'visible', timeout: 10_000 })
+      if (want('empty-state')) await c.still('empty-state', { hud: true, settle: 1500 })
+      // "Show me how" opens the Any framework tab; a LangGraph agent then posts its first event.
+      await c.win.getByRole('button', { name: 'Show me how →' }).click()
+      await c.win.locator('#connect').waitFor({ state: 'visible', timeout: 5000 })
+      await c.post({
+        agentId: 'lg:triage-1',
+        name: 'Iris',
+        provider: 'langgraph',
+        topic: 'Ticket triage',
+        status: 'thinking',
+      })
+      await c.win
+        .locator('#c-http-live')
+        .filter({ hasText: 'Received from' })
+        .waitFor({ timeout: 8000 })
+      if (want('connect-panel')) await c.still('connect-panel', { hud: true, settle: 1500 })
+    },
+  },
 ]
 
 export async function runScenarios({ out, quality = 'high', only, clips = true, port }) {
@@ -753,7 +782,7 @@ export async function runScenarios({ out, quality = 'high', only, clips = true, 
     console.log(`scenario ${s.name}`)
     const c = await context({ out, quality, port, launch: s.launch })
     try {
-      await c.post(ANCHORS)
+      if (!s.empty) await c.post(ANCHORS)
       await s.run(c, want)
     } finally {
       await c.close()
