@@ -42,12 +42,13 @@ describe('interactionTarget (IN)', () => {
     expect(interactionTarget(player, [], [box(0, 0.6)])?.target.kind).toBe('object')
   })
 
-  // IN-3: beyond 1.2 m nothing is reachable (objects measure to their nearest edge).
+  // IN-3: beyond 1.5 m nothing is reachable (objects measure to their nearest edge).
   it('returns null out of range', () => {
-    expect(INTERACT_RANGE_M).toBe(1.2)
-    expect(interactionTarget(player, [{ id: 'a', pos: { x: 0, z: 1.3 } }], [])).toBeNull()
-    expect(interactionTarget(player, [], [box(0, 1.6)])).toBeNull()
-    expect(interactionTarget(player, [], [box(0, 1.4, 0.5)])).not.toBeNull()
+    expect(INTERACT_RANGE_M).toBe(1.5)
+    expect(interactionTarget(player, [{ id: 'a', pos: { x: 0, z: 1.45 } }], [])).not.toBeNull()
+    expect(interactionTarget(player, [{ id: 'a', pos: { x: 0, z: 1.6 } }], [])).toBeNull()
+    expect(interactionTarget(player, [], [box(0, 1.9)])).toBeNull()
+    expect(interactionTarget(player, [], [box(0, 1.8, 0.5)])).not.toBeNull()
   })
 
   // IN-4: behind or beside (outside ±45°) gives null.
@@ -107,8 +108,12 @@ describe('interactionTarget (IN)', () => {
       { kind: 'capability', ref: { provider: 'p', id: 'fs' } },
       { kind: 'object', object: 'elevator' },
     ])
+    // Hit boxes come from the object's px box (a 1 m station without art: 16 px).
     const station = objs[0]!
-    expect(station.box.maxX - station.box.minX).toBeCloseTo(1)
+    const o = map.objects.find((x) => x.kind === 'station')!
+    expect(station.box.maxX - station.box.minX).toBeCloseTo(o.box.w / 16)
+    expect(station.box.minX).toBeCloseTo(map.originM.x + o.box.x / 16)
+    expect(station.box.maxZ).toBeCloseTo(map.originM.z + (o.box.y + o.box.h) / 16)
     expect(resolve('nowhere', 'station:1')).toBeUndefined()
     // Books and notebooks come from the layout's ports (the plan has no ref for them).
     surfaces.get('p')!.books = [undefined, undefined, slot('skill:pdf')]
@@ -117,6 +122,7 @@ describe('interactionTarget (IN)', () => {
     expect(book.target).toEqual({ kind: 'capability', ref: { provider: 'p', id: 'skill:pdf' } })
     const port = layout.ports!.get('wing:p:0/port:book:2')!
     expect((book.box.minX + book.box.maxX) / 2).toBeCloseTo(port.x)
+    expect(book.box.maxX - book.box.minX).toBeCloseTo(0.25)
     expect(withBooks.filter((o) => o.id.includes('/book:'))).toHaveLength(1)
     expect(resolve('wing:p:0', 'board:0')).toBeUndefined()
   })

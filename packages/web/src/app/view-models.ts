@@ -535,7 +535,7 @@ export interface HudVM {
   hint: { text: string; action?: 'connect' }
 }
 
-const CONTROLS_HELP = 'Drag to orbit · scroll to zoom · click an agent to chat'
+const CONTROLS_HELP = 'Drag to orbit · WASD to move · scroll to zoom · click an agent to chat'
 
 export function hudVM(state: OfficeState, phase?: EmptyPhase): HudVM {
   const counts = new Map<AgentStatus, number>()

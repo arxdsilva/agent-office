@@ -1,7 +1,8 @@
 // The 2D canvas: a 480×270 logical view inside #stage, integer-scaled to the window in device
-// pixels (crisp: no smoothing) and letterboxed. Static floor/wall layers are pre-rendered into
-// 512×512 chunks (32×32 tiles) and only the visible ones are drawn.
-import { TILE_PX, VIEW_H, VIEW_W, type PixelMap } from '../../app/pixel/types.ts'
+// pixels (crisp: no smoothing) and letterboxed; the camera's zoom level sets how many device px an
+// art px covers inside it. Floors and flat walls are pre-rendered into 512×512 chunks (32×32 one-
+// metre tiles) and only the visible ones are drawn.
+import { TILE_PX, VIEW_H, VIEW_W, type MapWall, type PixelMap } from '../../app/pixel/types.ts'
 import type { PixelTiles } from './tiles.ts'
 
 /** Tiles per chunk side (512 px). */
@@ -137,47 +138,70 @@ export class PixelRenderer {
   }
 }
 
-type Layer = 'base' | 'overhead'
+/** Walls baked into the chunks (flat: vertical runs and runs without a face); the rest y-sort. */
+export const flatWall = (w: MapWall) => w.face !== 's'
 
-/** Pre-rendered map chunks, built lazily for visible chunks; invalidated per changed module. */
+/** Each room's floor tile: the id of the 1 m cell at its centre (0: none). */
+function roomFloors(m: PixelMap): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const r of m.rooms) {
+    const tx = Math.floor((r.box.x + r.box.w / 2) / TILE_PX)
+    const ty = Math.floor((r.box.y + r.box.h / 2) / TILE_PX)
+    const ok = tx >= 0 && ty >= 0 && tx < m.widthTiles && ty < m.heightTiles
+    out.set(r.id, ok ? m.layers.floor[ty * m.widthTiles + tx]! : 0)
+  }
+  return out
+}
+
+/**
+ * Pre-rendered map chunks (512 px = 32 m), built lazily for visible chunks and invalidated per
+ * changed module: floors per 1 m cell, re-drawn per room clipped to its exact box (so floor seams
+ * follow the real walls, not the grid), then the flat walls.
+ */
 export class ChunkCache {
   private chunks = new Map<string, HTMLCanvasElement | null>()
   private pool: HTMLCanvasElement[] = []
   private map: PixelMap | null = null
+  private floors = new Map<string, number>()
 
-  constructor(private tiles: PixelTiles) {}
+  constructor(
+    private tiles: PixelTiles,
+    private paintWall: (c: CanvasRenderingContext2D, w: MapWall) => void = () => {},
+  ) {}
 
   /** A new map: keep chunks outside the changed modules when the grid didn't move. */
   setMap(map: PixelMap): void {
     const prev = this.map
     this.map = map
+    this.floors = roomFloors(map)
     const same =
       prev &&
-      prev.widthTiles === map.widthTiles &&
-      prev.heightTiles === map.heightTiles &&
+      prev.widthPx === map.widthPx &&
+      prev.heightPx === map.heightPx &&
       prev.originM.x === map.originM.x &&
       prev.originM.z === map.originM.z
     if (!same) return this.clear()
     for (const id of map.dirty) {
-      const room =
-        map.rooms.find((r) => r.placement === id) ?? prev.rooms.find((r) => r.placement === id)
-      if (!room) return this.clear()
-      const r = room.rect
-      for (
-        let cy = Math.floor((r.ty - 1) / CHUNK_TILES);
-        cy <= Math.floor((r.ty + r.th) / CHUNK_TILES);
-        cy++
-      )
+      const boxes = [...map.rooms, ...prev.rooms].filter((r) => r.placement === id)
+      if (!boxes.length) return this.clear()
+      for (const { box: b } of boxes) {
+        const pad = TILE_PX
         for (
-          let cx = Math.floor((r.tx - 1) / CHUNK_TILES);
-          cx <= Math.floor((r.tx + r.tw) / CHUNK_TILES);
-          cx++
+          let cy = Math.floor((b.y - pad) / CHUNK_PX);
+          cy <= Math.floor((b.y + b.h + pad) / CHUNK_PX);
+          cy++
         )
-          for (const layer of ['base', 'overhead'] as const) this.drop(`${layer}:${cx}:${cy}`)
+          for (
+            let cx = Math.floor((b.x - pad) / CHUNK_PX);
+            cx <= Math.floor((b.x + b.w + pad) / CHUNK_PX);
+            cx++
+          )
+            this.drop(`${cx}:${cy}`)
+      }
     }
   }
 
-  /** Every tile drawing changed (atlas loaded). */
+  /** Every drawing changed (atlas loaded). */
   clear(): void {
     for (const k of [...this.chunks.keys()]) this.drop(k)
   }
@@ -188,24 +212,18 @@ export class ChunkCache {
     this.chunks.delete(key)
   }
 
-  /** Draws the visible chunks of a layer (the context is in world px). Returns the count drawn. */
-  draw(ctx: CanvasRenderingContext2D, layer: Layer, v: ViewRect): number {
+  /** Draws the visible chunks (the context is in world px). Returns the count drawn. */
+  draw(ctx: CanvasRenderingContext2D, v: ViewRect): number {
     const m = this.map
     if (!m) return 0
     let n = 0
     const cx0 = Math.max(0, Math.floor(v.x / CHUNK_PX))
     const cy0 = Math.max(0, Math.floor(v.y / CHUNK_PX))
-    const cx1 = Math.min(
-      Math.ceil(m.widthTiles / CHUNK_TILES) - 1,
-      Math.floor((v.x + v.w) / CHUNK_PX),
-    )
-    const cy1 = Math.min(
-      Math.ceil(m.heightTiles / CHUNK_TILES) - 1,
-      Math.floor((v.y + v.h) / CHUNK_PX),
-    )
+    const cx1 = Math.min(Math.ceil(m.widthPx / CHUNK_PX) - 1, Math.floor((v.x + v.w) / CHUNK_PX))
+    const cy1 = Math.min(Math.ceil(m.heightPx / CHUNK_PX) - 1, Math.floor((v.y + v.h) / CHUNK_PX))
     for (let cy = cy0; cy <= cy1; cy++)
       for (let cx = cx0; cx <= cx1; cx++) {
-        const c = this.chunk(layer, cx, cy)
+        const c = this.chunk(cx, cy)
         if (!c) continue
         ctx.drawImage(c, cx * CHUNK_PX, cy * CHUNK_PX)
         n++
@@ -213,52 +231,75 @@ export class ChunkCache {
     return n
   }
 
-  private chunk(layer: Layer, cx: number, cy: number): HTMLCanvasElement | null {
-    const key = `${layer}:${cx}:${cy}`
+  private chunk(cx: number, cy: number): HTMLCanvasElement | null {
+    const key = `${cx}:${cy}`
     if (this.chunks.has(key)) return this.chunks.get(key)!
     const m = this.map!
     const canvas = this.pool.pop() ?? document.createElement('canvas')
     canvas.width = CHUNK_PX
     canvas.height = CHUNK_PX
     const c = canvas.getContext('2d')!
+    c.setTransform(1, 0, 0, 1, 0, 0)
     c.clearRect(0, 0, CHUNK_PX, CHUNK_PX)
     c.imageSmoothingEnabled = false
-    let any = false
-    const layers = layer === 'base' ? [m.layers.floor, m.layers.walls] : [m.layers.overhead]
-    for (let ty = 0; ty < CHUNK_TILES; ty++) {
-      const y = cy * CHUNK_TILES + ty
-      if (y >= m.heightTiles) break
-      for (let tx = 0; tx < CHUNK_TILES; tx++) {
-        const x = cx * CHUNK_TILES + tx
-        if (x >= m.widthTiles) break
-        for (let l = 0; l < layers.length; l++) {
-          const id = layers[l]![y * m.widthTiles + x]!
-          if (!id) continue
-          const wl = layers[l]!
-          const at = (xx: number, yy: number) =>
-            xx >= 0 &&
-            yy >= 0 &&
-            xx < m.widthTiles &&
-            yy < m.heightTiles &&
-            wl[yy * m.widthTiles + xx]! > 0
-          // Connected walls (N=1 E=2 S=4 W=8) for the atlas wall-top set.
-          const mask =
-            l === 0 && layer === 'base'
-              ? 0
-              : (at(x, y - 1) ? 1 : 0) |
-                (at(x + 1, y) ? 2 : 0) |
-                (at(x, y + 1) ? 4 : 0) |
-                (at(x - 1, y) ? 8 : 0)
-          this.tiles.draw(c, id, tx * TILE_PX, ty * TILE_PX, x, y, mask)
-          any = true
-        }
+    const ox = cx * CHUNK_PX
+    const oy = cy * CHUNK_PX
+    const tx0 = cx * CHUNK_TILES
+    const ty0 = cy * CHUNK_TILES
+    const tx1 = Math.min(m.widthTiles, tx0 + CHUNK_TILES)
+    const ty1 = Math.min(m.heightTiles, ty0 + CHUNK_TILES)
+    // 1. Every cell's own floor (streets, gaps between rooms).
+    for (let y = ty0; y < ty1; y++)
+      for (let x = tx0; x < tx1; x++) {
+        const id = m.layers.floor[y * m.widthTiles + x]!
+        if (id) this.tiles.draw(c, id, x * TILE_PX - ox, y * TILE_PX - oy, x, y)
       }
+    // 2. Each room's floor clipped to its exact box: cells straddling two rooms split at the wall.
+    for (const r of m.rooms) {
+      const id = this.floors.get(r.id)
+      const b = r.box
+      if (!id || b.x >= ox + CHUNK_PX || b.y >= oy + CHUNK_PX || b.x + b.w <= ox || b.y + b.h <= oy)
+        continue
+      c.save()
+      c.beginPath()
+      c.rect(b.x - ox, b.y - oy, b.w, b.h)
+      c.clip()
+      for (
+        let y = Math.max(ty0, Math.floor(b.y / TILE_PX));
+        y < Math.min(ty1, Math.ceil((b.y + b.h) / TILE_PX));
+        y++
+      )
+        for (
+          let x = Math.max(tx0, Math.floor(b.x / TILE_PX));
+          x < Math.min(tx1, Math.ceil((b.x + b.w) / TILE_PX));
+          x++
+        ) {
+          // Cells wholly inside the room already show its floor.
+          const inside =
+            x * TILE_PX >= b.x &&
+            y * TILE_PX >= b.y &&
+            (x + 1) * TILE_PX <= b.x + b.w &&
+            (y + 1) * TILE_PX <= b.y + b.h
+          if (inside && m.layers.floor[y * m.widthTiles + x] === id) continue
+          this.tiles.draw(c, id, x * TILE_PX - ox, y * TILE_PX - oy, x, y)
+        }
+      c.restore()
     }
-    if (!any && layer === 'overhead') {
-      this.pool.push(canvas)
-      this.chunks.set(key, null)
-      return null
+    // 3. Flat walls (no ¾ face) are part of the floor plan; faced walls y-sort with characters.
+    c.translate(-ox, -oy)
+    for (const w of m.walls) {
+      const b = w.box
+      if (
+        !flatWall(w) ||
+        b.x >= ox + CHUNK_PX ||
+        b.y >= oy + CHUNK_PX ||
+        b.x + b.w <= ox ||
+        b.y + b.h <= oy
+      )
+        continue
+      this.paintWall(c, w)
     }
+    c.setTransform(1, 0, 0, 1, 0, 0)
     this.chunks.set(key, canvas)
     return canvas
   }

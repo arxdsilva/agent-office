@@ -1,6 +1,6 @@
-// 2D input: WASD/arrows (the last pressed axis wins, GBA style), Shift to run, E/Enter to interact,
-// O for the overview, Space to bring the camera back, Esc, the wheel to zoom, click and hover on the
-// canvas. M and J belong to the HUD (DOM). Keys are ignored while suspended (a modal is open), while
+// 2D input: WASD/arrows (the last pressed axis wins, GBA style), Shift to sprint, R to toggle
+// running, E/Enter to interact, O for the overview, Space to bring the camera back, Esc, the wheel
+// and - / = (+) to zoom, click and hover on the canvas. M and J belong to the HUD (DOM). Keys are ignored while suspended (a modal is open), while
 // any <dialog> is open (e.g. the stop confirm), or while typing in a field. Non-modal panels
 // (the agent panel, the Library drawer) don't stop the player.
 import type { Dir4 } from '../../app/pixel/types.ts'
@@ -22,6 +22,10 @@ export interface InputHandlers {
   escape(): void
   /** The wheel, with where the pointer is (the overview zooms in at that point). */
   zoom(delta: 1 | -1, clientX: number, clientY: number): void
+  /** `-` (out) or `=` / `+` (in). */
+  zoomKey(delta: 1 | -1): void
+  /** R: toggle running as the default pace. */
+  toggleRun(): void
   /** Space: the camera returns to the player. */
   space(): void
   click(clientX: number, clientY: number): void
@@ -41,11 +45,19 @@ const typing = (t: EventTarget | null) =>
 const activates = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('button, a, summary, [role="button"]')
 
+const ZOOM: Record<string, 1 | -1> = {
+  Minus: -1,
+  NumpadSubtract: -1,
+  Equal: 1,
+  NumpadAdd: 1,
+}
+
 const modalOpen = () => typeof document !== 'undefined' && !!document.querySelector('dialog[open]')
 
 export class PixelInput {
   /** Pressed movement keys, oldest first. */
   private held: string[] = []
+  /** Shift is held (sprint). */
   run = false
   suspended = false
   lastInputAt = -Infinity
@@ -117,6 +129,13 @@ export class PixelInput {
     if (e.code === 'KeyE' || e.code === 'Enter') {
       this.mark()
       this.h.interact()
+    } else if (ZOOM[e.code] && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault()
+      this.mark()
+      this.h.zoomKey(ZOOM[e.code]!)
+    } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      this.mark()
+      this.h.toggleRun()
     } else if (e.code === 'KeyO') {
       this.mark()
       this.h.overview()

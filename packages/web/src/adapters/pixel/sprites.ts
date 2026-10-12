@@ -5,6 +5,8 @@
 // back to procedural drawing, so the 2D view always renders.
 import type { Appearance } from '../../app/motion.ts'
 import type { PropName } from '../../app/office-types.ts'
+import { walkFps } from '../../app/pixel/anim.ts'
+import { FrameLru } from '../../app/pixel/frame-lru.ts'
 import type { TileQuery } from '../../app/pixel/map.ts'
 import type { Dir4, PixelAnim, SpriteFoot } from '../../app/pixel/types.ts'
 import { objectArt, spriteFootOf } from './object-art.ts'
@@ -45,6 +47,11 @@ interface RawVariant {
   frame: string
   themed?: boolean
   foot?: [number, number]
+  /** Base in px (16 px per metre); `foot` × 16 when absent. */
+  footPx?: [number, number]
+  stretch?: [number, number]
+  stretchY?: [number, number]
+  screen?: [number, number, number, number]
   placeholder?: boolean
 }
 /** Object variants: facings (s/n/e/w), `v` (vertical art) and named states (booth-lamp on/off, …). */
@@ -54,7 +61,13 @@ export interface RawAtlas {
   frames?: Record<string, RawFrame>
   tileIds?: Record<string, number>
   tiles?: ({ frame: string } | null)[]
-  tileSets?: { wallTop?: Record<string, string>; wallFace?: Record<string, [string, string]> }
+  tileSets?: {
+    /** Thin-wall frames per wall kind (`solid`, `glass`): tops, end posts, the ¾ face and its caps. */
+    thinWall?: Record<
+      string,
+      { topH: string; topV: string; post: string; face: string; faceL: string; faceR: string }
+    >
+  }
   objects?: Record<string, { variants: RawVariants }>
   characters?: {
     layers?: string[]
@@ -70,7 +83,8 @@ export interface RawAtlas {
     glyphs?: Record<string, { frame: string; w: number; advance: number }>
     lineHeight?: number
   }
-  themes?: Record<string, { floor?: string }>
+  /** Theme floor and colour slots (W V U wall ramp, T trim, F floor, A B accents). */
+  themes?: Record<string, { floor?: string; colors?: Record<string, string> }>
   palettes?: { ramps?: Record<string, Record<string, string[]>> }
   placeholders?: string[]
 }
@@ -98,40 +112,34 @@ export class Atlas {
       : null
   }
 
-  /** A tile frame by name, themed first (`name@theme`). */
+  /** A tile frame by name, themed first (`name@theme`, then `name`, then `name@house`). */
   tileFrame(name: string, theme?: string): AtlasFrame | null {
     const ids = this.raw.tileIds ?? {}
-    const id = (theme && ids[`${name}@${theme}`]) || ids[name]
+    const id = (theme && ids[`${name}@${theme}`]) || ids[name] || ids[`${name}@house`]
     const t = id ? this.raw.tiles?.[id] : undefined
     return t ? this.frame(t.frame) : null
   }
 
-  /** The atlas tile for a map query (null: draw the procedural one). `mask`: connected walls. */
-  tile(q: TileQuery, mask: number): AtlasFrame | null {
+  /**
+   * The atlas floor tile for a map query (null: draw the procedural one). Walls are no longer
+   * tiles at GBA scale: they're drawn from `PixelMap.walls` (`effects.drawWall`).
+   */
+  tile(q: TileQuery): AtlasFrame | null {
+    if (q.layer !== 'floor') return null
     const theme = q.theme
-    if (q.layer === 'floor') {
-      const name =
-        q.kind === 'street'
-          ? 'floor/path'
-          : q.kind === 'default'
-            ? (this.raw.themes?.[theme ?? 'house']?.floor ?? 'floor/terrazzo')
-            : `floor/${q.kind}`
-      return this.tileFrame(name, theme)
-    }
-    if (q.kind === 'door') {
-      return q.layer === 'overhead' ? this.tileFrame('wall/face-hi', theme) : null
-    }
-    const kind = q.kind === 'window' ? 'window' : q.kind
-    if (q.edge === 'v') {
-      const top = this.raw.tileSets?.wallTop?.[kind] ?? 'wall/top-%mask%'
-      return (
-        this.tileFrame(top.replace('%mask%', String(mask)), theme) ??
-        this.tileFrame(top.replace('-%mask%', ''), theme)
-      )
-    }
-    const face = this.raw.tileSets?.wallFace?.[kind]
-    if (!face) return null
-    return this.tileFrame(q.layer === 'overhead' ? face[0] : face[1], theme)
+    const name =
+      q.kind === 'street'
+        ? 'floor/path'
+        : q.kind === 'default'
+          ? (this.raw.themes?.[theme ?? 'house']?.floor ?? 'floor/terrazzo')
+          : `floor/${q.kind}`
+    return this.tileFrame(name, theme)
+  }
+
+  /** A theme's colour slot (`W`, `V`, `U`, `T`, …), the house theme's, else undefined. */
+  themeColor(theme: string | undefined, slot: string): string | undefined {
+    const t = this.raw.themes
+    return (theme && t?.[theme]?.colors?.[slot]) || t?.house?.colors?.[slot]
   }
 
   /**
@@ -140,6 +148,11 @@ export class Atlas {
    * `named` picks a state variant (booth-lamp `on`/`off`, elevator-door `closed`/`open-1`…).
    * Themed frames use `frame@theme`, falling back to the house theme outside wings.
    */
+  /** True when the atlas has a named variant (e.g. `planter@area`) for `kind`. */
+  hasObjectVariant(kind: string, variant: string): boolean {
+    return !!this.raw.objects?.[kind]?.variants?.[variant]
+  }
+
   object(
     kind: string,
     theme?: string,
@@ -167,7 +180,12 @@ export class Atlas {
       (art.themed
         ? ((theme ? this.frame(`${art.frame}@${theme}`) : null) ?? this.frame(`${art.frame}@house`))
         : null) ?? this.frame(art.frame)
-    return f && { ...f, foot: art.foot, rotated: art.rotated }
+    if (!f) return null
+    const out: ObjectFrame = { ...f, footPx: art.footPx, rotated: art.rotated }
+    if (art.stretch) out.stretch = art.stretch
+    if (art.stretchY) out.stretchY = art.stretchY
+    if (art.screen) out.screen = art.screen
+    return out
   }
 
   /** The pose ref (e.g. 'walk-a-s') `t` seconds into an animation, with its alpha. */
@@ -205,10 +223,16 @@ export class Atlas {
   }
 }
 
-/** A frame plus the footprint (tiles) its art covers; `rotated`: draw the footprint turned 90°. */
+/**
+ * A frame plus its base (px, the box it sits on); `rotated`: draw the base turned 90°. `stretch` /
+ * `stretchY`: end columns / rows kept when the art fills a longer box; `screen`: the status screen.
+ */
 export interface ObjectFrame extends AtlasFrame {
-  foot: [number, number]
+  footPx: [number, number]
   rotated: boolean
+  stretch?: [number, number]
+  stretchY?: [number, number]
+  screen?: [number, number, number, number]
 }
 
 /** `spriteFootOf` for a loaded atlas (what the scene passes to `buildPixelMap`). */
@@ -277,6 +301,12 @@ export const ANIM_FPS: Record<PixelAnim, number> = {
   'elevator-out': 1,
 }
 
+/**
+ * How fast the walk cycle plays at a ground speed (m/s), relative to its authored rate (8 fps, the
+ * atlas' 133 ms frames): `walkFps` from the on-screen speed, so feet never slide at any speed.
+ */
+export const walkRate = (speed: number) => walkFps(speed) / ANIM_FPS.walk
+
 export interface Look extends Appearance {
   /** The player's "operator" outfit: a cap and a jacket. */
   player?: boolean
@@ -316,10 +346,20 @@ export interface CharFrame {
   alpha: number
 }
 
-/** Per-look frame canvases, least recently used looks evicted past 64. */
+/**
+ * Per-look frame canvases, least recently used looks evicted past 64, but never a look drawn in the
+ * last frame (zoomed out, more than 64 agents can be on screen; see `FrameLru`).
+ */
 export class CharacterSprites {
-  private looks = new Map<string, Map<string, HTMLCanvasElement>>()
+  private looks = new FrameLru<Map<string, HTMLCanvasElement>>(LRU_KEYS, (_k, frames) => {
+    for (const c of frames.values()) c.width = c.height = 0
+  })
   private atlas: Atlas | null = null
+
+  /** Call once per rendered frame, before drawing characters. */
+  nextFrame(): void {
+    this.looks.nextFrame()
+  }
 
   setAtlas(atlas: Atlas | null): void {
     this.atlas = atlas
@@ -363,23 +403,7 @@ export class CharacterSprites {
   }
 
   private framesOf(key: string): Map<string, HTMLCanvasElement> {
-    let frames = this.looks.get(key)
-    if (frames) {
-      this.looks.delete(key)
-      this.looks.set(key, frames)
-      return frames
-    }
-    frames = new Map()
-    this.looks.set(key, frames)
-    if (this.looks.size > LRU_KEYS) {
-      const [oldest, old] = this.looks.entries().next().value as [
-        string,
-        Map<string, HTMLCanvasElement>,
-      ]
-      for (const c of old.values()) c.width = c.height = 0
-      this.looks.delete(oldest)
-    }
-    return frames
+    return this.looks.get(key, () => new Map())
   }
 
   /** Stacks the recoloured layers of one pose (plus props) into a 16×24 canvas. */
@@ -461,12 +485,11 @@ export class CharacterSprites {
 
   count(): number {
     let n = 0
-    for (const f of this.looks.values()) n += f.size
+    this.looks.forEach((f) => (n += f.size))
     return n
   }
 
   clear(): void {
-    for (const f of this.looks.values()) for (const c of f.values()) c.width = c.height = 0
     this.looks.clear()
   }
 }

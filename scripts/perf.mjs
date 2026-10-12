@@ -16,6 +16,7 @@ const HELP = `Usage: node scripts/perf.mjs [options]
   --view <id>        camera bookmark while sampling (default overview)
   --low-end          CPU rendering (SwiftShader via AGENT_OFFICE_FORCE_SOFTWARE_GL=1), DPR 1
   --mode <3d|pixel>  view mode (default 3d; pixel = the 2D RPG mode, sampled at the claude-code wing)
+  --zoom-out         2D only: sample at the most zoomed-out level (the most on screen)
   -h, --help         this text
 
 Columns: avg fps (rAF), 1% low (rAF), rendered (the scene's own fps; frame pacing caps it),
@@ -32,6 +33,7 @@ const { values: args } = parseArgs({
     view: { type: 'string', default: 'overview' },
     'low-end': { type: 'boolean', default: false },
     mode: { type: 'string', default: '3d' },
+    'zoom-out': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
 })
@@ -68,6 +70,8 @@ async function measure(preset) {
           : window.__aoDebug.bookmark('wing:claude-code:0'),
       args.view,
     )
+    // 2D: step all the way out (- clamps at one device px per art px).
+    if (args['zoom-out']) for (let i = 0; i < 8; i++) await win.keyboard.press('-')
     await win.waitForTimeout(2000)
 
     const sample = await win.evaluate(async (seconds) => {

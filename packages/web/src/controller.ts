@@ -1279,6 +1279,19 @@ export function createController(d: ControllerDeps) {
     d.scene.onRoom?.((name) => void (room = name))
     d.scene.onPlayerMove?.((pos) => void (playerPos = pos))
     d.scene.onCamera?.((v) => void (cameraView = v))
+    // Zoom (− ⌂ +) and the run toggle: the HUD control drives the scene; the scene's state shows in the HUD.
+    let zoomState = { level: 0, levels: 1, atDefault: true }
+    let running = false
+    const showZoom = () => d.pixelHud?.renderZoom?.({ ...zoomState, run: running })
+    d.pixelHud?.onZoom?.((delta) => d.scene.zoomBy?.(delta))
+    d.scene.onZoom?.((z) => {
+      zoomState = z
+      showZoom()
+    })
+    d.scene.onRun?.((on) => {
+      running = on
+      showZoom()
+    })
     d.dialogue?.onAction(onDialogueAction)
     d.dialogue?.onClose(() => {
       dialogueAt = null

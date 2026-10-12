@@ -282,8 +282,25 @@ describe('parseManifest plan (2D floor plan)', () => {
     expect(m.modules.cap.plan!.walls[0]).toEqual({ a: [-3, 0.5], b: [3, 0.5], kind: 'curtain' })
   })
 
+  it('keeps a wall body side and thickness (contract §11), so 2D walls sit where 3D draws them', () => {
+    const j = json()
+    j.modules.wing.plan = {
+      ...plan(),
+      walls: [{ a: [0, 0], b: [4, 0], kind: 'solid', side: -1, thick: 0.15 }],
+    }
+    expect(parseManifest(j).modules.wing.plan!.walls[0]).toEqual({
+      a: [0, 0],
+      b: [4, 0],
+      kind: 'solid',
+      side: -1,
+      thick: 0.15,
+    })
+  })
+
   it('names the offending path', () => {
     const cases: [(p: Json) => void, string][] = [
+      [(p) => (p.walls[0].side = 2), 'modules.wing.plan.walls[0].side'],
+      [(p) => (p.walls[0].thick = -1), 'modules.wing.plan.walls[0].thick'],
       [(p) => (p.rooms[0].rect = [0, 0, 4]), 'modules.wing.plan.rooms[0].rect'],
       [(p) => (p.rooms[0].id = ''), 'modules.wing.plan.rooms[0].id'],
       [(p) => (p.walls[0].kind = 'brick'), 'modules.wing.plan.walls[0].kind'],

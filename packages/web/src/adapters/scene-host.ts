@@ -43,6 +43,8 @@ const LISTENERS = [
   'onPlayerMove',
   'onCamera',
   'onMinimapBase',
+  'onZoom',
+  'onRun',
   'onFrameStats',
 ] as const
 type ListenerName = (typeof LISTENERS)[number]
@@ -286,6 +288,18 @@ export class SceneHost implements SceneView {
     fn: (img: CanvasImageSource, widthTiles: number, heightTiles: number) => void,
   ): void {
     this.listen('onMinimapBase', fn)
+  }
+
+  zoomBy(delta: -1 | 0 | 1): void {
+    this.scene.zoomBy?.(delta)
+  }
+
+  onZoom(fn: (z: { level: number; levels: number; atDefault: boolean }) => void): void {
+    this.listen('onZoom', fn)
+  }
+
+  onRun(fn: (on: boolean) => void): void {
+    this.listen('onRun', fn)
   }
 
   // ── Adapter-level extras (main.ts) ──

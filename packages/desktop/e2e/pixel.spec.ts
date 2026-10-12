@@ -380,6 +380,16 @@ interface PixelMapDebug {
   originM: { x: number; z: number } | null
   tiles: { w: number; h: number } | null
   entities: { id: string; visible: boolean }[]
+  /** 16 at GBA scale: tiles are 16 px, so one tile is 16 / pxPerMetre metres. */
+  pxPerMetre?: number
+  zoom?: number
+  run?: boolean
+}
+interface PxRect {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 interface DebugObject {
   id: string
@@ -387,11 +397,14 @@ interface DebugObject {
   rect: TileRect
   room?: string
   orientation?: 'h' | 'v'
+  /** The footprint in map px (drawn base = solid box). */
+  box?: PxRect
 }
 interface DebugRoom {
   id: string
   name: string
   rect: TileRect
+  box?: PxRect
   placement: string
 }
 type MapWindow = {
@@ -415,8 +428,11 @@ const teleport = (win: Page, x: number, z: number) =>
     ([x, z]) => (window as unknown as MapWindow).__aoDebug.pixelTeleport(x!, z!, 's'),
     [x, z],
   )
-const inside = (a: TileRect, b: TileRect) =>
-  a.tx >= b.tx && a.ty >= b.ty && a.tx + a.tw <= b.tx + b.tw && a.ty + a.th <= b.ty + b.th
+/** Pixel boxes, with 2 px of slack for rounding. */
+const insidePx = (a: PxRect, b: PxRect) =>
+  a.x >= b.x - 2 && a.y >= b.y - 2 && a.x + a.w <= b.x + b.w + 2 && a.y + a.h <= b.y + b.h + 2
+/** Metres per map tile (1 at GBA scale). */
+const tileM = (s: PixelMapDebug) => 16 / (s.pxPerMetre ?? 32)
 /** Holds `key` and returns how far the player moved (m). */
 async function walked(win: Page, key: string, ms: number): Promise<{ dx: number; dz: number }> {
   const a = (await state(win)).player
@@ -450,8 +466,8 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
   if (lobby && s0.originM)
     await teleport(
       win,
-      s0.originM.x + (lobby.rect.tx + lobby.rect.tw / 2) * 0.5,
-      s0.originM.z + (lobby.rect.ty + lobby.rect.th / 2) * 0.5,
+      s0.originM.x + (lobby.rect.tx + lobby.rect.tw / 2) * tileM(s0),
+      s0.originM.z + (lobby.rect.ty + lobby.rect.th / 2) * tileM(s0),
     )
 
   await test.step('MV-1: the player walks while the overview stays open', async () => {
@@ -531,8 +547,8 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
     // Click the map's centre: the camera pans to the map's centre (± the clamp at the edges).
     const s = await state(win)
     await win.locator('#minimap-canvas').click({ position: { x: 160, y: 140 } })
-    const cx = s.originM!.x + (s.tiles!.w / 2) * 0.5
-    const cz = s.originM!.z + (s.tiles!.h / 2) * 0.5
+    const cx = s.originM!.x + (s.tiles!.w / 2) * tileM(s)
+    const cz = s.originM!.z + (s.tiles!.h / 2) * tileM(s)
     await expect
       .poll(async () => {
         const v = (await state(win)).view!
@@ -555,23 +571,24 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
       .sort((a, b) => a.rect.ty - b.rect.ty)
     expect(streets.length).toBeGreaterThan(0)
     const north = streets[0]!
-    const o = (await state(win)).originM!
+    const st = await state(win)
+    const o = st.originM!
     await teleport(
       win,
-      o.x + (north.rect.tx + north.rect.tw / 2) * 0.5,
-      o.z + north.rect.ty * 0.5 + 1,
+      o.x + (north.rect.tx + north.rect.tw / 2) * tileM(st),
+      o.z + north.rect.ty * tileM(st) + 1,
     )
     await blur(win)
-    // 6 s of S at walking speed (1.4 m/s): at least 7 m south, no invisible barriers.
+    // 6 s of S at walking speed (3 m/s): at least 12 m south, no invisible barriers.
     const d = await walked(win, 's', 6000)
-    expect(d.dz).toBeGreaterThanOrEqual(7)
+    expect(d.dz).toBeGreaterThanOrEqual(12)
   })
 
   await test.step('PC-2: vertical meeting tables use their vertical art', async () => {
     const tables = (await objects(win)).filter((o) => o.kind === 'meeting-table')
     expect(tables.length).toBeGreaterThan(0)
-    // A table taller than wide is drawn with the 'v' variant (its rect is the drawn sprite).
-    for (const t of tables) if (t.rect.th > t.rect.tw) expect(t.orientation, t.id).toBe('v')
+    // A table taller than wide is drawn with the 'v' variant (its box is the drawn base).
+    for (const t of tables) if (t.box!.h > t.box!.w) expect(t.orientation, t.id).toBe('v')
     expect(tables.some((t) => t.orientation === 'v')).toBe(true)
   })
 
@@ -582,8 +599,40 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
     for (const k of kitchens) {
       const mine = counters.filter((c) => c.room === k.id)
       expect(mine.length, k.id).toBeGreaterThan(0)
-      for (const c of mine) expect(inside(c.rect, k.rect), `${c.id} in ${k.id}`).toBe(true)
+      for (const c of mine) expect(insidePx(c.box!, k.box!), `${c.id} in ${k.id}`).toBe(true)
     }
+  })
+
+  await test.step('ZM-1: - zooms out in crisp steps; the player still walks; ⌂ returns to the default', async () => {
+    await blur(win)
+    const s0 = await state(win)
+    const before = s0.view!
+    // Two steps out: fewer device px per art px (crisp integer levels), and a much wider view
+    // (the view stops growing once the whole office fits, so ≥ 1.5×, not 2×).
+    await win.keyboard.press('-')
+    await win.keyboard.press('-')
+    await expect.poll(async () => (await state(win)).zoom!).toBeLessThan(s0.zoom!)
+    await expect.poll(async () => (await state(win)).view!.w / before.w).toBeGreaterThanOrEqual(1.5)
+    expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
+    // The HUD's ⌂ button returns to the default zoom.
+    await win.locator('#pixel-zoom [data-zoom="0"]').click()
+    await expect.poll(async () => Math.round((await state(win)).view!.w)).toBe(Math.round(before.w))
+  })
+
+  await test.step('RUN-1: walking covers 2.5 m/s; R makes running the default (≥ 4 m/s)', async () => {
+    // Back to the middle of the plaza, which has room to walk east and west.
+    const s1 = await state(win)
+    const cx = s1.originM!.x + (lobby!.rect.tx + lobby!.rect.tw / 2) * tileM(s1)
+    const cz = s1.originM!.z + (lobby!.rect.ty + lobby!.rect.th / 2) * tileM(s1)
+    await teleport(win, cx, cz)
+    await blur(win)
+    expect((await walked(win, 'd', 1000)).dx).toBeGreaterThanOrEqual(2.5)
+    // R toggles running on; the same second of A now covers at least 4 m.
+    await teleport(win, cx, cz)
+    await win.keyboard.press('r')
+    await expect.poll(async () => (await state(win)).run).toBe(true)
+    expect(-(await walked(win, 'a', 1000)).dx).toBeGreaterThanOrEqual(4)
+    await win.keyboard.press('r')
   })
 
   expect(errors).toEqual([])

@@ -110,6 +110,12 @@ export interface SceneView {
   travelTo?(target: { agentId?: string; viewId?: string; pos?: { x: number; z: number } }): void
   /** 2D: pan the camera to a world point (minimap click); any movement key returns it to the player. */
   panTo?(pos: { x: number; z: number }): void
+  /** 2D: step the zoom out (−1) or in (+1), or back to the default (0); crisp integer levels. */
+  zoomBy?(delta: -1 | 0 | 1): void
+  /** 2D: the zoom level changed (`level` index, `levels` count, `atDefault`). */
+  onZoom?(fn: (z: { level: number; levels: number; atDefault: boolean }) => void): void
+  /** 2D: the run toggle changed (R). */
+  onRun?(fn: (on: boolean) => void): void
 }
 
 export interface SceneSurfaces {
@@ -305,6 +311,10 @@ export interface PixelHudView {
   onMinimapPick(fn: (tx: number, ty: number, opts?: { travel?: boolean }) => void): void
   onDirectory(fn: (pick: { agentId?: string; viewId?: string; travel: boolean }) => void): void
   onDirectorySearch(fn: (q: string) => void): void
+  /** The zoom control (− ⌂ +): −1 out, +1 in, 0 back to the default. */
+  onZoom?(fn: (delta: -1 | 0 | 1) => void): void
+  /** Reflects the scene's zoom level and the run toggle in the HUD. */
+  renderZoom?(z: { level: number; levels: number; atDefault: boolean; run: boolean }): void
 }
 
 /** The `3D Office | 2D RPG` switch in #actions. */

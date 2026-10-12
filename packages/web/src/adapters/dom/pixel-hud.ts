@@ -1,5 +1,6 @@
 // PixelHudView port → the 2D mode's DOM overlay (plan §9):
-//   #pixel-hud     room name, counts and the selected-agent chip (top-left)
+//   #pixel-hud     room name, counts, the selected-agent chip (top-left), the M/J toggles and the
+//                  zoom control (#pixel-zoom: − ⌂ +, plus the R run hint / "Run: on")
 //   #pixel-alerts  clickable waiting / approval / error alerts (top-right, max 4 + "+N")
 //   #minimap       a 320×280 map: the scene's base image (rooms, walls, furniture), the camera
 //                  viewport, agents in status colours, you, wing/room labels and a legend.
@@ -21,6 +22,18 @@ const LEGEND: { kind: string; mark: string; text: string }[] = [
   { kind: 'error', mark: '✖', text: 'error' },
   { kind: 'you', mark: '■', text: 'you' },
 ]
+
+/** The zoom control's copy (kept here: the HUD owns its own small labels). */
+const ZOOM_COPY = {
+  group: 'Zoom',
+  buttons: [
+    { delta: -1, text: '−', label: 'Zoom out (-)' },
+    { delta: 0, text: '⌂', label: 'Default zoom' },
+    { delta: 1, text: '+', label: 'Zoom in (+)' },
+  ],
+  runOff: 'R: run',
+  runOn: 'Run: on',
+} as const
 
 type DirectoryPick = { agentId?: string; viewId?: string; travel: boolean }
 
@@ -55,6 +68,10 @@ export class DomPixelHud implements PixelHudView {
   private mapFn: (tx: number, ty: number, opts?: { travel?: boolean }) => void = () => {}
   private dirFn: (pick: DirectoryPick) => void = () => {}
   private searchFn: (q: string) => void = () => {}
+  private zoomFn: (delta: -1 | 0 | 1) => void = () => {}
+  private zoomBox: HTMLElement
+  private zoomButtons = new Map<-1 | 0 | 1, HTMLButtonElement>()
+  private runHint: HTMLElement
 
   constructor() {
     byId('minimap-title').textContent = PIXEL_COPY.minimap.title
@@ -64,6 +81,25 @@ export class DomPixelHud implements PixelHudView {
     this.bindToggle('ph-map-btn', PIXEL_COPY.minimap.toggle, () => this.toggleMinimap())
     this.bindToggle('ph-dir-btn', PIXEL_COPY.directory.toggle, () => this.toggleDirectory())
     byId('dir-close').addEventListener('click', () => this.setDirectory(false))
+    // The zoom control sits next to the M/J toggles.
+    this.zoomBox = el('span', undefined, 'ph-zoom')
+    this.zoomBox.id = 'pixel-zoom'
+    this.zoomBox.setAttribute('role', 'group')
+    this.zoomBox.setAttribute('aria-label', ZOOM_COPY.group)
+    this.zoomBox.dataset.run = 'false'
+    for (const z of ZOOM_COPY.buttons) {
+      const b = el('button', z.text, 'ph-tool ph-zoom-btn')
+      b.type = 'button'
+      b.dataset.zoom = String(z.delta)
+      b.title = z.label
+      b.setAttribute('aria-label', z.label)
+      b.addEventListener('click', () => this.zoomFn(z.delta))
+      this.zoomButtons.set(z.delta, b)
+      this.zoomBox.append(b)
+    }
+    this.runHint = el('span', ZOOM_COPY.runOff, 'ph-run')
+    this.zoomBox.append(this.runHint)
+    byId('ph-dir-btn').after(this.zoomBox)
     this.search.addEventListener('input', () => this.searchFn(this.search.value))
     this.directory.addEventListener('keydown', (e) => {
       // Typing in the directory never moves the player.
@@ -116,6 +152,19 @@ export class DomPixelHud implements PixelHudView {
   }
   onDirectorySearch(fn: (q: string) => void): void {
     this.searchFn = fn
+  }
+  onZoom(fn: (delta: -1 | 0 | 1) => void): void {
+    this.zoomFn = fn
+  }
+
+  /** − is disabled at the most zoomed-out level (0), + at the most zoomed-in, ⌂ at the default. */
+  renderZoom(z: { level: number; levels: number; atDefault: boolean; run: boolean }): void {
+    this.zoomButtons.get(-1)!.disabled = z.level <= 0
+    this.zoomButtons.get(1)!.disabled = z.level >= z.levels - 1
+    this.zoomButtons.get(0)!.disabled = z.atDefault
+    this.zoomBox.dataset.level = String(z.level)
+    this.zoomBox.dataset.run = String(z.run)
+    this.runHint.textContent = z.run ? ZOOM_COPY.runOn : ZOOM_COPY.runOff
   }
 
   show(on: boolean): void {

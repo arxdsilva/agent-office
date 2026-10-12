@@ -422,6 +422,8 @@ Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same li
 </tr>
 </table>
 
+![Zoomed out in 2D: two wings, Main Street and the atrium on one screen, at crisp whole-pixel scale](docs/screenshots/pixel-zoomed-out.png)
+
 ![The 2D Library: bookshelves for skills and boards for rules](docs/screenshots/pixel-library.png)
 
 - **The same agents, the same places:** agents arrive by elevator, sit at their pod, meet with their subagents, wait in phone booths, visit the Library and the Adapters room, and leave by elevator, exactly as in 3D. The 2D view draws the same decisions.
@@ -430,6 +432,7 @@ Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same li
 - **Never miss a request:** alerts at the top right ("! Ada is waiting for you", "needs approval") take you there. **M** opens the minimap, **J** a directory with fast travel, **O** the overview, and the mouse wheel zooms.
 - **Walk in every view:** you can keep moving while the overview is open, while following an agent, and with the chat panel or Library open (typing in a text field never moves you). **Space** or **Esc** brings the camera back to you.
 - **What you see is what blocks:** furniture collides exactly where it's drawn, walls sit where they are in 3D, and every corridor and door the agents use is walkable.
+- **GBA scale:** 16 px per metre, so one screen shows most of a wing and the office is a short walk across. Every desk, booth and chair is exactly where it is in 3D. Walk at 3 m/s, sprint with Shift, **R** to run by default, and **-** / **=** (or − ⌂ + in the HUD) to zoom out in crisp steps down to most of the office.
 - Original pixel art (no third-party sprites), 16 px tiles, crisp integer scaling. It runs at 120 fps with 36 MB of textures, and works without WebGL.
 
 How it's built (one `SceneView` port, two renderers): [docs/2d-architecture.md](docs/2d-architecture.md).
@@ -577,11 +580,13 @@ The token protects you from websites. It does not protect you from other program
 | Input                                    | Action                                                                       |
 | ---------------------------------------- | ---------------------------------------------------------------------------- |
 | Drag / scroll                            | Orbit and zoom                                                               |
+| WASD or arrow keys (orbit)               | Glide the camera over the office (Shift for faster); stops following         |
 | Click a name tag or agent                | Open the chat and focus the camera                                           |
 | Click a station, book, board or notebook | Open its capability panel                                                    |
 | View bar (bottom)                        | Jump to the atrium, Main Street, a wing, the Adapters room or the Library    |
 | `⤢ Fit`                                  | Frame the whole office                                                       |
 | `F` or `🚶 Walk`                         | First-person mode: WASD to move, Shift to sprint, `E` to talk, `Esc` to exit |
+| 2D: WASD, Shift, `R`                     | Walk, sprint, toggle running; `-` / `=` or the wheel zoom (crisp steps)      |
 | `⚙`                                      | Settings: hook, notifications, open at login, API port, graphics, updates    |
 | Closing the window                       | Keeps running in the tray. Quit from the tray menu or with ⌘Q.               |
 

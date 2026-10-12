@@ -15,6 +15,7 @@ import {
   REQUIRED_TILES,
   SRC,
   THEMES,
+  THIN_WALLS,
   autotileRows,
   buildAtlas,
   encodePng,
@@ -164,5 +165,121 @@ describe('atlas', () => {
   it('is deterministic: the same sources give the same bytes', () => {
     const again = buildAtlas()
     for (const [name, buf] of Object.entries(build.files)) expect(again.files[name]!.equals(buf), name).toBe(true)
+  })
+})
+
+// GBA scale (docs/pixel-style.md §Scale): every object is drawn at its sizes.json size, 16 px per metre.
+interface SizeKind {
+  class: 'fixed' | 'strip' | 'area'
+  base?: [number, number]
+  thickness?: number
+  unit?: number
+  overhang: number
+  v?: boolean
+}
+const SIZES = JSON.parse(readFileSync(join(SRC, 'sizes.json'), 'utf8')) as {
+  pxPerMetre: number
+  kinds: Record<string, SizeKind>
+  walls: { thickness: number; face: number }
+}
+/** Facings drawn on their side: their base is the table's base swapped. */
+const SWAPPED = new Set(['v', 'e', 'w'])
+const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol
+
+describe('scale: 16 px per metre', () => {
+  const variants = () =>
+    Object.entries(build.atlas.objects).flatMap(([kind, o]) => Object.entries(o.variants).map(([facing, v]) => ({ kind, facing, v })))
+  const frameOf = (v: { frame: string; themed: boolean }) => build.atlas.frames[v.themed ? `${v.frame}@house` : v.frame]!
+
+  it('says pxPerMetre: 16 in the header (no more metresPerTile)', () => {
+    expect((build.atlas as unknown as Record<string, unknown>).pxPerMetre).toBe(SIZES.pxPerMetre)
+    expect((build.atlas as unknown as Record<string, unknown>).metresPerTile).toBeUndefined()
+  })
+  it('gives every object variant footPx, foot = ceil(footPx / 16), ay and sortY from footPx', () => {
+    for (const { kind, facing, v } of variants()) {
+      const id = `${kind}@${facing}`
+      expect(v.footPx, id).toHaveLength(2)
+      const [w, h] = v.footPx
+      expect(v.foot, id).toEqual([Math.ceil(w / 16), Math.ceil(h / 16)])
+      const f = frameOf(v)
+      expect(f.h, `${id} frame height`).toBeGreaterThanOrEqual(h)
+      expect(f.w, `${id} frame width`).toBe(w)
+      expect(f.ay, `${id} ay`).toBe(f.h - h)
+      if (!v.flat) expect(v.sortY, `${id} sortY`).toBe(h)
+    }
+  })
+  it('draws every sizes.json kind, at its base (fixed) or thickness and unit (strip), with its overhang', () => {
+    for (const [kind, size] of Object.entries(SIZES.kinds)) {
+      const o = build.atlas.objects[kind]
+      expect(o, kind).toBeDefined()
+      if (size.v) expect(o!.variants['v'], `${kind}@v`).toBeDefined()
+      for (const [facing, v] of Object.entries(o!.variants)) {
+        if (facing === 'area') continue // 9-slice fills: any size (checked below)
+        const id = `${kind}@${facing}`
+        const [w, h] = v.footPx
+        const side = SWAPPED.has(facing)
+        const [long, short] = side ? [h, w] : [w, h]
+        if (size.class === 'fixed') {
+          const [bw, bh] = side ? [size.base![1], size.base![0]] : size.base!
+          expect(near(w, bw, 1) && near(h, bh, 1), `${id} footPx ${w}×${h} vs ${bw}×${bh}`).toBe(true)
+        }
+        if (size.class === 'strip') {
+          // A strip repeats along its long axis: columns (stretch) or, drawn on its side, rows (stretchY).
+          expect(v[side ? 'stretchY' : 'stretch'], `${id} ${side ? 'stretchY' : 'stretch'}`).toHaveLength(2)
+          expect(near(short, size.thickness!, 1), `${id} thickness ${short} vs ${size.thickness}`).toBe(true)
+          expect(near(long, size.unit!, 1), `${id} unit ${long} vs ${size.unit}`).toBe(true)
+        }
+        const over = frameOf(v).h - h
+        expect(near(over, size.overhang, 4), `${id} overhang ${over} vs ${size.overhang}`).toBe(true)
+      }
+    }
+  })
+  it('has 9-slice area fills for planters and benches (garden beds, bleachers): flat-based, edges ≥ 4 px', () => {
+    for (const kind of ['planter', 'bench']) {
+      const v = build.atlas.objects[kind]?.variants['area']
+      expect(v, `${kind}@area`).toBeDefined()
+      expect(v!.area, `${kind}@area meta`).toBe(true)
+      const f = frameOf(v!)
+      expect([f.w, f.h], kind).toEqual(v!.footPx)
+      expect(Math.min(f.w, f.h), kind).toBeGreaterThanOrEqual(12)
+    }
+  })
+  it('keeps every frame name of the 32 px/m art (variants and named states)', () => {
+    const want: Record<string, string[]> = {
+      desk: ['s', 'n', 'e', 'w'],
+      chair: ['s', 'n', 'e', 'w'],
+      sofa: ['s', 'n', 'e', 'w'],
+      armchair: ['s', 'n', 'e', 'w'],
+      'meeting-table': ['s', 'v'],
+      bench: ['s', 'v'],
+      bookshelf: ['s', 'e', 'w'],
+      'kitchen-counter': ['s', 'e', 'w'],
+      'booth-lamp': ['off', 'on'],
+      'elevator-door': ['closed', 'open-1', 'open-2', 'open-3'],
+      door: ['s', 'closed'],
+    }
+    for (const [kind, facings] of Object.entries(want))
+      for (const f of facings) expect(build.atlas.objects[kind]?.variants[f], `${kind}@${f}`).toBeDefined()
+  })
+  it('has the thin-wall set: 4 px tops, a 12 px face, posts and face end caps, solid and glass', () => {
+    const sizes: Record<string, [number, number]> = {
+      'thin-top-h': [16, SIZES.walls.thickness],
+      'thin-top-v': [SIZES.walls.thickness, 16],
+      'thin-post': [SIZES.walls.thickness, SIZES.walls.thickness],
+      'thin-face': [16, SIZES.walls.face],
+      'thin-face-l': [16, SIZES.walls.face],
+      'thin-face-r': [16, SIZES.walls.face],
+    }
+    for (const kind of ['wall', 'glass'])
+      for (const [part, [w, h]] of Object.entries(sizes)) {
+        const name = `${kind}/${part}`
+        const id = build.atlas.tileIds[`${name}@terracotta`] ?? build.atlas.tileIds[name]
+        expect(id, name).toBeGreaterThan(0)
+        const t = build.atlas.tiles[id!]!
+        const f = build.atlas.frames[t.frame]!
+        expect([f.w, f.h], name).toEqual([w, h])
+        expect(t.layer, name).toBe('walls')
+      }
+    expect(build.atlas.tileSets['thinWall']).toEqual(THIN_WALLS)
   })
 })

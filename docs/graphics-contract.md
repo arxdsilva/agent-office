@@ -185,5 +185,5 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 
 ## 12. Pixel assets (additive; the optional 2D RPG mode)
 - **Sources:** `assets/pixel/src/**`, hand-authored text pixel grids plus palettes (`docs/pixel-style.md`). **Build:** `make pixel-assets` → `packages/web/public/assets/pixel/{tiles,objects,characters,effects,font}.png` + `atlas.json`.
-- **Sizes:** 16×16 px tiles at 0.5 m; characters 16×24 px; a 5×7 bitmap font. Original work (MIT); no copied or traced third-party sprites, tiles or fonts; no logos.
+- **Sizes:** 16 px per metre (16×16 px floor tiles = 1 m; furniture at its plan size per `assets/pixel/src/sizes.json`); characters 16×24 px; a 5×7 bitmap font. Original work (MIT); no copied or traced third-party sprites, tiles or fonts; no logos.
 - **Budget:** ≤ 2 MB total, included in the 55 MB asset budget (§9).

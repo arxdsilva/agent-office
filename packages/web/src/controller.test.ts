@@ -1896,6 +1896,7 @@ function fakePixel(handlers: Record<string, (...a: any[]) => void> = {}) {
     vm: PixelHudVM | null
     minimap: MinimapVM | null
     directory: DirectoryVM | null
+    zoom?: { level: number; levels: number; atDefault: boolean; run: boolean }
   } = {
     shown: [],
     vm: null,
@@ -1917,6 +1918,10 @@ function fakePixel(handlers: Record<string, (...a: any[]) => void> = {}) {
     onMinimapPick: on('minimapPick'),
     onDirectory: on('directory'),
     onDirectorySearch: on('directorySearch'),
+    onZoom: on('hudZoom'),
+    renderZoom(z) {
+      this.zoom = z
+    },
   }
   const modeToggle: ModeToggleView & { modes: ViewMode[] } = {
     modes: [],
@@ -1943,6 +1948,8 @@ function pixelScene(v: ReturnType<typeof fakeViews>) {
   s.onRoom = (fn) => void (v.handlers.room = fn)
   s.onPlayerMove = (fn) => void ((v.handlers as Record<string, unknown>).playerMove = fn)
   s.onCamera = (fn) => void ((v.handlers as Record<string, unknown>).camera = fn)
+  s.onZoom = (fn) => void ((v.handlers as Record<string, unknown>).sceneZoom = fn)
+  s.onRun = (fn) => void ((v.handlers as Record<string, unknown>).sceneRun = fn)
   s.setInputSuspended = (on) => void s.suspended.push(on)
   s.follow = (id) => void s.followed.push(id)
   s.travelTo = (t) => void s.travels.push(t)
@@ -2234,6 +2241,22 @@ describe('controller: 2D movement in every view and the minimap (C-move, C-map)'
     } finally {
       wing.plan = before
     }
+  })
+
+  // C-zoom-1: the HUD zoom control steps the scene's zoom; the scene's level and run toggle show in the HUD.
+  it('wires the 2D zoom control and the run toggle both ways', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    const s = t.scene as typeof t.scene & { zooms: number[] }
+    s.zooms = []
+    s.zoomBy = (d) => void s.zooms.push(d)
+    const h = t.handlers as Record<string, (...a: unknown[]) => void>
+    h.hudZoom!(-1)
+    h.hudZoom!(0)
+    expect(s.zooms).toEqual([-1, 0])
+    h.sceneZoom!({ level: 1, levels: 4, atDefault: false })
+    expect(t.pixelHud.zoom).toEqual({ level: 1, levels: 4, atDefault: false, run: false })
+    h.sceneRun!(true)
+    expect(t.pixelHud.zoom).toEqual({ level: 1, levels: 4, atDefault: false, run: true })
   })
 
   // C-map-2: a minimap click pans to the exact point; shift-click travels the player there.

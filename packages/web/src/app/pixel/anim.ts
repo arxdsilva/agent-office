@@ -1,10 +1,8 @@
 // 3D clip → 2D pixel animation (plan §5.4), plus the status icon, which comes from the agent's
 // business status (not the clip), so "!" shows the moment an agent starts waiting, mid-walk too.
 import type { AgentStatus } from '@agent-office/shared'
-import { MIN_WALK_TIMESCALE } from '../motion.ts'
-import { WALK_SPEED } from '../navigation.ts'
 import type { ClipName, PropName } from '../office-types.ts'
-import type { PixelAnim, StatusIcon } from './types.ts'
+import { PX_PER_M, type PixelAnim, type StatusIcon } from './types.ts'
 
 export const CLIP_ANIM: Readonly<Record<ClipName, PixelAnim>> = {
   Idle: 'idle',
@@ -32,14 +30,15 @@ export const CLIP_ANIM: Readonly<Record<ClipName, PixelAnim>> = {
   ShelfPick: 'stand-interact',
 }
 
-/** Walk cycle frame rate at WALK_SPEED; other animations play at their own atlas timing. */
+/** The atlas walk cycle's own frame rate; other animations play at their own atlas timing. */
 export const WALK_FPS = 8
+/** One walk frame (a step) every this many on-screen px, so feet never slide. */
+export const STRIDE_PX = 8
 
 export const animFor = (clip: ClipName | undefined): PixelAnim => (clip ? CLIP_ANIM[clip] : 'idle')
 
-/** Walk frame rate for a ground speed (scaled like the 3D Walk timeScale, with the same floor). */
-export const walkFps = (speed: number) =>
-  WALK_FPS * Math.max(MIN_WALK_TIMESCALE, speed / WALK_SPEED)
+/** Walk frame rate for a ground speed (m/s): on-screen px per second / `STRIDE_PX`. */
+export const walkFps = (speedMps: number) => (Math.max(0, speedMps) * PX_PER_M) / STRIDE_PX
 
 /** Frame index `t` seconds into a looping animation of `frames` frames at `fps`. */
 export const frameAt = (t: number, frames: number, fps: number) =>

@@ -1,25 +1,27 @@
-// The 2D tile world (plan §3.2): every placement's module-local floor plan, rotated by its yaw and
-// translated, rasterized into tile layers, a collision grid, rooms and interactive objects.
-// Pure and deterministic: typed arrays, placements in layout order, three fixed passes.
-// Tile ids come from an injected `TileResolver` (the pixel adapter backs it with atlas.json).
+// The 2D world at GBA scale (plan "2D at GBA scale" §2): every placement's module-local floor plan,
+// rotated by its yaw and translated, becomes pixel geometry at 16 px/m. Rooms, walls and furniture
+// are px rects at their exact plan positions (never snapped to tiles); collision uses the same rects
+// (`solids`, indexed in 32 px buckets). Floors stay 16 px tiles = 1 m cells.
+// Pure and deterministic. Floor tile ids come from an injected `TileResolver` (atlas-backed).
 import { hash32, parseAnchorId, toWorld } from '../building.ts'
 import type { Manifest } from '../manifest.ts'
 import type { BuildingLayout, ModulePlacement, ThemeId, Vec2 } from '../office-types.ts'
-import { dir4, projectionFor, toTile } from './project.ts'
+import { dir4, projectionFor } from './project.ts'
 import {
-  TILE_M,
+  PX_PER_M,
   TILE_PX,
+  WALL_PX,
   type MapObject,
+  type MapWall,
   type ModulePlan,
   type PixelMap,
   type PixelRoom,
   type PlanByModule,
   type PlanFurniture,
-  type PlanWall,
+  type PxRect,
+  type SolidIndex,
   type SpriteFoot,
   type TilePos,
-  type TileRect,
-  type WallKind,
 } from './types.ts'
 
 /** Wall direction on the map: horizontal (east–west) or vertical (north–south). */
@@ -27,8 +29,7 @@ export type TileEdge = 'h' | 'v'
 
 /**
  * What tile to draw. `floor`: kind = the plan room's floor material, else 'street' / 'default'.
- * `wall`: kind = 'solid' | 'glass' | 'curtain' | 'door'. `overhead`: the same kinds, drawn on top of
- * characters one row above a horizontal wall (wall tops and door lintels).
+ * `wall` / `overhead`: kept for renderers that draw wall art from tiles.
  */
 export interface TileQuery {
   layer: 'floor' | 'wall' | 'overhead'
@@ -42,30 +43,65 @@ export interface TileResolver {
   tile(q: TileQuery): number
 }
 
-/** Furniture the player can walk over. */
-// Chairs sit on anchor approach lanes at tile resolution; the player walks past them (y-sorted).
-const WALKABLE = new Set<string>(['rug', 'sign', 'chair'])
-/** `ref`s that point at a capability surface slot. */
-const SLOT_REF = /^(station|book|board|notebook):\d+$/
-const EPS = 1e-6
+export type SizeClass = 'fixed' | 'strip' | 'area'
+export interface SizeSpec {
+  class: SizeClass
+  /** Canonical metres [w, d] ('h' orientation). */
+  m?: [number, number]
+  /** Art base [w, h] px ('h' orientation). */
+  base?: [number, number]
+  /** Strips: px across the long axis, and the repeat length along it. */
+  thickness?: number
+  unit?: number
+  /** Px drawn above the base. */
+  overhang: number
+  /** Has vertical art. */
+  v?: boolean
+}
 
 /**
- * Size classes (plan §1.1). Kinds not listed are **fixed**: the render rect is the sprite foot
- * centred on the piece. **strip**: the size-stable footprint along the long axis, the sprite's
- * thickness across (the renderer repeats the sprite). Strip kinds and the elevator become **area**
- * (a 9-slice fill) when the footprint is ≥ 3 tiles on both axes (garden pool, bleachers, the bank).
+ * Canonical 2D sizes, a copy of `assets/pixel/src/sizes.json` `kinds` (the web package can't read
+ * assets; `assets/pixel/map-invariants.test.ts` fails when the two drift).
  */
-export const SIZE_CLASS: Partial<Record<string, 'strip' | 'area'>> = {
-  bench: 'strip',
-  planter: 'strip',
-  'kitchen-counter': 'strip',
-  'cafe-bar': 'strip',
-  bookshelf: 'strip',
-  'notebook-rack': 'strip',
-  'led-wall': 'strip',
-  elevator: 'area',
+export const SIZES: Readonly<Record<string, SizeSpec>> = {
+  desk: { class: 'fixed', m: [1.6, 0.8], base: [26, 13], overhang: 12 },
+  chair: { class: 'fixed', m: [0.55, 0.55], base: [10, 10], overhang: 10 },
+  'meeting-table': { class: 'fixed', m: [2.4, 1.1], base: [38, 18], overhang: 8, v: true },
+  'reading-table': { class: 'fixed', m: [2, 1], base: [32, 16], overhang: 8 },
+  booth: { class: 'fixed', m: [1.4, 1.4], base: [22, 22], overhang: 22 },
+  station: { class: 'fixed', m: [1.68, 0.4], base: [27, 7], overhang: 18 },
+  'core-rack': { class: 'fixed', m: [0.96, 0.96], base: [15, 15], overhang: 20 },
+  board: { class: 'fixed', m: [0.98, 0.1], base: [16, 4], overhang: 18 },
+  'notebook-rack': { class: 'fixed', m: [2.96, 0.66], base: [47, 11], overhang: 14 },
+  sofa: { class: 'fixed', m: [2.75, 0.92], base: [44, 15], overhang: 8 },
+  armchair: { class: 'fixed', m: [0.82, 0.82], base: [13, 13], overhang: 8 },
+  beanbag: { class: 'fixed', m: [0.84, 0.84], base: [13, 13], overhang: 4 },
+  fridge: { class: 'fixed', m: [0.7, 0.65], base: [11, 10], overhang: 20 },
+  'coffee-machine': { class: 'fixed', m: [0.5, 0.38], base: [8, 6], overhang: 8 },
+  island: { class: 'fixed', m: [2.64, 1.05], base: [42, 17], overhang: 10 },
+  'reception-desk': { class: 'fixed', m: [4.36, 1.64], base: [70, 26], overhang: 14 },
+  pingpong: { class: 'fixed', m: [2.74, 1.52], base: [44, 24], overhang: 6, v: true },
+  arcade: { class: 'fixed', m: [0.8, 0.7], base: [13, 11], overhang: 18 },
+  'cafe-table': { class: 'fixed', m: [1, 1], base: [16, 16], overhang: 8 },
+  tv: { class: 'fixed', m: [1.6, 0.1], base: [26, 4], overhang: 14 },
+  sign: { class: 'strip', thickness: 4, unit: 26, overhang: 8 },
+  plant: { class: 'fixed', m: [0.5, 0.5], base: [8, 8], overhang: 14 },
+  bench: { class: 'strip', thickness: 7, unit: 24, overhang: 6, v: true },
+  planter: { class: 'strip', thickness: 8, unit: 16, overhang: 8 },
+  'kitchen-counter': { class: 'strip', thickness: 10, unit: 32, overhang: 12 },
+  'cafe-bar': { class: 'strip', thickness: 11, unit: 32, overhang: 12 },
+  bookshelf: { class: 'strip', thickness: 7, unit: 32, overhang: 24 },
+  'led-wall': { class: 'strip', thickness: 4, unit: 48, overhang: 26 },
+  rug: { class: 'area', overhang: 0 },
+  elevator: { class: 'area', overhang: 0 },
+  'elevator-door': { class: 'fixed', m: [2, 0.25], base: [32, 4], overhang: 28 },
+  door: { class: 'fixed', m: [1, 0.25], base: [16, 4], overhang: 26 },
+  window: { class: 'fixed', m: [2, 0.25], base: [32, 4], overhang: 12 },
+  'booth-lamp': { class: 'fixed', m: [1.4, 1.4], base: [22, 22], overhang: 22 },
+  'stats-board': { class: 'fixed', m: [4, 0.25], base: [64, 4], overhang: 26 },
 }
-/** Pieces hung on or pushed against a wall: their back edge snaps to the wall tile (plan §2d). */
+
+/** Pieces hung on or pushed against a wall: within `WALL_GAP_M` their back edge meets the wall. */
 export const WALL_MOUNTED = new Set<string>([
   'kitchen-counter',
   'bookshelf',
@@ -75,21 +111,23 @@ export const WALL_MOUNTED = new Set<string>([
   'sign',
   'notebook-rack',
 ])
-/** A piece whose back edge is this close to a wall line (m) sits against it. */
-const WALL_GAP = 0.3
-/** Walls this close to a piece (m) push it off their tile when they overlap. */
-const NEAR_WALL = 1
-/** Thin walls whose body is this close to a tile boundary (m) go to the module-interior tile. */
-const THIN_WALL = 0.2
-const NEAR_BOUNDARY = 0.05
-/** The ¾ art may rise this many tiles above an object's rect (never further: walls stay clean). */
-export const OVERHANG_TILES = 1
-
-/** Pixel-space limits of an object's drawing: its rect plus at most one tile of ¾ overhang. */
-export function drawBounds(o: Pick<MapObject, 'rect'>): TileRect {
-  const ty = Math.max(0, o.rect.ty - OVERHANG_TILES)
-  return { tx: o.rect.tx, ty, tw: o.rect.tw, th: o.rect.ty + o.rect.th - ty }
-}
+/** Furniture the player can walk over (chairs stay walkable: agents sit on them, y-sorted). */
+const WALKABLE = new Set<string>(['rug', 'sign', 'chair'])
+/** `ref`s that point at a capability surface slot. */
+const SLOT_REF = /^(station|book|board|notebook):\d+$/
+/** A wall-mounted piece this close to a wall (m) sits against it. */
+export const WALL_GAP_M = 0.3
+/** Collinear walls this close (m) are one wall (glass next to solid). */
+const MERGE_M = 0.1
+/** Gaps narrower than this (m) between wall runs are joints, not doors. */
+const MIN_DOOR_M = 0.5
+/** Planters and benches at least this deep (m) are areas (garden pools, bleachers). */
+const AREA_DEPTH_M = 2
+/** Share of a piece's footprint on a larger piece that makes it stacked (non-solid). */
+const STACKED = 0.5
+/** Bucket size of `PixelMap.solidIndex`. */
+export const SOLID_CELL_PX = 32
+const EPS = 1e-6
 
 export const tileIndex = (m: Pick<PixelMap, 'widthTiles'>, t: TilePos) => t.ty * m.widthTiles + t.tx
 
@@ -109,12 +147,99 @@ export function plansOf(m: Manifest): PlanByModule {
   return out
 }
 
+/** The size class of a piece (planters and benches ≥ 2 m deep become areas). */
+export function sizeClassOf(kind: string, shortSideM: number): SizeClass {
+  if ((kind === 'planter' || kind === 'bench') && shortSideM >= AREA_DEPTH_M - EPS) return 'area'
+  return SIZES[kind]?.class ?? 'fixed'
+}
+
+// ── Solid index ──────────────────────────────────────────────────────────────────────────────
+/** Buckets `solids` into a `SOLID_CELL_PX` grid covering widthPx × heightPx. */
+export function indexSolids(
+  solids: readonly PxRect[],
+  widthPx: number,
+  heightPx: number,
+): SolidIndex {
+  const cellPx = SOLID_CELL_PX
+  const cols = Math.max(1, Math.ceil(widthPx / cellPx))
+  const rows = Math.max(1, Math.ceil(heightPx / cellPx))
+  const buckets: number[][] = Array.from({ length: cols * rows }, () => [])
+  solids.forEach((r, i) =>
+    forBuckets(cols, rows, cellPx, r.x, r.y, r.x + r.w, r.y + r.h, (b) => buckets[b]!.push(i)),
+  )
+  return { cellPx, cols, rows, buckets }
+}
+
+function forBuckets(
+  cols: number,
+  rows: number,
+  cell: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  fn: (bucket: number) => void,
+) {
+  const c0 = Math.max(0, Math.floor(x0 / cell))
+  const r0 = Math.max(0, Math.floor(y0 / cell))
+  const c1 = Math.min(cols - 1, Math.floor((x1 - EPS) / cell))
+  const r1 = Math.min(rows - 1, Math.floor((y1 - EPS) / cell))
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) fn(r * cols + c)
+}
+
+/** Indices into `solids` of the rects in the buckets `box` touches (ascending, unique). */
+export function solidsNear(map: Pick<PixelMap, 'solids' | 'solidIndex'>, box: PxRect): number[] {
+  const { cellPx, cols, rows, buckets } = map.solidIndex
+  const seen = new Set<number>()
+  forBuckets(cols, rows, cellPx, box.x, box.y, box.x + box.w, box.y + box.h, (b) => {
+    for (const i of buckets[b]!) seen.add(i)
+  })
+  return [...seen].sort((a, b) => a - b)
+}
+
+// ── Build ────────────────────────────────────────────────────────────────────────────────────
 const signature = (p: ModulePlacement) =>
   `${p.id}@${p.position.x},${p.position.z},${p.yaw}#${p.theme ?? ''}${p.dimmed ? '~' : ''}`
 
+interface Origin {
+  originM: Vec2
+}
+const toPx = (v: number, o: number) => (v - o) * PX_PER_M
+
+/** The px rect (edges rounded) of a world AABB. */
+function boxOf(minX: number, minZ: number, maxX: number, maxZ: number, at: Origin): PxRect {
+  const x = Math.round(toPx(minX, at.originM.x))
+  const y = Math.round(toPx(minZ, at.originM.z))
+  return {
+    x,
+    y,
+    w: Math.max(1, Math.round(toPx(maxX, at.originM.x)) - x),
+    h: Math.max(1, Math.round(toPx(maxZ, at.originM.z)) - y),
+  }
+}
+/** A w × h px rect centred on a world point, rounded to whole px. */
+function centred(c: Vec2, w: number, h: number, at: Origin): PxRect {
+  const W = Math.max(1, Math.round(w))
+  const H = Math.max(1, Math.round(h))
+  return {
+    x: Math.round(toPx(c.x, at.originM.x) - W / 2),
+    y: Math.round(toPx(c.z, at.originM.z) - H / 2),
+    w: W,
+    h: H,
+  }
+}
+/** World AABB of a module-local rect. */
+function worldRect(p: ModulePlacement, x0: number, z0: number, x1: number, z1: number) {
+  const a = toWorld({ x: x0, z: z0 }, p)
+  const b = toWorld({ x: x1, z: z1 }, p)
+  return [Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z)] as const
+}
+const overlap = (a0: number, a1: number, b0: number, b1: number) =>
+  Math.min(a1, b1) - Math.max(a0, b0)
+
 /**
- * Builds the tile world; returns `prev` itself when neither the layout nor the plan changed.
- * `feet` sizes objects from their art (the atlas); without it objects use size-stable footprints.
+ * Builds the world; returns `prev` itself when neither the layout nor the plan changed.
+ * `feet` sizes objects from their art (the atlas base in px); without it, plan footprints.
  */
 export function buildPixelMap(
   layout: BuildingLayout,
@@ -126,112 +251,57 @@ export function buildPixelMap(
   const key = `${layout.key}#${hash32(JSON.stringify(plans))}${feet ? '#art' : ''}`
   if (prev && prev.key === key) return prev
   const proj = projectionFor(layout.bounds)
-  const w = proj.widthTiles
-  const h = proj.heightTiles
-  const size = w * h
-  const map: PixelMap = {
-    widthTiles: w,
-    heightTiles: h,
-    originM: proj.originM,
-    layers: {
-      floor: new Uint16Array(size),
-      walls: new Uint16Array(size),
-      overhead: new Uint16Array(size),
-    },
-    objects: [],
-    solid: new Uint8Array(size),
-    rooms: [],
-    key,
-    dirty: dirtyList(layout, proj, prev),
-  }
-  const inside = (t: TilePos) => t.tx >= 0 && t.ty >= 0 && t.tx < w && t.ty < h
-  const set = (layer: Uint16Array, t: TilePos, id: number) => {
-    if (inside(t)) layer[t.ty * w + t.tx] = id
-  }
+  const at: Origin = { originM: proj.originM }
   const placed = layout.placements
     .map((p) => ({ p, plan: plans[p.kind] }))
     .filter((x): x is { p: ModulePlacement; plan: ModulePlan } => !!x.plan)
 
-  // Pass 1: room floors.
+  const rooms: PixelRoom[] = []
+  const floorOf: number[] = []
   for (const { p, plan } of placed)
     for (const room of plan.rooms) {
-      const [x0, z0, x1, z1] = room.rect
-      const rect = rectOf(corners(p, x0, z0, x1, z1), map)
-      const floor = tiles.tile({
-        layer: 'floor',
-        kind: room.floor ?? (p.kind === 'street' ? 'street' : 'default'),
-        ...(p.theme && { theme: p.theme }),
-      })
-      forTiles(rect, (t) => set(map.layers.floor, t, floor))
-      const r: PixelRoom = { id: `${p.id}/${room.id}`, name: room.name, rect, placement: p.id }
+      const box = boxOf(...worldRect(p, ...room.rect), at)
+      const tx = Math.floor(box.x / TILE_PX)
+      const ty = Math.floor(box.y / TILE_PX)
+      const r: PixelRoom = {
+        id: `${p.id}/${room.id}`,
+        name: room.name,
+        box,
+        rect: {
+          tx,
+          ty,
+          tw: Math.ceil((box.x + box.w) / TILE_PX) - tx,
+          th: Math.ceil((box.y + box.h) / TILE_PX) - ty,
+        },
+        placement: p.id,
+      }
       if (p.theme) r.theme = p.theme
       if (p.provider) r.provider = p.provider
-      map.rooms.push(r)
+      rooms.push(r)
+      floorOf.push(
+        tiles.tile({
+          layer: 'floor',
+          kind: room.floor ?? (p.kind === 'street' ? 'street' : 'default'),
+          ...(p.theme && { theme: p.theme }),
+        }),
+      )
     }
 
-  // Pass 2: walls (doors win over wall samples in the same tile, so openings stay passable). Each
-  // sample sits on the wall's 3D body (offset by side · thick / 2), decided in module-local space so
-  // mirrored wings agree.
+  const objects: MapObject[] = []
+  const walls: MapWall[] = []
+  for (const { p, plan } of placed) buildWalls(p, plan, at, walls, objects)
+  for (const w of walls) if (w.box.w >= w.box.h) w.face = roomBelow(w.box, rooms) ? 's' : null
+
   for (const { p, plan } of placed) {
-    plan.walls.forEach((wall, wi) => {
-      const prefer = wallPrefer(wall, plan)
-      const len = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1])
-      if (len < EPS) return
-      const wa = toWorld({ x: wall.a[0], z: wall.a[1] }, p)
-      const wb = toWorld({ x: wall.b[0], z: wall.b[1] }, p)
-      const edge: TileEdge = Math.abs(wb.x - wa.x) >= Math.abs(wb.z - wa.z) ? 'h' : 'v'
-      const n = Math.ceil(len / (TILE_M / 2))
-      const kinds = new Map<number, { t: TilePos; door: boolean; opening: number }>()
-      for (let i = 0; i < n; i++) {
-        const t = ((i + 0.5) * len) / n
-        const tile = toTile(toWorld(wallPoint(wall, t, prefer), p), map)
-        if (!inside(tile)) continue
-        const opening = (wall.openings ?? []).findIndex(([t0, t1]) => t > t0 + EPS && t < t1 - EPS)
-        const k = tile.ty * w + tile.tx
-        const cur = kinds.get(k)
-        if (!cur || (!cur.door && opening >= 0))
-          kinds.set(k, { t: tile, door: opening >= 0, opening })
-      }
-      const doors = new Map<number, TilePos[]>()
-      for (const [k, { t, door, opening }] of kinds) {
-        const kind: WallKind | 'door' = door ? 'door' : wall.kind
-        const theme = p.theme ? { theme: p.theme } : {}
-        map.layers.walls[k] = tiles.tile({ layer: 'wall', kind, edge, ...theme })
-        map.solid[k] = door ? 0 : 1
-        if (edge === 'h' && t.ty > 0)
-          set(
-            map.layers.overhead,
-            { tx: t.tx, ty: t.ty - 1 },
-            tiles.tile({ layer: 'overhead', kind, edge, ...theme }),
-          )
-        if (door) doors.set(opening, [...(doors.get(opening) ?? []), t])
-      }
-      for (const [opening, ts] of [...doors].sort((x, y) => x[0] - y[0])) {
-        const rect = boundsOf(ts)
-        map.objects.push({
-          id: `${p.id}/door:${wi}:${opening}`,
-          kind: 'door',
-          rect,
-          sortY: (rect.ty + rect.th) * TILE_PX,
-          solid: false,
-          facing: edge === 'h' ? 's' : 'e',
-          orientation: rect.th > rect.tw ? 'v' : 'h',
-          fill: 'repeat',
-          ...(p.theme && { theme: p.theme }),
-        })
-      }
-    })
+    const pieces = plan.furniture.map((f, i) =>
+      furnitureObject(p, f, i, plan, at, feet ?? null, walls),
+    )
+    unstack(
+      pieces,
+      plan.furniture.map((f) => footprintOf(p, f)),
+    )
+    objects.push(...pieces)
   }
-
-  // Pass 3: furniture footprints.
-  for (const { p, plan } of placed)
-    plan.furniture.forEach((f, fi) => {
-      const o = furnitureObject(p, f, fi, map, feet ?? null, plan)
-      if (o.solid) forTiles(o.rect, (t) => inside(t) && (map.solid[t.ty * w + t.tx] = 1))
-      map.objects.push(o)
-    })
-
-  // Anchor-driven objects: booth lamps and elevator doors (never solid).
   for (const a of layout.anchors.values()) {
     const kind = /^spot:booth:\d+$/.test(a.local)
       ? 'booth-lamp'
@@ -239,30 +309,240 @@ export function buildPixelMap(
         ? 'elevator-door'
         : undefined
     if (!kind) continue
-    // Drawn over the booth / the elevator car: the art's foot centred on the spot.
+    // Drawn over the booth / the elevator car: the art's base centred on the spot.
     const f = feet?.foot(kind, 'h')
-    const rect = f ? centred(a.pos, f.tw, f.th, map) : { ...toTile(a.pos, map), tw: 1, th: 1 }
-    map.objects.push({
+    const base = SIZES[kind]!.base!
+    const box = centred(a.pos, f?.w ?? base[0], f?.h ?? base[1], at)
+    objects.push({
       id: `${a.placement}/${kind}:${a.local.slice(a.local.lastIndexOf(':') + 1)}`,
       kind,
-      rect,
-      sortY: (rect.ty + rect.th) * TILE_PX,
+      box,
+      sortY: box.y + box.h,
       solid: false,
       facing: dir4(a.heading),
       orientation: 'h',
       fill: 'sprite',
     })
   }
+
+  const widthPx = proj.widthTiles * TILE_PX
+  const heightPx = proj.heightTiles * TILE_PX
+  const solids = [...walls.map((w) => w.box), ...objects.filter((o) => o.solid).map((o) => o.box)]
+  const map: PixelMap = {
+    widthTiles: proj.widthTiles,
+    heightTiles: proj.heightTiles,
+    widthPx,
+    heightPx,
+    originM: proj.originM,
+    layers: { floor: floorLayer(proj.widthTiles, proj.heightTiles, rooms, floorOf) },
+    objects,
+    walls,
+    solids,
+    solidIndex: indexSolids(solids, widthPx, heightPx),
+    rooms,
+    key,
+    dirty: dirtyList(layout, proj, prev),
+  }
   return remember(map, layout)
 }
 
+/** Floor tile per 1 m cell: the smallest room holding the cell centre, else the most overlap. */
+function floorLayer(w: number, h: number, rooms: PixelRoom[], floorOf: number[]): Uint16Array {
+  const floor = new Uint16Array(w * h)
+  const best = new Float64Array(w * h).fill(Infinity)
+  const part = new Float64Array(w * h)
+  rooms.forEach((r, ri) => {
+    const area = r.box.w * r.box.h
+    for (let ty = Math.max(0, r.rect.ty); ty < Math.min(h, r.rect.ty + r.rect.th); ty++)
+      for (let tx = Math.max(0, r.rect.tx); tx < Math.min(w, r.rect.tx + r.rect.tw); tx++) {
+        const i = ty * w + tx
+        const cx = (tx + 0.5) * TILE_PX
+        const cy = (ty + 0.5) * TILE_PX
+        const inside =
+          cx >= r.box.x && cx < r.box.x + r.box.w && cy >= r.box.y && cy < r.box.y + r.box.h
+        if (inside) {
+          if (area < best[i]!) ((best[i] = area), (floor[i] = floorOf[ri]!))
+          continue
+        }
+        if (best[i]! < Infinity) continue
+        const o =
+          overlap(tx * TILE_PX, (tx + 1) * TILE_PX, r.box.x, r.box.x + r.box.w) *
+          overlap(ty * TILE_PX, (ty + 1) * TILE_PX, r.box.y, r.box.y + r.box.h)
+        if (o > part[i]!) ((part[i] = o), (floor[i] = floorOf[ri]!))
+      }
+  })
+  return floor
+}
+
+/** True when a room lies directly below a horizontal wall box (its 3/4 face is seen from there). */
+function roomBelow(b: PxRect, rooms: readonly PixelRoom[]): boolean {
+  const y = b.y + b.h + 1
+  return rooms.some(
+    (r) =>
+      overlap(b.x, b.x + b.w, r.box.x, r.box.x + r.box.w) >= 1 &&
+      y >= r.box.y &&
+      y < r.box.y + r.box.h,
+  )
+}
+
+// ── Walls ────────────────────────────────────────────────────────────────────────────────────
+type Span = [number, number]
+interface Seg {
+  axis: 'h' | 'v'
+  /** World coordinate across the wall of its body centre (z for 'h', x for 'v'). */
+  across: number
+  span: Span
+  openings: { span: Span; wi: number; oi: number }[]
+  /** Px thickness. */
+  thick: number
+  kind: 'solid' | 'glass'
+}
+
+/** Union of spans, sorted and merged. */
+function union(spans: Span[]): Span[] {
+  const s = [...spans].sort((a, b) => a[0] - b[0])
+  const out: Span[] = []
+  for (const x of s) {
+    const last = out.at(-1)
+    if (last && x[0] <= last[1] + EPS) last[1] = Math.max(last[1], x[1])
+    else out.push([x[0], x[1]])
+  }
+  return out
+}
+/** `a` minus every span of `cut`. */
+function subtract(a: Span[], cut: Span[]): Span[] {
+  let out = a
+  for (const [c0, c1] of cut)
+    out = out.flatMap(([s0, s1]): Span[] => {
+      if (c1 <= s0 + EPS || c0 >= s1 - EPS) return [[s0, s1]]
+      const keep: Span[] = []
+      if (c0 > s0 + EPS) keep.push([s0, c0])
+      if (c1 < s1 - EPS) keep.push([c1, s1])
+      return keep
+    })
+  return out
+}
+
+/** Module-local plan walls → world segments on their 3D body. */
+function segmentsOf(p: ModulePlacement, plan: ModulePlan): Seg[] {
+  const out: Seg[] = []
+  plan.walls.forEach((wall, wi) => {
+    const dx = wall.b[0] - wall.a[0]
+    const dz = wall.b[1] - wall.a[1]
+    const len = Math.hypot(dx, dz)
+    if (len < EPS) return
+    // The body: offset by side · thick / 2 along the (−dz, dx) normal (module-local).
+    const off = wall.side ? (wall.side * (wall.thick ?? 0)) / 2 : 0
+    const nx = (-dz / len) * off
+    const nz = (dx / len) * off
+    const at = (t: number) =>
+      toWorld({ x: wall.a[0] + (dx * t) / len + nx, z: wall.a[1] + (dz * t) / len + nz }, p)
+    const wa = at(0)
+    const wb = at(len)
+    const axis = Math.abs(wb.x - wa.x) >= Math.abs(wb.z - wa.z) ? 'h' : 'v'
+    const along = (q: Vec2) => (axis === 'h' ? q.x : q.z)
+    const span = (t0: number, t1: number): Span => {
+      const u = along(at(t0))
+      const v = along(at(t1))
+      return [Math.min(u, v), Math.max(u, v)]
+    }
+    out.push({
+      axis,
+      across: axis === 'h' ? (wa.z + wb.z) / 2 : (wa.x + wb.x) / 2,
+      span: span(0, len),
+      openings: (wall.openings ?? []).map(([t0, t1], oi) => ({ span: span(t0, t1), wi, oi })),
+      thick: Math.max(WALL_PX, Math.round((wall.thick ?? 0) * PX_PER_M)),
+      kind: wall.kind === 'solid' ? 'solid' : 'glass',
+    })
+  })
+  return out
+}
+
+/**
+ * A placement's walls: collinear segments (within 0.1 m) merge into one line (solid wins where both
+ * are, glass fills the rest), split at openings into `MapWall` runs. Openings left open are doors.
+ */
+function buildWalls(
+  p: ModulePlacement,
+  plan: ModulePlan,
+  at: Origin,
+  walls: MapWall[],
+  objects: MapObject[],
+) {
+  const segs = segmentsOf(p, plan)
+  const groups: Seg[][] = []
+  for (const s of segs) {
+    const g = groups.find(
+      (x) => x[0]!.axis === s.axis && Math.abs(x[0]!.across - s.across) <= MERGE_M + EPS,
+    )
+    if (g) g.push(s)
+    else groups.push([s])
+  }
+  const theme = p.theme ? { theme: p.theme } : {}
+  for (const g of groups) {
+    const axis = g[0]!.axis
+    const line = (g.find((s) => s.kind === 'solid') ?? g[0]!).across
+    const open = (s: Seg) => subtract([s.span], union(s.openings.map((o) => o.span)))
+    const solid = union(g.filter((s) => s.kind === 'solid').flatMap(open))
+    const glass = subtract(union(g.filter((s) => s.kind === 'glass').flatMap(open)), solid)
+    const thickOf = (kind: Seg['kind'], [a, b]: Span) =>
+      Math.max(
+        ...g
+          .filter((s) => s.kind === kind && overlap(s.span[0], s.span[1], a, b) > 0)
+          .map((s) => s.thick),
+        WALL_PX,
+      )
+    const runBox = ([a, b]: Span, thick: number): PxRect => {
+      const c = toPx(line, axis === 'h' ? at.originM.z : at.originM.x)
+      const o = axis === 'h' ? at.originM.x : at.originM.z
+      const s0 = Math.round(toPx(a, o))
+      const len = Math.max(1, Math.round(toPx(b, o)) - s0)
+      const c0 = Math.round(c - thick / 2)
+      return axis === 'h' ? { x: s0, y: c0, w: len, h: thick } : { x: c0, y: s0, w: thick, h: len }
+    }
+    const runs: { span: Span; kind: Seg['kind'] }[] = [
+      ...solid.map((span) => ({ span, kind: 'solid' as const })),
+      ...glass.map((span) => ({ span, kind: 'glass' as const })),
+    ].sort((x, y) => x.span[0] - y.span[0])
+    for (const r of runs)
+      walls.push({
+        box: runBox(r.span, thickOf(r.kind, r.span)),
+        kind: r.kind,
+        face: null,
+        ...theme,
+      })
+    // Doors: what is left of each opening once every run on the line is drawn.
+    const covered = union(runs.map((r) => r.span))
+    for (const s of g)
+      for (const o of s.openings) {
+        const gaps = subtract([o.span], covered).filter(([a, b]) => b - a >= MIN_DOOR_M - EPS)
+        gaps.forEach((gap, k) => {
+          const box = runBox(gap, s.thick)
+          objects.push({
+            id: `${p.id}/door:${o.wi}:${o.oi}${k ? `.${k}` : ''}`,
+            kind: 'door',
+            box,
+            sortY: box.y + box.h,
+            solid: false,
+            facing: axis === 'h' ? 's' : 'e',
+            orientation: axis,
+            fill: 'repeat',
+            ...theme,
+          })
+        })
+      }
+  }
+}
+
+// ── Furniture ────────────────────────────────────────────────────────────────────────────────
 function furnitureObject(
   p: ModulePlacement,
   f: PlanFurniture,
   i: number,
-  at: Pick<PixelMap, 'originM'>,
-  feet: SpriteFoot | null,
   plan: ModulePlan,
+  at: Origin,
+  feet: SpriteFoot | null,
+  walls: readonly MapWall[],
 ): MapObject {
   const yaw = p.yaw + f.yaw
   const c = Math.abs(Math.cos(yaw))
@@ -270,29 +550,48 @@ function furnitureObject(
   const hx = (f.w / 2) * c + (f.d / 2) * s
   const hz = (f.w / 2) * s + (f.d / 2) * c
   const orientation: 'h' | 'v' = hz > hx + EPS ? 'v' : 'h'
-  const sized = sizeObject(f.kind, hx, hz, orientation, feet)
-  const planRoom = roomOf(plan, f.x, f.z)
-  const toward = planRoom
-    ? { x: (planRoom.rect[0] + planRoom.rect[2]) / 2, z: (planRoom.rect[1] + planRoom.rect[3]) / 2 }
-    : interiorOf(plan)
-  const rect = placeLocal(p, f.x, f.z, sized.tw, sized.th, toward, at)
-  const trimmed = snapToWall(rect, p, f, plan, at)
-  // The room holding the piece (a sign hung outside a wall belongs to no room).
-  const roomRect = planRoom && rectOf(corners(p, ...planRoom.rect), at)
-  const room = roomRect && clampTo(rect, roomRect) ? planRoom : undefined
-  // A piece cut down by a wall or its room no longer matches its art: fill the rect (9-slice).
-  const fill = trimmed || rect.tw !== sized.tw || rect.th !== sized.th ? 'area' : sized.fill
+  const centre = toWorld({ x: f.x, z: f.z }, p)
+  const plan2 = boxOf(centre.x - hx, centre.z - hz, centre.x + hx, centre.z + hz, at)
+  const cls = sizeClassOf(f.kind, 2 * Math.min(hx, hz))
+  let box: PxRect
+  if (cls === 'area') box = plan2
+  else if (cls === 'strip') {
+    const art = feet?.foot(f.kind, orientation)
+    const thick = art
+      ? orientation === 'v'
+        ? art.w
+        : art.h
+      : (SIZES[f.kind]?.thickness ?? Math.round(2 * Math.min(hx, hz) * PX_PER_M))
+    box =
+      orientation === 'v'
+        ? { ...centred(centre, thick, 1, at), y: plan2.y, h: plan2.h }
+        : { ...centred(centre, 1, thick, at), x: plan2.x, w: plan2.w }
+  } else {
+    const art = feet?.foot(f.kind, orientation)
+    box = art ? centred(centre, art.w, art.h, at) : plan2
+  }
+  const mounted = WALL_MOUNTED.has(f.kind) && mountOnWall(box, plan2, walls)
   const o: MapObject = {
     id: `${p.id}/${f.ref ?? `${f.kind}:${i}`}`,
     kind: f.kind,
-    rect,
-    sortY: (rect.ty + rect.th) * TILE_PX,
+    box,
+    sortY: box.y + box.h,
     solid: !WALKABLE.has(f.kind),
     facing: dir4(yaw),
     orientation,
-    fill,
+    fill: cls === 'area' ? 'area' : cls === 'strip' ? 'repeat' : 'sprite',
   }
-  if (room) o.room = `${p.id}/${room.id}`
+  if (mounted) o.wallMounted = true
+  // The room holding the piece (a sign hung outside a wall belongs to no room).
+  const planRoom = roomOf(plan, f.x, f.z)
+  if (planRoom) {
+    const rb = boxOf(...worldRect(p, ...planRoom.rect), at)
+    if (
+      overlap(box.x, box.x + box.w, rb.x, rb.x + rb.w) > 0 &&
+      overlap(box.y, box.y + box.h, rb.y, rb.y + rb.h) > 0
+    )
+      o.room = `${p.id}/${planRoom.id}`
+  }
   if (p.theme) o.theme = p.theme
   if (f.kind === 'elevator') o.interact = { kind: 'object', object: 'elevator' }
   else if (f.kind === 'led-wall') o.interact = { kind: 'object', object: 'stats-board' }
@@ -303,192 +602,71 @@ function furnitureObject(
   return o
 }
 
-/** Render size (tiles, world axes) and fill for a piece (plan §1.1, the size classes). */
-function sizeObject(
-  kind: string,
-  hx: number,
-  hz: number,
-  orientation: 'h' | 'v',
-  feet: SpriteFoot | null,
-): { tw: number; th: number; fill: NonNullable<MapObject['fill']> } {
-  const sw = stableTiles(hx)
-  const sh = stableTiles(hz)
-  const cls = SIZE_CLASS[kind]
-  if (cls && sw >= 3 && sh >= 3) return { tw: sw, th: sh, fill: 'area' }
-  const foot = feet?.foot(kind, orientation) ?? null
-  if (!foot) return { tw: sw, th: sh, fill: 'sprite' }
-  if (cls === 'strip') {
-    if (orientation === 'v' && sh > foot.th) return { tw: foot.tw, th: sh, fill: 'repeat' }
-    if (orientation === 'h' && sw > foot.tw) return { tw: sw, th: foot.th, fill: 'repeat' }
-  }
-  return { tw: foot.tw, th: foot.th, fill: 'sprite' }
-}
-
-/** Size-stable tile count for a half extent (plan §1.2): max(1, round(2·half / TILE_M)). */
-const stableTiles = (half: number) => Math.max(1, Math.round((2 * half) / TILE_M - EPS))
-
-/**
- * A tw × th tile rect (world axes) centred on the module-local point (x, z), snapped to whole tiles
- * in module-local space, so a rotated wing gets the same tiles as an unrotated one. A half-tile tie
- * rounds toward `toward` (the room's centre), keeping pieces off the corridors around them.
- */
-function placeLocal(
-  p: ModulePlacement,
-  x: number,
-  z: number,
-  tw: number,
-  th: number,
-  toward: Vec2,
-  at: Pick<PixelMap, 'originM'>,
-): TileRect {
-  const swap = Math.abs(Math.cos(p.yaw)) < Math.SQRT1_2
-  const nx = swap ? th : tw
-  const nz = swap ? tw : th
-  const snap = (v: number, n: number, to: number) => {
-    const s = v / TILE_M - n / 2
-    const tie = Math.abs(s - Math.floor(s) - 0.5) < 1e-3
-    return (tie ? (to < v ? Math.floor(s) : Math.ceil(s)) : Math.round(s)) * TILE_M
-  }
-  const x0 = snap(x, nx, toward.x)
-  const z0 = snap(z, nz, toward.z)
-  const r = rectOf(corners(p, x0, z0, x0 + nx * TILE_M, z0 + nz * TILE_M), at)
-  return { tx: r.tx, ty: r.ty, tw, th }
-}
-
-/** A tw × th tile rect centred on a world point, snapped to whole tiles. */
-function centred(c: Vec2, tw: number, th: number, at: Pick<PixelMap, 'originM'>): TileRect {
-  return {
-    tx: Math.round((c.x - at.originM.x) / TILE_M - tw / 2),
-    ty: Math.round((c.z - at.originM.z) / TILE_M - th / 2),
-    tw,
-    th,
-  }
-}
-
-/** Module-local centre of the plan's rooms: the side walls are pushed toward. */
-function interiorOf(plan: ModulePlan): Vec2 {
-  if (!plan.rooms.length) return { x: 0, z: 0 }
-  const xs = plan.rooms.flatMap((r) => [r.rect[0], r.rect[2]])
-  const zs = plan.rooms.flatMap((r) => [r.rect[1], r.rect[3]])
-  return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2 }
-}
-
-/**
- * Which side of a wall's (−dz, dx) normal a thin wall on a tile boundary takes (+1 / −1): the
- * module interior; when the wall runs through the middle of the module, the side with fewer
- * pieces standing against it (a shelf on a partition keeps its row). Module-local, so mirrored
- * wings agree.
- */
-export function wallPrefer(wall: PlanWall, plan: ModulePlan): 1 | -1 {
-  const dx = wall.b[0] - wall.a[0]
-  const dz = wall.b[1] - wall.a[1]
-  const len = Math.hypot(dx, dz)
-  if (len < EPS) return 1
-  const nx = -dz / len
-  const nz = dx / len
-  const c = interiorOf(plan)
-  const d = (c.x - wall.a[0]) * nx + (c.z - wall.a[1]) * nz
-  if (Math.abs(d) > EPS) return d > 0 ? 1 : -1
-  let score = 0
-  for (const f of plan.furniture) {
-    const t = ((f.x - wall.a[0]) * dx + (f.z - wall.a[1]) * dz) / len
-    const off = (f.x - wall.a[0]) * nx + (f.z - wall.a[1]) * nz
-    if (t >= 0 && t <= len && Math.abs(off) <= 2 * TILE_M) score += Math.sign(off)
-  }
-  return score > 0 ? -1 : 1
-}
-
-/**
- * The module-local point `t` metres along a wall where its body is (plan §1.3): offset by
- * side · thick / 2 along the (−dz, dx) normal. A thin wall (≤ 0.2 m, or one without `side`: older
- * manifests) whose line lies within 5 cm of a tile boundary goes onto the tile on the `prefer` side
- * (`wallPrefer`), so it is one tile thick and mirrored wings agree.
- */
-export function wallPoint(wall: PlanWall, t: number, prefer: 1 | -1): Vec2 {
-  const dx = wall.b[0] - wall.a[0]
-  const dz = wall.b[1] - wall.a[1]
-  const len = Math.hypot(dx, dz)
-  const nx = -dz / len
-  const nz = dx / len
-  const off = wall.side ? (wall.side * (wall.thick ?? 0)) / 2 : 0
-  const line = { x: wall.a[0] + (dx * t) / len, z: wall.a[1] + (dz * t) / len }
-  const p = { x: line.x + nx * off, z: line.z + nz * off }
-  if (wall.side && (wall.thick ?? 0) > THIN_WALL) return p
-  // Axis-aligned walls only: the coordinate across the wall.
-  const across: 'x' | 'z' | null =
-    Math.abs(nx) > 1 - EPS ? 'x' : Math.abs(nz) > 1 - EPS ? 'z' : null
-  if (!across) return p
-  const v = line[across]
-  const edge = Math.round(v / TILE_M) * TILE_M
-  if (Math.abs(v - edge) > NEAR_BOUNDARY) return p
-  const n = across === 'x' ? nx : nz
-  return { ...p, [across]: edge + (prefer * n * TILE_M) / 2 }
-}
-
-/**
- * Pieces against a wall (plan §2d): wall-mounted kinds whose back edge is within 30 cm of the
- * nearest wall line sit on the tile next to the wall, on the piece's side. Any other piece that
- * overlaps a wall tile is trimmed back to its side (moved when it is one tile thick), so walls stay
- * one clean tile and nothing is drawn across them. True when the piece was trimmed.
- */
-function snapToWall(
-  rect: TileRect,
-  p: ModulePlacement,
-  f: PlanFurniture,
-  plan: ModulePlan,
-  at: Pick<PixelMap, 'originM'>,
-): boolean {
-  const c = Math.abs(Math.cos(f.yaw))
-  const s = Math.abs(Math.sin(f.yaw))
+/** World AABB [minX, minZ, maxX, maxZ] (m) of a plan piece. */
+function footprintOf(p: ModulePlacement, f: PlanFurniture): [number, number, number, number] {
+  const yaw = p.yaw + f.yaw
+  const c = Math.abs(Math.cos(yaw))
+  const s = Math.abs(Math.sin(yaw))
   const hx = (f.w / 2) * c + (f.d / 2) * s
   const hz = (f.w / 2) * s + (f.d / 2) * c
-  const near: { wall: PlanWall; t: number; gap: number }[] = []
-  for (const wall of plan.walls) {
-    const dx = wall.b[0] - wall.a[0]
-    const dz = wall.b[1] - wall.a[1]
-    const len = Math.hypot(dx, dz)
-    if (len < EPS) continue
-    const t = ((f.x - wall.a[0]) * dx + (f.z - wall.a[1]) * dz) / len
-    if (t < 0 || t > len) continue
-    const dist = Math.abs((f.x - wall.a[0]) * (-dz / len) + (f.z - wall.a[1]) * (dx / len))
-    const half = Math.abs(dz / len) * hx + Math.abs(dx / len) * hz
-    if (dist - half <= NEAR_WALL) near.push({ wall, t, gap: dist - half })
-  }
-  near.sort((x, y) => x.gap - y.gap)
-  let trimmed = false
-  near.forEach(({ wall, t, gap }, i) => {
-    const wp = wallPoint(wall, t, wallPrefer(wall, plan))
-    const wt = toTile(toWorld(wp, p), at)
-    // A tile on the piece's side of the wall (decided in module-local space).
-    const len = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1])
-    const nx = -(wall.b[1] - wall.a[1]) / len
-    const nz = (wall.b[0] - wall.a[0]) / len
-    const sign = (f.x - wall.a[0]) * nx + (f.z - wall.a[1]) * nz >= 0 ? 1 : -1
-    const side = toTile(
-      toWorld({ x: wp.x + sign * nx * TILE_M, z: wp.z + sign * nz * TILE_M }, p),
-      at,
+  const w = toWorld({ x: f.x, z: f.z }, p)
+  return [w.x - hx, w.z - hz, w.x + hx, w.z + hz]
+}
+
+/**
+ * Pieces standing on another (coffee machines on a counter, an LED wall over the bar): when at least
+ * `STACKED` of a solid piece's plan footprint lies on a larger solid piece, it stops blocking (the
+ * piece below does), so solid bases never overlap.
+ */
+function unstack(objects: MapObject[], plan: [number, number, number, number][]) {
+  const area = (r: (typeof plan)[number]) => (r[2] - r[0]) * (r[3] - r[1])
+  const solid = objects.map((o) => o.solid)
+  objects.forEach((o, i) => {
+    if (!solid[i]) return
+    const a = plan[i]!
+    const on = plan.some(
+      (b, j) =>
+        j !== i &&
+        solid[j] &&
+        area(b) > area(a) &&
+        Math.max(0, overlap(a[0], a[2], b[0], b[2])) *
+          Math.max(0, overlap(a[1], a[3], b[1], b[3])) >=
+          STACKED * area(a),
     )
-    const mount = i === 0 && gap <= WALL_GAP && WALL_MOUNTED.has(f.kind)
-    const h = side.ty !== wt.ty
-    if (!h && side.tx === wt.tx) return
-    const k = h ? 'ty' : 'tx'
-    const n = h ? 'th' : 'tw'
-    const w = wt[k]
-    const after = side[k] > w
-    if (mount) {
-      rect[k] = after ? w + 1 : w - rect[n]
-      return
-    }
-    if (w < rect[k] || w >= rect[k] + rect[n]) return
-    // Overlapping the wall: trim the piece back to its side (a thin piece moves instead).
-    const keep = after ? rect[k] + rect[n] - (w + 1) : w - rect[k]
-    if (keep >= 1) {
-      rect[n] = keep
-      if (after) rect[k] = w + 1
-      trimmed = true
-    } else rect[k] = after ? w + 1 : w - rect[n]
+    if (on) o.solid = false
   })
-  return trimmed
+}
+
+/**
+ * Wall-mounted pieces: when the plan footprint's edge is within `WALL_GAP_M` of a wall run alongside
+ * it, the piece's back edge moves onto the wall's inner face (in place). True when mounted.
+ */
+function mountOnWall(box: PxRect, footprint: PxRect, walls: readonly MapWall[]): boolean {
+  const gapPx = WALL_GAP_M * PX_PER_M
+  let best: { gap: number; apply: () => void } | undefined
+  const cx = footprint.x + footprint.w / 2
+  const cy = footprint.y + footprint.h / 2
+  for (const w of walls) {
+    const b = w.box
+    const horizontal = b.w >= b.h
+    if (horizontal) {
+      if (overlap(footprint.x, footprint.x + footprint.w, b.x, b.x + b.w) <= 0) continue
+      const north = b.y + b.h / 2 < cy
+      const gap = north ? footprint.y - (b.y + b.h) : b.y - (footprint.y + footprint.h)
+      if (gap > gapPx || gap < -footprint.h) continue
+      if (!best || gap < best.gap)
+        best = { gap, apply: () => (box.y = north ? b.y + b.h : b.y - box.h) }
+    } else {
+      if (overlap(footprint.y, footprint.y + footprint.h, b.y, b.y + b.h) <= 0) continue
+      const west = b.x + b.w / 2 < cx
+      const gap = west ? footprint.x - (b.x + b.w) : b.x - (footprint.x + footprint.w)
+      if (gap > gapPx || gap < -footprint.w) continue
+      if (!best || gap < best.gap)
+        best = { gap, apply: () => (box.x = west ? b.x + b.w : b.x - box.w) }
+    }
+  }
+  best?.apply()
+  return !!best
 }
 
 /** The innermost plan room holding a module-local point. */
@@ -504,59 +682,8 @@ function roomOf(plan: ModulePlan, x: number, z: number) {
   return best
 }
 
-/**
- * Shrinks `r` (in place) to lie inside `room` (a piece longer than its room stops at the wall);
- * false when they don't meet.
- */
-function clampTo(r: TileRect, room: TileRect): boolean {
-  const x0 = Math.max(r.tx, room.tx)
-  const y0 = Math.max(r.ty, room.ty)
-  const x1 = Math.min(r.tx + r.tw, room.tx + room.tw)
-  const y1 = Math.min(r.ty + r.th, room.ty + room.th)
-  if (x1 <= x0 || y1 <= y0) return false
-  r.tx = x0
-  r.ty = y0
-  r.tw = x1 - x0
-  r.th = y1 - y0
-  return true
-}
-
-/** Module-local rect corners → world points. */
-function corners(p: ModulePlacement, x0: number, z0: number, x1: number, z1: number): Vec2[] {
-  return [toWorld({ x: x0, z: z0 }, p), toWorld({ x: x1, z: z1 }, p)]
-}
-
-/** Tile rect covering the world AABB of `pts` (rounded outward, edges on the grid stay put). */
-function rectOf(pts: Vec2[], at: Pick<PixelMap, 'originM'>): TileRect {
-  const xs = pts.map((q) => (q.x - at.originM.x) / TILE_M)
-  const zs = pts.map((q) => (q.z - at.originM.z) / TILE_M)
-  const tx = Math.floor(Math.min(...xs) + EPS)
-  const ty = Math.floor(Math.min(...zs) + EPS)
-  return {
-    tx,
-    ty,
-    tw: Math.max(1, Math.ceil(Math.max(...xs) - EPS) - tx),
-    th: Math.max(1, Math.ceil(Math.max(...zs) - EPS) - ty),
-  }
-}
-
-function boundsOf(ts: TilePos[]): TileRect {
-  const tx = Math.min(...ts.map((t) => t.tx))
-  const ty = Math.min(...ts.map((t) => t.ty))
-  return {
-    tx,
-    ty,
-    tw: Math.max(...ts.map((t) => t.tx)) - tx + 1,
-    th: Math.max(...ts.map((t) => t.ty)) - ty + 1,
-  }
-}
-
-function forTiles(r: TileRect, fn: (t: TilePos) => void) {
-  for (let ty = r.ty; ty < r.ty + r.th; ty++)
-    for (let tx = r.tx; tx < r.tx + r.tw; tx++) fn({ tx, ty })
-}
-
-/** Placements whose tiles changed: all when the grid moved, else added, moved or removed ones. */
+// ── Chunk invalidation ───────────────────────────────────────────────────────────────────────
+/** Placements whose geometry changed: all when the grid moved, else added, moved or removed ones. */
 function dirtyList(
   layout: BuildingLayout,
   proj: ReturnType<typeof projectionFor>,
@@ -582,7 +709,6 @@ function dirtyList(
 /** Placement signatures each map was built from (kept off the public shape). */
 const prevSignatures = new WeakMap<PixelMap, Map<string, string>>()
 
-/** Remembers the signatures a map was built from (called by `buildPixelMap`). */
 function remember(map: PixelMap, layout: BuildingLayout) {
   prevSignatures.set(map, new Map(layout.placements.map((p) => [p.id, signature(p)])))
   return map

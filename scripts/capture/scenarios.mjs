@@ -856,6 +856,7 @@ export const SCENARIOS = [
       'pixel-library',
       'pixel-meeting',
       'pixel-minimap',
+      'pixel-zoomed-out',
     ],
     clips: ['pixel-walk'],
     async run(c, want) {
@@ -917,6 +918,13 @@ export const SCENARIOS = [
         await win.locator('#minimap').waitFor({ state: 'visible', timeout: 5000 })
         await still('pixel-minimap')
         await win.keyboard.press('m')
+      }
+      if (want('pixel-zoomed-out')) {
+        // - zooms out in crisp whole-pixel steps: most of the office on one screen, still walkable.
+        await goTo({ agentId: 'cc:omar' })
+        for (let i = 0; i < 4; i++) await win.keyboard.press('-')
+        await still('pixel-zoomed-out')
+        await win.locator('#pixel-zoom [data-zoom="0"]').click()
       }
       if (want('pixel-walk')) {
         // The player walks east along the pods (D held while frames are taken).

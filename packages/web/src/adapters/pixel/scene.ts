@@ -12,11 +12,14 @@ import type { AgentPlan, BuildingLayout, ClipName, Link, Vec2 } from '../../app/
 import { PIXEL_COPY } from '../../app/pixel-copy.ts'
 import {
   PX_PER_M,
-  TILE_M,
+  TILE_PX,
+  VIEW_H,
+  VIEW_W,
   type Dir4,
   type InteractTarget,
   type MapObject,
   type PixelMap,
+  type PxRect,
   type TileRect,
 } from '../../app/pixel/types.ts'
 import {
@@ -41,14 +44,7 @@ import {
 } from '../../app/pixel/interact.ts'
 import { dirVector, pixelToWorld, toPixel, toTile } from '../../app/pixel/project.ts'
 import { roomLabel } from '../../app/pixel/rooms.ts'
-import {
-  blocked,
-  nearestFree,
-  spawnPoint,
-  SPRINT_SPEED,
-  stepPlayer,
-  WALK_SPEED,
-} from '../../app/pixel/walk.ts'
+import { blocked, nearestFree, playerSpeed, spawnPoint, stepPlayer } from '../../app/pixel/walk.ts'
 import { PixelCamera } from './camera.ts'
 import { NpcSystem, type Npc } from './characters.ts'
 import {
@@ -60,13 +56,16 @@ import {
   drawSolidOverlay,
   drawStatusIcon,
   drawFx,
+  drawWall,
   FLAT_KINDS,
   iconFx,
+  overhangOf,
+  wallClip,
 } from './effects.ts'
 import { declutterTags } from '../../app/pixel/tags.ts'
 import { drawTag, drawText, GLYPH_H, textWidth } from './font.ts'
 import { PixelInput } from './input.ts'
-import { ChunkCache, PixelRenderer, type ViewRect } from './renderer.ts'
+import { ChunkCache, flatWall, PixelRenderer, type ViewRect } from './renderer.ts'
 import {
   CHAR_H,
   CHAR_W,
@@ -74,6 +73,7 @@ import {
   createSpriteFoot,
   loadAtlas,
   lookKey,
+  walkRate,
   type Atlas,
   type Look,
 } from './sprites.ts'
@@ -93,6 +93,24 @@ const OPPOSITE: Record<Dir4, Dir4> = { n: 's', s: 'n', e: 'w', w: 'e' }
 /** The overview's title bar (canvas text). */
 const OVERVIEW_TITLE = PIXEL_COPY.overviewTitle
 const debugEnabled = () => new URLSearchParams(location.search).get('debug') === '1'
+/** Name tags within this many metres of the player show in 'nearby' mode (16 px per metre). */
+const NEARBY_M = 4
+/** How far the player stands from what they travel to (m). */
+const PLACE_NEAR_M = 1
+/** Objects considered for E/interaction around the player (m). */
+const INTERACT_PREFILTER_M = 3
+
+/** The 1 m cells a px box covers. */
+const cellsOf = (b: PxRect): TileRect => {
+  const tx = Math.floor(b.x / TILE_PX)
+  const ty = Math.floor(b.y / TILE_PX)
+  return {
+    tx,
+    ty,
+    tw: Math.max(1, Math.ceil((b.x + b.w) / TILE_PX) - tx),
+    th: Math.max(1, Math.ceil((b.y + b.h) / TILE_PX) - ty),
+  }
+}
 
 /** The player's place survives mode switches within a session (plan §6). */
 let savedPlayer: { pos: Vec2; dir: Dir4 } | null = null
@@ -111,7 +129,7 @@ interface Player {
 export class PixelScene implements SceneView {
   private renderer: PixelRenderer
   private tiles = new PixelTiles()
-  private chunks = new ChunkCache(this.tiles)
+  private chunks = new ChunkCache(this.tiles, (c, w) => drawWall(c, w, this.atlas, 'top'))
   private sprites = new CharacterSprites()
   private npcs = new NpcSystem()
   private camera = new PixelCamera()
@@ -124,6 +142,10 @@ export class PixelScene implements SceneView {
   private clips: ClipTable = {}
   private player: Player
   private placed = false
+  /** R: running is the default pace (session only). */
+  private running = false
+  /** Wall-mounted objects' art limits, per map. */
+  private artClips = new Map<string, PxRect | null>()
   private gfx: Effective | null = null
   private theme: 'light' | 'dark' = 'dark'
   private links: Link[] = []
@@ -141,7 +163,6 @@ export class PixelScene implements SceneView {
   private lastTalked: string | null = null
   /** Desk seat anchor → the desk object in front of it (status monitor colour). */
   private deskOf = new Map<string, string>()
-  private litBooths = new Set<string>()
   private resolve: (placement: string, slot: string) => CapabilityRef | undefined = () => undefined
   private room = ''
   private currentView: string | null = null
@@ -170,6 +191,8 @@ export class PixelScene implements SceneView {
   private cameraFn: ((view: TileRect) => void) | null = null
   private baseFn:
     ((img: CanvasImageSource, widthTiles: number, heightTiles: number) => void) | null = null
+  private zoomFn: ((z: { level: number; levels: number; atDefault: boolean }) => void) | null = null
+  private runFn: ((on: boolean) => void) | null = null
   private lastCam = ''
   private lastCamAt = -Infinity
   private lastTile = ''
@@ -206,8 +229,10 @@ export class PixelScene implements SceneView {
           }
           return
         }
-        this.camera.setZoom(this.camera.zoom + d)
+        this.zoomBy(d)
       },
+      zoomKey: (d) => this.zoomBy(d),
+      toggleRun: () => this.setRun(!this.running),
       space: () => this.setCam({ type: 'space' }),
       click: (x, y) => this.click(x, y),
       hover: (x, y) => this.hoverAt(x, y),
@@ -271,7 +296,7 @@ export class PixelScene implements SceneView {
     const map = this.map
     if (!map) return
     const dir = this.input.direction()
-    const speed = this.input.run ? SPRINT_SPEED : WALK_SPEED
+    const speed = playerSpeed({ sprint: this.input.run, run: this.running })
     const before = { ...p.pos }
     if (dir) {
       p.goal = null
@@ -286,20 +311,15 @@ export class PixelScene implements SceneView {
         const ax = Math.abs(dx) > Math.abs(dz)
         p.dir = ax ? (dx > 0 ? 'e' : 'w') : dz > 0 ? 's' : 'n'
         const left = ax ? Math.abs(dx) : Math.abs(dz)
-        p.pos = stepPlayer(
-          map,
-          p.pos,
-          dirVector(p.dir),
-          WALK_SPEED,
-          Math.min(dt, left / WALK_SPEED),
-        )
+        p.pos = stepPlayer(map, p.pos, dirVector(p.dir), speed, Math.min(dt, left / speed))
         if (p.pos.x === before.x && p.pos.z === before.z) p.goal = null
       }
     }
     const moved = before.x !== p.pos.x || before.z !== p.pos.z
     if (moved) {
       for (const n of this.npcs.npcs.values()) n.faceOverride = null
-      p.animT += dt
+      // The walk cycle runs at the on-screen speed, so feet never slide.
+      p.animT += dt * walkRate(speed)
     }
     p.moving = moved
     savedPlayer = { pos: { ...p.pos }, dir: p.dir }
@@ -334,13 +354,13 @@ export class PixelScene implements SceneView {
   private emitCamera(map: PixelMap): void {
     if (!this.cameraFn || this.time - this.lastCamAt < 0.25) return
     const v = this.view()
-    const tx = Math.max(0, Math.floor(v.x / 16))
-    const ty = Math.max(0, Math.floor(v.y / 16))
+    const tx = Math.max(0, Math.floor(v.x / TILE_PX))
+    const ty = Math.max(0, Math.floor(v.y / TILE_PX))
     const r: TileRect = {
       tx,
       ty,
-      tw: Math.min(map.widthTiles, Math.ceil((v.x + v.w) / 16)) - tx,
-      th: Math.min(map.heightTiles, Math.ceil((v.y + v.h) / 16)) - ty,
+      tw: Math.min(map.widthTiles, Math.ceil((v.x + v.w) / TILE_PX)) - tx,
+      th: Math.min(map.heightTiles, Math.ceil((v.y + v.h) / TILE_PX)) - ty,
     }
     const k = `${r.tx},${r.ty},${r.tw},${r.th}`
     if (k === this.lastCam) return
@@ -362,15 +382,45 @@ export class PixelScene implements SceneView {
 
   // ── Drawing ──
   private view(): ViewRect {
+    const r = this.renderer
+    // The zoom levels follow the window's integer fit scale.
+    if (this.camera.setFit(r.scale)) this.emitZoom()
     const m = this.map
-    const w = m ? m.widthTiles * TILE_M * PX_PER_M : 480
-    const h = m ? m.heightTiles * TILE_M * PX_PER_M : 270
-    return this.camera.view(this.renderer.scale, w, h)
+    return this.camera.view(r.viewW, r.viewH, m ? m.widthPx : VIEW_W, m ? m.heightPx : VIEW_H)
+  }
+
+  // ── Zoom and run ──
+  /** Steps the zoom out (−1), in (+1) or back to the default (0). */
+  zoomBy(delta: -1 | 0 | 1): void {
+    this.view()
+    if (this.camera.zoomBy(delta)) this.emitZoom()
+  }
+
+  private emitZoom(): void {
+    this.zoomFn?.(this.camera.info())
+  }
+
+  private setRun(on: boolean): void {
+    if (on === this.running) return
+    this.running = on
+    this.runFn?.(on)
+  }
+
+  onZoom(fn: (z: { level: number; levels: number; atDefault: boolean }) => void): void {
+    this.zoomFn = fn
+    this.camera.setFit(this.renderer.scale)
+    fn(this.camera.info())
+  }
+
+  onRun(fn: (on: boolean) => void): void {
+    this.runFn = fn
+    fn(this.running)
   }
 
   private draw(): void {
     const r = this.renderer
     const c = r.ctx
+    this.sprites.nextFrame()
     r.begin(BACKGROUND[this.theme])
     const map = this.map
     if (!map) {
@@ -381,12 +431,15 @@ export class PixelScene implements SceneView {
     const v = this.view()
     const over = this.camera.overview
     r.world(v, over)
-    this.drawn = this.chunks.draw(c, 'base', v)
+    this.drawn = this.chunks.draw(c, v)
     const inView = (x: number, y: number, m = 32) =>
       x > v.x - m && x < v.x + v.w + m && y > v.y - m && y < v.y + v.h + m
+    /** A box (plus its art's overhang above) touches the view. */
+    const boxInView = (b: PxRect, up = 32) =>
+      b.x < v.x + v.w && b.x + b.w > v.x && b.y - up < v.y + v.h && b.y + b.h > v.y
     // Desk monitors show the seated agent's status colour.
     const monitors = new Map<string, string>()
-    this.litBooths.clear()
+    const booths: { px: number; py: number }[] = []
     for (const n of this.npcs.npcs.values()) {
       const t = n.plan.intent.target
       const desk = t.includes('/seat:desk:') ? this.deskOf.get(t) : undefined
@@ -394,24 +447,33 @@ export class PixelScene implements SceneView {
       // A booth lamp lights while a waiting agent occupies the booth.
       if (n.plan.intent.activity === 'booth' && this.layout) {
         const a = this.layout.anchors.get(t)
-        if (a) {
-          const tt = toTile(a.pos, map)
-          this.litBooths.add(tt.tx + ',' + tt.ty)
-        }
+        if (a) booths.push(toPixel(a.pos, map))
       }
     }
     type D = { y: number; draw: () => void }
     const list: D[] = []
+    // Objects y-sort by their box's bottom edge (the feet line), characters by their feet.
     for (const ob of map.objects) {
-      const x = ob.rect.tx * 16
-      const y = ob.rect.ty * 16
-      if (!inView(x, y)) continue
+      const b = ob.box
+      if (!boxInView(b)) continue
       const hl = ob.id === this.focusObject || ob.id === this.hoverObject
-      const lit = ob.kind === 'booth-lamp' && this.litBooths.has(ob.rect.tx + ',' + ob.rect.ty)
+      const lit =
+        ob.kind === 'booth-lamp' &&
+        booths.some(
+          (q) =>
+            q.px >= b.x - 8 && q.px <= b.x + b.w + 8 && q.py >= b.y - 8 && q.py <= b.y + b.h + 8,
+        )
+      const clip = this.artClips.get(ob.id) ?? null
       list.push({
-        y: FLAT_KINDS.has(ob.kind) ? -1e9 : ob.sortY,
-        draw: () => drawObject(c, ob, monitors.get(ob.id) ?? null, hl, lit, this.atlas),
+        // Chairs sort at their top edge so whoever sits on one is drawn over it.
+        y: FLAT_KINDS.has(ob.kind) ? -1e9 : ob.kind === 'chair' ? b.y + 1 : b.y + b.h,
+        draw: () => drawObject(c, ob, monitors.get(ob.id) ?? null, hl, lit, this.atlas, clip),
       })
+    }
+    // Walls with a ¾ face y-sort too: whoever stands behind (north of) one is hidden by its face.
+    for (const w of map.walls) {
+      if (flatWall(w) || !boxInView(w.box, 16)) continue
+      list.push({ y: w.box.y + w.box.h, draw: () => drawWall(c, w, this.atlas) })
     }
     const visible: { n: Npc; x: number; y: number }[] = []
     for (const n of this.npcs.npcs.values()) {
@@ -439,14 +501,19 @@ export class PixelScene implements SceneView {
       y: pp.py,
       draw: () => {
         if (!drawFx(c, this.atlas, 'shadow', pp.px, pp.py, this.time)) drawShadow(c, pp.px, pp.py)
-        const t = p.moving ? p.animT * (this.input.run ? SPRINT_SPEED / WALK_SPEED : 1) : this.time
-        const f = this.sprites.frame(p.look, p.key, p.dir, p.moving ? 'walk' : 'idle', t)
+        const f = this.sprites.frame(
+          p.look,
+          p.key,
+          p.dir,
+          p.moving ? 'walk' : 'idle',
+          p.moving ? p.animT : this.time,
+        )
         c.drawImage(f.canvas, Math.round(pp.px) - f.ax, Math.round(pp.py) - f.ay)
       },
     })
     list.sort((a, b) => a.y - b.y)
     for (const d of list) d.draw()
-    this.drawn += list.length + this.chunks.draw(c, 'overhead', v)
+    this.drawn += list.length
     // Links: from the agent (live position) to the capability.
     for (const l of this.links) {
       const n = this.npcs.npcs.get(l.agentId)
@@ -461,7 +528,8 @@ export class PixelScene implements SceneView {
       if (n.icon && !drawFx(c, this.atlas, iconFx(n.icon), x, y - CHAR_H, this.time))
         drawStatusIcon(c, n.icon, x, y - CHAR_H, this.time)
     if (!over) {
-      // Tags never overlap: selected and hovered first, then the nearest to the player.
+      // Tags never overlap: selected and hovered first, then the nearest to the player. Zoomed out
+      // (below 2 device px per art px), only essential tags show.
       const tagY = (n: Npc, y: number) => y - CHAR_H - (n.icon ? 12 : 1)
       const keep = declutterTags(
         visible
@@ -476,7 +544,9 @@ export class PixelScene implements SceneView {
               (n.id === this.selected ? 1e6 : 0) +
               (n.id === this.hoverAgent ? 1e5 : 0) -
               Math.hypot(n.motion.pos.x - this.player.pos.x, n.motion.pos.z - this.player.pos.z),
+            essential: this.essentialTag(n),
           })),
+        this.camera.zoom,
       )
       for (const { n, x, y } of visible)
         if (keep.has(n.id)) {
@@ -497,7 +567,7 @@ export class PixelScene implements SceneView {
     if (this.solidOverlay) this.drawSolid(c, map, v)
     r.screen()
     if (map.key.startsWith('footprint|'))
-      drawText(c, PIXEL_COPY.missingPlan, 4, 262, 'rgba(244,241,234,0.7)')
+      drawText(c, PIXEL_COPY.missingPlan, 4, VIEW_H - 8, 'rgba(244,241,234,0.7)')
     if (over) this.drawOverview(c, map, v, visible, pp)
     else if (this.cam.mode === 'follow') this.drawPlayerArrow(c, v, pp)
     r.end()
@@ -518,7 +588,7 @@ export class PixelScene implements SceneView {
     pp: { px: number; py: number },
   ): void {
     const tileCentre = (tx: number, ty: number) =>
-      this.toScreen(v, (tx + 0.5) * 16, (ty + 0.5) * 16)
+      this.toScreen(v, (tx + 0.5) * TILE_PX, (ty + 0.5) * TILE_PX)
     for (const l of this.labels) {
       const at = tileCentre(l.tx, l.ty)
       const text = l.text
@@ -553,8 +623,8 @@ export class PixelScene implements SceneView {
     // Title bar.
     const title = OVERVIEW_TITLE
     c.fillStyle = 'rgba(20,18,28,0.85)'
-    c.fillRect(0, 0, 480, GLYPH_H + 6)
-    drawText(c, title, Math.round((480 - textWidth(title)) / 2), 3, '#f4f1ea')
+    c.fillRect(0, 0, VIEW_W, GLYPH_H + 6)
+    drawText(c, title, Math.round((VIEW_W - textWidth(title)) / 2), 3, '#f4f1ea')
   }
 
   /** While following an agent: an edge arrow pointing to the player when they're off-screen. */
@@ -564,8 +634,8 @@ export class PixelScene implements SceneView {
     pp: { px: number; py: number },
   ): void {
     const s = this.toScreen(v, pp.px, pp.py - CHAR_H / 2)
-    const W = 480
-    const H = 270
+    const W = VIEW_W
+    const H = VIEW_H
     if (s.x >= 0 && s.y >= 0 && s.x <= W && s.y <= H) return
     const cx = W / 2
     const cy = H / 2
@@ -600,12 +670,18 @@ export class PixelScene implements SceneView {
     drawSolidOverlay(c, map, v)
   }
 
+  /** Selected, hovered, waiting or error: still tagged when zoomed out (`declutterTags`). */
+  private essentialTag(n: Npc): boolean {
+    const st = n.plan.agent.status
+    return n.id === this.selected || n.id === this.hoverAgent || st === 'waiting' || st === 'error'
+  }
+
   private showTag(n: Npc): boolean {
-    if (n.id === this.selected || n.id === this.hoverAgent) return true
+    if (this.essentialTag(n)) return true
     const mode = this.gfx?.labels.mode ?? 'nearby'
     if (mode === 'all') return true
     if (mode === 'selected') return false
-    const reach = Math.min(this.gfx?.labels.nearbyM ?? 2.5, 2.5)
+    const reach = Math.min(this.gfx?.labels.nearbyM ?? NEARBY_M, NEARBY_M)
     return (
       Math.hypot(n.motion.pos.x - this.player.pos.x, n.motion.pos.z - this.player.pos.z) <= reach
     )
@@ -626,10 +702,7 @@ export class PixelScene implements SceneView {
   }
 
   private centerOf(ob: MapObject, map: PixelMap): Vec2 {
-    return {
-      x: map.originM.x + (ob.rect.tx + ob.rect.tw / 2) * TILE_M,
-      z: map.originM.z + (ob.rect.ty + ob.rect.th / 2) * TILE_M,
-    }
+    return pixelToWorld(ob.box.x + ob.box.w / 2, ob.box.y + ob.box.h / 2, map)
   }
 
   private interactObjects(map: PixelMap): InteractObject[] {
@@ -647,12 +720,13 @@ export class PixelScene implements SceneView {
         ...(n.plan.agent.parentId && { parentId: n.plan.agent.parentId }),
       }))
     const px = this.player.pos
+    const r = INTERACT_PREFILTER_M
     const near = this.interactObjects(map).filter(
       (o) =>
-        o.box.maxX > px.x - 2 &&
-        o.box.minX < px.x + 2 &&
-        o.box.maxZ > px.z - 2 &&
-        o.box.minZ < px.z + 2,
+        o.box.maxX > px.x - r &&
+        o.box.minX < px.x + r &&
+        o.box.maxZ > px.z - r &&
+        o.box.minZ < px.z + r,
     )
     const hit = interactionTarget({ pos: px, facing: this.player.dir }, agents, near)
     if (!hit) return null
@@ -704,20 +778,16 @@ export class PixelScene implements SceneView {
     return best?.id ?? null
   }
 
+  /** The interactive object drawn at a world px (its box or the art rising above it). */
   private objectAt(wx: number, wy: number): MapObject | null {
     const map = this.map
     if (!map) return null
-    const tx = Math.floor(wx / 16)
-    const ty = Math.floor(wy / 16)
     return (
-      map.objects.find(
-        (o) =>
-          tx >= o.rect.tx &&
-          ty >= o.rect.ty &&
-          tx < o.rect.tx + o.rect.tw &&
-          ty < o.rect.ty + o.rect.th &&
-          this.objectTarget(o),
-      ) ?? null
+      map.objects.find((o) => {
+        const b = o.box
+        if (wx < b.x || wx >= b.x + b.w || wy >= b.y + b.h) return false
+        return wy >= b.y - overhangOf(o, this.atlas) && !!this.objectTarget(o)
+      }) ?? null
     )
   }
 
@@ -773,7 +843,7 @@ export class PixelScene implements SceneView {
     if (!map) return
     for (const d of ['s', 'e', 'w', 'n'] as Dir4[]) {
       const v = dirVector(d)
-      const at = { x: p.x + v.x * 0.8, z: p.z + v.z * 0.8 }
+      const at = { x: p.x + v.x * PLACE_NEAR_M, z: p.z + v.z * PLACE_NEAR_M }
       if (!blocked(map, at)) {
         this.player.pos = at
         this.player.dir = OPPOSITE[d]
@@ -915,6 +985,8 @@ export class PixelScene implements SceneView {
     this.updateResolver()
     if (this.map === map || this.map?.key === map.key) return
     this.map = map
+    this.artClips.clear()
+    for (const o of map.objects) if (o.wallMounted) this.artClips.set(o.id, wallClip(o, map.walls))
     this.mapDesks(map, layout)
     this.chunks.setMap(map)
     this.labels = minimapLabels(layout, plans, map)
@@ -1146,7 +1218,11 @@ export class PixelScene implements SceneView {
         return {
           player: { x: this.player.pos.x, z: this.player.pos.z, dir: this.player.dir },
           room: this.room,
+          /** Device px per art px (the crisp zoom level). */
           zoom: this.camera.zoom,
+          zoomLevel: this.camera.info(),
+          pxPerMetre: PX_PER_M,
+          run: this.running,
           overview: this.camera.overview,
           camera: this.cam.mode,
           following: this.cam.mode === 'follow' ? this.cam.agentId : null,
@@ -1157,13 +1233,15 @@ export class PixelScene implements SceneView {
             const c = pixelToWorld(v.x + v.w / 2, v.y + v.h / 2, m)
             return { cx: c.x, cz: c.z, w: v.w / PX_PER_M, h: v.h / PX_PER_M }
           })(),
-          /** Every map object's rect, orientation, fill and room (tiles). */
+          /** Every map object's box (px), its 1 m cells (`rect`), orientation, fill and room. */
           objects: () =>
             (this.map?.objects ?? []).map((o) => ({
               id: o.id,
               kind: o.kind,
-              rect: { ...o.rect },
+              box: { ...o.box },
+              rect: cellsOf(o.box),
               solid: o.solid,
+              ...(o.wallMounted && { wallMounted: true }),
               ...(o.room !== undefined && { room: o.room }),
               ...(o.orientation && { orientation: o.orientation }),
               ...(o.fill && { fill: o.fill }),
@@ -1172,9 +1250,17 @@ export class PixelScene implements SceneView {
             (this.map?.rooms ?? []).map((r) => ({
               id: r.id,
               name: r.name,
+              box: { ...r.box },
               rect: { ...r.rect },
               placement: r.placement,
             })),
+          walls: () =>
+            (this.map?.walls ?? []).map((w) => ({
+              box: { ...w.box },
+              kind: w.kind,
+              face: w.face,
+            })),
+          solids: () => (this.map?.solids ?? []).map((r) => ({ ...r })),
           originM: this.map ? { ...this.map.originM } : null,
           tiles: this.map ? { w: this.map.widthTiles, h: this.map.heightTiles } : null,
           entities: [...this.npcs.npcs.values()].map((n) => ({

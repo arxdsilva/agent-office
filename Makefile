@@ -69,6 +69,7 @@ perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 
 perf-pixel: ## 2D RPG mode frame rate with 60 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs --mode pixel --agents 60 --presets low,high
+	$(ELECTRON_ENV) node scripts/perf.mjs --mode pixel --agents 60 --presets low --zoom-out
 
 perf-low: ## Low-end simulation: Minimal and Low on software GL (SwiftShader), 60 agents
 	$(ELECTRON_ENV) node scripts/perf.mjs --low-end

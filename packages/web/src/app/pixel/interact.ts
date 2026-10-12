@@ -1,4 +1,4 @@
-// What "E" talks to (plan §8.1): the nearest interactable within 1.2 m in a 90° cone in front of
+// What "E" talks to (plan §8.1): the nearest interactable within 1.5 m in a 90° cone in front of
 // the player, agents before objects. Objects are measured to their nearest edge (a 2 m shelf counts
 // from its front, not its centre).
 import type { ProviderSurfaces } from '../capability-vm.ts'
@@ -8,9 +8,11 @@ import type { AABB, BuildingLayout, Vec2, Vec3 } from '../office-types.ts'
 import { PIXEL_COPY } from '../pixel-copy.ts'
 import { capabilitySlot } from './map.ts'
 import { dirVector } from './project.ts'
-import { TILE_M, type Dir4, type InteractTarget, type PixelMap } from './types.ts'
+import { PX_PER_M, type Dir4, type InteractTarget, type PixelMap } from './types.ts'
 
-export const INTERACT_RANGE_M = 1.2
+export const INTERACT_RANGE_M = 1.5
+/** Side of a book / notebook port's hit box (m). */
+const PORT_M = 0.25
 /** Half the cone (45°), with a hair of tolerance for exact diagonals. */
 const CONE_COS = Math.cos(Math.PI / 4) - 1e-9
 
@@ -105,7 +107,7 @@ export function objectTargets(
   resolve: (placement: string, slot: string) => CapabilityRef | undefined,
   /**
    * `BuildingLayout.ports`: books and notebooks have no furniture `ref` in the plan, so each
-   * `port:book:*` / `port:notebook:*` attach point becomes a half-tile target on its shelf face.
+   * `port:book:*` / `port:notebook:*` attach point becomes a 0.25 m target on its shelf face.
    */
   ports?: ReadonlyMap<string, Vec3>,
 ): InteractObject[] {
@@ -115,7 +117,7 @@ export function objectTargets(
     const m = /^port:((book|notebook):\d+)$/.exec(local)
     const ref = m && resolve(placement, m[1]!)
     if (!ref) continue
-    const h = TILE_M / 2
+    const h = PORT_M
     out.push({
       id: `${placement}/${m[1]}`,
       target: { kind: 'capability', ref },
@@ -134,10 +136,10 @@ export function objectTargets(
       id: o.id,
       target,
       box: {
-        minX: map.originM.x + o.rect.tx * TILE_M,
-        maxX: map.originM.x + (o.rect.tx + o.rect.tw) * TILE_M,
-        minZ: map.originM.z + o.rect.ty * TILE_M,
-        maxZ: map.originM.z + (o.rect.ty + o.rect.th) * TILE_M,
+        minX: map.originM.x + o.box.x / PX_PER_M,
+        maxX: map.originM.x + (o.box.x + o.box.w) / PX_PER_M,
+        minZ: map.originM.z + o.box.y / PX_PER_M,
+        maxZ: map.originM.z + (o.box.y + o.box.h) / PX_PER_M,
       },
     })
   }

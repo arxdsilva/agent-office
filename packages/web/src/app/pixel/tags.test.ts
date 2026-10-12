@@ -30,4 +30,23 @@ describe('declutterTags', () => {
   it('breaks priority ties by id, so the result is stable frame to frame', () => {
     expect([...declutterTags([tag('b', 0, 0, 1), tag('a', 5, 0, 1)])]).toEqual(['a'])
   })
+
+  // Zoomed out (fewer than 2 device px per art px) only essential tags show: selected, hovered,
+  // waiting or error agents. At 2 and above every tag competes as usual.
+  it('keeps only essential tags when zoomed out below 2', () => {
+    const tags = [
+      { ...tag('sel', 0, 0, 9), essential: true },
+      tag('plain', 100, 0, 1),
+      { ...tag('err', 200, 0, 1), essential: true },
+    ]
+    expect([...declutterTags(tags, 1)].sort()).toEqual(['err', 'sel'])
+    expect([...declutterTags(tags, 2)].sort()).toEqual(['err', 'plain', 'sel'])
+    expect([...declutterTags(tags)].sort()).toEqual(['err', 'plain', 'sel'])
+    // Essential tags still never overlap each other.
+    const pile = [
+      { ...tag('a', 0, 0, 2), essential: true },
+      { ...tag('b', 5, 0, 1), essential: true },
+    ]
+    expect([...declutterTags(pile, 1)]).toEqual(['a'])
+  })
 })

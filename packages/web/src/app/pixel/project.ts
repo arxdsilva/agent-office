@@ -1,14 +1,14 @@
-// World metres ↔ 2D tiles and pixels (plan §3.1). North is −z: the atrium sits at the top.
+// World metres ↔ 2D pixels (16 px/m) and 1 m tiles (plan §3.1). North is −z: the atrium sits at the top.
 // Heading convention (navigation.ts): heading 0 faces +z (south on the map), π/2 faces +x (east).
 import { normalizeAngle } from '../building.ts'
 import type { AABB, Vec2 } from '../office-types.ts'
 import { PX_PER_M, TILE_M, type Dir4, type TilePos } from './types.ts'
 
-/** Empty tiles around the building. */
-export const PAD_TILES = 2
+/** Empty 1 m tiles around the building (PAD 1 m). */
+export const PAD_TILES = 1
 
 export interface Projection {
-  /** World metres of tile (0, 0)'s top-left corner (snapped to the 0.5 m grid). */
+  /** World metres of tile (0, 0)'s top-left corner (snapped to the 1 m grid). */
   originM: Vec2
   widthTiles: number
   heightTiles: number

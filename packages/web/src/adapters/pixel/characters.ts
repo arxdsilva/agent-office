@@ -14,11 +14,11 @@ import {
   type MotionEvent,
 } from '../../app/motion.ts'
 import type { AgentPlan, PropName, Vec2 } from '../../app/office-types.ts'
-import { npcVisual, WALK_FPS } from '../../app/pixel/anim.ts'
+import { npcVisual } from '../../app/pixel/anim.ts'
 import { createNpcs, type NpcEntity } from '../../app/pixel/npc.ts'
 import { dir4 } from '../../app/pixel/project.ts'
 import type { Dir4, PixelAnim, StatusIcon } from '../../app/pixel/types.ts'
-import { lookKey, type Look } from './sprites.ts'
+import { ANIM_FPS, lookKey, type Look } from './sprites.ts'
 
 export interface Npc {
   id: string
@@ -102,7 +102,7 @@ export class NpcSystem {
       const name = m.clip === 'SitDown' ? 'sit-down' : m.clip === 'StandUp' ? 'stand-up' : v.anim
       if (name !== n.name) ((n.anim = v.anim), (n.name = name), (n.animT = 0))
       // Walk cycles run at the ground speed (like the 3D Walk timeScale); the rest in real time.
-      n.animT += dt * (v.fps ? v.fps / WALK_FPS : 1)
+      n.animT += dt * (v.fps ? v.fps / ANIM_FPS.walk : 1)
       n.icon = v.icon
       n.props = v.props
       n.dir = n.faceOverride ?? dir4(m.heading)

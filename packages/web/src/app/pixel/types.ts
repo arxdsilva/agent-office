@@ -5,10 +5,14 @@ import type { AgentStatus, ViewMode } from '@agent-office/shared'
 import type { CapabilityRef } from '../library-types.ts'
 import type { ThemeId } from '../office-types.ts'
 
-/** Metres per tile and pixels per tile (16 px tiles at 0.5 m: a character is one tile wide). */
-export const TILE_M = 0.5
+/**
+ * Scale (GBA scale, plan "2D at GBA scale" §1): 16 px per metre. Floors are 16 px tiles = 1 m
+ * cells; furniture, walls and rooms are placed at their exact plan positions in pixels (not
+ * snapped to tiles). A character (16×24) is one metre wide.
+ */
+export const PX_PER_M = 16
 export const TILE_PX = 16
-export const PX_PER_M = TILE_PX / TILE_M
+export const TILE_M = TILE_PX / PX_PER_M
 /** Logical canvas, integer-scaled to the window (letterboxed). */
 export const VIEW_W = 480
 export const VIEW_H = 270
@@ -24,6 +28,13 @@ export interface TileRect {
   ty: number
   tw: number
   th: number
+}
+/** A rect in map pixels (integers; origin = `PixelMap.originM`). */
+export interface PxRect {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 // ── Floor plan as exported by Blender (graphics contract §11), module-local metres ──────────
@@ -100,21 +111,27 @@ export type PlanByModule = Partial<
   Record<'atrium' | 'street' | 'wing' | 'garden' | 'cap', ModulePlan>
 >
 
-// ── The generated world ───────────────────────────────────────────────────────────────────────
+// ── The generated world (map pixels, 16 px per metre) ────────────────────────────────────────
 export interface MapObject {
   id: string
   kind: FurnitureKind | 'door' | 'window' | 'booth-lamp' | 'elevator-door'
-  /** Footprint in tiles (world space, after the module's yaw). */
-  rect: TileRect
-  /** Feet line in pixels, for y-sorting with characters. */
+  /**
+   * The footprint in map pixels, after the module's yaw. It is both the solid box (when `solid`)
+   * and the base the art is drawn on: fixed art is drawn with its base exactly on `box` and its
+   * overhang above; strips repeat along the long axis; areas 9-slice-fill it.
+   */
+  box: PxRect
+  /** Feet line in map pixels (the box's bottom edge), for y-sorting with characters. */
   sortY: number
   solid: boolean
   theme?: ThemeId
   facing?: Dir4
   /** Drawing orientation: 'v' when the footprint is taller than wide (vertical art variants). */
   orientation?: 'h' | 'v'
-  /** How the renderer fills `rect`: one sprite, a sprite repeated along the long axis, or a 9-slice. */
+  /** How the renderer fills `box`: one sprite, a sprite repeated along the long axis, or a 9-slice. */
   fill?: 'sprite' | 'repeat' | 'area'
+  /** Against a wall: the art never crosses that wall (no overhang drawn past it). */
+  wallMounted?: boolean
   /** Room id the object belongs to (for invariants and debug). */
   room?: string
   /** Interactive objects: what E/click opens. */
@@ -123,29 +140,62 @@ export interface MapObject {
     | { kind: 'object'; object: 'elevator' | 'stats-board' | 'sign'; label?: string }
 }
 
+/** One wall run between openings, in map pixels (at least `WALL_PX` thick). */
+export interface MapWall {
+  box: PxRect
+  kind: 'solid' | 'glass'
+  /**
+   * The side whose 3/4 face is drawn: 's' for a horizontal wall seen from the room below it.
+   * Vertical walls and walls with no room below draw only their top strip (null).
+   */
+  face: 's' | null
+  theme?: ThemeId
+}
+/** Minimum wall thickness in px (drawn and solid), and the 3/4 face height drawn above it. */
+export const WALL_PX = 4
+export const WALL_FACE_PX = 12
+
 export interface PixelRoom {
   id: string
   name: string
+  /** Exact room box in map pixels. */
+  box: PxRect
+  /** The 1 m cells the room covers (minimap, HUD room lookup). */
   rect: TileRect
   theme?: ThemeId
   provider?: string
   placement: string
 }
 
+/** Uniform bucket grid over `PixelMap.solids` for fast circle/rect queries. */
+export interface SolidIndex {
+  /** Bucket size in px. */
+  cellPx: number
+  cols: number
+  rows: number
+  /** Row-major; each bucket lists indices into `PixelMap.solids`. */
+  buckets: number[][]
+}
+
 export interface PixelMap {
+  /** 1 m floor cells. */
   widthTiles: number
   heightTiles: number
-  /** World metres of tile (0, 0) (bounds min, padded). */
+  widthPx: number
+  heightPx: number
+  /** World metres of pixel (0, 0) (bounds min, padded). */
   originM: { x: number; z: number }
-  /** Tile ids per layer (atlas indices; 0 = empty), row-major. */
-  layers: { floor: Uint16Array; walls: Uint16Array; overhead: Uint16Array }
+  /** Floor tile ids per 1 m cell (atlas indices; 0 = empty), row-major. */
+  layers: { floor: Uint16Array }
   objects: MapObject[]
-  /** 1 = blocked for the player (walls + solid furniture). */
-  solid: Uint8Array
+  walls: MapWall[]
+  /** Everything that blocks the player: wall boxes + solid object boxes. */
+  solids: PxRect[]
+  solidIndex: SolidIndex
   rooms: PixelRoom[]
   /** Changes only when the building layout or the plan changes. */
   key: string
-  /** Placements whose tiles changed since the previous map (chunk re-render list). */
+  /** Placements whose geometry changed since the previous map (chunk re-render list). */
   dirty: string[]
 }
 
@@ -221,9 +271,9 @@ export interface MinimapVM {
   viewport?: TileRect
 }
 
-/** Atlas footprint (tiles) of an object's art for an orientation; null when the kind has no art. */
+/** Atlas base size (px) of an object's art for an orientation; null when the kind has no art. */
 export interface SpriteFoot {
-  foot(kind: string, orientation: 'h' | 'v'): { tw: number; th: number } | null
+  foot(kind: string, orientation: 'h' | 'v'): { w: number; h: number } | null
 }
 export interface DirectoryVM {
   query: string

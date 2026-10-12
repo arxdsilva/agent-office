@@ -71,7 +71,30 @@ export const REQUIRED_TILES = [
   'stairs/up',
   'shade/n',
   'rug/c',
+  'wall/thin-top-h',
+  'wall/thin-top-v',
+  'wall/thin-post',
+  'wall/thin-face',
+  'glass/thin-top-h',
+  'glass/thin-top-v',
+  'glass/thin-post',
+  'glass/thin-face',
 ]
+/** Thin walls at 16 px/m (docs/pixel-style.md §Scale): 4 px tops (16 px pieces), a 12 px face, posts and face caps. */
+export const THIN_WALLS = Object.fromEntries(
+  ['wall', 'glass'].map((k) => [
+    k === 'wall' ? 'solid' : 'glass',
+    {
+      topH: `${k}/thin-top-h`,
+      topV: `${k}/thin-top-v`,
+      post: `${k}/thin-post`,
+      face: `${k}/thin-face`,
+      faceL: `${k}/thin-face-l`,
+      faceR: `${k}/thin-face-r`,
+    },
+  ]),
+)
+export const PX_PER_METRE = 16
 /** Extra glyphs beyond ASCII 32–126. */
 export const EXTRA_GLYPHS = ['·', '→', '✓', '…', '✖', '⚙', '▶', '▼', '←', '↑', '↓', '♥', '★', '•']
 
@@ -548,7 +571,7 @@ export function buildAtlas({ log = () => {} } = {}) {
     generator: 'assets/pixel/build.mjs',
     license: 'Original work for agent-office, MIT (assets/pixel/LICENSES.md)',
     tileSize: TILE,
-    metresPerTile: 0.5,
+    pxPerMetre: PX_PER_METRE,
     sheets: {},
     frames,
     tiles: [null],
@@ -581,7 +604,9 @@ export function buildAtlas({ log = () => {} } = {}) {
   }
   for (const f of tileFrames) {
     checkKeys(f, officeKeys)
-    if (f.w !== TILE || f.h !== TILE) throw new Error(`${f.file}: tile "${f.name}" must be 16×16 (is ${f.w}×${f.h})`)
+    // Thin-wall pieces (meta "thin") are 16 px long and 4 or 12 px across; every other tile is 16×16.
+    const ok = f.meta.thin ? [f.w, f.h].every((d) => [4, 12, 16].includes(d)) : f.w === TILE && f.h === TILE
+    if (!ok) throw new Error(`${f.file}: tile "${f.name}" must be ${f.meta.thin ? '4, 12 or 16 px per side' : '16×16'} (is ${f.w}×${f.h})`)
     if (f.meta.autotile) {
       for (let mask = 0; mask < 16; mask++)
         addTile(`${f.name}-${mask}`, autotileRows(f.rows, mask, f.meta.edge ?? 'k', f.meta.lip ?? null), { ...f.meta, autotile: undefined, mask }, f.file)
@@ -614,21 +639,25 @@ export function buildAtlas({ log = () => {} } = {}) {
   for (const f of objFrames) {
     checkKeys(f, officeKeys)
     const [kind, facing = 's'] = f.name.split('@')
-    const foot = f.meta.foot ?? [Math.ceil(f.w / TILE), 1]
+    // footPx: the base (footprint) in px at 16 px/m; it sits at the bottom of the frame, the rest is overhang.
+    const footPx = f.meta.footPx ?? (f.meta.foot ? f.meta.foot.map((t) => t * TILE) : [f.w, TILE])
+    if (footPx[1] > f.h) throw new Error(`${f.file}:${f.line}: "${f.name}" footPx ${footPx} is taller than its frame (${f.h})`)
+    const foot = footPx.map((p) => Math.ceil(p / TILE))
     const ax = Number(f.attrs.ax ?? 0)
-    const ay = Number(f.attrs.ay ?? f.h - foot[1] * TILE)
+    const ay = Number(f.attrs.ay ?? f.h - footPx[1])
     const themed = usesTheme(f.rows)
     for (const theme of themed ? THEMES : [null]) {
       const id = theme ? `${f.name}@${theme}` : f.name
       objEntries.push({ key: `obj:${id}`, img: rowsToImage(f.rows, officeColor(pal, theme, f.file)), ax, ay })
     }
-    const { foot: _f, ...rest } = f.meta
+    const { foot: _f, footPx: _p, ...rest } = f.meta
     ;(objects[kind] ??= { variants: {} }).variants[facing] = {
       frame: `obj:${f.name}`,
       themed,
+      footPx,
       foot,
       solid: rest.solid ?? true,
-      sortY: rest.sortY ?? foot[1] * TILE,
+      sortY: rest.sortY ?? footPx[1],
       ...rest,
     }
   }
@@ -636,7 +665,9 @@ export function buildAtlas({ log = () => {} } = {}) {
     if (!objects[kind]) {
       placeholders.push(`obj:${kind}`)
       objEntries.push({ key: `obj:${kind}`, img: placeholder(TILE * 2, TILE * 2), ax: 0, ay: TILE })
-      objects[kind] = { variants: { s: { frame: `obj:${kind}`, themed: false, foot: [2, 1], solid: true, sortY: TILE, placeholder: true } } }
+      objects[kind] = {
+        variants: { s: { frame: `obj:${kind}`, themed: false, footPx: [TILE * 2, TILE], foot: [2, 1], solid: true, sortY: TILE, placeholder: true } },
+      }
     }
   atlas.objects = Object.fromEntries(Object.keys(objects).sort().map((k) => [k, objects[k]]))
 
@@ -793,6 +824,7 @@ export function buildAtlas({ log = () => {} } = {}) {
       window: ['wall/window-hi', 'wall/window-lo'],
     },
     rug: Object.fromEntries(['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se'].map((p) => [p, `rug/${p}`])),
+    thinWall: THIN_WALLS,
     shade: { n: 'shade/n', w: 'shade/w', e: 'shade/e', nw: 'shade/nw', ne: 'shade/ne' },
   }
   atlas.palettes = { ramps: pal.ramps, recolorSource: pal.recolorSource, office: pal.office }

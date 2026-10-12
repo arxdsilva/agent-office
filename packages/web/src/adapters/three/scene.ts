@@ -379,6 +379,7 @@ export class ThreeScene implements SceneView {
     this.layout = layout
     this.building.setLayout(layout)
     const b = layout.bounds
+    this.cam.setBounds(b)
     this.catcher.scale.set(b.maxX - b.minX + 4, b.maxZ - b.minZ + 4, 1)
     this.catcher.position.set((b.minX + b.maxX) / 2, 0.004, (b.minZ + b.maxZ) / 2)
     this.updateBookmarks()
@@ -1182,6 +1183,14 @@ export class ThreeScene implements SceneView {
           ms / 1000,
         ),
       focus: (agentId: string) => this.pickFn(agentId),
+      /** Orbit target and the agent the camera follows (orbit-keys.spec). */
+      orbit: () => {
+        const t = this.cam.orbit.target
+        return {
+          target: { x: t.x, y: t.y, z: t.z },
+          following: this.cam.following ? this.selected : null,
+        }
+      },
       walkTo: (pos: Vec3T, heading: number) => this.cam.walkAt(new THREE.Vector3(...pos), heading),
       setQuality: (q: GraphicsQuality) => this.setQuality(q),
       timeScale: (n: number) => this.clock.setScale(n),

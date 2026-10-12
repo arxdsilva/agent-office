@@ -654,7 +654,7 @@ describe('emptyStateVM', () => {
 describe('hudVM hint', () => {
   it('normal controls help, or a Connect link once the office is empty again', () => {
     expect(hudVM(stateWith([])).hint).toEqual({
-      text: 'Drag to orbit · scroll to zoom · click an agent to chat',
+      text: 'Drag to orbit · WASD to move · scroll to zoom · click an agent to chat',
     })
     expect(hudVM(stateWith([]), 'first-run').hint.action).toBeUndefined()
     for (const phase of ['empty-again', 'dismissed'] as const)

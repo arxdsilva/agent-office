@@ -373,3 +373,37 @@ describe('SceneHost: 2D camera, minimap base and travel (HS-6)', () => {
     expect(p.calls.find((c) => c.name === 'travelTo')?.args).toEqual([{ pos: { x: 3, z: 4 } }])
   })
 })
+
+describe('SceneHost: 2D zoom and run (HS-7)', () => {
+  it('HS-7 forwards onZoom/onRun across a switch and zoomBy to the active scene', async () => {
+    const made: ReturnType<typeof fakeScene>[] = []
+    const factory = vi.fn((mode: ViewMode) => {
+      const f = fakeScene(mode)
+      const fns: Record<string, (...a: unknown[]) => void> = {}
+      Object.assign(f.scene, {
+        onZoom: (fn: (...a: unknown[]) => void) => void (fns.onZoom = fn),
+        onRun: (fn: (...a: unknown[]) => void) => void (fns.onRun = fn),
+        zoomBy: (d: number) => void f.calls.push({ name: 'zoomBy', args: [d] }),
+        fns,
+      })
+      made.push(f)
+      return f.scene
+    })
+    const host = new SceneHost({ factory, resync: () => new Map(), mode: '3d' })
+    const zooms: unknown[] = []
+    const runs: boolean[] = []
+    host.onZoom((z) => zooms.push(z))
+    host.onRun((on) => runs.push(on))
+    await host.load('m.json')
+    await host.switchTo('pixel')
+    const fns = (made[1]!.scene as unknown as { fns: Record<string, (...a: unknown[]) => void> })
+      .fns
+    // The listeners registered before the switch reach the new 2D scene.
+    fns.onZoom!({ level: 2, levels: 4, atDefault: true })
+    fns.onRun!(true)
+    expect(zooms).toEqual([{ level: 2, levels: 4, atDefault: true }])
+    expect(runs).toEqual([true])
+    host.zoomBy(-1)
+    expect(made[1]!.calls.find((c) => c.name === 'zoomBy')?.args).toEqual([-1])
+  })
+})

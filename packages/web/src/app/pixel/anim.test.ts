@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ClipName } from '../office-types.ts'
-import { WALK_SPEED } from '../navigation.ts'
-import { CLIP_ANIM, WALK_FPS, animFor, frameAt, npcVisual, statusIcon, walkFps } from './anim.ts'
+import { CLIP_ANIM, STRIDE_PX, animFor, frameAt, npcVisual, statusIcon, walkFps } from './anim.ts'
 import { PIXEL_ANIMS } from './types.ts'
 
 const CLIPS: ClipName[] = [
@@ -42,12 +41,13 @@ describe('clip → pixel animation (AN)', () => {
     expect(animFor(undefined)).toBe('idle')
   })
 
-  // AN-2: the walk cycle speeds up and slows down with ground speed, like the 3D timeScale.
-  it('scales the walk frame rate with speed', () => {
-    expect(walkFps(WALK_SPEED)).toBeCloseTo(WALK_FPS)
-    expect(walkFps(WALK_SPEED * 2)).toBeCloseTo(WALK_FPS * 2)
-    expect(walkFps(0)).toBeGreaterThan(0)
-    expect(walkFps(0)).toBeLessThan(WALK_FPS)
+  // AN-2: one walk frame every 8 on-screen px, so feet never slide at any speed (player or agent).
+  it('derives the walk frame rate from on-screen speed', () => {
+    expect(STRIDE_PX).toBe(8)
+    expect(walkFps(3)).toBeCloseTo(6) // the player: 48 px/s
+    expect(walkFps(5)).toBeCloseTo(10) // running
+    expect(walkFps(1.4)).toBeCloseTo(2.8) // an agent strolling at 22.4 px/s
+    expect(walkFps(0)).toBe(0)
     expect(frameAt(0.26, 4, 8)).toBe(2)
     expect(frameAt(1.0, 4, 8)).toBe(0)
     expect(frameAt(5, 1, 8)).toBe(0)

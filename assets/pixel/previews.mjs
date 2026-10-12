@@ -234,70 +234,95 @@ function tileAt(build, frame, name, theme) {
   return frame(`tile:${id}`)
 }
 
-/** A small room composed from tiles, objects and characters (the art review in context). */
+/**
+ * A small office at 16 px/m (docs/pixel-style.md §Scale), composed from floors, thin walls, objects and characters:
+ * the art review in context. Objects are placed by their base's top-left in px (atlas `footPx`), like the map does.
+ */
 function mockRoom(build, frame, theme) {
-  const W = 24
-  const H = 16
-  const img = image(W * 16, H * 16)
+  const W = 30 * 16
+  const H = 17 * 16
+  const img = image(W, H)
   const floor = build.atlas.themes[theme].floor
-  const put = (name, tx, ty) => {
+  const tile = (name, x, y) => {
     const f = tileAt(build, frame, name, theme)
-    if (f) blit(img, f.img, tx * 16, ty * 16)
+    if (f) blit(img, f.img, x, y)
+    return f
   }
-  // Floors: the theme floor inside, a street path below, grass at the bottom.
-  for (let ty = 0; ty < H; ty++)
-    for (let tx = 0; tx < W; tx++) put(ty >= 13 ? 'floor/grass' : ty >= 11 ? 'floor/path' : floor, tx, ty)
-  // A kitchen corner with tiles.
-  for (let ty = 3; ty < 7; ty++) for (let tx = 18; tx < 23; tx++) put('floor/tile', tx, ty)
-  // Rug under the lounge.
-  const rug = [['nw', 'n', 'n', 'ne'], ['w', 'c', 'c', 'e'], ['sw', 's', 's', 'se']]
-  rug.forEach((r, y) => r.forEach((p, x) => put(`rug/${p}`, 12 + x, 6 + y)))
-  // North wall: top row (autotiled), two face rows, a window and a glass section.
-  for (let tx = 0; tx < W; tx++) {
-    const mask = (tx > 0 ? 8 : 0) | (tx < W - 1 ? 2 : 0)
-    put(tx >= 8 && tx < 12 ? `glass/top-${mask}` : `wall/top-${mask}`, tx, 0)
-    const face = tx >= 8 && tx < 12 ? 'glass' : tx >= 3 && tx < 5 ? 'window' : 'wall'
-    put(face === 'window' ? 'wall/window-hi' : `${face}/face-hi`, tx, 1)
-    put(face === 'window' ? 'wall/window-lo' : `${face}/face-lo`, tx, 2)
-    put('shade/n', tx, 3)
+  // Floors per 1 m cell: the theme floor inside, a kitchen tile corner, the street path and grass below.
+  for (let ty = 0; ty < 17; ty++)
+    for (let tx = 0; tx < 30; tx++)
+      tile(ty >= 15 ? 'floor/grass' : ty >= 13 ? 'floor/path' : tx >= 22 && ty < 6 ? 'floor/tile' : floor, tx * 16, ty * 16)
+  // Thin walls: the north wall (a 12 px face above a 4 px top), a glass stretch, a west wall and a doorway gap.
+  const wallY = 16
+  for (let x = 0; x < W; x += 16) {
+    if (x >= 160 && x < 176) continue // doorway, 1 m
+    const glass = x >= 224 && x < 288
+    const k = glass ? 'glass' : 'wall'
+    const cap = x === 144 ? '-r' : x === 176 ? '-l' : ''
+    tile(`${k}/thin-face${cap}`, x, wallY - 12)
+    tile(`${k}/thin-top-h`, x, wallY)
   }
-  // A west wall running south.
-  for (let ty = 0; ty < 10; ty++) put(`wall/top-${(ty > 0 ? 1 : 0) | (ty < 9 ? 4 : 0) | (ty === 0 ? 2 : 0)}`, 0, ty)
-  for (let ty = 3; ty < 10; ty++) put('shade/w', 1, ty)
-  // Objects + characters, y-sorted.
+  for (let y = wallY + 4; y < 13 * 16; y += 16) tile('wall/thin-top-v', 0, y)
+  tile('wall/thin-post', 0, wallY)
+  // Objects + characters, y-sorted by the base's bottom edge (or the feet).
   const sprites = []
-  const obj = (kind, tx, ty, facing = 's') => {
-    const v = build.atlas.objects[kind]?.variants[facing]
+  const obj = (kind, x, y, facing = 's') => {
+    const o = build.atlas.objects[kind]
+    const v = o?.variants[facing] ?? Object.values(o?.variants ?? {})[0]
     if (!v) return
     const f = frame(v.themed ? `${v.frame}@${theme}` : v.frame)
     if (!f) return
-    sprites.push({ y: ty * 16 + v.sortY, draw: () => blit(img, f.img, tx * 16 - f.ax, ty * 16 - f.ay) })
+    sprites.push({ y: v.flat ? -1 : y + v.sortY, draw: () => blit(img, f.img, x - f.ax, y - f.ay) })
   }
-  const npc = (look, ref, px, py) =>
-    sprites.push({ y: py, draw: () => blit(img, character(build, frame, look, ref), px - 8, py - 23) })
-  obj('desk', 2, 5, 's')
-  obj('chair', 3, 7, 'n')
-  npc(LOOKS[0], 'sit-type-a-n', 3 * 16 + 8, 7 * 16 + 14)
-  obj('desk', 6, 5, 's')
-  obj('chair', 7, 7, 'n')
-  npc(LOOKS[1], 'sit-think-n', 7 * 16 + 8, 7 * 16 + 14)
-  obj('plant', 1, 3)
-  obj('bookshelf', 8, 3)
-  obj('sofa', 12, 6, 's')
-  npc(LOOKS[2], 'lounge-s', 13 * 16 + 8, 7 * 16 + 10)
-  obj('armchair', 16, 7, 'w')
-  obj('kitchen-counter', 18, 3)
-  obj('coffee-machine', 19, 3)
-  obj('fridge', 22, 3)
-  npc(LOOKS[3], 'cup-s', 20 * 16 + 8, 6 * 16 + 4)
-  obj('cafe-table', 19, 8)
-  obj('plant', 23, 9)
-  obj('bench', 3, 14)
-  obj('planter', 9, 14)
-  npc(LOOKS[4], 'walk-a-e', 6 * 16, 12 * 16 + 4)
-  npc(LOOKS[8], 'stand-n', 11 * 16, 11 * 16 + 8)
-  npc(LOOKS[5], 'talk-a-w', 15 * 16, 12 * 16 + 4)
-  npc(LOOKS[6], 'wave-a-s', 18 * 16, 12 * 16 + 4)
+  const npc = (look, ref, px, py) => sprites.push({ y: py, draw: () => blit(img, character(build, frame, look, ref), px - 8, py - 23) })
+  // A desk pod: two desks back to back, chairs on the outside.
+  obj('desk', 24, 64, 'n')
+  obj('chair', 32, 52, 's')
+  npc(LOOKS[0], 'sit-type-a-s', 37, 62)
+  obj('desk', 24, 77, 's')
+  obj('chair', 32, 92, 'n')
+  npc(LOOKS[1], 'sit-think-n', 37, 101)
+  obj('desk', 52, 64, 'n')
+  obj('desk', 52, 77, 's')
+  obj('chair', 60, 92, 'n')
+  npc(LOOKS[7], 'sit-type-a-n', 65, 101)
+  obj('desk', 96, 56, 'e')
+  obj('chair', 112, 64, 'w')
+  obj('plant', 6, 22)
+  obj('bookshelf', 100, 20)
+  obj('board', 136, 20)
+  // Lounge on a rug.
+  obj('rug', 184, 72)
+  obj('sofa', 190, 74, 's')
+  npc(LOOKS[2], 'lounge-s', 204, 90)
+  obj('armchair', 238, 96, 'w')
+  obj('cafe-table', 210, 104)
+  obj('tv', 196, 20)
+  obj('booth', 296, 20)
+  obj('booth-lamp', 296, 20, 'on')
+  // Kitchen.
+  obj('kitchen-counter', 352, 20)
+  obj('kitchen-counter', 384, 20)
+  obj('coffee-machine', 360, 22)
+  obj('fridge', 420, 20)
+  obj('island', 360, 56)
+  npc(LOOKS[3], 'cup-s', 392, 92)
+  obj('meeting-table', 300, 120)
+  obj('chair', 306, 108, 's')
+  obj('chair', 326, 108, 's')
+  obj('chair', 306, 140, 'n')
+  npc(LOOKS[4], 'sit-talk-a-s', 311, 118)
+  obj('arcade', 440, 120)
+  obj('pingpong', 380, 132)
+  // Street and garden.
+  obj('bench', 40, 218)
+  obj('planter', 100, 222)
+  obj('planter', 116, 222)
+  obj('plant', 160, 214)
+  obj('sign', 200, 214)
+  npc(LOOKS[5], 'walk-a-e', 100, 214)
+  npc(LOOKS[8], 'stand-n', 168, 200)
+  npc(LOOKS[6], 'wave-a-s', 250, 214)
   sprites.sort((a, b) => a.y - b.y).forEach((s) => s.draw())
   return img
 }

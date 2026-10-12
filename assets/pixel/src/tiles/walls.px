@@ -306,3 +306,109 @@ TTTTTTTTTTTTTTTT
 ::;;............
 
 @frame shade/ne from=shade/nw flip=x
+
+# Thin walls at 16 px/m (docs/pixel-style.md §Scale): a 4 px top strip (16 px pieces, horizontal and vertical),
+# a 4×4 post for wall ends and corners, and a 12 px 3/4 face drawn above a horizontal wall when a room lies
+# south of it (-l / -r: the face's end caps beside a doorway or a wall end). Theme slots as above.
+@frame wall/thin-top-h
+@meta {"thin":true,"solid":true}
+TTTTTTTTTTTTTTTT
+WWWWWWWWWWWWWWWW
+VVVVVVVVVVVVVVVV
+TTTTTTTTTTTTTTTT
+
+@frame wall/thin-top-v
+@meta {"thin":true,"solid":true}
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+TWVT
+
+@frame wall/thin-post
+@meta {"thin":true,"solid":true}
+TTTT
+TWVT
+TVUT
+TTTT
+
+@frame wall/thin-face
+@meta {"thin":true,"solid":true}
+TTTTTTTTTTTTTTTT
+VVVVVVVVVVVVVVVV
+WWWWWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW
+VVVVVVVVVVVVVVVV
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+TTTTTTTTTTTTTTTT
+
+@frame wall/thin-face-l from=wall/thin-face edgeL=T
+@frame wall/thin-face-r from=wall/thin-face edgeR=T
+
+# Glass: a light-blue top edge in a trim frame and a translucent face (glints repeat every 16 px).
+@frame glass/thin-top-h
+@meta {"thin":true,"solid":true}
+TTTTTTTTTTTTTTTT
+bbbbbbbbbbbbbbbb
+cccccccccccccccc
+TTTTTTTTTTTTTTTT
+
+@frame glass/thin-top-v
+@meta {"thin":true,"solid":true}
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+TbcT
+
+@frame glass/thin-post
+@meta {"thin":true,"solid":true}
+TTTT
+TTTT
+TTTT
+TTTT
+
+@frame glass/thin-face
+@meta {"thin":true,"solid":true}
+TTTTTTTTTTTTTTTT
+~~^~~~~~~~~~~~~=
+~~~^~~~~~~~~~~~=
+~~~~^~~~~~~~~~~=
+~~~~~^~~~~~~~~~=
+~~~~~~~~~~~~~~~=
+~~~~~~~~~^~~~~~=
+~~~~~~~~~~^~~~~=
+~~~~~~~~~~~~~~~=
+~~~~~~~~~~~~~~~=
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+
+@frame glass/thin-face-l from=glass/thin-face edgeL=T
+@frame glass/thin-face-r from=glass/thin-face edgeR=T

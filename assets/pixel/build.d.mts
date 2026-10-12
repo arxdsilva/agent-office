@@ -30,7 +30,7 @@ export interface Atlas {
   tiles: ({ id: string; name: string; theme?: string; frame: string; layer: string; solid: boolean; mask?: number } | null)[]
   tileIds: Record<string, number>
   tileSets: Record<string, unknown>
-  objects: Record<string, { variants: Record<string, { frame: string; themed: boolean; foot: [number, number]; solid: boolean; sortY: number; [k: string]: unknown }> }>
+  objects: Record<string, { variants: Record<string, { frame: string; themed: boolean; foot: [number, number]; footPx: [number, number]; flat?: boolean; solid: boolean; sortY: number; [k: string]: unknown }> }>
   characters: {
     size: [number, number]
     anchor: [number, number]
@@ -68,6 +68,7 @@ export declare const REQUIRED_EFFECTS: string[]
 export declare const REQUIRED_TILES: string[]
 export declare const EXTRA_GLYPHS: string[]
 export declare const CHAR_LAYERS: string[]
+export declare const THIN_WALLS: Record<string, Record<string, string>>
 export declare function loadPalettes(): {
   office: Record<string, string | null>
   themes: Record<string, Record<string, string>>

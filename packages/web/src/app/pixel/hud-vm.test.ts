@@ -82,7 +82,7 @@ describe('pixel HUD (HUD)', () => {
     expect(vm.moreAlerts).toBe(1)
   })
 
-  // HUD-4: minimap dots in status colours at the agents' tiles, plus the player.
+  // HUD-4: minimap dots in status colours at the agents' 1 m tiles, plus the player.
   it('builds minimap dots', () => {
     const proj = { originM: { x: -10, z: -10 }, widthTiles: 40, heightTiles: 40 }
     const vm = minimapVM(
@@ -98,9 +98,9 @@ describe('pixel HUD (HUD)', () => {
       heightTiles: 40,
       dots: [
         { id: 'a', tx: 0, ty: 0, color: STATUS_COLORS.waiting },
-        { id: 'b', tx: 20, ty: 20, color: STATUS_COLORS.error },
+        { id: 'b', tx: 10, ty: 10, color: STATUS_COLORS.error },
       ],
-      player: { tx: 22, ty: 22 },
+      player: { tx: 11, ty: 11 },
     })
     expect(minimapVM(proj, []).player).toBeUndefined()
   })

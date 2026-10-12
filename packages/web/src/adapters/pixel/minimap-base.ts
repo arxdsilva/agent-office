@@ -1,11 +1,13 @@
-// The minimap's base image (plan §2c): floors in their theme colour, the street, walls, doors and
-// solid furniture, at 2 px per tile. Rendered once per `PixelMap.key` from the pure colour grid
-// (`app/pixel/minimap-colors.ts`); the HUD draws agents, the player, labels and the viewport on top.
+// The minimap's base image (plan §2c): floors in their theme colour, the street, walls and solid
+// furniture, at 4 px per metre (one 1 m tile = 4×4 px). Rendered once per `PixelMap.key`: the
+// building's floor from the pure colour grid (`app/pixel/minimap-colors.ts`), then rooms, furniture
+// and walls at their exact px boxes; the HUD draws agents, the player, labels and the viewport on top.
 import { minimapColors, type MinimapPalette } from '../../app/pixel/minimap-colors.ts'
-import type { PixelMap } from '../../app/pixel/types.ts'
+import { TILE_PX, type PixelMap, type PxRect } from '../../app/pixel/types.ts'
 import type { Atlas } from './sprites.ts'
 
-export const MINIMAP_PX_PER_TILE = 2
+export const MINIMAP_PX_PER_TILE = 4
+const GLASS = '#8fb8cc'
 
 const DEFAULT_FLOOR = '#d9d2c6'
 
@@ -36,22 +38,43 @@ export class MinimapBase {
     const g = c.getContext('2d')
     if (g) {
       g.clearRect(0, 0, c.width, c.height)
-      const colors = minimapColors(map, minimapPalette(atlas))
+      const palette = minimapPalette(atlas)
+      const colors = minimapColors(map, palette)
       const w = map.widthTiles
-      // Batch runs of the same colour along each row.
+      // 1. The building's floor per 1 m cell (walls and furniture come from the exact geometry).
+      const coarse = new Set([palette.wall, palette.furniture, palette.door])
       for (let y = 0; y < map.heightTiles; y++) {
         let x = 0
         while (x < w) {
           const col = colors[y * w + x]
           let end = x + 1
           while (end < w && colors[y * w + end] === col) end++
-          if (col) {
+          if (col && !coarse.has(col)) {
             g.fillStyle = col
             g.fillRect(x * s, y * s, (end - x) * s, s)
           }
           x = end
         }
       }
+      // 2. Rooms at their exact boxes (largest first, so nested rooms win), then solid
+      //    furniture and the walls (at least 1 px), all at 4 px per metre.
+      const k = s / TILE_PX
+      const rect = (b: PxRect, col: string) => {
+        g.fillStyle = col
+        const x0 = Math.floor(b.x * k)
+        const y0 = Math.floor(b.y * k)
+        g.fillRect(
+          x0,
+          y0,
+          Math.max(1, Math.round((b.x + b.w) * k) - x0),
+          Math.max(1, Math.round((b.y + b.h) * k) - y0),
+        )
+      }
+      const rooms = [...map.rooms].sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)
+      for (const r of rooms)
+        rect(r.box, r.placement.startsWith('street') ? palette.street : palette.floor(r.theme))
+      for (const o of map.objects) if (o.solid) rect(o.box, palette.furniture)
+      for (const wl of map.walls) rect(wl.box, wl.kind === 'glass' ? GLASS : palette.wall)
     }
     this.canvas = c
     this.key = key

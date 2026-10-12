@@ -16,15 +16,17 @@ import { PX_PER_M, TILE_M } from './types.ts'
 const bounds = { minX: -10.2, maxX: 10.2, minZ: -24, maxZ: 36 }
 
 describe('projection (PR)', () => {
-  // PR-1: metres → pixels → metres is lossless, and tiles are 0.5 m.
-  it('round-trips world ↔ pixel and maps tiles at 0.5 m', () => {
+  // PR-1: metres → pixels → metres is lossless, at 16 px per metre, and tiles are 1 m cells.
+  it('round-trips world ↔ pixel at 16 px/m and maps 1 m tiles', () => {
     const p = projectionFor(bounds)
     const w = { x: 3.3, z: -7.25 }
     const px = toPixel(w, p)
     const back = pixelToWorld(px.px, px.py, p)
     expect(back.x).toBeCloseTo(w.x, 9)
     expect(back.z).toBeCloseTo(w.z, 9)
-    expect(toPixel({ x: p.originM.x + 1, z: p.originM.z }, p)).toEqual({ px: PX_PER_M, py: 0 })
+    expect(PX_PER_M).toBe(16)
+    expect(TILE_M).toBe(1)
+    expect(toPixel({ x: p.originM.x + 1, z: p.originM.z }, p)).toEqual({ px: 16, py: 0 })
     const t = toTile(w, p)
     const c = tileCenter(t, p)
     expect(Math.abs(c.x - w.x)).toBeLessThanOrEqual(TILE_M / 2)
@@ -48,15 +50,15 @@ describe('projection (PR)', () => {
     for (const d of ['n', 'e', 's', 'w'] as const) expect(dir4(headingOf4(d))).toBe(d)
   })
 
-  // PR-3: the world is padded by 2 tiles, origin snapped to the tile grid.
-  it('pads the bounds by two tiles and snaps the origin to the grid', () => {
+  // PR-3: the world is padded by 1 m, origin snapped to the 1 m grid.
+  it('pads the bounds by one metre and snaps the origin to the grid', () => {
     const p = projectionFor(bounds)
-    expect(PAD_TILES).toBe(2)
-    expect(p.originM.x).toBeLessThanOrEqual(bounds.minX - 2 * TILE_M)
-    expect(p.originM.x).toBeGreaterThan(bounds.minX - 3 * TILE_M)
-    expect(p.originM.x / TILE_M).toBe(Math.round(p.originM.x / TILE_M))
-    expect(p.originM.x + p.widthTiles * TILE_M).toBeGreaterThanOrEqual(bounds.maxX + 2 * TILE_M)
-    expect(p.originM.z + p.heightTiles * TILE_M).toBeGreaterThanOrEqual(bounds.maxZ + 2 * TILE_M)
+    expect(PAD_TILES * TILE_M).toBe(1)
+    expect(p.originM.x).toBeLessThanOrEqual(bounds.minX - 1)
+    expect(p.originM.x).toBeGreaterThan(bounds.minX - 2)
+    expect(p.originM.x).toBe(Math.round(p.originM.x))
+    expect(p.originM.x + p.widthTiles).toBeGreaterThanOrEqual(bounds.maxX + 1)
+    expect(p.originM.z + p.heightTiles).toBeGreaterThanOrEqual(bounds.maxZ + 1)
   })
 
   // PR-4: the elevators (atrium, north) land in the top part of the map.

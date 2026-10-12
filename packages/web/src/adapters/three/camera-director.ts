@@ -9,7 +9,8 @@ import { toWorld } from '../../app/building.ts'
 import { frameSurfaces } from '../../app/framing.ts'
 import { LIB_COPY } from '../../app/library-copy.ts'
 import type { Manifest } from '../../app/manifest.ts'
-import type { BuildingLayout, ModulePlacement, Vec2, Vec3 } from '../../app/office-types.ts'
+import type { AABB, BuildingLayout, ModulePlacement, Vec2, Vec3 } from '../../app/office-types.ts'
+import { clampTarget, isTypingTarget, orbitPan, type PanInput } from '../../app/orbit-keys.ts'
 import type { SurfaceRole, WorldBox } from './building-view.ts'
 
 const EYE_HEIGHT = 1.65
@@ -370,6 +371,12 @@ export class CameraDirector {
   private relaxed = false
   /** Clamp state to apply when the current flight lands (restoring mid-flight would snap). */
   private relaxAfter: boolean | null = null
+  /** Layout bounds: WASD panning keeps the orbit target within them (+4 m). */
+  private bounds: AABB | null = null
+  /** Reused per frame by the WASD pan (update() stays allocation-free). */
+  private panIn: PanInput = { keys: this.keys, heading: 0, distance: 0, dt: 0, sprint: false }
+  private pan = { dx: 0, dz: 0 }
+  private clamped = { x: 0, z: 0 }
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -391,6 +398,17 @@ export class CameraDirector {
       this.markInput()
     })
     const down = (e: KeyboardEvent) => {
+      // Orbit: typing in a field, a modal dialog, or a shortcut (macOS drops the keyup of keys
+      // released while ⌘ is held) never pans. Walk mode keeps its pointer-lock behaviour.
+      if (
+        this.mode === 'orbit' &&
+        (e.metaKey ||
+          e.ctrlKey ||
+          e.altKey ||
+          isTypingTarget(e.target as HTMLElement | null) ||
+          document.querySelector('dialog[open]'))
+      )
+        return
       this.keys.add(e.code)
       if (this.mode === 'walk') this.markInput()
     }
@@ -498,6 +516,11 @@ export class CameraDirector {
     }
   }
 
+  /** The layout bounds that WASD panning clamps the orbit target to (+4 m margin). */
+  setBounds(b: AABB | null): void {
+    this.bounds = b
+  }
+
   get following(): boolean {
     return this.follow !== null
   }
@@ -588,6 +611,12 @@ export class CameraDirector {
   }
 
   private updateOrbit(dt: number): void {
+    // WASD / arrows pan target and camera together; like a drag pan, it stops following.
+    const panning = !this.flight && this.panStep(dt)
+    if (panning) {
+      this.follow = null
+      this.markInput()
+    }
     const live = this.follow?.()
     if (live) this.live.copy(live).setY(Math.max(1, live.y))
     if (this.flight) {
@@ -614,7 +643,41 @@ export class CameraDirector {
       this.orbit.target.add(this.delta)
       this.camera.position.add(this.delta)
     }
+    if (panning) this.applyPan()
     this.orbit.update(dt)
+  }
+
+  /** Computes this frame's WASD move into `pan`; false when no pan key is held. */
+  private panStep(dt: number): boolean {
+    const t = this.orbit.target
+    const p = this.camera.position
+    const i = this.panIn
+    i.heading = Math.atan2(t.x - p.x, t.z - p.z)
+    i.distance = p.distanceTo(t)
+    i.dt = dt
+    i.sprint = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
+    orbitPan(i, this.pan)
+    return this.pan.dx !== 0 || this.pan.dz !== 0
+  }
+
+  /** Moves target and camera by `pan`, then clamps the target to the bounds (camera follows). */
+  private applyPan(): void {
+    const t = this.orbit.target
+    const p = this.camera.position
+    let dx = this.pan.dx
+    let dz = this.pan.dz
+    if (this.bounds) {
+      const c = this.clamped
+      c.x = t.x + dx
+      c.z = t.z + dz
+      clampTarget(c, this.bounds, 4, c)
+      dx = c.x - t.x
+      dz = c.z - t.z
+    }
+    t.x += dx
+    t.z += dz
+    p.x += dx
+    p.z += dz
   }
 
   /** Where the camera looks (for the shadow frustum). */

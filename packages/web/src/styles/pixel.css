@@ -148,6 +148,32 @@ body:has(#hud.with-banner) #pixel-hud {
   opacity: 0.5;
   cursor: default;
 }
+/* The zoom control (− ⌂ +) and the run hint, next to the M/J toggles. */
+.ph-tools {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ph-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ph-zoom-btn {
+  min-width: 24px;
+  padding: 2px 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.ph-run {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--px-muted);
+  white-space: nowrap;
+}
+.ph-zoom[data-run='true'] .ph-run {
+  color: var(--px-accent);
+  font-weight: 700;
+}
 .ph-tool:focus-visible,
 .dlg-action:focus-visible,
 .dlg-close:focus-visible,

@@ -374,6 +374,16 @@ function plan(v: unknown, path: string): ModulePlan | undefined {
       wall.openings = arr(wo.openings, `${p}.openings`).map(
         (x, j) => nums(x, 2, `${p}.openings[${j}]`) as [number, number],
       )
+    // Which side the wall body extends to and how thick it is (contract §11, additive).
+    if (wo.side !== undefined) {
+      if (wo.side !== -1 && wo.side !== 1) throw new ManifestError(`${p}.side`, 'expected -1 or 1')
+      wall.side = wo.side
+    }
+    if (wo.thick !== undefined) {
+      if (typeof wo.thick !== 'number' || !(wo.thick > 0))
+        throw new ManifestError(`${p}.thick`, 'expected a positive number')
+      wall.thick = wo.thick
+    }
     return wall
   })
   const furniture = arr(o.furniture, `${path}.furniture`).map((f, i): PlanFurniture => {
