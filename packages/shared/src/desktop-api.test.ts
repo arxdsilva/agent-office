@@ -227,3 +227,20 @@ describe('provider contracts', () => {
     expect(PROVIDER_IDS).toContain('claude-code')
   })
 })
+
+// Zod 4 keeps `.default()` inside `.partial()`: a patch must carry only the keys it was given, or every
+// settings change would silently reset all other settings to their defaults (found by graphics G2 on CI).
+describe('SettingsPatchSchema', () => {
+  it('keeps only the given keys (no defaults injected)', () => {
+    expect(SettingsPatchSchema.parse({ theme: 'dark' })).toEqual({ theme: 'dark' })
+    expect(SettingsPatchSchema.parse({ graphicsAdvanced: { fps: '30' } })).toEqual({
+      graphicsAdvanced: expect.objectContaining({ fps: '30' }),
+    })
+    expect(Object.keys(SettingsPatchSchema.parse({ port: 4400 }))).toEqual(['port'])
+  })
+
+  it('still validates values and rejects unknown keys', () => {
+    expect(SettingsPatchSchema.safeParse({ port: 80 }).success).toBe(false)
+    expect(SettingsPatchSchema.safeParse({ nope: true }).success).toBe(false)
+  })
+})

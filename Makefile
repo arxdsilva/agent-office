@@ -10,6 +10,9 @@ ELECTRON_ENV := env -u ELECTRON_RUN_AS_NODE
 UNSIGNED := CSC_IDENTITY_AUTO_DISCOVERY=$${CSC_IDENTITY_AUTO_DISCOVERY:-$$([ -n "$$CSC_LINK" ] && echo true || echo false)}
 # Headless Linux (CI) needs a virtual display for Electron.
 XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null && echo "xvfb-run -a")
+# Headless Linux (CI) has no GPU, and Chromium no longer falls back to SwiftShader for WebGL on its own:
+# render on software GL there (TESTING.md: E2E runs on software GL in CI), or the office never loads.
+SOFTWARE_GL := $(if $(XVFB),AGENT_OFFICE_FORCE_SOFTWARE_GL=1,)
 
 .PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check
 
@@ -87,7 +90,7 @@ test-e2e: ## Run backend end-to-end tests (real HTTP server + hook script)
 	pnpm test:e2e
 
 test-ui: ## Drive the built app with Playwright (run `make build` first)
-	$(ELECTRON_ENV) $(XVFB) pnpm test:ui
+	$(ELECTRON_ENV) $(SOFTWARE_GL) $(XVFB) pnpm test:ui
 
 coverage: ## Run unit tests with the 70% per-package thresholds
 	pnpm coverage

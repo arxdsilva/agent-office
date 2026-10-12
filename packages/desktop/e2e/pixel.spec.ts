@@ -232,10 +232,21 @@ test('2D RPG: switch, walk, talk, alerts, team, objects, leave, back to 3D, rela
     await expect
       .poll(async () => (await entity(win, 'e2e-lead'))?.activity, { timeout: 30_000 })
       .toBe('meeting')
-    await goTo(win, { agentId: 'e2e-sub' })
-    await blur(win)
-    await win.keyboard.press('e')
-    await expect(win.locator('#dialogue')).toBeVisible()
+    // E talks to the nearest agent in front of the player; a mock agent can wander in between, so
+    // step up to Sub again until its own dialogue opens.
+    await expect
+      .poll(
+        async () => {
+          if (await win.locator('#dialogue').isVisible()) await win.keyboard.press('Escape')
+          await goTo(win, { agentId: 'e2e-sub' })
+          await blur(win)
+          await win.keyboard.press('e')
+          await expect(win.locator('#dialogue')).toBeVisible()
+          return win.locator('#dlg-title').textContent()
+        },
+        { timeout: 20_000 },
+      )
+      .toMatch(/Sub/)
     await expect(win.locator('#dlg-actions [data-action="go-parent"]')).toHaveText(/Go to Lead/)
     await expect(win.locator('#dlg-actions [data-action="talk"]')).toHaveCount(0)
     await win.locator('#dialogue').press('Escape')

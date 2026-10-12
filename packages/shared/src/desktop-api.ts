@@ -92,8 +92,23 @@ export const SettingsSchema = z.object({
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({})
-export const SettingsPatchSchema = SettingsSchema.partial().strict()
-export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
+export type SettingsPatch = Partial<Settings>
+/**
+ * A partial update: only the keys given. Zod 4 keeps `.default()` inside `.partial()`, which would
+ * fill every missing key with its default and silently reset all other settings on each change, so
+ * the top-level defaults are removed first (nested objects such as `graphicsAdvanced` are sent whole).
+ */
+export const SettingsPatchSchema: z.ZodType<SettingsPatch> = z
+  .object(
+    Object.fromEntries(
+      Object.entries(SettingsSchema.shape).map(([k, v]) => [
+        k,
+        v instanceof z.ZodDefault ? v.removeDefault() : v,
+      ]),
+    ) as unknown as typeof SettingsSchema.shape,
+  )
+  .partial()
+  .strict() as unknown as z.ZodType<SettingsPatch>
 export interface SettingsResult {
   settings: Settings
   restartRequired: boolean

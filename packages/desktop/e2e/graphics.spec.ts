@@ -148,7 +148,7 @@ test('G4: on software rendering, Auto picks Minimal', async () => {
   await expect.poll(async () => (await graphics(win)).preset, { timeout: 20_000 }).toBe('minimal')
   // Settings explains why.
   await win.locator('#settings-btn').click()
-  await expect(win.locator('#s-gfx-auto-note')).toContainText('software rendering')
+  await expect(win.locator('#s-gfx-auto-note')).toContainText(/software rendering/i)
   await app.close()
 })
 
