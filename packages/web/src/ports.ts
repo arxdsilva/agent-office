@@ -7,6 +7,8 @@ import type {
   PermissionMode,
   SettingsPatch,
 } from '@agent-office/shared'
+import type { Effective, GraphicsStats } from './app/graphics-types.ts'
+import type { LibraryTab, LibrarySort, LibraryVM, ViewEntry } from './app/library-types.ts'
 import type {
   NewSessionVM,
   PermissionCardVM,
@@ -64,6 +66,17 @@ export interface SceneView {
   cameraIdleMs(): number
   /** Light or dark scene background and fill light (plan §2.6); no rebuild. */
   setTheme(theme: 'light' | 'dark'): void
+  /** Applies the effective graphics settings live (low-spec plan §5.3). Supersedes setQuality. */
+  setGraphics(e: Effective): void
+  /** Live numbers for Settings → Graphics (sampled; cheap). */
+  stats(): GraphicsStats
+  /** The GPU context was lost / came back (driver reset). */
+  onContextLost(fn: () => void): void
+  onContextRestored(fn: () => void): void
+  /** Pointer over a capability surface (null when it leaves); screen coordinates in CSS px. */
+  onHoverSurface(fn: (ref: CapabilityRef | null, x: number, y: number) => void): void
+  /** The camera views available now (the DOM view bar renders them; replaces the scene's own buttons). */
+  onViews(fn: (views: ViewEntry[]) => void): void
 }
 
 export interface SceneSurfaces {
@@ -118,6 +131,8 @@ export interface PanelView {
   onToggleUse(fn: (id: string) => void): void
   /** Text typed so far (kept per agent as a draft). */
   onDraft(fn: (text: string) => void): void
+  /** A "Skills & rules used" / "Connections used" chip was clicked. */
+  onPickCapability(fn: (ref: CapabilityRef) => void): void
 }
 
 /** The new-session dialog (`<dialog id="new-session">`), plan §2.4. */
@@ -155,6 +170,34 @@ export interface HudView {
   setConnectBadge(on: boolean): void
   /** The ⊕ New session button. */
   onNewSession(fn: () => void): void
+  /** The 📚 Library button. */
+  onLibrary(fn: () => void): void
+}
+
+/** The Library browser drawer (`<aside id="library">`), low-spec plan §B2. */
+export interface LibraryView {
+  open(vm: LibraryVM): void
+  render(vm: LibraryVM): void
+  close(): void
+  isOpen(): boolean
+  onClose(fn: () => void): void
+  onProvider(fn: (provider: string) => void): void
+  onTab(fn: (tab: LibraryTab) => void): void
+  onSearch(fn: (query: string) => void): void
+  onSort(fn: (sort: LibrarySort) => void): void
+  onPick(fn: (ref: CapabilityRef) => void): void
+}
+
+/** Hover tooltip near the cursor (`#tooltip`). */
+export interface TooltipView {
+  show(text: string, x: number, y: number): void
+  hide(): void
+}
+
+/** Camera view buttons (`#views`), with provider menus for Library and Adapters. */
+export interface ViewBarView {
+  render(views: ViewEntry[]): void
+  onPick(fn: (viewId: string) => void): void
 }
 
 /** The Connect panel (`<dialog id="connect">`), plan §2.2. */

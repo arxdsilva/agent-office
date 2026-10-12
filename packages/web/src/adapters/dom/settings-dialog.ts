@@ -1,9 +1,18 @@
-import { GraphicsQualitySchema, type SettingsPatch } from '@agent-office/shared'
+import {
+  BATTERY_PRESETS,
+  GRAPHICS_QUALITIES,
+  GraphicsAdvancedSchema,
+  GraphicsQualitySchema,
+  SettingsSchema,
+  type GraphicsAdvanced,
+  type SettingsPatch,
+} from '@agent-office/shared'
 import { COPY } from '../../app/connect-copy.ts'
+import { GFX_COPY } from '../../app/graphics-copy.ts'
 import { SESSION_COPY } from '../../app/session-copy.ts'
 import type { SettingsVM } from '../../app/view-models.ts'
 import type { SettingsView } from '../../ports.ts'
-import { byId } from './el.ts'
+import { byId, el } from './el.ts'
 
 const CHECKBOXES = [
   'notifications',
@@ -17,6 +26,112 @@ const THEMES = ['system', 'light', 'dark'] as const
 type Theme = (typeof THEMES)[number]
 /** Fields W2 adds to SettingsVM; optional here so this adapter compiles on its own. */
 type AppearanceVM = SettingsVM & Partial<{ theme: Theme; allowBypassPermissions: boolean }>
+
+type AdvKey = keyof GraphicsAdvanced
+type BatteryPreset = (typeof BATTERY_PRESETS)[number]
+/**
+ * Settings → Graphics as this adapter reads it (low-spec plan §2.1, §5.6). Every field is optional:
+ * the stored values may arrive flat on SettingsVM, the derived texts under `graphics` (graphicsVM).
+ */
+interface GraphicsBlockVM {
+  /** "Auto picked: Low (integrated GPU)"; null/absent hides the line (manual presets). */
+  autoNote?: string | null
+  /** "62 fps · Low · GPU memory ≈ 140 MB · 1280×720" */
+  now?: string
+  /** Any advanced override is set → "(custom)". */
+  custom?: boolean
+  /** The value 'auto' resolves to, per option: "Auto · 30". */
+  autoHints?: Partial<Record<AdvKey, string>>
+}
+type GfxVM = AppearanceVM &
+  Partial<{
+    graphicsAdvanced: GraphicsAdvanced
+    powerSaverBlur: boolean
+    powerSaverHidden: boolean
+    batteryPreset: BatteryPreset
+    hardwareAcceleration: boolean
+    graphics: GraphicsBlockVM
+  }>
+
+const V = GFX_COPY.values
+/** Advanced options in display order: label, optional help, and the non-auto values with labels. */
+const ADVANCED: { key: AdvKey; label: string; help?: string; values: [string, string][] }[] = [
+  {
+    key: 'resolution',
+    label: GFX_COPY.options.resolution,
+    values: [
+      ['0.5', '50%'],
+      ['0.67', '67%'],
+      ['0.75', '75%'],
+      ['1', '100%'],
+    ],
+  },
+  {
+    key: 'fps',
+    label: GFX_COPY.options.fps,
+    values: [
+      ['30', '30'],
+      ['60', '60'],
+      ['unlimited', V.unlimited],
+    ],
+  },
+  {
+    key: 'shadows',
+    label: GFX_COPY.options.shadows,
+    values: [
+      ['off', V.off],
+      ['contact', V.contact],
+      ['full', V.full],
+    ],
+  },
+  {
+    key: 'effects',
+    label: GFX_COPY.options.effects,
+    help: GFX_COPY.options.effectsHelp,
+    values: [
+      ['off', V.off],
+      ['on', V.on],
+    ],
+  },
+  {
+    key: 'characters',
+    label: GFX_COPY.options.characters,
+    values: [
+      ['low', V.low],
+      ['medium', V.medium],
+      ['high', V.high],
+    ],
+  },
+  {
+    key: 'labels',
+    label: GFX_COPY.options.labels,
+    values: [
+      ['selected', V.selected],
+      ['nearby', V.nearby],
+      ['all', V.all],
+    ],
+  },
+  {
+    key: 'links',
+    label: GFX_COPY.options.links,
+    values: [
+      ['off', V.off],
+      ['static', V.static],
+      ['animated', V.animated],
+    ],
+  },
+  {
+    key: 'building',
+    label: GFX_COPY.options.building,
+    help: GFX_COPY.options.buildingHelp,
+    values: [
+      ['low', V.low],
+      ['medium', V.medium],
+      ['high', V.high],
+    ],
+  },
+]
+const AUTO_ADVANCED: GraphicsAdvanced = GraphicsAdvancedSchema.parse({})
 
 /** SettingsView port → the native <dialog> in index.html. */
 export class DomSettings implements SettingsView {
@@ -39,10 +154,7 @@ export class DomSettings implements SettingsView {
         (e) => void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
       )
     }
-    byId<HTMLSelectElement>('s-graphicsQuality').addEventListener('change', (e) => {
-      const q = GraphicsQualitySchema.safeParse((e.target as HTMLSelectElement).value)
-      if (q.success) void this.changeFn({ graphicsQuality: q.data })
-    })
+    this.bindGraphics()
     byId<HTMLFormElement>('s-port-form').addEventListener('submit', (e) => {
       e.preventDefault()
       void this.changeFn({ port: Number(byId<HTMLInputElement>('s-port').value) })
@@ -95,6 +207,114 @@ export class DomSettings implements SettingsView {
     }
   }
 
+  /** Settings → Graphics (§2.1): preset, power saver, Advanced overrides, hardware acceleration. */
+  private bindGraphics(): void {
+    byId('s-gfx-h').textContent = GFX_COPY.title
+    byId('s-gfx-quality-l').textContent = 'Quality'
+    byId('s-gfx-now-l').textContent = 'Now'
+    const quality = byId<HTMLSelectElement>('s-graphicsQuality')
+    quality.replaceChildren(...GRAPHICS_QUALITIES.map((q) => option(q, GFX_COPY.presets[q])))
+    quality.addEventListener('change', () => {
+      const q = GraphicsQualitySchema.safeParse(quality.value)
+      if (q.success) void this.changeFn({ graphicsQuality: q.data })
+      this.renderPresetHelp(quality.value)
+    })
+
+    byId('s-saver-h').textContent = GFX_COPY.power.title
+    byId('s-saver-blur-l').textContent = GFX_COPY.power.blur
+    byId('s-saver-hidden-l').textContent = GFX_COPY.power.hidden
+    const box = (id: string, key: 'powerSaverBlur' | 'powerSaverHidden' | 'hardwareAcceleration') =>
+      byId<HTMLInputElement>(id).addEventListener(
+        'change',
+        (e) => void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
+      )
+    box('s-saver-blur', 'powerSaverBlur')
+    box('s-saver-hidden', 'powerSaverHidden')
+    byId('s-battery-l').textContent = GFX_COPY.power.battery
+    const battery = byId<HTMLSelectElement>('s-battery-preset')
+    battery.replaceChildren(
+      ...BATTERY_PRESETS.map((p) => option(p, p === 'off' ? V.off : GFX_COPY.presets[p])),
+    )
+    battery.addEventListener('change', () => {
+      const b = SettingsSchema.shape.batteryPreset.safeParse(battery.value)
+      if (b.success) void this.changeFn({ batteryPreset: b.data })
+    })
+
+    byId('s-adv-title').textContent = GFX_COPY.advanced.title
+    byId('s-adv-custom').textContent = GFX_COPY.advanced.custom
+    const grid = byId('s-adv-grid')
+    for (const o of ADVANCED) {
+      const id = `s-adv-${o.key}`
+      const label = el('label', o.label)
+      label.htmlFor = id
+      if (o.help) label.append(el('span', ` (${o.help})`, 'muted small'))
+      const select = el('select')
+      select.id = id
+      select.append(
+        option('auto', GFX_COPY.presets.auto),
+        ...o.values.map(([v, l]) => option(v, l)),
+      )
+      select.addEventListener('change', () => void this.sendAdvanced())
+      grid.append(label, select)
+    }
+    const reset = byId('s-adv-reset')
+    reset.textContent = GFX_COPY.advanced.reset
+    reset.addEventListener('click', () => {
+      for (const o of ADVANCED) byId<HTMLSelectElement>(`s-adv-${o.key}`).value = 'auto'
+      void this.sendAdvanced()
+    })
+
+    byId('s-hw-accel-l').textContent = GFX_COPY.hardware.accel
+    byId('s-hw-accel-note').textContent = GFX_COPY.hardware.restart
+    box('s-hw-accel', 'hardwareAcceleration')
+  }
+
+  /** The whole `graphicsAdvanced` object from the selects (keeps the strict patch schema simple). */
+  private sendAdvanced(): void | Promise<void> {
+    const raw = Object.fromEntries(
+      ADVANCED.map((o) => [o.key, byId<HTMLSelectElement>(`s-adv-${o.key}`).value]),
+    )
+    const adv = GraphicsAdvancedSchema.safeParse(raw)
+    if (!adv.success) return
+    this.renderCustom(adv.data)
+    return this.changeFn({ graphicsAdvanced: adv.data })
+  }
+
+  private renderCustom(adv: GraphicsAdvanced, custom?: boolean): void {
+    const on = custom ?? ADVANCED.some((o) => adv[o.key] !== 'auto')
+    byId('s-adv-custom').hidden = !on
+    byId<HTMLButtonElement>('s-adv-reset').disabled = !on
+  }
+
+  private renderPresetHelp(q: string): void {
+    const help = GFX_COPY.presetHelp as Record<string, string | undefined>
+    byId('s-gfx-help').textContent = help[q] ?? ''
+  }
+
+  private renderGraphics(vm: GfxVM): void {
+    const g = vm.graphics ?? {}
+    byId<HTMLSelectElement>('s-graphicsQuality').value = vm.graphicsQuality
+    this.renderPresetHelp(vm.graphicsQuality)
+    const note = byId('s-gfx-auto-note')
+    note.hidden = vm.graphicsQuality !== 'auto' || !g.autoNote
+    note.textContent = g.autoNote ?? ''
+    if (g.now) byId('s-gfx-now').textContent = g.now
+    byId<HTMLInputElement>('s-saver-blur').checked = vm.powerSaverBlur ?? true
+    byId<HTMLInputElement>('s-saver-hidden').checked = vm.powerSaverHidden ?? true
+    byId<HTMLSelectElement>('s-battery-preset').value = vm.batteryPreset ?? 'off'
+    byId<HTMLInputElement>('s-hw-accel').checked = vm.hardwareAcceleration ?? true
+    const hwRow = byId<HTMLInputElement>('s-hw-accel').closest('label') ?? byId('s-hw-accel')
+    ;(hwRow as HTMLElement).hidden = vm.showHardwareAcceleration === false
+    const adv = vm.graphicsAdvanced ?? AUTO_ADVANCED
+    for (const o of ADVANCED) {
+      const select = byId<HTMLSelectElement>(`s-adv-${o.key}`)
+      if (document.activeElement !== select) select.value = adv[o.key]
+      const hint = g.autoHints?.[o.key]
+      select.options[0]!.textContent = hint ?? GFX_COPY.presets.auto
+    }
+    this.renderCustom(adv, g.custom)
+  }
+
   /** Turning bypass on asks first, in our own <dialog> (never window.confirm); turning it off doesn't. */
   private bindBypass(): void {
     byId('s-bypass-label').textContent = SESSION_COPY.bypass.label
@@ -130,12 +350,16 @@ export class DomSettings implements SettingsView {
     this.installFn = fn
   }
 
-  /** Live readout under the quality select (only refreshed while the dialog is open). */
+  /**
+   * Fallback live readout (fps and preset only) for when the VM carries no `graphics.now` line;
+   * the controller's 2 Hz render of `graphics.now` wins once it arrives.
+   */
   showFrameRate(fps: number, preset: string): void {
-    if (!this.dialog.open) return
+    if (!this.dialog.open || this.hasNowLine) return
     const name = preset.charAt(0).toUpperCase() + preset.slice(1)
-    byId('s-fps').textContent = `${name} · ${Math.round(fps)} fps`
+    byId('s-gfx-now').textContent = `${Math.round(fps)} fps · ${name}`
   }
+  private hasNowLine = false
 
   isOpen(): boolean {
     return this.dialog.open
@@ -155,7 +379,7 @@ export class DomSettings implements SettingsView {
     byId('s-error').textContent = message
   }
 
-  render(vm: AppearanceVM): void {
+  render(vm: GfxVM): void {
     this.selectTheme(vm.theme ?? 'system')
     if (!this.confirm.open)
       byId<HTMLInputElement>('s-allowBypassPermissions').checked =
@@ -163,7 +387,8 @@ export class DomSettings implements SettingsView {
     for (const key of CHECKBOXES) byId<HTMLInputElement>(`s-${key}`).checked = vm[key]
     const port = byId<HTMLInputElement>('s-port')
     if (document.activeElement !== port) port.value = String(vm.port)
-    byId<HTMLSelectElement>('s-graphicsQuality').value = vm.graphicsQuality
+    this.hasNowLine = !!vm.graphics?.now
+    this.renderGraphics(vm)
     byId('s-restart').hidden = !vm.restartNote
     byId('s-hook-label').textContent = vm.hook.label
     this.hookAction = vm.hook.action
@@ -179,4 +404,10 @@ export class DomSettings implements SettingsView {
     link.hidden = vm.update.action !== 'download'
     if (vm.update.url) link.href = vm.update.url
   }
+}
+
+function option(value: string, label: string): HTMLOptionElement {
+  const o = el('option', label)
+  o.value = value
+  return o
 }

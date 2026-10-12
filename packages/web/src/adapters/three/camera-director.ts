@@ -1,12 +1,16 @@
 // Camera (plan §4.2): damped orbit with bookmarks, focus-then-follow for the selected agent, and a
 // first-person walk mode with head-bob and collision against the building's `collider` boxes.
+// Library and Adapters bookmarks frame their surfaces head-on from inside the room (low-spec plan
+// §B3); while one is active the orbit clamps relax so eye-level close-ups are allowed.
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import { toWorld } from '../../app/building.ts'
+import { frameSurfaces } from '../../app/framing.ts'
+import { LIB_COPY } from '../../app/library-copy.ts'
 import type { Manifest } from '../../app/manifest.ts'
-import type { BuildingLayout, ModulePlacement, Vec2 } from '../../app/office-types.ts'
-import type { WorldBox } from './building-view.ts'
+import type { BuildingLayout, ModulePlacement, Vec2, Vec3 } from '../../app/office-types.ts'
+import type { SurfaceRole, WorldBox } from './building-view.ts'
 
 const EYE_HEIGHT = 1.65
 const WALK_SPEED = 2.2
@@ -17,6 +21,11 @@ const STEP_LENGTH = 0.7
 const FOCUS_S = 0.8
 const FOLLOW_DISTANCE = 6
 const FOLLOW_SMOOTHING = 4
+/** Orbit clamps: the default steep view, and relaxed (eye level, close) in capability rooms. */
+const MAX_POLAR = Math.PI / 2.2
+const RELAXED_POLAR = Math.PI / 2 + 0.15
+const MIN_DISTANCE = 2.5
+const RELAXED_MIN_DISTANCE = 0.5
 
 export type Mode = 'orbit' | 'walk'
 
@@ -25,6 +34,11 @@ export interface Bookmark {
   label: string
   target: THREE.Vector3
   position: THREE.Vector3
+  /** A capability-room view (eye level, close): the orbit clamps relax while it's active. */
+  closeUp?: boolean
+  /** Library and Adapters views are grouped per provider in the view bar. */
+  group?: 'library' | 'adapters'
+  provider?: string
 }
 
 interface Flight {
@@ -39,8 +53,192 @@ interface Flight {
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
 const v3 = (p: Vec2, y = 0) => new THREE.Vector3(p.x, y, p.z)
 
-/** Camera bookmarks for a layout: overview, atrium, Main Street, then one per wing. */
-export function bookmarksFor(layout: BuildingLayout, manifest: Manifest): Bookmark[] {
+/** Module-local positions of the wing's capability surfaces (role → slot → position). */
+export type WingSurfaces = Map<SurfaceRole, Map<string, Vec3>>
+
+/** Camera field of view used for framing (matches the scene camera). */
+export interface FrameView {
+  fovDeg: number
+  aspect: number
+}
+
+const toV3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z)
+
+function centroid2(points: Vec2[]): Vec2 | null {
+  if (!points.length) return null
+  const n = points.length
+  return points.reduce((a, p) => ({ x: a.x + p.x / n, z: a.z + p.z / n }), { x: 0, z: 0 })
+}
+
+/** The farthest any of `room` lies from `from` along `dir` (xz): how far the camera may back up. */
+function roomDepth(from: Vec3, to: Vec3, room: Vec3[]): number {
+  let dx = to.x - from.x
+  let dz = to.z - from.z
+  const l = Math.hypot(dx, dz) || 1
+  dx /= l
+  dz /= l
+  let d = 0
+  for (const p of room) d = Math.max(d, (p.x - from.x) * dx + (p.z - from.z) * dz)
+  return d
+}
+
+/**
+ * Library and Adapters bookmarks for one wing (low-spec plan §B3), framed with `frameSurfaces`
+ * from the surfaces' real positions: `library` (shelves and boards from the far side, facing the
+ * door wall), `library-rules` (the boards head-on), `adapters` (all stations, down the room) and
+ * `adapters-door` (stations 4–7 head-on).
+ */
+export function roomBookmarks(
+  layout: BuildingLayout,
+  p: ModulePlacement,
+  surfaces: WingSurfaces,
+  view: FrameView,
+): Bookmark[] {
+  const key = `${p.provider}:${p.annex ?? 0}`
+  const name = p.label ?? p.provider ?? p.id
+  const provider = p.provider ?? p.id
+  const world = (v: Vec3): Vec3 => {
+    const w = toWorld({ x: v.x, z: v.z }, p)
+    return { x: w.x, y: v.y, z: w.z }
+  }
+  const pick = (role: SurfaceRole, from = 0, to = Infinity) =>
+    [...(surfaces.get(role) ?? [])]
+      .filter(([slot]) => Number(slot) >= from && Number(slot) <= to)
+      .map(([, v]) => world(v))
+  const anchors = (re: RegExp) =>
+    [...layout.anchors.values()].filter((a) => a.placement === p.id && re.test(a.local))
+  const books = pick('book')
+  const boards = pick('board')
+  const notebooks = pick('notebook')
+  const stations = pick('station')
+  const out: Bookmark[] = []
+  const add = (
+    id: string,
+    label: string,
+    group: 'library' | 'adapters',
+    f: { position: Vec3; target: Vec3 },
+  ) =>
+    out.push({
+      id: `${id}:${key}`,
+      label: `${label} · ${name}`,
+      target: toV3(f.target),
+      position: toV3(f.position),
+      closeUp: true,
+      group,
+      provider,
+    })
+
+  const reading = centroid2(anchors(/^(seat:reading|spot:shelf):/).map((a) => a.pos))
+  const library = [...books, ...boards, ...notebooks]
+  if (reading && books.length + boards.length) {
+    const shown = [...books, ...boards]
+    const c = frameSurfaces({ surfaces: shown, inside: reading, ...view, maxDist: 99 })
+    const depth = roomDepth(c.target, c.position, library) - 0.5
+    add(
+      'library',
+      LIB_COPY.views.library,
+      'library',
+      frameSurfaces({
+        surfaces: shown,
+        inside: reading,
+        ...view,
+        margin: 1.05,
+        maxDist: Math.max(1.2, depth),
+        eyeHeight: 2.7,
+      }),
+    )
+  }
+  if (reading && boards.length) {
+    const c = frameSurfaces({ surfaces: boards, inside: reading, ...view, maxDist: 99 })
+    add(
+      'library-rules',
+      LIB_COPY.views.rulesWall,
+      'library',
+      frameSurfaces({
+        surfaces: boards,
+        inside: reading,
+        ...view,
+        maxDist: Math.max(1.2, roomDepth(c.target, c.position, library) - 0.5),
+      }),
+    )
+  }
+  const spots = anchors(/^spot:station:/)
+  if (stations.length && spots.length) {
+    // Down the room's long axis, raised so both rows of stations show.
+    const all = centroid2(spots.map((a) => a.pos))!
+    const along = { x: all.x, z: all.z + 3 }
+    const rowA = centroid2(pick('station', 0, 3))
+    const rowB = centroid2(pick('station', 4, 7))
+    if (rowA && rowB) {
+      // The rows face each other across the room; its long axis is perpendicular to that.
+      let ax = -(rowB.z - rowA.z)
+      let az = rowB.x - rowA.x
+      const l = Math.hypot(ax, az) || 1
+      ax /= l
+      az /= l
+      // From the end next to the Library (the rooms' shared doorway side).
+      const sign = reading && (reading.x - all.x) * ax + (reading.z - all.z) * az < 0 ? -1 : 1
+      along.x = all.x + ax * sign * 3
+      along.z = all.z + az * sign * 3
+    }
+    const c = frameSurfaces({ surfaces: stations, inside: along, ...view, maxDist: 99 })
+    add(
+      'adapters',
+      LIB_COPY.views.adapters,
+      'adapters',
+      frameSurfaces({
+        surfaces: stations,
+        inside: along,
+        ...view,
+        margin: 1.0,
+        maxDist: Math.max(1.2, roomDepth(c.target, c.position, stations) + 1.4),
+        eyeHeight: 4.2,
+      }),
+    )
+    // Door side, stations 4–7: the room's core column stands between the rows, so look along
+    // that row from the room's end, beside the column (head-on would be blocked by it).
+    const door = pick('station', 4, 7)
+    if (door.length && rowB && rowA) {
+      const across = { x: rowA.x - rowB.x, z: rowA.z - rowB.z }
+      const w = Math.hypot(across.x, across.z) || 1
+      const end = { x: along.x - all.x, z: along.z - all.z }
+      const e = Math.hypot(end.x, end.z) || 1
+      // A point ~1.6 m in from the stations, toward the open end of the room.
+      const inside = {
+        x: rowB.x + (across.x / w) * 1.6 + (end.x / e) * 4.5,
+        z: rowB.z + (across.z / w) * 1.6 + (end.z / e) * 4.5,
+      }
+      const d = frameSurfaces({ surfaces: door, inside, ...view, maxDist: 99 })
+      const reach = Math.hypot(inside.x - d.target.x, inside.z - d.target.z)
+      add(
+        'adapters-door',
+        LIB_COPY.views.adaptersDoor,
+        'adapters',
+        frameSurfaces({
+          surfaces: door,
+          inside,
+          ...view,
+          minDist: reach,
+          maxDist: reach,
+          eyeHeight: 2.4,
+        }),
+      )
+    }
+  }
+  return out
+}
+
+/**
+ * Camera bookmarks for a layout: overview, atrium, Main Street, then one per wing, then the
+ * capability rooms per wing. With `surfaces` (once a wing has loaded) the rooms are framed from
+ * inside (§B3); before that, from the anchors (a steep view over the partitions).
+ */
+export function bookmarksFor(
+  layout: BuildingLayout,
+  manifest: Manifest,
+  surfaces?: WingSurfaces | null,
+  view: FrameView = { fovDeg: 45, aspect: 16 / 9 },
+): Bookmark[] {
   const b = layout.bounds
   const cx = (b.minX + b.maxX) / 2
   const cz = (b.minZ + b.maxZ) / 2
@@ -91,15 +289,27 @@ export function bookmarksFor(layout: BuildingLayout, manifest: Manifest): Bookma
   }
   // Capability rooms per wing (when the manifest has them).
   for (const p of layout.placements.filter((x) => x.kind === 'wing')) {
+    const framed = surfaces ? roomBookmarks(layout, p, surfaces, view) : []
+    if (framed.length) {
+      out.push(...framed)
+      continue
+    }
     const key = `${p.provider}:${p.annex ?? 0}`
     const name = p.label ?? p.provider ?? p.id
-    const rooms: [string, string, RegExp][] = [
-      ['adapters', 'Adapters', /^spot:station:/],
-      ['library', 'Library', /^(seat:reading|spot:shelf):/],
+    const rooms: [string, 'library' | 'adapters', string, RegExp][] = [
+      ['adapters', 'adapters', LIB_COPY.views.adapters, /^spot:station:/],
+      ['library', 'library', LIB_COPY.views.library, /^(seat:reading|spot:shelf):/],
     ]
-    for (const [id, label, re] of rooms) {
+    for (const [id, group, label, re] of rooms) {
       const b = anchorBookmark(layout, re, 9, p.id)
-      if (b) out.push({ ...b, id: `${id}:${key}`, label: `${label} · ${name}` })
+      if (b)
+        out.push({
+          ...b,
+          id: `${id}:${key}`,
+          label: `${label} · ${name}`,
+          group,
+          provider: p.provider ?? p.id,
+        })
     }
   }
   return out
@@ -157,6 +367,9 @@ export class CameraDirector {
   private side = new THREE.Vector3()
   private delta = new THREE.Vector3()
   private live = new THREE.Vector3()
+  private relaxed = false
+  /** Clamp state to apply when the current flight lands (restoring mid-flight would snap). */
+  private relaxAfter: boolean | null = null
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -166,8 +379,8 @@ export class CameraDirector {
     this.orbit.enableDamping = true
     this.orbit.dampingFactor = 0.08
     this.orbit.minPolarAngle = 0.12
-    this.orbit.maxPolarAngle = Math.PI / 2.2
-    this.orbit.minDistance = 2.5
+    this.orbit.maxPolarAngle = MAX_POLAR
+    this.orbit.minDistance = MIN_DISTANCE
     this.orbit.maxDistance = 180
     this.orbit.screenSpacePanning = false
     this.walk = new PointerLockControls(camera, document.body)
@@ -198,9 +411,31 @@ export class CameraDirector {
     return performance.now() - this.lastInputAt
   }
 
+  /** Capability-room view active: eye-level angles and close distances allowed. */
+  get closeUp(): boolean {
+    return this.relaxed
+  }
+
+  private setRelaxed(on: boolean): void {
+    this.relaxAfter = null
+    if (on === this.relaxed) return
+    this.relaxed = on
+    this.orbit.maxPolarAngle = on ? RELAXED_POLAR : MAX_POLAR
+    this.orbit.minDistance = on ? RELAXED_MIN_DISTANCE : MIN_DISTANCE
+    this.camera.near = on ? 0.05 : 0.1
+    this.camera.updateProjectionMatrix()
+  }
+
+  /** Relax now when going close; tighten only once the flight lands. */
+  private planRelax(closeUp: boolean): void {
+    if (closeUp) this.setRelaxed(true)
+    else if (this.relaxed) this.relaxAfter = false
+  }
+
   /** Eases to a bookmark (0.8 s, ease-in-out cubic) and stops following. */
-  flyTo(b: Pick<Bookmark, 'target' | 'position'>, seconds = FOCUS_S): void {
+  flyTo(b: Pick<Bookmark, 'target' | 'position' | 'closeUp'>, seconds = FOCUS_S): void {
     if (this.mode === 'walk') this.exitWalk()
+    this.planRelax(!!b.closeUp)
     this.follow = null
     this.flight = {
       fromTarget: this.orbit.target.clone(),
@@ -213,8 +448,9 @@ export class CameraDirector {
   }
 
   /** Jumps without animation (first frame, screenshots). */
-  jumpTo(b: Pick<Bookmark, 'target' | 'position'>): void {
+  jumpTo(b: Pick<Bookmark, 'target' | 'position' | 'closeUp'>): void {
     if (this.mode === 'walk') this.exitWalk()
+    this.setRelaxed(!!b.closeUp)
     this.follow = null
     this.flight = null
     this.orbit.target.copy(b.target)
@@ -228,6 +464,7 @@ export class CameraDirector {
     const p = get?.()
     if (!get || !p) return
     if (this.mode === 'walk') this.exitWalk()
+    this.planRelax(false)
     const to = p.clone().setY(Math.max(1, p.y))
     const offset = this.camera.position.clone().sub(this.orbit.target)
     offset.y = Math.max(offset.y, offset.length() * 0.45)
@@ -350,6 +587,7 @@ export class CameraDirector {
       if (f.t >= 1) {
         this.flight = null
         this.followPos.copy(this.orbit.target)
+        if (this.relaxAfter !== null) this.setRelaxed(this.relaxAfter)
       }
     } else if (live) {
       // Follow: move target and camera together, smoothed, so the view stays steady.

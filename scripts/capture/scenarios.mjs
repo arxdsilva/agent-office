@@ -814,6 +814,35 @@ export const SCENARIOS = [
       }
     },
   },
+  {
+    // The Library browser (📚) with a skill picked (camera close-up + Capability panel), and
+    // Settings → Graphics with Advanced open.
+    name: 'library-browser',
+    shots: ['library-browser', 'graphics-settings'],
+    clips: [],
+    async run(c, want) {
+      const { win } = c
+      await c.post(OFFICE)
+      await c.fastForward(30)
+      // 📚 opens the drawer on claude-code; pick the first skill: the camera flies to its spine.
+      await win.locator('#library-btn').click()
+      await win.locator('#library').waitFor({ state: 'visible', timeout: 10_000 })
+      await win.locator('#lib-rows [role="option"]').first().click()
+      await win.locator('#cap-panel').waitFor({ state: 'visible', timeout: 10_000 })
+      if (want('library-browser')) await c.still('library-browser', { hud: true, settle: 2500 })
+      await win.keyboard.press('Escape')
+      await win.locator('#library').evaluate((el) => (el.hidden = true))
+      // Settings → Graphics with the Advanced section open (the capability panel covers ⚙).
+      await win
+        .locator('#cap-close')
+        .dispatchEvent('click')
+        .catch(() => {})
+      await win.locator('#settings-btn').dispatchEvent('click')
+      await win.locator('#s-gfx-advanced').evaluate((d) => (d.open = true))
+      await win.locator('#s-gfx-advanced').scrollIntoViewIfNeeded()
+      if (want('graphics-settings')) await c.still('graphics-settings', { hud: true, settle: 1500 })
+    },
+  },
 ]
 
 export async function runScenarios({ out, quality = 'high', only, clips = true, port }) {

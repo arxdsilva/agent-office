@@ -1,6 +1,8 @@
 // Pure view models: everything the DOM adapters show, computed from state. No DOM here.
 import {
   AGENT_STATUSES,
+  BATTERY_PRESETS,
+  GRAPHICS_QUALITIES,
   PERMISSION_MODES,
   STATUS_COLORS,
   type Agent,
@@ -11,6 +13,7 @@ import {
   type ConnectionInfo,
   type ContextChip,
   type ContextRef,
+  type GraphicsAdvanced,
   type GraphicsQuality,
   type HookStatus,
   type ModelOption,
@@ -35,6 +38,9 @@ import {
   type SnippetLang,
 } from './connect-types.ts'
 import { ago } from './format.ts'
+import { GFX_COPY } from './graphics-copy.ts'
+import type { Effective, GraphicsStats, Preset, Tier } from './graphics-types.ts'
+import { PRESETS, resolvePreset } from './quality.ts'
 import type { Activity } from './office-types.ts'
 import { SESSION_COPY } from './session-copy.ts'
 import {
@@ -166,6 +172,8 @@ export function activityLabel(
 
 export interface PanelVM {
   id: string
+  /** The agent's provider (capability chip refs); '' once it left. */
+  provider: string
   present: boolean
   name: string
   subtitle: string
@@ -227,6 +235,7 @@ export function panelVM(
   if (!a)
     return {
       id,
+      provider: '',
       present: false,
       name: 'This agent has left the office',
       subtitle: '',
@@ -241,6 +250,7 @@ export function panelVM(
   const activity = info ? activityLabel(info.activity, info) : undefined
   return {
     id,
+    provider: a.provider,
     present: true,
     name: a.name,
     subtitle: [a.kind, a.provider, a.model].filter(Boolean).join(' · '),
@@ -559,6 +569,15 @@ export interface SettingsVM {
   restartNote: boolean
   hook: HookActionVM
   update: { label: string; action: 'check' | 'install' | 'download' | null; url?: string }
+  graphicsAdvanced: GraphicsAdvanced
+  powerSaverBlur: boolean
+  powerSaverHidden: boolean
+  batteryPreset: Settings['batteryPreset']
+  hardwareAcceleration: boolean
+  /** False on macOS: turning acceleration off leaves no WebGL there. */
+  showHardwareAcceleration: boolean
+  /** Settings → Graphics derived texts and options (low-spec plan §2.1). */
+  graphics: GraphicsVM
 }
 
 export function settingsVM(i: {
@@ -567,6 +586,10 @@ export function settingsVM(i: {
   version: string
   update: UpdateState
   restartNote?: boolean
+  /** Live graphics facts (tier, Auto's current preset, stats, power); settings come from above. */
+  graphics?: Omit<GraphicsInput, 'settings'>
+  /** macOS has no software WebGL fallback, so the acceleration toggle is hidden there. */
+  isMac?: boolean
 }): SettingsVM {
   const hook = hookVM(i.hook)
   return {
@@ -583,6 +606,198 @@ export function settingsVM(i: {
     restartNote: !!i.restartNote,
     hook,
     update: updateVM(i.update),
+    graphicsAdvanced: i.settings.graphicsAdvanced,
+    powerSaverBlur: i.settings.powerSaverBlur,
+    powerSaverHidden: i.settings.powerSaverHidden,
+    batteryPreset: i.settings.batteryPreset,
+    hardwareAcceleration: i.settings.hardwareAcceleration,
+    showHardwareAcceleration: !i.isMac,
+    graphics: graphicsVM({ ...i.graphics, settings: i.settings }),
+  }
+}
+
+// ── Settings → Graphics (low-spec plan §2.1, §3) ────────────────────────────────────────────────
+export interface GfxOption {
+  value: string
+  label: string
+}
+
+export interface GfxAdvancedRowVM {
+  key: keyof GraphicsAdvanced
+  label: string
+  help?: string
+  /** The current setting ('auto' or an override). */
+  value: string
+  /** First entry is `auto`, labelled "Auto · <what the preset gives>". */
+  options: GfxOption[]
+}
+
+export interface GraphicsVM {
+  quality: GraphicsQuality
+  qualityOptions: { value: GraphicsQuality; label: string; help?: string }[]
+  /** "Auto picked: Low (integrated GPU)" (`#s-gfx-auto-note`); null for a manual preset. */
+  autoNote: string | null
+  /** "62 fps · Low · GPU memory ≈ 140 MB · 1280×720" (`#s-gfx-now`); absent before a sample. */
+  now?: string
+  saverBlur: boolean
+  saverHidden: boolean
+  batteryPreset: (typeof BATTERY_PRESETS)[number]
+  batteryOptions: GfxOption[]
+  /** Any advanced override set. */
+  custom: boolean
+  /** "Advanced" or "Advanced (custom)" (the `<summary>`). */
+  advancedSummary: string
+  advanced: GfxAdvancedRowVM[]
+  /** Per option, what 'auto' resolves to: "Auto · 30" (same text as `advanced[].options[0]`). */
+  autoHints: Record<keyof GraphicsAdvanced, string>
+  hardwareAcceleration: boolean
+}
+
+export interface GraphicsInput {
+  settings: Settings
+  /** Detected hardware tier (Auto's start and ceiling). */
+  tier?: Tier
+  /** The preset Auto runs now (the governor's). */
+  autoPreset?: Preset
+  stats?: GraphicsStats
+  /** What the scene applies now (battery preset included). */
+  effective?: Effective
+  onBattery?: boolean
+}
+
+const V = GFX_COPY.values
+const pct = (x: number) => `${Math.round(x * 100)}%`
+
+/** Per option: its choices (besides auto) and how the preset's own value reads. */
+const ADVANCED: {
+  key: keyof GraphicsAdvanced
+  label: string
+  help?: string
+  options: GfxOption[]
+  auto: (p: Preset) => string
+}[] = [
+  {
+    key: 'resolution',
+    label: GFX_COPY.options.resolution,
+    options: (['0.5', '0.67', '0.75', '1'] as const).map((v) => ({ value: v, label: pct(+v) })),
+    auto: (p) => pct(PRESETS[p].resolutionScale),
+  },
+  {
+    key: 'fps',
+    label: GFX_COPY.options.fps,
+    options: [
+      { value: '30', label: '30' },
+      { value: '60', label: '60' },
+      { value: 'unlimited', label: V.unlimited },
+    ],
+    auto: (p) => String(PRESETS[p].fpsLimit ?? V.unlimited),
+  },
+  {
+    key: 'shadows',
+    label: GFX_COPY.options.shadows,
+    options: [
+      { value: 'off', label: V.off },
+      { value: 'contact', label: V.contact },
+      { value: 'full', label: V.full },
+    ],
+    auto: (p) => V[PRESETS[p].shadows],
+  },
+  {
+    key: 'effects',
+    label: GFX_COPY.options.effects,
+    help: GFX_COPY.options.effectsHelp,
+    options: [
+      { value: 'off', label: V.off },
+      { value: 'on', label: V.on },
+    ],
+    auto: (p) => (PRESETS[p].bloom ? V.on : V.off),
+  },
+  {
+    key: 'characters',
+    label: GFX_COPY.options.characters,
+    options: (['low', 'medium', 'high'] as const).map((v) => ({ value: v, label: V[v] })),
+    auto: (p) => V[PRESETS[p].characters],
+  },
+  {
+    key: 'labels',
+    label: GFX_COPY.options.labels,
+    options: (['selected', 'nearby', 'all'] as const).map((v) => ({ value: v, label: V[v] })),
+    auto: (p) => V[PRESETS[p].labels.mode],
+  },
+  {
+    key: 'links',
+    label: GFX_COPY.options.links,
+    options: (['off', 'static', 'animated'] as const).map((v) => ({ value: v, label: V[v] })),
+    auto: (p) => V[PRESETS[p].links],
+  },
+  {
+    key: 'building',
+    label: GFX_COPY.options.building,
+    help: GFX_COPY.options.buildingHelp,
+    options: (['low', 'medium', 'high'] as const).map((v) => ({ value: v, label: V[v] })),
+    auto: (p) => V[PRESETS[p].building],
+  },
+]
+
+export function graphicsVM(i: GraphicsInput): GraphicsVM {
+  const s = i.settings
+  const autoPreset = i.autoPreset ?? i.tier?.start ?? 'high'
+  const battery = !!i.onBattery && s.batteryPreset !== 'off'
+  const preset: Preset =
+    i.effective?.preset ??
+    (battery && s.batteryPreset !== 'off'
+      ? s.batteryPreset
+      : resolvePreset(s.graphicsQuality, autoPreset))
+  const custom = Object.values(s.graphicsAdvanced).some((v) => v !== 'auto')
+  let autoNote: string | null = null
+  if (s.graphicsQuality === 'auto' && i.tier)
+    autoNote =
+      i.tier.why === 'software'
+        ? GFX_COPY.softwareNote
+        : GFX_COPY.autoPicked(GFX_COPY.presets[autoPreset], GFX_COPY.why[i.tier.why])
+  const st = i.stats
+  const advanced = ADVANCED.map((o) => ({
+    key: o.key,
+    label: o.label,
+    ...(o.help && { help: o.help }),
+    value: s.graphicsAdvanced[o.key],
+    options: [{ value: 'auto', label: GFX_COPY.advanced.auto(o.auto(preset)) }, ...o.options],
+  }))
+  return {
+    quality: s.graphicsQuality,
+    qualityOptions: GRAPHICS_QUALITIES.map((q) => ({
+      value: q,
+      label: GFX_COPY.presets[q],
+      ...(q !== 'auto' && { help: GFX_COPY.presetHelp[q] }),
+    })),
+    autoNote,
+    ...(st && {
+      now: GFX_COPY.now(
+        Math.round(st.fps),
+        GFX_COPY.presets[preset],
+        Math.round(st.textureMB + st.geometryMB),
+        st.width,
+        st.height,
+        battery,
+      ),
+    }),
+    saverBlur: s.powerSaverBlur,
+    saverHidden: s.powerSaverHidden,
+    batteryPreset: s.batteryPreset,
+    batteryOptions: BATTERY_PRESETS.map((b) => ({
+      value: b,
+      label: b === 'off' ? V.off : GFX_COPY.presets[b],
+    })),
+    custom,
+    advancedSummary: custom
+      ? `${GFX_COPY.advanced.title} ${GFX_COPY.advanced.custom}`
+      : GFX_COPY.advanced.title,
+    advanced,
+    autoHints: Object.fromEntries(advanced.map((r) => [r.key, r.options[0]!.label])) as Record<
+      keyof GraphicsAdvanced,
+      string
+    >,
+    hardwareAcceleration: s.hardwareAcceleration,
   }
 }
 

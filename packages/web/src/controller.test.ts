@@ -31,12 +31,19 @@ import {
   type ConnectVM,
   type EmptyStateVM,
 } from './app/connect-types.ts'
-import { createController } from './controller.ts'
+import { createController, GFX_POLL_MS, LOSS_WINDOW_MS } from './controller.ts'
 import { SESSION_COPY } from './app/session-copy.ts'
 import { cap } from './app/__fixtures__/capabilities.ts'
 import type { CapabilityPanelVM } from './app/capability-vm.ts'
+import type { Effective, GraphicsStats, HardwareInfo } from './app/graphics-types.ts'
+import { GFX_COPY } from './app/graphics-copy.ts'
+import { LIB_COPY } from './app/library-copy.ts'
+import type { LibraryVM, ViewEntry } from './app/library-types.ts'
 import type {
   BannerView,
+  LibraryView,
+  TooltipView,
+  ViewBarView,
   CapabilityPanelView,
   ConnectView,
   EmptyStateView,
@@ -97,6 +104,8 @@ function fakeGateway(
     update: [] as ((s: UpdateState) => void)[],
     conn: [] as ((i: ConnectionInfo) => void)[],
     openConnect: [] as (() => void)[],
+    power: [] as ((s: { onBattery: boolean }) => void)[],
+    windowVisible: [] as ((visible: boolean) => void)[],
   }
   const sub =
     <T>(list: T[]) =>
@@ -163,6 +172,9 @@ function fakeGateway(
       onOpenSettings: sub(listeners.openSettings),
       copyText: vi.fn(async (_text: string) => {}),
       onOpenConnect: sub(listeners.openConnect),
+      onPower: sub(listeners.power),
+      power: vi.fn(async () => ({ onBattery: false })),
+      onWindowVisibility: sub(listeners.windowVisible),
     },
     connections: {
       info: vi.fn(async () => connInfo({ hook: hookState })),
@@ -195,8 +207,33 @@ function fakeViews() {
     selected: string | null
     qualities: GraphicsQuality[]
     themes: ('light' | 'dark')[]
+    graphics: Effective[]
+    statsNow: GraphicsStats
+    statsCalls: number
     last(): Map<string, AgentPlan>
   } = {
+    graphics: [],
+    statsNow: {
+      fps: 60,
+      drawCalls: 1,
+      triangles: 1,
+      textureMB: 100,
+      geometryMB: 20,
+      width: 800,
+      height: 600,
+    },
+    statsCalls: 0,
+    setGraphics(e) {
+      this.graphics.push(e)
+    },
+    stats() {
+      this.statsCalls++
+      return this.statsNow
+    },
+    onContextLost: on('contextLost'),
+    onContextRestored: on('contextRestored'),
+    onHoverSurface: on('hover'),
+    onViews: on('views'),
     themes: [],
     setTheme(t) {
       this.themes.push(t)
@@ -288,6 +325,7 @@ function fakeViews() {
     onOpenUse: on('openUse') as unknown as PanelView['onOpenUse'],
     onToggleUse: on('toggleUse'),
     onDraft: on('draft'),
+    onPickCapability: on('chip'),
   }
   const hud: HudView & { vm: HudVM | null; badge: boolean | null } = {
     vm: null,
@@ -298,6 +336,7 @@ function fakeViews() {
     onOpenSettings: on('openSettings'),
     onConnect: on('hudConnect'),
     onNewSession: on('newSession'),
+    onLibrary: on('library'),
     setConnectBadge(on) {
       this.badge = on
     },
@@ -444,7 +483,51 @@ function fakeViews() {
         this.shown.push({ text, ...(action && { action }) })
       },
     }
+  const library: LibraryView & { vm: LibraryVM | null; opens: number } = {
+    vm: null,
+    opens: 0,
+    open(vm) {
+      this.vm = vm
+      this.opens++
+    },
+    render(vm) {
+      if (this.vm) this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    isOpen() {
+      return this.vm !== null
+    },
+    onClose: on('libClose'),
+    onProvider: on('libProvider'),
+    onTab: on('libTab'),
+    onSearch: on('libSearch'),
+    onSort: on('libSort'),
+    onPick: on('libPick'),
+  }
+  const tooltip: TooltipView & { text: string | null; at: [number, number] | null } = {
+    text: null,
+    at: null,
+    show(text, x, y) {
+      this.text = text
+      this.at = [x, y]
+    },
+    hide() {
+      this.text = null
+    },
+  }
+  const viewBar: ViewBarView & { views: ViewEntry[] | null } = {
+    views: null,
+    render(views) {
+      this.views = views
+    },
+    onPick: on('viewPick'),
+  }
   return {
+    library,
+    tooltip,
+    viewBar,
     scene,
     panel,
     hud,
@@ -463,10 +546,16 @@ function fakeViews() {
 async function setup(
   initial?: Settings,
   prepare?: (v: ReturnType<typeof fakeViews>, g: ReturnType<typeof fakeGateway>) => void,
-  opts: { agents?: Agent[]; isWindows?: boolean } = {},
+  opts: {
+    agents?: Agent[]
+    isWindows?: boolean
+    hardware?: HardwareInfo | null
+    dpr?: number
+  } = {},
 ) {
   const g = fakeGateway(initial, opts.agents)
   const v = fakeViews()
+  const page = fakePage()
   prepare?.(v, g)
   const timers: { ms: number; fn: () => void }[] = []
   const timeouts: { ms: number; fn: () => void; live: boolean }[] = []
@@ -485,6 +574,10 @@ async function setup(
       return () => void (t.live = false)
     },
     ...(opts.isWindows !== undefined && { isWindows: opts.isWindows }),
+    doc: page.doc,
+    win: page.win,
+    ...(opts.hardware !== undefined && { hardware: () => opts.hardware ?? null }),
+    ...(opts.dpr !== undefined && { devicePixelRatio: () => opts.dpr! }),
   })
   await c.start()
   /** Fires every timer registered with this interval. */
@@ -507,7 +600,44 @@ async function setup(
       tick(250)
     }
   }
-  return { ...g, ...v, c, tick, advance, timers, fire, push, flush }
+  /** Moves the clock without director ticks. */
+  const setNow = (ms: number) => void (now = ms)
+  return { ...g, ...v, page, c, tick, advance, timers, fire, push, flush, setNow }
+}
+
+/** `document` (visibility, focus) and `window` (focus/blur events) stand-ins. */
+function fakePage() {
+  const fns: Record<string, (() => void)[]> = {}
+  const add = (t: string, fn: () => void) => void (fns[t] ??= []).push(fn)
+  const remove = (t: string, fn: () => void) => void fns[t]?.splice(fns[t]!.indexOf(fn), 1)
+  const emit = (t: string) => fns[t]?.forEach((fn) => fn())
+  const doc = {
+    hidden: false,
+    focused: true,
+    hasFocus() {
+      return this.focused
+    },
+    addEventListener: add,
+    removeEventListener: remove,
+  }
+  const win = { addEventListener: add, removeEventListener: remove }
+  return {
+    doc,
+    win,
+    fns,
+    blur() {
+      doc.focused = false
+      emit('blur')
+    },
+    focus() {
+      doc.focused = true
+      emit('focus')
+    },
+    hide(hidden: boolean) {
+      doc.hidden = hidden
+      emit('visibilitychange')
+    },
+  }
 }
 
 describe('controller', () => {
@@ -784,35 +914,194 @@ describe('controller', () => {
     expect(api.updates.install).toHaveBeenCalled()
   })
 
-  it('forwards the saved graphics quality to the scene on start, then on every change', async () => {
+  it('C-1: pushes the effective graphics to the scene on start, then on every settings change', async () => {
     const { scene, handlers } = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'medium' })
-    expect(scene.qualities).toEqual(['medium'])
+    expect(scene.graphics.map((e) => e.preset)).toEqual(['medium'])
+    // The old preset-only path is no longer used.
+    expect(scene.qualities).toEqual([])
 
     // Changing the preset in Settings applies it live (no restart).
     await handlers.settingsChange!({ graphicsQuality: 'low' })
-    expect(scene.qualities).toEqual(['medium', 'low'])
+    expect(scene.graphics.at(-1)).toMatchObject({ preset: 'low', fpsLimit: 60, links: 'static' })
 
-    // Unrelated changes and re-opening the dialog do not re-apply the same preset.
+    // An advanced override applies on top of the preset.
+    await handlers.settingsChange!({
+      graphicsAdvanced: { ...DEFAULT_SETTINGS.graphicsAdvanced, fps: '30' },
+    })
+    expect(scene.graphics.at(-1)).toMatchObject({ preset: 'low', fpsLimit: 30 })
+
+    // Unrelated changes and re-opening the dialog do not re-apply the same graphics.
+    const n = scene.graphics.length
     await handlers.settingsChange!({ notifications: false })
     await handlers.openSettings!()
-    expect(scene.qualities).toEqual(['medium', 'low'])
+    expect(scene.graphics).toHaveLength(n)
   })
 
   it('falls back to auto quality when settings cannot be read at start', async () => {
     const g = fakeGateway()
     g.api.settings.get.mockRejectedValueOnce(new Error('ipc down'))
     const v = fakeViews()
+    const { mql: _mql, ...views } = v
     const c = createController({
       gateway: g.api,
-      ...v,
+      ...views,
       grouping: byProviderAndTopic,
       clock: { now: () => 0 },
       every: () => () => {},
       after: () => () => {},
     })
     await c.start()
-    expect(v.scene.qualities).toEqual(['auto'])
+    // Auto without a known tier: High, as before.
+    expect(v.scene.graphics.map((e) => e.preset)).toEqual(['high'])
     expect(v.scene.buildings).toHaveLength(1)
+  })
+
+  it('Auto starts at the detected tier and the governor steps it from scene stats', async () => {
+    const hardware: HardwareInfo = {
+      renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11)',
+      vendor: 'Google Inc.',
+      maxTextureSize: 16384,
+      dpr: 2,
+      cores: 8,
+      webgl2: true,
+    }
+    const t = await setup(undefined, undefined, { hardware })
+    expect(t.scene.graphics.at(-1)).toMatchObject({ preset: 'low', pixelRatioCap: 1 })
+    // 10 s above 58 fps (Low's 60 cap is not a "low cap"): steps up to the Medium ceiling.
+    t.scene.statsNow = { ...t.scene.statsNow, fps: 60 }
+    for (let i = 0; i < 20; i++) t.tick(GFX_POLL_MS)
+    expect(t.scene.graphics.at(-1)!.preset).toBe('medium')
+    for (let i = 0; i < 40; i++) t.tick(GFX_POLL_MS)
+    expect(t.scene.graphics.at(-1)!.preset).toBe('medium')
+    // Settings shows what Auto picked and why.
+    await t.handlers.openSettings!()
+    expect(t.settings.vm?.graphics.autoNote).toBe('Auto picked: Medium (integrated GPU)')
+  })
+
+  it('a manual preset ignores the governor and the stats are not polled while Settings is closed', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'high' })
+    t.scene.statsNow = { ...t.scene.statsNow, fps: 10 }
+    for (let i = 0; i < 20; i++) t.tick(GFX_POLL_MS)
+    expect(t.scene.graphics.map((e) => e.preset)).toEqual(['high'])
+    expect(t.scene.statsCalls).toBe(0)
+  })
+
+  it('J11: Settings → Graphics shows a live stats line at 2 Hz while open', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'low' })
+    await t.handlers.openSettings!()
+    expect(t.settings.vm?.graphics.now).toBe('60 fps · Low · GPU memory ≈ 120 MB · 800×600')
+    t.scene.statsNow = { ...t.scene.statsNow, fps: 41.6 }
+    t.tick(GFX_POLL_MS)
+    expect(t.settings.vm?.graphics.now).toMatch(/^42 fps · Low/)
+    // Closed: no more sampling.
+    t.settings.close()
+    const calls = t.scene.statsCalls
+    t.tick(GFX_POLL_MS)
+    expect(t.scene.statsCalls).toBe(calls)
+  })
+
+  it('C-2: a power push re-computes (battery preset while unplugged, with "(battery)")', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'high', batteryPreset: 'low' })
+    expect(t.api.app.power).toHaveBeenCalled()
+    expect(t.scene.graphics.at(-1)!.preset).toBe('high')
+    await t.handlers.openSettings!()
+    t.listeners.power.forEach((fn) => fn({ onBattery: true }))
+    expect(t.scene.graphics.at(-1)!.preset).toBe('low')
+    expect(t.settings.vm?.graphics.now).toContain('Low (battery)')
+    t.listeners.power.forEach((fn) => fn({ onBattery: false }))
+    expect(t.scene.graphics.at(-1)!.preset).toBe('high')
+  })
+
+  it('reads the initial power state (already on battery at start)', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, batteryPreset: 'minimal' }, (_v, g) => {
+      g.api.app.power.mockResolvedValue({ onBattery: true })
+    })
+    await t.flush()
+    expect(t.scene.graphics.at(-1)!.preset).toBe('minimal')
+  })
+
+  // Page visibility isn't reliable (Playwright pins it; some window managers don't report it), so
+  // main also says when the window is hidden or minimized.
+  it('pauses while main reports the window hidden or minimized, even if the page says visible', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'high' })
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBeNull()
+    t.listeners.windowVisible.forEach((fn) => fn(false))
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBe(0)
+    t.listeners.windowVisible.forEach((fn) => fn(true))
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBeNull()
+  })
+
+  it('C-3: focus and visibility re-compute: 15 fps unfocused, paused while hidden', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'high' })
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBeNull()
+    t.page.blur()
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBe(15)
+    t.page.hide(true)
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBe(0)
+    // Paused: the governor gets no samples.
+    t.page.hide(false)
+    t.page.focus()
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBeNull()
+    // Saver off: no change when unfocused.
+    await t.handlers.settingsChange!({ powerSaverBlur: false })
+    t.page.blur()
+    expect(t.scene.graphics.at(-1)!.fpsLimit).toBeNull()
+    // stop() removes the listeners.
+    t.c.stop()
+    expect(Object.values(t.page.fns).every((l) => l.length === 0)).toBe(true)
+  })
+
+  it('starts hidden or unfocused when the page already is', async () => {
+    const t = await setup(undefined, undefined, { dpr: 3 })
+    expect(t.scene.graphics.at(-1)!.pixelRatioCap).toBe(2)
+    const g = fakeGateway()
+    const v = fakeViews()
+    const page = fakePage()
+    page.doc.hidden = true
+    const { mql: _mql, ...views } = v
+    await createController({
+      gateway: g.api,
+      ...views,
+      grouping: byProviderAndTopic,
+      clock: { now: () => 0 },
+      every: () => () => {},
+      after: () => () => {},
+      doc: page.doc,
+      win: page.win,
+    }).start()
+    expect(v.scene.graphics.at(-1)!.fpsLimit).toBe(0)
+  })
+
+  it('C-4: context loss shows a banner, restore re-applies; 3 losses in 5 min offer Minimal', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, graphicsQuality: 'high' })
+    const n = t.scene.graphics.length
+    t.handlers.contextLost!()
+    expect(t.banner.shown).toEqual({ kind: 'info', text: GFX_COPY.recovering })
+    t.handlers.contextRestored!()
+    expect(t.banner.shown).toBeNull()
+    expect(t.scene.graphics).toHaveLength(n + 1)
+    t.setNow(60_000)
+    t.handlers.contextLost!()
+    t.handlers.contextRestored!()
+    expect(t.toast.shown).toEqual([])
+    t.setNow(120_000)
+    t.handlers.contextLost!()
+    const prompt = t.toast.shown.at(-1)!
+    expect(prompt.text).toBe(GFX_COPY.keepFailing)
+    expect(prompt.action?.label).toBe(GFX_COPY.switchMinimal)
+    prompt.action!.run()
+    await t.flush()
+    expect(t.api.settings.set).toHaveBeenCalledWith({ graphicsQuality: 'minimal' })
+    expect(t.scene.graphics.at(-1)!.preset).toBe('minimal')
+    // Losses older than 5 minutes don't count.
+    t.setNow(120_000 + LOSS_WINDOW_MS + 1)
+    t.handlers.contextLost!()
+    expect(t.toast.shown).toHaveLength(1)
+    // A restore doesn't clear someone else's banner.
+    t.handlers.contextRestored!()
+    t.banner.show({ kind: 'error', text: 'Port busy' })
+    t.handlers.contextRestored!()
+    expect(t.banner.shown?.text).toBe('Port busy')
   })
 
   it('stop unsubscribes from the gateway', async () => {
@@ -1425,5 +1714,143 @@ describe('controller: new session dialog', () => {
     const t = await setup(undefined, undefined, { agents })
     await t.handlers.newSession!()
     expect(t.newSession.vm?.limit).toBe('Stop a session first (6 running)')
+  })
+})
+
+describe('controller: Library browser, views and hover (Part B)', () => {
+  const skills = (provider: string, n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      cap(`skill:s${String(i).padStart(2, '0')}`, { provider, scope: 'plugin' }),
+    )
+  async function withLibrary() {
+    const t = await setup(undefined, undefined, {
+      agents: [agent('a', { name: 'Ada', provider: 'langgraph' })],
+    })
+    t.push({
+      type: 'capabilities',
+      provider: 'claude-code',
+      capabilities: [...skills('claude-code', 30), cap('rule:project:CLAUDE.md')],
+    })
+    t.push({
+      type: 'capabilities',
+      provider: 'langgraph',
+      capabilities: [cap('skill:plan', { provider: 'langgraph', active: ['a'] })],
+    })
+    t.advance(250)
+    return t
+  }
+
+  it('C-lib-1: 📚 opens the drawer on the default provider; tabs, search, sort and provider re-render', async () => {
+    const t = await withLibrary()
+    t.handlers.library!()
+    expect(t.library.vm).toMatchObject({
+      provider: 'claude-code',
+      providers: ['claude-code', 'langgraph'],
+      tab: 'skills',
+      sort: 'recent',
+    })
+    expect(t.library.vm!.overflowLabel).toBe('Not on a shelf (7)')
+    t.handlers.libTab!('rules')
+    expect(t.library.vm!.rows.map((r) => r.label)).toEqual(['CLAUDE.md'])
+    t.handlers.libTab!('skills')
+    t.handlers.libSearch!('s2')
+    expect(t.library.vm!.rows.map((r) => r.label)).toEqual(['s20', 's21', 's22'])
+    t.handlers.libSort!('az')
+    expect(t.library.vm!.sort).toBe('az')
+    t.handlers.libProvider!('langgraph')
+    t.handlers.libSearch!('')
+    expect(t.library.vm!.rows.map((r) => r.label)).toEqual(['plan'])
+    // Live while open: the director tick re-renders.
+    t.push({
+      type: 'capabilities',
+      provider: 'langgraph',
+      capabilities: [cap('skill:plan', { provider: 'langgraph' })],
+    })
+    t.advance(250)
+    expect(t.library.vm!.rows[0]!.inUse).toBe(false)
+    // Re-opening starts on the selected agent's provider.
+    t.handlers.libClose!()
+    t.library.close()
+    t.handlers.pick!('a')
+    t.handlers.library!()
+    expect(t.library.vm!.provider).toBe('langgraph')
+  })
+
+  it('C-lib-2: picking a row flies the camera to it and opens the Capability panel; the drawer stays', async () => {
+    const t = await withLibrary()
+    t.handlers.library!()
+    t.handlers.libPick!({ provider: 'claude-code', id: 'skill:s01' })
+    expect(t.scene.focused).toEqual({ provider: 'claude-code', id: 'skill:s01' })
+    expect(t.capabilityPanel.vm?.title).toBe('s01')
+    expect(t.capabilityPanel.vm?.meta.some(([, v]) => v === LIB_COPY.notOnShelf)).toBe(false)
+    expect(t.library.isOpen()).toBe(true)
+    // Unknown ids do nothing.
+    t.handlers.libPick!({ provider: 'claude-code', id: 'nope' })
+    expect(t.capabilityPanel.vm?.title).toBe('s01')
+  })
+
+  it('C-lib-3: an overflow row opens the panel with "Not on a shelf", without moving the camera', async () => {
+    const t = await withLibrary()
+    t.handlers.library!()
+    const overflow = t.library.vm!.overflow[0]!.ref
+    t.handlers.libPick!(overflow)
+    expect(t.scene.focused).toBeNull()
+    expect(t.capabilityPanel.vm?.title).toBe(overflow.id.replace('skill:', ''))
+    expect(t.capabilityPanel.vm?.meta).toContainEqual(['Where', LIB_COPY.notOnShelf])
+    // Stays on re-render.
+    t.advance(250)
+    expect(t.capabilityPanel.vm?.meta).toContainEqual(['Where', LIB_COPY.notOnShelf])
+  })
+
+  it('C-lib-4: a "+N more" pick in the scene opens the drawer on that tab’s overflow group', async () => {
+    const t = await withLibrary()
+    t.handlers.pickCapability!({ provider: 'claude-code', id: '+more' })
+    expect(t.library.vm).toMatchObject({
+      provider: 'claude-code',
+      tab: 'skills',
+      focus: 'overflow',
+    })
+    expect(t.capabilityPanel.vm).toBeNull()
+    t.handlers.pickCapability!({ provider: 'claude-code', id: '+more:rules' })
+    expect(t.library.vm).toMatchObject({ tab: 'rules', focus: 'overflow' })
+    // Switching tabs drops the focus.
+    t.handlers.libTab!('memory')
+    expect(t.library.vm!.focus).toBeUndefined()
+  })
+
+  it('C-chip: an agent panel chip opens the capability like a drawer pick (provider filled in)', async () => {
+    const t = await withLibrary()
+    t.handlers.pick!('a')
+    t.handlers.chip!({ provider: '', id: 'skill:plan' })
+    expect(t.scene.focused).toEqual({ provider: 'langgraph', id: 'skill:plan' })
+    expect(t.capabilityPanel.vm?.title).toBe('plan')
+    t.handlers.chip!({ provider: 'claude-code', id: 'skill:s00' })
+    expect(t.capabilityPanel.vm?.title).toBe('s00')
+    // No provider and no selection: ignored.
+    t.handlers.chip!({ provider: '', id: 'skill:s01' })
+    expect(t.capabilityPanel.vm?.title).toBe('s00')
+  })
+
+  it('views: the scene’s views go to the view bar; a pick moves the camera', async () => {
+    const t = await setup()
+    const views = [{ id: 'atrium', label: 'Atrium' }]
+    t.handlers.views!(views)
+    expect(t.viewBar.views).toEqual(views)
+    t.handlers.viewPick!('library:p:0')
+    expect(t.scene.wentTo).toContain('library:p:0')
+  })
+
+  it('TT: hovering a surface shows its tooltip near the cursor; leaving hides it', async () => {
+    const t = await withLibrary()
+    t.handlers.hover!({ provider: 'claude-code', id: 'rule:project:CLAUDE.md' }, 10, 20)
+    expect(t.tooltip.text).toBe('📜 CLAUDE.md · rule (project) · click to open')
+    expect(t.tooltip.at).toEqual([10, 20])
+    t.handlers.hover!({ provider: 'claude-code', id: '+more' }, 5, 5)
+    expect(t.tooltip.text).toBe('📚 +7 more · Not on a shelf (overflow) · click to open')
+    t.handlers.hover!({ provider: 'claude-code', id: 'gone' }, 5, 5)
+    expect(t.tooltip.text).toBeNull()
+    t.handlers.hover!({ provider: 'claude-code', id: 'skill:s00' }, 1, 1)
+    t.handlers.hover!(null, 0, 0)
+    expect(t.tooltip.text).toBeNull()
   })
 })

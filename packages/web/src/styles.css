@@ -1,4 +1,5 @@
 @import './styles/session.css';
+@import './styles/library.css';
 
 :root {
   --bg: #eef0f3;
@@ -486,6 +487,84 @@ textarea:focus-visible {
 }
 #settings a.btn {
   text-decoration: none;
+}
+/* Settings → Graphics (low-spec plan §2.1) */
+#settings .s-sub {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+#settings .row.end {
+  justify-content: flex-end;
+}
+#s-gfx-now {
+  font-variant-numeric: tabular-nums;
+}
+#s-gfx-advanced {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+#s-gfx-advanced > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 600;
+}
+#s-gfx-advanced > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+#s-adv-custom[hidden] {
+  display: none;
+}
+.adv-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 6px 0;
+}
+.adv-grid label {
+  font-size: 13px;
+}
+
+/* WebGL failure card (§2.4): replaces the stage when the 3D view can't start */
+#gfx-failure {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(480px, calc(100vw - 32px));
+  height: fit-content;
+  padding: 20px 22px;
+  z-index: 5;
+  color: var(--text);
+}
+#gfx-failure[hidden] {
+  display: none;
+}
+#gfx-failure h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+#gfx-f-status:empty {
+  display: none;
+}
+#gfx-f-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+#gfx-f-error {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  font:
+    11px/1.4 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 /* Settings → Appearance: [System] [Light] [Dark] */
 .segmented {

@@ -4,7 +4,10 @@
 //   node assets/build.mjs --quality final|draft   headless Blender build → gltf-transform → public/assets
 //   node assets/build.mjs --test                  Blender-side asset tests (+ the character's, when present)
 //   node assets/build.mjs --previews              Eevee stills of every module → assets/previews/
-//   node assets/build.mjs --verify                re-check the published assets (validator, budgets, anchors)
+//   node assets/build.mjs --verify                re-check the published assets (validator, budgets, anchors, VRAM)
+//   node assets/build.mjs --verify --visual       … plus SSIM of the lightmap tiers against their sources
+//   node assets/build.mjs --repack                re-run the optimize step (WebP textures + extras.hash, lightmap
+//                                                 tiers) from the last Blender export, no bake
 //   node assets/build.mjs --pin                   download Poly Haven sources and pin their sha256
 //
 // Options: --modules atrium,street,garden,cap,wing:terracotta,…  (default: all)   --jobs N (parallel Blender
@@ -20,6 +23,9 @@ const ROOT = path.dirname(ASSETS);
 const BLENDER_DIR = path.join(ASSETS, 'blender');
 const CACHE = path.join(ASSETS, 'cache');
 const PUBLIC = path.join(ROOT, 'packages', 'web', 'public', 'assets');
+const OUT = path.join(ASSETS, 'out');
+/** Raw Blender exports of the last final build (full-quality JPEG textures, 8-bit PNG lightmaps). */
+const RAW = path.join(CACHE, 'work-final');
 const PINS_FILE = path.join(BLENDER_DIR, 'polyhaven.json');
 const BLENDER_VERSION = '5.2';
 const THEMES = ['terracotta', 'nordic', 'forest', 'ocean', 'neon', 'brass'];
@@ -37,7 +43,7 @@ const BUDGETS = {
 
 // ---------------------------------------------------------------------------------------------- args
 function parseArgs(argv) {
-  const a = { quality: 'final', modules: ALL_MODULES, jobs: 0, mode: 'build', skipCharacter: false };
+  const a = { quality: 'final', modules: ALL_MODULES, jobs: 0, mode: 'build', skipCharacter: false, visual: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--quality') a.quality = argv[++i];
@@ -47,6 +53,8 @@ function parseArgs(argv) {
     else if (k === '--previews') a.mode = 'previews';
     else if (k === '--verify') a.mode = 'verify';
     else if (k === '--pin') a.mode = 'pin';
+    else if (k === '--repack') a.mode = 'repack';
+    else if (k === '--visual') a.visual = true;
     else if (k === '--skip-character') a.skipCharacter = true;
     else throw new Error(`unknown argument ${k}`);
   }
@@ -192,7 +200,7 @@ function inputHash(quality, pins) {
 
 // ------------------------------------------------------------------------------------------ optimize
 async function gltfTools() {
-  const { NodeIO } = await import('@gltf-transform/core');
+  const { NodeIO, Logger } = await import('@gltf-transform/core');
   const { ALL_EXTENSIONS } = await import('@gltf-transform/extensions');
   const fns = await import('@gltf-transform/functions');
   const { MeshoptEncoder, MeshoptDecoder } = await import('meshoptimizer');
@@ -200,6 +208,7 @@ async function gltfTools() {
   await MeshoptEncoder.ready;
   await MeshoptDecoder.ready;
   const io = new NodeIO()
+    .setLogger(new Logger(Logger.Verbosity.ERROR))
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
   return { io, fns, sharp, MeshoptEncoder };
@@ -221,12 +230,68 @@ async function optimizeGlb(tools, src, dest, { skinned = false } = {}) {
   if (skinned) steps.push(fns.meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
   else steps.push(fns.meshopt({ encoder: MeshoptEncoder, level: 'high', quantizePosition: 16, quantizeTexcoord: 16, quantizeNormal: 10 }));
   await doc.transform(...steps);
+  await hashTextures(tools, doc);
   await io.write(dest, doc);
 }
 
 async function optimizePng(tools, src, dest) {
-  const buf = await tools.sharp(src).png({ compressionLevel: 9, adaptiveFiltering: true, effort: 10 }).toBuffer();
+  // Lossless: sharp's png `effort` (like quality/colours) switches to a 256-colour palette, which bands lightmaps.
+  const buf = await tools.sharp(src).png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
   fs.writeFileSync(dest, buf);
+}
+
+// ------------------------------------------------------------------------- textures and lightmaps (§6, §6b)
+// No KTX2: three's Basis transcoder needs eval (`new Function`), which the app's CSP forbids (§6b).
+
+async function rgbaOf(sharp, input, size) {
+  let img = sharp(Buffer.isBuffer(input) || typeof input === 'string' ? input : Buffer.from(input));
+  if (size) img = img.resize(size[0], size[1], { fit: 'fill', kernel: 'lanczos3' });
+  const { data, info } = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { data: new Uint8Array(data), width: info.width, height: info.height };
+}
+
+/** Contract §6b: extras.hash = sha1 over the decoded RGBA of the shipped image, first 12 hex chars. */
+async function hashTextures(tools, doc) {
+  for (const t of doc.getRoot().listTextures()) {
+    const { data } = await rgbaOf(tools.sharp, t.getImage());
+    t.setExtras({ ...t.getExtras(), hash: createHash('sha1').update(data).digest('hex').slice(0, 12) });
+  }
+}
+
+/** Contract §6: full, ½ and ¼ tiers of a lightmap PNG as WebP (sharp lanczos3 downscales). */
+async function lightmapTiers(tools, srcPng, destDir, base) {
+  const meta = await tools.sharp(srcPng).metadata();
+  const variants = {};
+  for (const [tier, div] of [['full', 1], ['half', 2], ['quarter', 4]]) {
+    let img = tools.sharp(srcPng);
+    if (div > 1) img = img.resize(Math.max(1, Math.floor(meta.width / div)), Math.max(1, Math.floor(meta.height / div)), { fit: 'fill', kernel: 'lanczos3' });
+    const file = `${base}.lightmap.${tier}.webp`;
+    // WebP q95 from the 24-bit bake: SSIM ≥ 0.97 against it (AV-visual); lossless would break the 55 MB budget.
+    fs.writeFileSync(path.join(destDir, file), await img.webp({ quality: 95, effort: 6 }).toBuffer());
+    variants[tier] = file;
+  }
+  return variants;
+}
+
+/** Every lightmap entry of a manifest, with the glb base name it belongs to (atrium, wing-terracotta, …). */
+function lightmapEntries(manifest) {
+  const out = [];
+  for (const [id, m] of Object.entries(manifest.modules)) {
+    if (id === 'wing') for (const t of Object.values(m.themes)) out.push({ base: t.file.replace(/\.glb$/, ''), lm: t.lightmap });
+    else if (m.lightmap) out.push({ base: m.file.replace(/\.glb$/, ''), lm: m.lightmap });
+  }
+  return out;
+}
+
+/** Publish a staged build: public/assets gets exactly the stage; assets/out|draft also keeps the PNG lightmap sources. */
+function publish(stage, pngStage, outDir) {
+  fs.rmSync(PUBLIC, { recursive: true, force: true });
+  fs.mkdirSync(PUBLIC, { recursive: true });
+  fs.cpSync(stage, PUBLIC, { recursive: true });
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.cpSync(stage, outDir, { recursive: true });
+  fs.cpSync(pngStage, outDir, { recursive: true });
 }
 
 // -------------------------------------------------------------------------------------------- verify
@@ -284,7 +349,14 @@ async function verify(tools, dir) {
   }
   if (total > BUDGETS.total) problems.push(`public assets total ${total} bytes > ${BUDGETS.total}`);
   console.table(rows);
-  console.log(`[asset] total ${(total / 1e6).toFixed(2)} MB`);
+  console.log(`[asset] total ${(total / 1e6).toFixed(2)} MB (${(total / 2 ** 20).toFixed(1)} MiB)`);
+  // The CI validator (assets/validate.ts): texture hashes, lightmap tiers, VRAM estimate (AV-1..4).
+  const { validateAssets } = await import('./validate.ts');
+  const report = await validateAssets(dir);
+  const MiB = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
+  const lm = report.vram.lightmaps;
+  console.log(`[asset] GPU texture estimate (RGBA8 × 4/3): glb textures ${MiB(report.vram.textures)} in ${report.vram.uniqueTextures} unique; + lightmaps full ${MiB(report.vram.textures + lm.full)}, half ${MiB(report.vram.textures + lm.half)}, quarter ${MiB(report.vram.textures + lm.quarter)}`);
+  problems.push(...report.problems);
   // Anchors / nav (a light duplicate of the Blender-side test, on the published manifest).
   const need = {
     wing: {
@@ -322,6 +394,55 @@ async function verify(tools, dir) {
     throw new Error(`${problems.length} asset problem(s)`);
   }
   console.log('[asset] verify ok');
+}
+
+// ------------------------------------------------------------------------------------ visual (AV-visual)
+const SSIM_MIN = 0.97;
+const VISUAL_MODULES = ['atrium', 'wing-terracotta'];
+
+/**
+ * --verify --visual: SSIM of the shipped lightmap tiers against their PNG source (atrium, terracotta),
+ * gated at ≥ 0.97 (full tier exact size; ½ and ¼ against a lanczos3 downscale of the source). Base
+ * colour (WebP q82, unchanged by this mode) is reported against the raw export for context.
+ */
+async function visual(tools) {
+  const { ssim } = await import('./validate.ts');
+  const { sharp, io } = tools;
+  const manifest = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'manifest.json'), 'utf8'));
+  const rows = [];
+  const fails = [];
+  const score = (a, b) => ssim(a.data, b.data, a.width, a.height);
+  for (const { base, lm } of lightmapEntries(manifest).filter((e) => VISUAL_MODULES.includes(e.base))) {
+    const png = [RAW, OUT].map((d) => path.join(d, `${base}.lightmap.png`)).find((f) => fs.existsSync(f));
+    if (!png) {
+      console.warn(`[asset] WARN no source PNG for ${base}; skipped`);
+      continue;
+    }
+    for (const tier of ['full', 'half', 'quarter']) {
+      const shipped = await rgbaOf(sharp, path.join(PUBLIC, lm.variants[tier]));
+      const s = score(shipped, await rgbaOf(sharp, png, [shipped.width, shipped.height]));
+      rows.push({ image: `${base} lightmap ${tier}`, size: `${shipped.width}²`, ssim: s.toFixed(4), gated: 'yes' });
+      if (s < SSIM_MIN) fails.push(`${base} lightmap ${tier}: SSIM ${s.toFixed(4)} < ${SSIM_MIN}`);
+    }
+  }
+  for (const base of VISUAL_MODULES) {
+    const rawGlb = path.join(RAW, `${base}.glb`);
+    if (!fs.existsSync(rawGlb)) continue;
+    const raw = new Map((await io.read(rawGlb)).getRoot().listTextures().map((t) => [t.getName(), t]));
+    const doc = await io.read(path.join(PUBLIC, `${base}.glb`));
+    for (const t of doc.getRoot().listTextures()) {
+      const src = raw.get(t.getName()) ?? raw.get(t.getName().replace(/\.webp$/, ''));
+      if (!src || !/diff/.test(t.getName())) continue;
+      const shipped = await rgbaOf(sharp, t.getImage());
+      rows.push({ image: `${base} ${t.getName()}`, size: `${shipped.width}²`, ssim: score(shipped, await rgbaOf(sharp, src.getImage(), [shipped.width, shipped.height])).toFixed(4), gated: 'no (WebP q82, as before)' });
+    }
+  }
+  console.table(rows);
+  if (fails.length) {
+    for (const p of fails) console.error(`[asset] FAIL ${p}`);
+    throw new Error(`${fails.length} lightmap tier(s) below SSIM ${SSIM_MIN}`);
+  }
+  console.log(`[asset] visual ok (lightmap tiers SSIM ≥ ${SSIM_MIN})`);
 }
 
 // ---------------------------------------------------------------------------------------------- main
@@ -390,18 +511,23 @@ async function build(args) {
 
   // Optimize into a staging dir, then publish to public/assets and assets/out|draft.
   const stage = path.join(work, 'stage');
-  fs.rmSync(stage, { recursive: true, force: true });
+  const pngStage = path.join(work, 'stage-png');
+  for (const d of [stage, pngStage]) fs.rmSync(d, { recursive: true, force: true });
   fs.mkdirSync(path.join(stage, 'hdri'), { recursive: true });
+  fs.mkdirSync(pngStage, { recursive: true });
   const tools = await gltfTools();
   const files = [];
   for (const [id, m] of Object.entries(modules)) {
-    if (id === 'wing') for (const t of Object.values(m.themes)) files.push(t.file, t.lightmap.file);
-    else files.push(m.file, m.lightmap.file);
+    if (id === 'wing') for (const t of Object.values(m.themes)) files.push(t.file);
+    else files.push(m.file);
   }
-  for (const f of files) {
-    const src = path.join(work, f);
-    if (f.endsWith('.glb')) await optimizeGlb(tools, src, path.join(stage, f));
-    else await optimizePng(tools, src, path.join(stage, f));
+  for (const f of files) await optimizeGlb(tools, path.join(work, f), path.join(stage, f));
+  // Lightmaps: the PNG stays in assets/out|draft as the source; public/assets gets the WebP tiers.
+  for (const { base, lm } of lightmapEntries(manifest)) {
+    const png = path.join(pngStage, lm.file);
+    await optimizePng(tools, path.join(work, lm.file), png);
+    lm.variants = await lightmapTiers(tools, path.join(work, lm.file), stage, base);
+    lm.file = lm.variants.full;
   }
   if (character) {
     await optimizeGlb(tools, path.join(work, 'character.glb'), path.join(stage, 'character.glb'), { skinned: true });
@@ -410,12 +536,77 @@ async function build(args) {
   fs.copyFileSync(hdri, path.join(stage, 'hdri', 'office.hdr'));
   fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
-  for (const dest of [PUBLIC, outDir]) {
-    fs.rmSync(dest, { recursive: true, force: true });
-    fs.mkdirSync(dest, { recursive: true });
-    fs.cpSync(stage, dest, { recursive: true });
+  publish(stage, pngStage, outDir);
+  console.log(`[asset] published ${walk(stage).length} files to ${path.relative(ROOT, PUBLIC)} and ${path.relative(ROOT, outDir)} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  await verify(tools, PUBLIC);
+}
+
+/**
+ * --repack: re-run the optimize step without Blender. Sources, best first: the raw exports of the last
+ * final build (assets/cache/work-final), then the published files (WebP is re-encoded). The
+ * manifest is the published one with its lightmap entries rewritten (contract §6, §7).
+ */
+async function repack() {
+  const t0 = Date.now();
+  const manifestFile = [PUBLIC, OUT].map((d) => path.join(d, 'manifest.json')).find((f) => fs.existsSync(f));
+  if (!manifestFile) throw new Error('no manifest.json in public/assets or assets/out; run make assets first');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const pick = (...candidates) => {
+    const f = candidates.find((c) => fs.existsSync(c));
+    if (!f) throw new Error(`no source for ${path.basename(candidates[0])}`);
+    return f;
+  };
+  // Snapshot every published source first: publishing replaces public/assets and assets/out.
+  const snap = path.join(CACHE, 'repack-src');
+  const stage = path.join(CACHE, 'repack-stage');
+  const pngStage = path.join(CACHE, 'repack-png');
+  for (const d of [snap, stage, pngStage]) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of [snap, path.join(stage, 'hdri'), pngStage]) fs.mkdirSync(d, { recursive: true });
+  const fromPublished = (f) => {
+    const src = pick(path.join(PUBLIC, f), path.join(OUT, f));
+    const dst = path.join(snap, f);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+    return dst;
+  };
+  const tools = await gltfTools();
+  const glbs = [];
+  for (const [id, m] of Object.entries(manifest.modules)) {
+    if (id === 'wing') for (const t of Object.values(m.themes)) glbs.push(t.file);
+    else glbs.push(m.file);
   }
-  console.log(`[asset] published ${files.length + 2} files to ${path.relative(ROOT, PUBLIC)} and ${path.relative(ROOT, outDir)} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  const sources = new Map();
+  for (const f of glbs) sources.set(f, fs.existsSync(path.join(RAW, f)) ? path.join(RAW, f) : fromPublished(f));
+  const lmSources = new Map();
+  for (const { base } of lightmapEntries(manifest)) {
+    const png = `${base}.lightmap.png`;
+    lmSources.set(base, fs.existsSync(path.join(RAW, png)) ? path.join(RAW, png) : fromPublished(png));
+  }
+  const charSrc = manifest.character ? (fs.existsSync(path.join(RAW, manifest.character.file)) ? path.join(RAW, manifest.character.file) : fromPublished(manifest.character.file)) : null;
+  const charMeta = manifest.character ? fromPublished(manifest.character.meta) : null;
+  const hdri = fromPublished(manifest.hdri);
+
+  for (const f of glbs) {
+    const t = Date.now();
+    await optimizeGlb(tools, sources.get(f), path.join(stage, f));
+    console.log(`[asset] ${f} from ${path.relative(ROOT, sources.get(f))} in ${((Date.now() - t) / 1000).toFixed(0)} s`);
+  }
+  for (const { base, lm } of lightmapEntries(manifest)) {
+    const t = Date.now();
+    const png = path.join(pngStage, `${base}.lightmap.png`);
+    await optimizePng(tools, lmSources.get(base), png);
+    lm.variants = await lightmapTiers(tools, lmSources.get(base), stage, base);
+    lm.file = lm.variants.full;
+    console.log(`[asset] ${base} lightmap tiers in ${((Date.now() - t) / 1000).toFixed(0)} s`);
+  }
+  if (charSrc) {
+    await optimizeGlb(tools, charSrc, path.join(stage, manifest.character.file), { skinned: true });
+    fs.copyFileSync(charMeta, path.join(stage, manifest.character.meta));
+  }
+  fs.copyFileSync(hdri, path.join(stage, manifest.hdri));
+  fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  publish(stage, pngStage, OUT);
+  console.log(`[asset] repacked ${walk(stage).length} files into ${path.relative(ROOT, PUBLIC)} and ${path.relative(ROOT, OUT)} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   await verify(tools, PUBLIC);
 }
 
@@ -452,7 +643,11 @@ try {
   else if (args.mode === 'test') await test();
   else if (args.mode === 'previews') await previews(args);
   else if (args.mode === 'pin') await ensureSources({ pin: true });
-  else if (args.mode === 'verify') await verify(await gltfTools(), PUBLIC);
+  else if (args.mode === 'repack') await repack();
+  else if (args.mode === 'verify') {
+    await verify(await gltfTools(), PUBLIC);
+    if (args.visual) await visual(await gltfTools());
+  }
 } catch (e) {
   console.error(`[asset] ERROR ${e.message}`);
   process.exit(1);

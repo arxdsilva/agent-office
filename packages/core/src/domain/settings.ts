@@ -2,7 +2,13 @@ import { SettingsSchema, type Settings, type SettingsPatch } from '@agent-office
 import { ValidationError } from './errors.ts'
 
 /** Fields whose change needs the backend (HTTP API + sources) to restart. */
-const RESTART_FIELDS = ['port', 'claudeAdapter', 'mock', 'discoverCapabilities'] as const
+const RESTART_FIELDS = [
+  'port',
+  'claudeAdapter',
+  'mock',
+  'discoverCapabilities',
+  'hardwareAcceleration',
+] as const
 
 export function mergeSettings(
   current: Settings,

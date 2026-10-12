@@ -35,7 +35,32 @@ class FakeShellWindow extends FakeWindow {
   }
 }
 
+/** Electron's powerMonitor stand-in: `emit` flips the source and notifies listeners. */
+function fakePowerMonitor() {
+  const listeners = new Map<string, Set<() => void>>()
+  const m = {
+    onBattery: false,
+    isOnBatteryPower: () => m.onBattery,
+    on: (event: string, fn: () => void) => {
+      if (!listeners.has(event)) listeners.set(event, new Set())
+      listeners.get(event)!.add(fn)
+      return m
+    },
+    removeListener: (event: string, fn: () => void) => {
+      listeners.get(event)?.delete(fn)
+      return m
+    },
+    emit: (event: 'on-battery' | 'on-ac') => {
+      m.onBattery = event === 'on-battery'
+      for (const fn of listeners.get(event) ?? []) fn()
+    },
+    listenerCount: () => [...listeners.values()].reduce((n, s) => n + s.size, 0),
+  }
+  return m
+}
+
 function fakeShell() {
+  const power = fakePowerMonitor()
   const handlers = new Map<string, (senderUrl: string | undefined, ...args: unknown[]) => unknown>()
   let quit = 0
   const copied: string[] = []
@@ -56,6 +81,7 @@ function fakeShell() {
     window: new FakeShellWindow(),
     ipc: { handle: (c, fn) => handlers.set(c, fn), removeAll: () => handlers.clear() },
     rendererUrl: 'app://renderer/index.html',
+    power,
     quit: () => quit++,
   }
   const call = (channel: string, ...args: unknown[]) =>
@@ -69,6 +95,7 @@ function fakeShell() {
     quits: () => quit,
     copied,
     picked,
+    power,
   }
 }
 
@@ -401,6 +428,18 @@ describe('compose', () => {
     // 20 s later it is marked done.
     scheduler.fireTimers()
     expect(app.office.query.agent('agent-office-test')?.status).toBe('done')
+  })
+
+  it('PW-1 pushes power changes to the window and answers app:power-get; stop unsubscribes', async () => {
+    const { app, call, window, power } = setup()
+    await app.start()
+    expect(await call(IPC.appPowerGet)).toEqual({ onBattery: false })
+    // Unplugging pushes the new state; the battery preset (renderer) reacts to it.
+    power.emit('on-battery')
+    expect(window.sent).toContainEqual([IPC.appPower, { onBattery: true }])
+    expect(await call(IPC.appPowerGet)).toEqual({ onBattery: true })
+    await app.stop()
+    expect(power.listenerCount()).toBe(0)
   })
 
   it('stop closes the API and unregisters IPC', async () => {

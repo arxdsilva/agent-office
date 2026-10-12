@@ -1,9 +1,13 @@
 // Name tags and status bubbles (CSS2D). They follow each character's head, fade with distance
 // (opaque < 12 m, hidden > 40 m) and recede when a wall is in the way (checked every 250 ms).
+// The name-tag mode (low-spec plan §5.3) shows all, nearby or only the selected tag; hidden tags
+// skip the occlusion test, and the CSS2D pass is skipped on frames where nothing moved.
 // All text goes through textContent (PRIVACY_SECURITY rule).
 import { STATUS_COLORS, type Agent } from '@agent-office/shared'
 import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
+import type { LabelMode } from '../../app/graphics-types.ts'
+import { labelVisible, needsOcclusion, type LabelFilter } from '../../app/labels-filter.ts'
 import type { Activity } from '../../app/office-types.ts'
 import type { WorldBox } from './building-view.ts'
 
@@ -59,9 +63,9 @@ class Label {
   }
 
   /** `call`: the capability bubble while calling or visiting (🔌 Gmail · search, 📖 run-office). */
-  set(a: Agent, activity: Activity, call?: string): void {
+  set(a: Agent, activity: Activity, call?: string): boolean {
     const key = `${a.name}|${a.interactive}|${a.unread}|${a.status}|${a.tool}|${a.text}|${activity}|${a.parentId}|${call}`
-    if (key === this.shown) return
+    if (key === this.shown) return false
     this.shown = key
     this.name.textContent = a.name
     this.chat.textContent = a.interactive ? '💬' : ''
@@ -75,6 +79,7 @@ class Label {
     this.bubble.textContent = text
     this.bubble.style.setProperty('--status', STATUS_COLORS[a.status])
     this.bubble.hidden = text === ''
+    return true
   }
 }
 
@@ -92,6 +97,12 @@ export class Labels {
   private box = new THREE.Box3()
   private dir = new THREE.Vector3()
   private want = new THREE.Vector3()
+  /** Name-tag mode and the selected agent (pure filter, low-spec plan §5.3). */
+  private filter: LabelFilter = { mode: 'all', nearbyM: FADE_FAR, selected: null }
+  /** Something changed since the last CSS2D pass (text, set, size, mode, selection). */
+  private dirty = true
+  private lastView = new THREE.Matrix4()
+  private lastProj = new THREE.Matrix4()
 
   constructor(
     stage: HTMLElement,
@@ -121,7 +132,15 @@ export class Labels {
       this.renderer.domElement.append(l.stack)
       if (a.id === this.selected) l.tag.classList.add('selected')
     }
-    l.set(a, activity, call)
+    if (l.set(a, activity, call)) this.dirty = true
+  }
+
+  /** Name-tag mode (all · nearby within `nearbyM` · selected only). */
+  setMode(mode: LabelMode, nearbyM: number): void {
+    if (mode === this.filter.mode && nearbyM === this.filter.nearbyM) return
+    this.filter.mode = mode
+    this.filter.nearbyM = nearbyM
+    this.dirty = true
   }
 
   remove(id: string): void {
@@ -130,6 +149,7 @@ export class Labels {
     l.stack.remove()
     this.group.remove(l.obj)
     this.labels.delete(id)
+    this.dirty = true
   }
 
   ids(): string[] {
@@ -139,7 +159,9 @@ export class Labels {
   select(id: string | null): void {
     this.labels.get(this.selected ?? '')?.tag.classList.remove('selected')
     this.selected = id
+    this.filter.selected = id
     this.labels.get(id ?? '')?.tag.classList.add('selected')
+    this.dirty = true
   }
 
   /** `headOf` gives each agent's head position (undefined = not in the world yet / gone). */
@@ -152,9 +174,14 @@ export class Labels {
     camera.getWorldPosition(this.camPos)
     const checkOcclusion = now - this.lastOcclusion >= OCCLUSION_MS
     if (checkOcclusion) this.lastOcclusion = now
+    const f = this.filter
+    const far = f.mode === 'nearby' ? Math.min(f.nearbyM, FADE_FAR) : FADE_FAR
+    const near = Math.min(FADE_NEAR, far * 0.6)
+    let changed = this.dirty
     for (const [id, l] of this.labels) {
       const head = headOf(id)
       if (!head) {
+        if (l.obj.visible) changed = true
         l.obj.visible = false
         l.placed = false
         continue
@@ -164,20 +191,36 @@ export class Labels {
       this.want.set(head.x, head.y + HEAD_CLEARANCE, head.z)
       const p = l.obj.position
       const gap = p.distanceTo(this.want)
-      if (!l.placed || gap > 3) (p.copy(this.want), (l.placed = true))
-      else if (gap > LEASH) p.lerp(this.want, 1 - LEASH / gap)
+      if (!l.placed || gap > 3) (p.copy(this.want), (l.placed = true), (changed = true))
+      else if (gap > LEASH) (p.lerp(this.want, 1 - LEASH / gap), (changed = true))
       const d = this.camPos.distanceTo(l.obj.position)
-      if (checkOcclusion) l.occluded = this.blocked(l.obj.position, d, occluders)
       const selected = id === this.selected
-      const visible = selected || d < FADE_FAR
+      // 'all' keeps the old 40 m horizon; 'nearby' its own radius (whichever is nearer).
+      const visible = labelVisible(f, id, d) && (selected || d < far)
+      if (l.obj.visible !== visible) changed = true
       l.obj.visible = visible
       if (!visible) continue
+      // Only shown tags pay for the occlusion test.
+      if (checkOcclusion)
+        l.occluded = needsOcclusion(f, id, d) && this.blocked(l.obj.position, d, occluders)
       // Behind a wall the tag stays (clickable, so you can still find someone) but recedes.
-      const fade = d <= FADE_NEAR ? 1 : 1 - (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)
+      const fade = d <= near ? 1 : Math.max(0, 1 - (d - near) / (far - near))
       const opacity = selected ? 1 : fade * (l.occluded ? OCCLUDED_OPACITY : 1)
       const o = opacity.toFixed(2)
       if (l.stack.style.opacity !== o) l.stack.style.opacity = o
     }
+    // The CSS2D pass projects every tag; skip it when neither the view nor any tag changed.
+    camera.updateMatrixWorld()
+    if (
+      !this.lastView.equals(camera.matrixWorld) ||
+      !this.lastProj.equals((camera as THREE.PerspectiveCamera).projectionMatrix)
+    ) {
+      this.lastView.copy(camera.matrixWorld)
+      this.lastProj.copy((camera as THREE.PerspectiveCamera).projectionMatrix)
+      changed = true
+    }
+    if (!changed) return
+    this.dirty = false
     this.renderer.render(this.scene, camera)
   }
 
@@ -198,5 +241,6 @@ export class Labels {
 
   setSize(w: number, h: number): void {
     this.renderer.setSize(w, h)
+    this.dirty = true
   }
 }

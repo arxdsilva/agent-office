@@ -3,7 +3,14 @@
 // validateAssets(dir), that reads manifest.json and every file it references.
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
-import { Logger, NodeIO, type Document, type Node, type Primitive } from '@gltf-transform/core'
+import {
+  ImageUtils,
+  Logger,
+  NodeIO,
+  type Document,
+  type Node,
+  type Primitive,
+} from '@gltf-transform/core'
 import { ALL_EXTENSIONS, type InstancedMesh } from '@gltf-transform/extensions'
 import validator from 'gltf-validator'
 import { MeshoptDecoder } from 'meshoptimizer'
@@ -12,6 +19,15 @@ import { MeshoptDecoder } from 'meshoptimizer'
 export const MB = 1024 * 1024
 /** Contract §9: everything under packages/web/public/assets. */
 export const TOTAL_MAX_BYTES = 55 * MB
+/**
+ * Contract §9: GPU texture memory (RGBA8 × 4/3, deduped by extras.hash, all six themes) per lightmap
+ * tier: High/Ultra use full, Low/Medium ½, Minimal ¼.
+ */
+export const VRAM_MAX_BYTES = { full: 340 * MB, half: 150 * MB, quarter: 110 * MB } as const
+export const LIGHTMAP_TIERS = ['full', 'half', 'quarter'] as const
+export type LightmapTier = (typeof LIGHTMAP_TIERS)[number]
+const TIER_DIVISOR: Record<LightmapTier, number> = { full: 1, half: 2, quarter: 4 }
+const TIER_LABEL: Record<LightmapTier, string> = { full: 'full', half: '½', quarter: '¼' }
 export const THEMES = ['terracotta', 'nordic', 'forest', 'ocean', 'neon', 'brass'] as const
 export const SINGLE_MODULES = ['atrium', 'street', 'garden', 'cap'] as const
 export type ModuleKind = (typeof SINGLE_MODULES)[number] | 'wing'
@@ -152,9 +168,12 @@ export interface NavJson {
   nodes: Record<string, { x: number; z: number; width: number }>
   edges: [string, string][]
 }
+export type LightmapVariants = Record<LightmapTier, string>
 export interface Lightmap {
+  /** The full tier (contract §6). */
   file: string
   intensity: number
+  variants?: LightmapVariants
 }
 export interface ModuleJson {
   file: string
@@ -212,10 +231,20 @@ export function isSafeRef(ref: unknown, ext?: RegExp): ref is string {
 }
 
 // ── Manifest shape ──────────────────────────────────────────────────────────────────────────────
+/** Images the renderer decodes natively (no KTX2: its transcoder needs eval, which the CSP forbids). */
+const IMAGE_REF = /\.(png|webp)$/i
+
 function checkLightmap(path: string, v: unknown, out: string[]) {
   if (!isObj(v)) return void out.push(`${path}: missing lightmap { file, intensity }`)
-  if (!isSafeRef(v.file, /\.png$/i)) out.push(`${path}.file: must be a relative .png path`)
+  if (!isSafeRef(v.file, IMAGE_REF)) out.push(`${path}.file: must be a relative .png or .webp path`)
   if (!isNum(v.intensity) || v.intensity <= 0) out.push(`${path}.intensity: must be > 0`)
+  if (!isObj(v.variants))
+    return void out.push(
+      `${path}.variants: missing { full, half, quarter } size tiers (contract §6)`,
+    )
+  for (const t of LIGHTMAP_TIERS)
+    if (!isSafeRef(v.variants[t], IMAGE_REF))
+      out.push(`${path}.variants.${t}: must be a relative .png or .webp path`)
 }
 
 function checkBounds(path: string, v: unknown, out: string[]) {
@@ -641,6 +670,179 @@ export function checkCharacterGlb(file: string, s: GlbStats, meta?: CharacterMet
   return out
 }
 
+// ── GPU textures (contract §6, §6b, §9) ──────────────────────────────────────────────────────────
+export interface TextureInfo {
+  name: string
+  mime: string
+  hash: unknown
+  width: number
+  height: number
+}
+
+const HASH_RE = /^[0-9a-f]{12}$/
+const NO_KTX2 = 'the Basis transcoder needs eval, which the CSP forbids (contract §6b)'
+
+/** AV-1: every glb texture is a browser-decodable image with extras.hash; no KHR_texture_basisu. */
+export function checkTextures(file: string, textures: TextureInfo[], extensions: string[] = []): string[] {
+  const out: string[] = []
+  if (extensions.includes('KHR_texture_basisu')) out.push(`${file}: uses KHR_texture_basisu; ${NO_KTX2}`)
+  for (const t of textures) {
+    const at = `${file}: texture "${t.name}"`
+    if (t.mime === 'image/ktx2') out.push(`${at} is KTX2; ${NO_KTX2}`)
+    if (typeof t.hash !== 'string' || !HASH_RE.test(t.hash))
+      out.push(`${at} has no extras.hash (12 hex chars of sha1 over its RGBA, contract §6b)`)
+  }
+  return out
+}
+
+/**
+ * AV-2: the lightmap tiers are images at full, ½ and ¼ size. A tier that is `undefined` is missing
+ * (the loader reports that); `null` means the file is not a PNG or WebP image.
+ */
+export function checkLightmapTiers(
+  refs: LightmapVariants,
+  sizes: Partial<Record<LightmapTier, [number, number] | null>>,
+): string[] {
+  const out: string[] = []
+  const full = sizes.full
+  for (const t of LIGHTMAP_TIERS) {
+    const s = sizes[t]
+    if (s === undefined) continue
+    if (s === null) {
+      out.push(`${refs[t]}: is not a PNG or WebP image`)
+      continue
+    }
+    if (t === 'full' || !full) continue
+    const w = Math.max(1, Math.floor(full[0] / TIER_DIVISOR[t]))
+    const h = Math.max(1, Math.floor(full[1] / TIER_DIVISOR[t]))
+    if (s[0] !== w || s[1] !== h)
+      out.push(`${refs[t]}: is ${s[0]}×${s[1]}, expected ${w}×${h} (${TIER_LABEL[t]} of ${refs.full})`)
+  }
+  return out
+}
+
+/** Plan §5.5: every image uploads as RGBA8 (4 B/px), ×4/3 for mipmaps. */
+export function textureBytes(width: number, height: number): number {
+  return (width * height * 4 * 4) / 3
+}
+
+/** AV-3: GPU bytes of a texture list where entries with the same key (extras.hash) count once. */
+export function estimateVram(items: { key: string; width: number; height: number }[]) {
+  const seen = new Set<string>()
+  let bytes = 0
+  for (const i of items) {
+    if (seen.has(i.key)) continue
+    seen.add(i.key)
+    bytes += textureBytes(i.width, i.height)
+  }
+  return { bytes, unique: seen.size }
+}
+
+/** AV-3: the estimate per lightmap tier (glb textures + that tier's lightmaps) against §9. */
+export function checkVram(textures: number, lightmaps: Record<LightmapTier, number>): string[] {
+  return LIGHTMAP_TIERS.filter((t) => textures + lightmaps[t] > VRAM_MAX_BYTES[t]).map(
+    (t) =>
+      `GPU texture memory estimate at the ${t} lightmap tier ${Math.round((textures + lightmaps[t]) / MB)} MB exceeds the ${VRAM_MAX_BYTES[t] / MB} MB budget (all themes, RGBA8 × 4/3, deduped by extras.hash; contract §9)`,
+  )
+}
+
+/** AV-4. */
+export function checkTotal(bytes: number): string[] {
+  return bytes > TOTAL_MAX_BYTES
+    ? [`assets total ${(bytes / MB).toFixed(1)} MB exceeds the ${TOTAL_MAX_BYTES / MB} MB budget`]
+    : []
+}
+
+/**
+ * AV-visual: mean SSIM of the luma of two RGBA images (8×8 windows, stride 4, the usual
+ * C1 = (0.01·255)², C2 = (0.03·255)²). 1 means identical.
+ */
+export function ssim(a: Uint8Array, b: Uint8Array, width: number, height: number): number {
+  const n = width * height
+  if (a.length !== n * 4 || b.length !== n * 4)
+    throw new Error(`ssim: image size mismatch (${a.length}, ${b.length} bytes for ${width}×${height})`)
+  const luma = (d: Uint8Array) => {
+    const y = new Float64Array(n)
+    for (let i = 0; i < n; i++) y[i] = 0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!
+    return y
+  }
+  const x = luma(a)
+  const z = luma(b)
+  const C1 = (0.01 * 255) ** 2
+  const C2 = (0.03 * 255) ** 2
+  const W = Math.min(8, width, height)
+  const S = Math.max(1, W >> 1)
+  const N = W * W
+  let sum = 0
+  let count = 0
+  for (let j = 0; j + W <= height; j += S)
+    for (let i = 0; i + W <= width; i += S) {
+      let mx = 0
+      let mz = 0
+      for (let v = 0; v < W; v++)
+        for (let u = 0; u < W; u++) {
+          const k = (j + v) * width + i + u
+          mx += x[k]!
+          mz += z[k]!
+        }
+      mx /= N
+      mz /= N
+      let vx = 0
+      let vz = 0
+      let c = 0
+      for (let v = 0; v < W; v++)
+        for (let u = 0; u < W; u++) {
+          const k = (j + v) * width + i + u
+          const dx = x[k]! - mx
+          const dz = z[k]! - mz
+          vx += dx * dx
+          vz += dz * dz
+          c += dx * dz
+        }
+      const d = Math.max(1, N - 1)
+      sum +=
+        ((2 * mx * mz + C1) * ((2 * c) / d + C2)) / ((mx * mx + mz * mz + C1) * (vx / d + vz / d + C2))
+      count++
+    }
+  return count ? sum / count : 1
+}
+
+/** Every texture of a glb with its size and hash (gltf-transform keeps image extras on the Texture). */
+export function textureInfos(doc: Document): TextureInfo[] {
+  return doc
+    .getRoot()
+    .listTextures()
+    .map((t, i) => {
+      const img = t.getImage() ?? new Uint8Array()
+      const mime = t.getMimeType()
+      const size = imageSize(img, mime) ?? [0, 0]
+      return {
+        name: t.getName() || t.getURI() || `#${i}`,
+        mime,
+        hash: (t.getExtras() as Record<string, unknown>).hash,
+        width: size[0]!,
+        height: size[1]!,
+      }
+    })
+}
+
+const isPng = (b: Uint8Array) => PNG_SIGNATURE.every((x, i) => b[i] === x)
+const isWebp = (b: Uint8Array) =>
+  new TextDecoder().decode(b.subarray(0, 4)) === 'RIFF' &&
+  new TextDecoder().decode(b.subarray(8, 12)) === 'WEBP'
+
+/** Width × height of a PNG/WebP/JPEG (by content, checked against `mime` when given), else null. */
+function imageSize(bytes: Uint8Array, mime?: string): [number, number] | null {
+  const kind = isPng(bytes) ? 'image/png' : isWebp(bytes) ? 'image/webp' : mime
+  if (!kind || (mime && kind !== mime)) return null
+  try {
+    const s = ImageUtils.getSize(bytes, kind)
+    return s && s[0] > 0 && s[1] > 0 ? [s[0], s[1]] : null
+  } catch {
+    return null
+  }
+}
+
 // ── IO orchestrator ─────────────────────────────────────────────────────────────────────────────
 export interface FileReport {
   file: string
@@ -651,6 +853,8 @@ export interface AssetReport {
   problems: string[]
   files: FileReport[]
   totalBytes: number
+  /** GPU texture memory estimate (AV-3), in bytes: deduped glb textures, lightmaps per tier. */
+  vram: { textures: number; uniqueTextures: number; lightmaps: Record<LightmapTier, number> }
 }
 
 const LFS_POINTER = 'version https://git-lfs'
@@ -678,7 +882,13 @@ export async function createIO(): Promise<NodeIO> {
  * problems: everything wrong is listed in `problems`, so CI prints the full picture at once.
  */
 export async function validateAssets(dir: string): Promise<AssetReport> {
-  const report: AssetReport = { problems: [], files: [], totalBytes: 0 }
+  const report: AssetReport = {
+    problems: [],
+    files: [],
+    totalBytes: 0,
+    vram: { textures: 0, uniqueTextures: 0, lightmaps: { full: 0, half: 0, quarter: 0 } },
+  }
+  const gpuTextures: { key: string; width: number; height: number }[] = []
   const p = report.problems
   let manifestText: string
   try {
@@ -728,20 +938,44 @@ export async function validateAssets(dir: string): Promise<AssetReport> {
       )
     }
     let stats: GlbStats
+    let doc: Document
     try {
-      stats = glbStats(await io.readBinary(bytes))
+      doc = await io.readBinary(bytes)
+      stats = glbStats(doc)
     } catch (e) {
       p.push(`${ref}: could not be read (${(e as Error).message})`)
       return null
     }
+    const textures = textureInfos(doc)
+    p.push(...checkTextures(ref, textures, doc.getRoot().listExtensionsUsed().map((e) => e.extensionName)))
+    textures.forEach((t, i) =>
+      gpuTextures.push({
+        key: typeof t.hash === 'string' && HASH_RE.test(t.hash) ? t.hash : `${ref}#${i}`,
+        width: t.width,
+        height: t.height,
+      }),
+    )
     report.files.push({ file: ref, bytes: bytes.length, triangles: stats.triangles })
     p.push(...checkBudget(ref, bytes.length, budget, stats.triangles))
     return stats
   }
 
-  const png = async (ref: string) => {
-    const bytes = await load(ref)
-    if (bytes && !PNG_SIGNATURE.every((b, i) => bytes[i] === b)) p.push(`${ref}: is not a PNG file`)
+  /** Lightmap: the three size tiers (AV-2) plus `file` (the full tier). */
+  const lightmapBytes: Record<LightmapTier, number> = { full: 0, half: 0, quarter: 0 }
+  const lightmap = async (lm: Lightmap) => {
+    const refs = lm.variants!
+    const sizes: Partial<Record<LightmapTier, [number, number] | null>> = {}
+    for (const t of LIGHTMAP_TIERS) {
+      const bytes = await load(refs[t])
+      if (!bytes) continue
+      const s = imageSize(bytes)
+      sizes[t] = s
+      if (s) lightmapBytes[t] += textureBytes(s[0], s[1])
+    }
+    p.push(...checkLightmapTiers(refs, sizes))
+    if (LIGHTMAP_TIERS.some((t) => refs[t] === lm.file)) return
+    const bytes = await load(lm.file)
+    if (bytes && !imageSize(bytes)) p.push(`${lm.file}: is not a PNG or WebP image`)
   }
 
   // Building modules
@@ -750,7 +984,7 @@ export async function validateAssets(dir: string): Promise<AssetReport> {
     p.push(...checkAnchorCounts(kind, mod.anchors), ...checkNav(kind, mod.nav, mod.anchors))
     const s = await glb(mod.file, BUDGETS[kind])
     if (s) p.push(...checkModuleGlb(mod.file, kind, s, mod.anchors))
-    if (mod.lightmap) await png(mod.lightmap.file)
+    if (mod.lightmap) await lightmap(mod.lightmap)
   }
   const wing = m.modules.wing
   p.push(
@@ -762,7 +996,7 @@ export async function validateAssets(dir: string): Promise<AssetReport> {
     const th = wing.themes[t]!
     const s = await glb(th.file, BUDGETS.wing)
     if (s) p.push(...checkModuleGlb(th.file, 'wing', s, wing.anchors))
-    await png(th.lightmap.file)
+    await lightmap(th.lightmap)
   }
   p.push(...checkBuildingNav(m))
 
@@ -783,10 +1017,10 @@ export async function validateAssets(dir: string): Promise<AssetReport> {
   const cs = await glb(m.character.file, BUDGETS.character)
   if (cs) p.push(...checkCharacterGlb(m.character.file, cs, meta))
 
+  const gpu = estimateVram(gpuTextures)
+  report.vram = { textures: gpu.bytes, uniqueTextures: gpu.unique, lightmaps: lightmapBytes }
+  p.push(...checkVram(gpu.bytes, lightmapBytes))
   report.totalBytes = await dirSize(dir)
-  if (report.totalBytes > TOTAL_MAX_BYTES)
-    p.push(
-      `assets total ${(report.totalBytes / MB).toFixed(1)} MB exceeds the ${TOTAL_MAX_BYTES / MB} MB budget`,
-    )
+  p.push(...checkTotal(report.totalBytes))
   return report
 }

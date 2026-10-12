@@ -42,6 +42,27 @@ describe('parseManifest', () => {
     expect(m.character).toEqual({ file: 'character.glb', meta: 'character.json' })
   })
 
+  // Lightmap size tiers (graphics contract §6): kept by the parser so presets can swap them.
+  it('keeps lightmap variants and rejects a non-string variant', () => {
+    const l = json()
+    l.modules.atrium.lightmap = {
+      file: 'atrium.lightmap.png',
+      intensity: 3,
+      variants: {
+        full: 'atrium.lightmap.png',
+        half: 'atrium.lightmap.half.png',
+        quarter: 'atrium.lightmap.quarter.png',
+      },
+    }
+    expect(parseManifest(l).modules.atrium.lightmap?.variants).toEqual({
+      full: 'atrium.lightmap.png',
+      half: 'atrium.lightmap.half.png',
+      quarter: 'atrium.lightmap.quarter.png',
+    })
+    l.modules.atrium.lightmap.variants = { half: 4 }
+    expect(failure(l).path).toBe('modules.atrium.lightmap.variants.half')
+  })
+
   it('accepts a subset of themes (milestone 1 ships terracotta only)', () => {
     const m = parseManifest(fixtureManifestJson(['terracotta']))
     expect(Object.keys(m.modules.wing.themes)).toEqual(['terracotta'])

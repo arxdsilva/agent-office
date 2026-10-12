@@ -28,4 +28,7 @@ export const IPC = {
   sessInterrupt: 'sess:interrupt',
   sessStop: 'sess:stop',
   sessAnswer: 'sess:answer',
+  appPower: 'app:power',
+  appPowerGet: 'app:power-get',
+  appVisibility: 'app:visibility',
 } as const

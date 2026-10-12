@@ -27,3 +27,13 @@ The contract between the Blender pipeline and the renderer is `docs/graphics-con
 | Draw sign text at runtime from the provider id as plain text                                                                                                                                                 | Put any third-party logo, trademark or company name in an asset  |
 | Check performance with `make perf` (150 mock agents, FPS report) at the Medium preset                                                                                                                        | Call a scene change done without a perf number                   |
 | Respect the `graphicsQuality` preset (`SceneView.setQuality`); E2E runs on Low because CI uses software GL                                                                                                   | Hard-code post-processing or shadow settings outside the presets |
+
+## Low-spec rules (graphics settings)
+
+| Do                                                                                                                                                                | Don't                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Put every per-frame cost behind an `Effective` lever (`web/src/app/quality.ts`): presets, Advanced overrides and power saver all flow through `effectiveGraphics` | Add per-frame work that Minimal or Low can't turn down             |
+| Let the frame pacer decide when to render (`frame-pacer.ts`); the controller combines page and window visibility                                                  | Read `document.hidden` in the scene to second-guess the controller |
+| Ship glb textures as WebP with `extras.hash`, lightmaps as full/½/¼ WebP tiers (`make assets-repack`)                                                             | Use KTX2/Basis: its transcoder needs `eval`, which the CSP forbids |
+| Frame Library and Adapters views with `app/framing.ts` from inside the room                                                                                       | Hand-place camera bookmarks                                        |
+| Check `make perf` (preset matrix) and, on Linux or Windows, `make perf-low`                                                                                       | Call a graphics change done without a before/after number          |

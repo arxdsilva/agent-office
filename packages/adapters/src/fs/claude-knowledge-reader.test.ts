@@ -232,3 +232,64 @@ describe('ClaudeKnowledgeReader: limits', () => {
     ])
   })
 })
+
+describe('ClaudeKnowledgeReader: synced skills (~/.claude/skills/synced/*/*/SKILL.md)', () => {
+  it('finds synced skills at exactly that depth, with scope user', async () => {
+    const t = tree()
+    t.put(join(t.home, 'skills/synced/team-a/deploy/SKILL.md'), skillMd('deploy', 'Ship it.'))
+    t.put(join(t.home, 'skills/synced/team-b/review/SKILL.md'), skillMd('review', 'Review.'))
+    // Too shallow (a group folder holding SKILL.md) and too deep: both ignored.
+    t.put(join(t.home, 'skills/synced/team-a/SKILL.md'), skillMd('shallow', 'x'))
+    t.put(join(t.home, 'skills/synced/team-a/nested/inner/SKILL.md'), skillMd('deep', 'x'))
+    const ds = await t.reader().read([])
+    expect(byId(ds, 'skill:deploy')).toEqual({
+      id: 'skill:deploy',
+      category: 'skill',
+      kind: 'skill',
+      label: 'deploy',
+      summary: 'Ship it.',
+      scope: 'user',
+    })
+    expect(byId(ds, 'skill:review')).toMatchObject({ scope: 'user' })
+    expect(byId(ds, 'skill:shallow')).toBeUndefined()
+    expect(byId(ds, 'skill:deep')).toBeUndefined()
+    expect(byId(ds, 'skill:inner')).toBeUndefined()
+  })
+
+  it('ignores symlinked group and skill directories', async () => {
+    const t = tree()
+    t.put(join(t.root, 'outside/group/linked-skill/SKILL.md'), skillMd('via-group', 'x'))
+    t.put(join(t.root, 'outside/lone/SKILL.md'), skillMd('via-skill', 'x'))
+    mkdirSync(join(t.home, 'skills/synced/real'), { recursive: true })
+    symlinkSync(join(t.root, 'outside/group'), join(t.home, 'skills/synced/linked-group'))
+    symlinkSync(join(t.root, 'outside/lone'), join(t.home, 'skills/synced/real/linked'))
+    expect(await t.reader().read([])).toEqual([])
+  })
+
+  it('counts synced skills toward the 48-skill cap', async () => {
+    const t = tree()
+    for (let i = 0; i < 30; i++) t.put(join(t.home, `skills/u${i}/SKILL.md`), skillMd(`u${i}`, 'x'))
+    for (let i = 0; i < 30; i++)
+      t.put(join(t.home, `skills/synced/g/s${i}/SKILL.md`), skillMd(`s${i}`, 'x'))
+    const skills = (await t.reader().read([])).filter((d) => d.category === 'skill')
+    expect(skills).toHaveLength(48)
+    // User skills come first, so all 30 survive the cap.
+    expect(skills.filter((d) => d.id.startsWith('skill:u'))).toHaveLength(30)
+  })
+
+  it('on a name clash: project > user > synced > plugin', async () => {
+    const t = tree()
+    t.put(join(t.cwd, '.claude/skills/one/SKILL.md'), skillMd('one', 'From project.'))
+    t.put(join(t.home, 'skills/synced/g/one/SKILL.md'), skillMd('one', 'From synced.'))
+    t.put(join(t.home, 'skills/two/SKILL.md'), skillMd('two', 'From user.'))
+    t.put(join(t.home, 'skills/synced/g/two/SKILL.md'), skillMd('two', 'From synced.'))
+    t.put(join(t.home, 'skills/synced/g/three/SKILL.md'), skillMd('three', 'From synced.'))
+    // A plugin without a usable name yields a bare id, so it can clash with a synced skill.
+    t.put(join(t.home, 'plugins/cache/bad name!/skills/three/SKILL.md'), skillMd('three', 'P.'))
+    const ds = await t.reader().read([t.cwd])
+    const summaries = (id: string) => ds.filter((d) => d.id === id).map((d) => d.summary)
+    expect(summaries('skill:one')).toEqual(['From project.'])
+    expect(summaries('skill:two')).toEqual(['From user.'])
+    expect(summaries('skill:three')).toEqual(['From synced.'])
+  })
+})

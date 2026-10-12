@@ -15,4 +15,11 @@ describe('moduleCulling', () => {
     expect(moduleCulling(true, DETAIL_DISTANCE - 1).detail).toBe(true)
     expect(moduleCulling(true, DETAIL_DISTANCE + 1).detail).toBe(false)
   })
+
+  it('CU-1: the detail distance comes from the graphics settings (detailCullM)', () => {
+    expect(moduleCulling(true, 20, 16).detail).toBe(false)
+    expect(moduleCulling(true, 15, 16).detail).toBe(true)
+    expect(moduleCulling(true, 40, 48).detail).toBe(true)
+    expect(moduleCulling(false, 1, 48).detail).toBe(false)
+  })
 })

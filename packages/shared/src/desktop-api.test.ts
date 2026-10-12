@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PERMISSION_MODES, PermissionModeSchema } from './protocol.ts'
 import {
+  GraphicsAdvancedSchema,
   AnswerArgsSchema,
   NewSessionArgsSchema,
   CopyTextSchema,
@@ -30,7 +31,7 @@ describe('SettingsSchema', () => {
 
   it('graphicsQuality defaults to auto and accepts only the presets', () => {
     expect(DEFAULT_SETTINGS.graphicsQuality).toBe('auto')
-    expect(GRAPHICS_QUALITIES).toEqual(['auto', 'low', 'medium', 'high', 'ultra'])
+    expect(GRAPHICS_QUALITIES).toEqual(['auto', 'minimal', 'low', 'medium', 'high', 'ultra'])
     for (const q of GRAPHICS_QUALITIES)
       expect(SettingsSchema.parse({ graphicsQuality: q }).graphicsQuality).toBe(q)
     expect(SettingsSchema.safeParse({ graphicsQuality: 'max' }).success).toBe(false)
@@ -133,5 +134,46 @@ describe('managed sessions and context contracts', () => {
     expect(AnswerArgsSchema.safeParse(ok).success).toBe(true)
     expect(AnswerArgsSchema.safeParse({ ...ok, requestId: 'perm_x' }).success).toBe(false)
     expect(AnswerArgsSchema.safeParse({ ...ok, decision: 'always' }).success).toBe(false)
+  })
+})
+
+describe('graphics settings (low-spec plan §4.1)', () => {
+  it('adds a Minimal preset and keeps Auto as the default', () => {
+    expect(GRAPHICS_QUALITIES).toEqual(['auto', 'minimal', 'low', 'medium', 'high', 'ultra'])
+    expect(DEFAULT_SETTINGS.graphicsQuality).toBe('auto')
+  })
+
+  it('defaults every advanced option to auto and power saver on', () => {
+    expect(DEFAULT_SETTINGS.graphicsAdvanced).toEqual({
+      resolution: 'auto',
+      fps: 'auto',
+      shadows: 'auto',
+      effects: 'auto',
+      characters: 'auto',
+      labels: 'auto',
+      links: 'auto',
+      building: 'auto',
+    })
+    expect(DEFAULT_SETTINGS).toMatchObject({
+      powerSaverBlur: true,
+      powerSaverHidden: true,
+      batteryPreset: 'off',
+      hardwareAcceleration: true,
+    })
+  })
+
+  it('rejects unknown advanced values and accepts a partial advanced object', () => {
+    expect(GraphicsAdvancedSchema.safeParse({ fps: '45' }).success).toBe(false)
+    expect(GraphicsAdvancedSchema.parse({ fps: '30' })).toMatchObject({ fps: '30', labels: 'auto' })
+    expect(
+      SettingsPatchSchema.safeParse({ graphicsAdvanced: { labels: 'selected' } }).success,
+    ).toBe(true)
+  })
+
+  it('reads an older settings file without the new fields', () => {
+    const old = SettingsSchema.parse({ graphicsQuality: 'low', port: 4317 })
+    expect(old.graphicsQuality).toBe('low')
+    expect(old.graphicsAdvanced.fps).toBe('auto')
+    expect(old.hardwareAcceleration).toBe(true)
   })
 })

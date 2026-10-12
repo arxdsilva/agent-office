@@ -161,6 +161,8 @@ function mergeBodies(template: THREE.Object3D): BodyLayout {
 const HIT_GEOMETRY = new THREE.BoxGeometry(0.7, 1.8, 0.7).translate(0, 0.9, 0)
 const HIT_MATERIAL = new THREE.MeshBasicMaterial({ visible: false })
 const LABEL_LIFT = 0.25
+/** Same margin as motion.ts `fromPreset`: impostors start 10 m beyond the LOD1 distance. */
+const IMPOSTOR_MARGIN = 10
 const HEAD_SMOOTH_TAU = 0.12
 
 interface Agent {
@@ -277,7 +279,30 @@ export class CharacterSystem {
   }
 
   setQuality(q: Exclude<GraphicsQuality, 'auto'>): void {
-    this.quality = CHARACTER_QUALITY[q]
+    this.quality = CHARACTER_QUALITY[presetOf(q)]
+    for (const a of this.agents.values()) this.applyShadows(a)
+  }
+
+  /**
+   * Character detail from the effective graphics (low-spec plan §5.3): LOD distances, animated
+   * budget, real shadow casting (full) and contact blobs (contact, full). `impostorAtFar`
+   * (Minimal) turns agents into impostors from the far distance instead of 10 m beyond it.
+   */
+  setDetail(d: {
+    lod: [number, number]
+    maxAnimated: number
+    shadows: 'off' | 'contact' | 'full'
+    impostorAtFar: boolean
+  }): void {
+    const [near, far] = d.lod
+    this.quality = {
+      near,
+      far,
+      maxAnimated: d.maxAnimated,
+      shadows: d.shadows === 'full',
+      impostorDist: d.impostorAtFar ? far : far + IMPOSTOR_MARGIN,
+    }
+    this.blobs.setVisible(d.shadows !== 'off')
     for (const a of this.agents.values()) this.applyShadows(a)
   }
 
@@ -386,7 +411,7 @@ export class CharacterSystem {
         if (tier !== 'frozen') animated++
       }
       this.applyFade(a)
-      if (m.visible) this.blobs.push(m.pos.x, m.pos.z, 0.95 * m.opacity)
+      if (m.visible && this.blobs.visible) this.blobs.push(m.pos.x, m.pos.z, 0.95 * m.opacity)
       this.updateHead(a, dt)
     }
     this.blobs.end()

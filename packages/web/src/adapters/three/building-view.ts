@@ -1,13 +1,17 @@
 // The building (contract §2, §5, §6): module instances from `BuildingLayout`, lightmaps, runtime-driven
 // surfaces (screens, booth LEDs, signs, the LED wall, elevator doors), ceilings, colliders, culling.
+// Graphics levers (low-spec plan §5.3): detail-cull distance, lightmap size tier (load → swap →
+// dispose, live), canvas resolution and LED-wall redraw rate.
 import { STATUS_COLORS } from '@agent-office/shared'
 import * as THREE from 'three'
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
+import type { LightmapTier } from '../../app/graphics-types.ts'
+import { LIB_COPY } from '../../app/library-copy.ts'
 import type { Lightmap, Manifest } from '../../app/manifest.ts'
-import type { AABB, BuildingLayout, ModulePlacement } from '../../app/office-types.ts'
+import type { AABB, BuildingLayout, ModulePlacement, Vec3 } from '../../app/office-types.ts'
 import type { ProviderSurfaces, SurfaceSlot } from '../../app/capability-vm.ts'
-import { moduleCulling } from '../../app/culling.ts'
-import type { AssetStore } from './assets.ts'
+import { DETAIL_DISTANCE, moduleCulling } from '../../app/culling.ts'
+import { lightmapFile, type AssetStore, type TieredLightmap } from './assets.ts'
 import {
   accentOrBlue,
   canvasFor,
@@ -26,6 +30,16 @@ export interface WorldBox {
   maxY: number
   minZ: number
   maxZ: number
+}
+
+/** One placed capability surface (camera close-ups). Width × height from its extras (m). */
+export interface SurfaceSpot {
+  pos: THREE.Vector3
+  placement: string
+  role: SurfaceRole
+  slot: string
+  width: number
+  height: number
 }
 
 export interface ScreenState {
@@ -248,6 +262,14 @@ function toCheapGlass(m: StdMat): StdMat {
 
 export type SurfaceRole = 'station' | 'book' | 'board' | 'notebook'
 
+/** The Library drawer tab an overflow surface opens. */
+const MORE_TAB: Record<SurfaceRole, string> = {
+  book: 'skills',
+  board: 'rules',
+  notebook: 'memory',
+  station: 'adapters',
+}
+
 interface Door {
   obj: THREE.Object3D
   base: THREE.Vector3
@@ -309,6 +331,14 @@ export class BuildingView {
   private tmp = new THREE.Vector3()
   private arcadeT = 0
   private collidersCache: WorldBox[] | null = null
+  /** Prepared modules by file, with the lightmap they use now (for tier swaps). */
+  private prepared = new Map<string, { gltf: GLTF; lm?: TieredLightmap }>()
+  private tier: LightmapTier = 'full'
+  private detailCullM = DETAIL_DISTANCE
+  /** Canvas surfaces' resolution (0.5 on Low and Minimal). */
+  private canvasScale = 1
+  /** LED wall redraws only when the minute changes (Low and Minimal). */
+  private wallThrottle = false
   /** Fires when a module finished loading (colliders and surfaces changed). */
   onChange: () => void = () => {}
 
@@ -355,12 +385,83 @@ export class BuildingView {
   }
 
   private async loadPrepared(file: string, lm?: Lightmap): Promise<GLTF> {
+    const tier = this.tier
     const [gltf, tex] = await Promise.all([
       this.store.module(file),
-      lm ? this.store.lightmap(lm.file).catch(() => null) : Promise.resolve(null),
+      lm ? this.store.lightmap(lm, tier).catch(() => null) : Promise.resolve(null),
     ])
+    const first = !gltf.userData.prepared
     prepareModule(gltf, tex, lm)
+    if (first) {
+      gltf.userData.lightmapFile = tex && lm ? lightmapFile(lm, tier) : undefined
+      this.prepared.set(file, { gltf, ...(lm ? { lm } : {}) })
+      // The tier changed while this module loaded: bring it up to date.
+      if (tier !== this.tier) void this.swapLightmap(file)
+    }
     return gltf
+  }
+
+  /**
+   * Graphics levers (low-spec plan §5.3): furniture/detail cull distance, lightmap size tier
+   * (swapped live: load the new tier, swap it on every material, dispose the old), canvas
+   * resolution (redraws every surface), and the LED wall's redraw rate.
+   */
+  setDetail(d: { detailCullM: number; lightmapTier: LightmapTier; lowCanvas: boolean }): void {
+    this.detailCullM = d.detailCullM
+    // Force the next update to re-apply detail visibility.
+    for (const inst of this.instances.values()) inst.detailShown = !inst.detailShown
+    const scale = d.lowCanvas ? 0.5 : 1
+    if (scale !== this.canvasScale) {
+      this.canvasScale = scale
+      for (const inst of this.instances.values()) {
+        inst.booksKey = ''
+        for (const byRef of inst.surfaces.values()) for (const sf of byRef.values()) sf.key = ''
+      }
+      this.surfaceTime = 1
+    }
+    this.wallThrottle = d.lowCanvas
+    if (d.lightmapTier !== this.tier) {
+      this.tier = d.lightmapTier
+      for (const file of this.prepared.keys()) void this.swapLightmap(file)
+    }
+  }
+
+  /** Loads the current tier's lightmap for one module, swaps it in everywhere, frees the old one. */
+  private async swapLightmap(file: string): Promise<void> {
+    const entry = this.prepared.get(file)
+    if (!entry?.lm) return
+    const { gltf, lm } = entry
+    const old = gltf.userData.lightmapFile as string | undefined
+    const want = lightmapFile(lm, this.tier)
+    // No lightmap at load (failed): the module isn't baked; nothing to swap.
+    if (!old || old === want) return
+    const tier = this.tier
+    let tex: THREE.Texture
+    try {
+      tex = await this.store.lightmap(lm, tier)
+    } catch {
+      return // keep the current tier
+    }
+    if (tier !== this.tier || gltf.userData.lightmapFile !== old) return
+    let previous: THREE.Texture | null = null
+    const swap = (o: THREE.Object3D) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      for (const m of matsOf(mesh))
+        if (m.lightMap && m.lightMap.name === old) {
+          previous = m.lightMap
+          m.lightMap = tex
+        }
+    }
+    gltf.scene.traverse(swap)
+    this.group.traverse(swap)
+    for (const inst of this.instances.values())
+      if (inst.dimmed)
+        for (const mats of inst.dimmed.values())
+          for (const m of (Array.isArray(mats) ? mats : [mats]) as StdMat[])
+            if (m.lightMap?.name === old) m.lightMap = tex
+    gltf.userData.lightmapFile = want
+    if (previous) this.store.dropLightmap(old)
   }
 
   /** Adds, updates and removes module instances to match the layout. Wings stream in as they load. */
@@ -701,15 +802,79 @@ export class BuildingView {
 
   /** World positions of a capability's surfaces (one per wing of its provider). */
   surfacesOf(ref: { provider: string; id: string }): THREE.Vector3[] {
-    const out: THREE.Vector3[] = []
+    return this.surfaceSpots(ref).map((s) => s.pos)
+  }
+
+  /** A capability's surfaces with their wing and role (camera close-ups). */
+  surfaceSpots(ref: { provider: string; id: string }): SurfaceSpot[] {
+    const out: SurfaceSpot[] = []
+    for (const inst of this.instances.values()) {
+      if (inst.placement.provider !== ref.provider) continue
+      for (const [role, byRef] of inst.surfaces)
+        for (const [slot, sf] of byRef)
+          if ((sf.obj.userData.capability as { id?: string } | undefined)?.id === ref.id)
+            out.push({
+              pos: sf.obj.getWorldPosition(new THREE.Vector3()),
+              placement: inst.placement.id,
+              role,
+              slot,
+              width: Number(sf.obj.userData.width) || 0.5,
+              height: Number(sf.obj.userData.height) || 0.5,
+            })
+    }
+    return out
+  }
+
+  /**
+   * Module-local positions of the wing's capability surfaces by role and slot (every wing theme
+   * shares the layout), from the first wing that has loaded; null until one has.
+   */
+  wingSurfaces(): Map<SurfaceRole, Map<string, Vec3>> | null {
+    for (const inst of this.instances.values()) {
+      if (inst.placement.kind !== 'wing' || !inst.surfaces.size) continue
+      const out = new Map<SurfaceRole, Map<string, Vec3>>()
+      const p = new THREE.Vector3()
+      for (const [role, byRef] of inst.surfaces) {
+        const m = new Map<string, Vec3>()
+        for (const [slot, sf] of byRef) {
+          inst.group.worldToLocal(sf.obj.getWorldPosition(p))
+          m.set(slot, { x: p.x, y: p.y, z: p.z })
+        }
+        out.set(role, m)
+      }
+      return out
+    }
+    return null
+  }
+
+  /** The surface object a capability ref resolves to in one wing (hover/debug projection). */
+  surfaceObject(ref: { provider: string; id: string }): THREE.Object3D | null {
     for (const inst of this.instances.values()) {
       if (inst.placement.provider !== ref.provider) continue
       for (const byRef of inst.surfaces.values())
         for (const sf of byRef.values())
           if ((sf.obj.userData.capability as { id?: string } | undefined)?.id === ref.id)
-            out.push(sf.obj.getWorldPosition(new THREE.Vector3()))
+            return sf.obj
     }
-    return out
+    return null
+  }
+
+  /** Canvas textures of the runtime surfaces, signs and the LED wall (GPU memory accounting). */
+  canvasTextures(): THREE.Texture[] {
+    const out = new Set<THREE.Texture>([this.wallTexture])
+    for (const inst of this.instances.values()) {
+      for (const t of inst.bookAtlases) out.add(t)
+      for (const byRef of inst.surfaces.values())
+        for (const sf of byRef.values()) {
+          const t = sf.mats[0]?.userData.canvasTexture as THREE.Texture | undefined
+          if (t) out.add(t)
+        }
+      for (const sign of inst.signs) {
+        const t = sign.mats[0]?.userData.signTexture as THREE.Texture | undefined
+        if (t) out.add(t)
+      }
+    }
+    return [...out]
   }
 
   /** Station screens, spines, boards and notebooks that are filled (for picking). */
@@ -747,20 +912,36 @@ export class BuildingView {
 
   private drawSurfaces(inst: Instance, s: ProviderSurfaces | undefined, accent: string): void {
     const provider = inst.placement.provider!
+    const k = this.canvasScale
+    // An empty Library says so on board 0 instead of six blank boards (low-spec plan §B4).
+    const emptyLibrary = !s || (!s.books.some(Boolean) && !s.boards.some(Boolean))
     let picksChanged = false
-    const mark = (sf: Surface, slot: SurfaceSlot<unknown> | undefined) => {
-      const ref = slot && slot.id !== '+more' ? { provider, id: slot.id } : undefined
+    // Overflow ("+N more") surfaces pick as '+more:<tab>' so the Library drawer opens on that tab;
+    // `label` carries their title for the hover tooltip.
+    const mark = (sf: Surface, slot: SurfaceSlot<unknown> | undefined, role: SurfaceRole) => {
+      const more = slot?.id === '+more'
+      const title = (slot?.vm as { title?: string } | undefined)?.title
+      const ref = !slot
+        ? undefined
+        : more
+          ? { provider, id: `+more:${MORE_TAB[role]}`, ...(title ? { label: title } : {}) }
+          : { provider, id: slot.id }
       if ((sf.obj.userData.capability as { id?: string } | undefined)?.id !== ref?.id)
         picksChanged = true
       sf.obj.userData.capability = ref
     }
     for (const [ref, sf] of inst.surfaces.get('station') ?? []) {
       const slot = s?.stations[Number(ref)]
-      mark(sf, slot)
+      mark(sf, slot, 'station')
       const key = JSON.stringify(slot?.vm ?? null) + accent
       if (key === sf.key) continue
       sf.key = key
-      const tex = canvasFor(sf, 768, Math.round(768 / Math.max(1, sf.aspect || 16 / 9)), true)
+      const tex = canvasFor(
+        sf,
+        Math.round(768 * k),
+        Math.round((768 * k) / Math.max(1, sf.aspect || 16 / 9)),
+        true,
+      )
       drawStation(tex.image as HTMLCanvasElement, slot?.vm, accent)
       tex.needsUpdate = true
     }
@@ -769,27 +950,37 @@ export class BuildingView {
       const key = JSON.stringify(s?.books.map((b) => b && [b.id, b.vm]) ?? null)
       if (key !== inst.booksKey) {
         inst.booksKey = key
-        for (const [ref, sf] of books) mark(sf, s?.books[Number(ref)])
-        drawBooks(inst.bookAtlases, books, s?.books ?? [], accent)
+        for (const [ref, sf] of books) mark(sf, s?.books[Number(ref)], 'book')
+        drawBooks(inst.bookAtlases, books, s?.books ?? [], accent, k)
       }
     }
     for (const [ref, sf] of inst.surfaces.get('board') ?? []) {
       const slot = s?.boards[Number(ref)]
-      mark(sf, slot)
-      const key = JSON.stringify(slot?.vm ?? null)
+      mark(sf, slot, 'board')
+      const placard = emptyLibrary && ref === '0' ? LIB_COPY.emptyBoard : undefined
+      const key = JSON.stringify(slot?.vm ?? null) + (placard ?? '')
       if (key === sf.key) continue
       sf.key = key
-      const tex = canvasFor(sf, 384, Math.round(384 / Math.max(0.2, sf.aspect || 0.75)))
-      drawBoard(tex.image as HTMLCanvasElement, slot?.vm, accent)
+      const tex = canvasFor(
+        sf,
+        Math.round(384 * k),
+        Math.round((384 * k) / Math.max(0.2, sf.aspect || 0.75)),
+      )
+      drawBoard(tex.image as HTMLCanvasElement, slot?.vm, accent, placard)
       tex.needsUpdate = true
     }
     for (const [ref, sf] of inst.surfaces.get('notebook') ?? []) {
       const slot = s?.notebooks[Number(ref)]
-      mark(sf, slot)
+      mark(sf, slot, 'notebook')
       const key = JSON.stringify(slot?.vm ?? null)
       if (key === sf.key) continue
       sf.key = key
-      const tex = canvasFor(sf, 128, Math.round(128 / Math.max(0.2, sf.aspect || 0.8)))
+      // 2× the old 128 px cover: the label is drawn twice as large (low-spec plan §B4).
+      const tex = canvasFor(
+        sf,
+        Math.round(256 * k),
+        Math.round((256 * k) / Math.max(0.2, sf.aspect || 0.8)),
+      )
       drawNotebook(tex.image as HTMLCanvasElement, slot?.vm.title, accent)
       tex.needsUpdate = true
     }
@@ -804,18 +995,21 @@ export class BuildingView {
       slots: (SurfaceSlot<unknown> | undefined)[] | undefined,
       base: number,
       boost: number,
+      empty = 0.35,
     ) => {
       for (const [ref, sf] of inst.surfaces.get(role) ?? []) {
         const slot = slots?.[Number(ref)]
         const want = slot?.glow ?? 0
         sf.glow += (want - sf.glow) * ease
-        const filled = slot ? 1 : 0.35
+        const filled = slot ? 1 : empty
         for (const m of sf.mats) m.emissiveIntensity = (base + sf.glow * boost) * filled
       }
     }
     apply('station', s?.stations, 0.85, 0.45)
-    apply('book', s?.books, 0.3, 1.4)
-    apply('board', s?.boards, 0.45, 0.9)
+    // Empty spines stay dark: no glow at all (low-spec plan §B4).
+    apply('book', s?.books, 0.3, 1.4, 0)
+    // Boards are near-white paper: low emissive so they don't bloom into a haze up close.
+    apply('board', s?.boards, 0.12, 0.35)
     apply('notebook', s?.notebooks, 0.3, 1.4)
     for (const [ref, mats] of inst.leds) {
       if (!ref.startsWith('station:')) continue
@@ -890,7 +1084,7 @@ export class BuildingView {
     camera.getWorldPosition(this.tmp)
     for (const inst of this.instances.values()) {
       const dist = inst.box.distanceToPoint(this.tmp)
-      const cull = moduleCulling(this.frustum.intersectsBox(inst.box), dist)
+      const cull = moduleCulling(this.frustum.intersectsBox(inst.box), dist, this.detailCullM)
       inst.group.visible = cull.visible
       const detail = cull.detail
       if (inst.group.visible && detail !== inst.detailShown) {
@@ -924,6 +1118,8 @@ export class BuildingView {
   private drawWall(): void {
     const s = this.stats
     const minute = new Date().toTimeString().slice(0, 5)
+    // Low and Minimal: at most once a minute (the clock tick), not on every count change.
+    if (this.wallThrottle && this.wallDrawn.endsWith(`|${minute}`)) return
     const key = `${s.agents}|${s.working}|${s.waiting}|${s.meetings}|${s.wings}|${minute}`
     if (key === this.wallDrawn) return
     this.wallDrawn = key

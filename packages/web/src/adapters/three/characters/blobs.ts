@@ -1,5 +1,5 @@
 // Contact shadows: one soft dark disc under every visible character, drawn as a single
-// InstancedMesh (one draw call for everyone). Always on, at every quality preset.
+// InstancedMesh (one draw call for everyone). On unless shadows are off (Minimal, low-spec plan §5.3).
 import * as THREE from 'three'
 
 const TEX = 64
@@ -36,6 +36,7 @@ export class BlobShadows {
   })
   private mesh: THREE.InstancedMesh
   private n = 0
+  private shown = true
   private readonly m = new THREE.Matrix4()
 
   constructor(private readonly parent: THREE.Object3D) {
@@ -50,8 +51,19 @@ export class BlobShadows {
     mesh.count = 0
     mesh.raycast = () => {}
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.visible = this.shown
     this.parent.add(mesh)
     return mesh
+  }
+
+  /** Shadows off: no discs at all (and no per-frame matrix uploads). */
+  setVisible(on: boolean) {
+    this.shown = on
+    this.mesh.visible = on
+  }
+
+  get visible(): boolean {
+    return this.shown
   }
 
   begin() {

@@ -23,9 +23,23 @@ export const WindowBoundsSchema = z.object({
 })
 
 /** Renderer quality presets. `auto` starts at `high` and lets the renderer step down/up by FPS. */
-export const GRAPHICS_QUALITIES = ['auto', 'low', 'medium', 'high', 'ultra'] as const
+export const GRAPHICS_QUALITIES = ['auto', 'minimal', 'low', 'medium', 'high', 'ultra'] as const
 export const GraphicsQualitySchema = z.enum(GRAPHICS_QUALITIES)
 export type GraphicsQuality = z.infer<typeof GraphicsQualitySchema>
+
+/** Per-feature graphics overrides; 'auto' takes the value from the preset (low-spec plan §2.1). */
+export const GraphicsAdvancedSchema = z.object({
+  resolution: z.enum(['auto', '0.5', '0.67', '0.75', '1']).default('auto'),
+  fps: z.enum(['auto', '30', '60', 'unlimited']).default('auto'),
+  shadows: z.enum(['auto', 'off', 'contact', 'full']).default('auto'),
+  effects: z.enum(['auto', 'off', 'on']).default('auto'),
+  characters: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
+  labels: z.enum(['auto', 'selected', 'nearby', 'all']).default('auto'),
+  links: z.enum(['auto', 'off', 'static', 'animated']).default('auto'),
+  building: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
+})
+export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
+export const BATTERY_PRESETS = ['off', 'minimal', 'low', 'medium'] as const
 
 export const SettingsSchema = z.object({
   /** Local HTTP API port used by the Claude Code hook and external agents. */
@@ -48,6 +62,16 @@ export const SettingsSchema = z.object({
   theme: z.enum(['system', 'light', 'dark']).default('system'),
   /** Offer the "Bypass permissions" mode for managed sessions (off by default; confirm to enable). */
   allowBypassPermissions: z.boolean().default(false),
+  /** Per-feature overrides on top of `graphicsQuality`. */
+  graphicsAdvanced: GraphicsAdvancedSchema.default(GraphicsAdvancedSchema.parse({})),
+  /** Lower the frame rate (15 fps) while the window isn't focused. */
+  powerSaverBlur: z.boolean().default(true),
+  /** Stop rendering while the window is hidden or minimized. */
+  powerSaverHidden: z.boolean().default(true),
+  /** While on battery, use this preset instead (off = keep the chosen preset). */
+  batteryPreset: z.enum(BATTERY_PRESETS).default('off'),
+  /** Off = software rendering (needs a restart). */
+  hardwareAcceleration: z.boolean().default(true),
   windowBounds: WindowBoundsSchema.optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
@@ -173,6 +197,10 @@ export interface ConnectionInfo {
   mock: { enabled: boolean; override?: 'on' | 'off' }
 }
 
+export interface PowerState {
+  onBattery: boolean
+}
+
 export type TestEventResult = { ok: true } | { ok: false; error: string }
 
 /** Text the renderer may put on the clipboard (written by main; the renderer permission stays denied). */
@@ -224,6 +252,11 @@ export interface AgentOfficeApi {
     copyText(text: string): Promise<void>
     /** Main asks the UI to open the Connect panel (tray menu). */
     onOpenConnect(cb: () => void): () => void
+    /** Power source changes (Electron powerMonitor). */
+    onPower(cb: (s: PowerState) => void): () => void
+    power(): Promise<PowerState>
+    /** Main reports the window hidden/minimized (false) or shown/restored (true): the power saver. */
+    onWindowVisibility(cb: (visible: boolean) => void): () => void
   }
   connections: {
     info(): Promise<ConnectionInfo>

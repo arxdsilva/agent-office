@@ -1,8 +1,11 @@
 // Links from agents to the capabilities they use (docs/capabilities.md §5, plan §10.6/§10.F):
 // adapters get a glowing tube with flowing dashes, skills and rules a stream of drifting page
 // particles, both along the director's quadratic arc. Readable through walls (no depth test).
+// Link mode (low-spec plan §5.3): `animated` as above; `static` draws one straight segment per
+// link from a single LineSegments pool, rebuilt only when the links change; `off` draws nothing.
 import * as THREE from 'three'
-import type { Link } from '../../app/office-types.ts'
+import type { LinkMode } from '../../app/graphics-types.ts'
+import type { RenderLink as Link } from '../../app/links.ts'
 
 export const MAX_LINKS = 64
 const SEGMENTS = 24
@@ -84,9 +87,66 @@ interface Slot {
   drawn: number
 }
 
+/** Static links: one straight segment each, all in one LineSegments (one draw call, no per-frame work). */
+class StaticLines {
+  readonly lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>
+  private pos = new THREE.BufferAttribute(new Float32Array(MAX_LINKS * 6), 3)
+  private col = new THREE.BufferAttribute(new Float32Array(MAX_LINKS * 6), 3)
+  private c = new THREE.Color()
+  links: Link[] = []
+
+  constructor() {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', this.pos)
+    geo.setAttribute('color', this.col)
+    geo.setDrawRange(0, 0)
+    this.lines = new THREE.LineSegments(
+      geo,
+      new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    )
+    this.lines.name = 'links-static'
+    this.lines.renderOrder = 10
+    this.lines.frustumCulled = false
+  }
+
+  set(links: Link[], highlighted: string | null): void {
+    this.links = links
+    let n = 0
+    for (const l of links) {
+      if (n >= MAX_LINKS || l.opacity <= 0) continue
+      const dim = highlighted && l.capabilityId !== highlighted ? 0.12 : 1
+      this.c.set(l.color).multiplyScalar(dim * Math.min(1, l.opacity))
+      this.pos.setXYZ(n * 2, l.from.x, l.from.y, l.from.z)
+      this.pos.setXYZ(n * 2 + 1, l.to.x, l.to.y, l.to.z)
+      this.col.setXYZ(n * 2, this.c.r, this.c.g, this.c.b)
+      this.col.setXYZ(n * 2 + 1, this.c.r, this.c.g, this.c.b)
+      n++
+    }
+    this.pos.needsUpdate = true
+    this.col.needsUpdate = true
+    this.lines.geometry.setDrawRange(0, n * 2)
+  }
+
+  dispose(): void {
+    this.lines.geometry.dispose()
+    this.lines.material.dispose()
+  }
+}
+
+const isLine = (l: Link) => l.style === 'line'
+
 export class LinkSystem {
   readonly group = new THREE.Group()
   private slots = new Map<string, Slot>()
+  private mode: LinkMode = 'animated'
+  private statics = new StaticLines()
   private time = 0
   private pageTex = spriteTexture('page')
   private glowTex = spriteTexture('glow')
@@ -100,15 +160,31 @@ export class LinkSystem {
   constructor() {
     this.group.name = 'links'
     this.group.renderOrder = 10
+    this.group.add(this.statics.lines)
+  }
+
+  /** off · static (straight lines, no per-frame work) · animated (tubes and particles). */
+  setMode(mode: LinkMode): void {
+    if (mode === this.mode) return
+    this.mode = mode
+    this.group.visible = mode !== 'off'
+    // Leaving animated: drop its tubes now (they would only fade on the next update).
+    if (mode !== 'animated')
+      for (const [id, s] of this.slots) (this.dispose(s), this.slots.delete(id))
+    if (mode !== 'static') this.statics.set([], null)
   }
 
   /** The director's current links (calls fading out included). Over budget: nearest win. */
   set(links: Link[], camera: THREE.Camera, selected: string | null): void {
     camera.getWorldPosition(this.camPos)
+    if (this.mode === 'off') return this.onChange([])
     const ranked =
       links.length <= MAX_LINKS ? links : this.rank(links, selected).slice(0, MAX_LINKS)
+    const lines = this.mode === 'static' ? ranked : ranked.filter(isLine)
+    this.statics.set(lines, this.highlighted)
     const keep = new Set<string>()
     for (const l of ranked) {
+      if (this.mode === 'static' || isLine(l)) continue
       keep.add(l.id)
       let s = this.slots.get(l.id)
       if (!s) s = this.create(l)
@@ -229,6 +305,7 @@ export class LinkSystem {
 
   highlight(capabilityId: string | null): void {
     this.highlighted = capabilityId
+    this.statics.set(this.statics.links, capabilityId)
   }
 
   /** Where the links to a capability start (agents' ports), for camera framing. */
@@ -236,10 +313,17 @@ export class LinkSystem {
     const out: THREE.Vector3[] = []
     for (const s of this.slots.values())
       if (!s.gone && s.link.capabilityId === capabilityId) out.push(s.curve.v0, s.curve.v2)
+    for (const l of this.statics.links)
+      if (l.capabilityId === capabilityId)
+        out.push(
+          new THREE.Vector3(l.from.x, l.from.y, l.from.z),
+          new THREE.Vector3(l.to.x, l.to.y, l.to.z),
+        )
     return out
   }
 
   update(dt: number): void {
+    if (this.mode !== 'animated' && !this.slots.size) return
     this.time += dt
     for (const [id, s] of this.slots) {
       const rate = s.target > s.shown ? 1 / FADE_IN_S : 1 / FADE_OUT_S
@@ -312,23 +396,39 @@ export class LinkSystem {
     visible: boolean
     radius: number
   }[] {
-    return [...this.slots.values()].map((s) => {
-      const obj = s.tube ?? s.points!
-      obj.geometry.computeBoundingSphere()
+    const lines = this.statics.links.map((l) => {
+      const a = new THREE.Vector3(l.from.x, l.from.y, l.from.z)
+      const b = new THREE.Vector3(l.to.x, l.to.y, l.to.z)
       return {
-        id: s.link.id,
-        style: s.link.style,
-        from: s.curve.v0.toArray(),
-        to: s.curve.v2.toArray(),
-        shown: s.shown,
-        opacity: s.drawn,
-        visible: obj.visible && this.group.visible,
-        radius: obj.geometry.boundingSphere?.radius ?? 0,
+        id: l.id,
+        style: 'line',
+        from: a.toArray(),
+        to: b.toArray(),
+        shown: l.opacity,
+        opacity: l.opacity,
+        visible: this.group.visible,
+        radius: a.distanceTo(b) / 2,
       }
     })
+    return lines.concat(
+      [...this.slots.values()].map((s) => {
+        const obj = s.tube ?? s.points!
+        obj.geometry.computeBoundingSphere()
+        return {
+          id: s.link.id,
+          style: s.link.style,
+          from: s.curve.v0.toArray(),
+          to: s.curve.v2.toArray(),
+          shown: s.shown,
+          opacity: s.drawn,
+          visible: obj.visible && this.group.visible,
+          radius: obj.geometry.boundingSphere?.radius ?? 0,
+        }
+      }),
+    )
   }
 
   count(): number {
-    return this.slots.size
+    return this.slots.size + this.statics.links.length
   }
 }

@@ -53,6 +53,7 @@ export class ClaudeKnowledgeReader {
     for (const cwd of cwds)
       skills.push(...(await this.skillsIn(join(cwd, '.claude/skills'), 'project')))
     skills.push(...(await this.skillsIn(join(this.o.claudeHome, 'skills'), 'user')))
+    skills.push(...(await this.syncedSkills()))
     skills.push(...(await this.pluginSkills()))
 
     const rules: CapabilityDecl[] = []
@@ -90,6 +91,15 @@ export class ClaudeKnowledgeReader {
       })
     }
     return out.sort((a, b) => (a.label < b.label ? -1 : 1))
+  }
+
+  /** `~/.claude/skills/synced/<group>/<skill>/SKILL.md` exactly (scope user; dedup gives user ones precedence). */
+  private async syncedSkills(): Promise<CapabilityDecl[]> {
+    const root = join(this.o.claudeHome, 'skills', 'synced')
+    const out: CapabilityDecl[] = []
+    for (const group of (await dirs(root)).sort())
+      out.push(...(await this.skillsIn(join(root, group), 'user')))
+    return out
   }
 
   /** Skills anywhere under `~/.claude/plugins` (scope plugin), skipping dot-dirs and marketplace listings. */

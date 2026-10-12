@@ -38,7 +38,7 @@ The **Connected** tab lists every provider, its agent count and how it's connect
 - **Light and dark themes.** System, Light or Dark, with the same features in both ([Appearance](#appearance)).
 - **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP ([Talk to agents](#talk-to-agents)).
 - **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
-- **Library.** Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
+- **Library.** Browse every skill, rule and memory entry from 📚, or fly to them in the office. Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
 - **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error ([Tray and notifications](#tray-and-notifications)).
 - **Obvious setup.** An empty office shows how to connect Claude Code, any framework or a demo; the 🔌 Connect panel has live status, copy-ready snippets and a test button ([Connect your agents](#connect-your-agents)).
 - **Zero-config Claude Code.** Running sessions, their subagents, configured MCP servers, skills and rules appear automatically ([Using it with Claude Code](#using-it-with-claude-code)).
@@ -289,6 +289,10 @@ readable spines, its **rules** are boards on the wall with their title and first
 its **memory** entries are notebooks on a rack. There's a reading table for agents who need to
 sit down with a book.
 
+**📚 Library** (top right) lists all of it, for any provider: Skills, Rules, Memory and Adapters tabs, with search, scope, summary and usage. That includes the items that don't fit on the shelves ("Not on a shelf"). Pick one and the camera flies to it, close enough to read, and its panel opens. In the 3D view, hover a spine, board, notebook or station to see its name, and click it to open it. The **Library ▾** and **Adapters ▾** view buttons fly to any provider's rooms, including a head-on **Rules wall** view.
+
+![The Library browser next to a close-up of the skill shelves, with the picked skill's panel open](docs/screenshots/library-browser.png)
+
 <table>
 <tr>
 <td width="50%"><img src="docs/screenshots/library-room.png" width="100%" alt="The Library: shelves of skill books, rule boards on the wall, two agents reading at the table"></td>
@@ -368,15 +372,24 @@ sprint, `E` to talk to the agent (or open the station, book or board) under the 
 
 ## Graphics
 
-⚙ Settings → **Graphics** picks a quality preset. It applies immediately and is saved with your settings.
+⚙ Settings → **Graphics** picks a quality preset. Everything applies immediately and is saved with your settings.
 
-| Preset | For                                                                                                    |
-| ------ | ------------------------------------------------------------------------------------------------------ |
-| Auto   | The default. Starts at High and steps down or up to keep the frame rate smooth.                        |
-| Low    | Older or battery-powered machines: no real-time shadows or post-processing, fewer animated characters. |
-| Medium | Balanced: soft shadows, ambient occlusion at half resolution, bloom and anti-aliasing.                 |
-| High   | Full-resolution ambient occlusion and sharper shadows, up to Retina pixel density.                     |
-| Ultra  | Native pixel density, the largest shadow maps and more animated characters at full detail.             |
+| Preset  | For                                                                                                                                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auto    | The default. Starts from what your computer can do (software rendering → Minimal, integrated graphics → Low, Apple M1/M2 → Medium, faster GPUs → High), then steps down or up to keep the frame rate smooth, never above that starting tier. |
+| Minimal | Very old or software-rendered computers: 30 fps, ¾ resolution, no shadows or effects, name tags only nearby, static links, the smallest lightmaps.                                                                                           |
+| Low     | Laptops with integrated graphics: 60 fps, contact shadows only, no post-processing, nearby name tags, half-size lightmaps.                                                                                                                   |
+| Medium  | Balanced: soft shadows, glow and anti-aliasing.                                                                                                                                                                                              |
+| High    | Ambient occlusion and sharper shadows, up to Retina pixel density.                                                                                                                                                                           |
+| Ultra   | Native pixel density, the largest shadow maps and more animated characters at full detail.                                                                                                                                                   |
+
+![Settings → Graphics: quality, the live frame rate and GPU memory, power saver, and the Advanced options](docs/screenshots/graphics-settings.png)
+
+- **Live numbers:** "Now" shows the frame rate, the preset in force, an estimate of GPU memory and the drawing size.
+- **Power saver:** 15 fps while the window isn't focused, no rendering while it's hidden or minimized, and optionally a lighter preset on battery.
+- **Advanced:** override single features on top of the preset: resolution, frame-rate limit, shadows, effects, character detail, name tags (all, nearby, or only the selected agent), capability links (animated, static or off) and building detail. "(custom)" marks overrides; **Reset to preset** clears them.
+- **If 3D can't start** (no WebGL), a card explains it and offers software rendering on Windows and Linux. macOS has no software WebGL fallback, so that option isn't offered there.
+- **Smaller on the GPU:** textures shared across the building are loaded once, and lightmaps come in three sizes picked by the preset.
 
 Low (left) and Ultra (right), same view:
 

@@ -6,12 +6,23 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Document, Logger, type Node } from '@gltf-transform/core'
-import { EXTMeshGPUInstancing } from '@gltf-transform/extensions'
+import { EXTMeshGPUInstancing, KHRTextureBasisu } from '@gltf-transform/extensions'
 import { meshopt } from '@gltf-transform/functions'
 import { MeshoptEncoder } from 'meshoptimizer'
+import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   BONES,
+  checkLightmapTiers,
+  checkTextures,
+  checkTotal,
+  checkVram,
+  estimateVram,
+  ssim,
+  textureBytes,
+  TOTAL_MAX_BYTES,
+  VRAM_MAX_BYTES,
+  type TextureInfo,
   CHARACTER_MATERIALS,
   CLIPS,
   checkAnchor,
@@ -43,6 +54,25 @@ const PNG_1PX = Buffer.from(
   'base64',
 )
 const clone = <T>(v: T): T => structuredClone(v)
+const HASH = '0123456789ab'
+
+/** A size×size grey PNG (lightmap tiers). */
+const pngCache = new Map<number, Promise<Buffer>>()
+const png = (size: number) => {
+  let p = pngCache.get(size)
+  if (!p) {
+    p = sharp({ create: { width: size, height: size, channels: 3, background: '#808080' } })
+      .png()
+      .toBuffer()
+    pngCache.set(size, p)
+  }
+  return p
+}
+const tiersFor = (base: string) => ({
+  full: `${base}.lightmap.full.png`,
+  half: `${base}.lightmap.half.png`,
+  quarter: `${base}.lightmap.quarter.png`,
+})
 
 // ── Fixture: a minimal but contract-complete asset set ──────────────────────────────────────────
 type Spec = [id: string, extra?: Partial<AnchorJson>]
@@ -152,7 +182,7 @@ const BOUNDS: Record<ModuleKind, Manifest['modules']['atrium']['bounds']> = {
 function moduleJson(kind: ModuleKind) {
   const anchors = anchorsFor(kind)
   return {
-    lightmap: { file: `${kind}.lightmap.png`, intensity: 3 },
+    lightmap: { file: `${kind}.lightmap.full.png`, intensity: 3, variants: tiersFor(kind) },
     bounds: BOUNDS[kind],
     anchors,
     nav: navFor(kind, anchors),
@@ -178,7 +208,11 @@ function fixtureManifest(): Manifest {
             t,
             {
               file: `wing-${t}.glb`,
-              lightmap: { file: `wing-${t}.lightmap.png`, intensity: 2.8 },
+              lightmap: {
+                file: `wing-${t}.lightmap.full.png`,
+                intensity: 2.8,
+                variants: tiersFor(`wing-${t}`),
+              },
               signColor: '#F4EDE4',
               accent: '#D97757',
             },
@@ -253,9 +287,26 @@ function quadDoc(name: string) {
   return { doc, buf, scene, quad }
 }
 
-function moduleDoc(kind: ModuleKind, anchors: Record<string, AnchorJson>) {
+/** The floor's base colour: a PNG with extras.hash (contract §6b); `ktx2` or `noHash` break it. */
+interface FloorTexture {
+  bytes: Uint8Array
+  noHash?: boolean
+  ktx2?: boolean
+}
+
+function moduleDoc(kind: ModuleKind, anchors: Record<string, AnchorJson>, tex?: FloorTexture) {
   const { doc, scene, quad } = quadDoc(kind)
-  scene.addChild(doc.createNode('floor').setMesh(quad(true)).setExtras({ role: 'baked' }))
+  const floor = quad(true)
+  if (tex) {
+    const t = doc
+      .createTexture('floor')
+      .setImage(tex.bytes)
+      .setMimeType(tex.ktx2 ? 'image/ktx2' : 'image/png')
+    if (!tex.noHash) t.setExtras({ hash: HASH })
+    if (tex.ktx2) doc.createExtension(KHRTextureBasisu).setRequired(true)
+    floor.listPrimitives()[0]!.setMaterial(doc.createMaterial('floor').setBaseColorTexture(t))
+  }
+  scene.addChild(doc.createNode('floor').setMesh(floor).setExtras({ role: 'baked' }))
   const panel = quad(false)
   for (const a of Object.values(anchors)) {
     if (a.screen)
@@ -354,11 +405,19 @@ function characterDoc(clips: readonly string[] = CLIPS) {
   return doc
 }
 
-/** Writes the full fixture (manifest, 10 glbs, lightmaps, HDRI, character.json) into `dir`. */
+async function writeTiers(dir: string, base: string) {
+  const refs = tiersFor(base)
+  await writeFile(join(dir, refs.full), await png(16))
+  await writeFile(join(dir, refs.half), await png(8))
+  await writeFile(join(dir, refs.quarter), await png(4))
+}
+
+/** Writes the full fixture (manifest, 10 glbs, lightmap tiers, HDRI, character.json) into `dir`. */
 async function writeFixture(dir: string) {
   await MeshoptEncoder.ready
   const io = (await createIO()).registerDependencies({ 'meshopt.encoder': MeshoptEncoder })
   const m = fixtureManifest()
+  const tex: FloorTexture = { bytes: PNG_1PX }
   await mkdir(join(dir, 'hdri'), { recursive: true })
   await writeFile(join(dir, 'manifest.json'), JSON.stringify(m))
   await writeFile(join(dir, m.hdri), '#?RADIANCE\n')
@@ -366,17 +425,17 @@ async function writeFixture(dir: string) {
   await writeFile(join(dir, m.character.file), await io.writeBinary(characterDoc()))
   for (const kind of ['atrium', 'street', 'garden', 'cap'] as const) {
     const mod = m.modules[kind]
-    await writeFile(join(dir, mod.file), await io.writeBinary(moduleDoc(kind, mod.anchors)))
-    await writeFile(join(dir, mod.lightmap!.file), PNG_1PX)
+    await writeFile(join(dir, mod.file), await io.writeBinary(moduleDoc(kind, mod.anchors, tex)))
+    await writeTiers(dir, kind)
   }
   for (const t of THEMES) {
-    const doc = moduleDoc('wing', m.modules.wing.anchors)
+    const doc = moduleDoc('wing', m.modules.wing.anchors, tex)
     // One theme goes through EXT_meshopt_compression, like the real gltf-transform step.
     if (t === 'terracotta')
       await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }))
     const th = m.modules.wing.themes[t]!
     await writeFile(join(dir, th.file), await io.writeBinary(doc))
-    await writeFile(join(dir, th.lightmap.file), PNG_1PX)
+    await writeTiers(dir, `wing-${t}`)
   }
   return m
 }
@@ -611,6 +670,87 @@ describe('asset validator: glb stats and budgets', () => {
   })
 })
 
+describe('asset validator: GPU textures (hashes, lightmap tiers, memory)', () => {
+  const ok: TextureInfo = { name: 'oak', mime: 'image/webp', hash: HASH, width: 1024, height: 1024 }
+
+  it('AV-1: every glb texture has a 12-hex extras.hash; no KTX2 (the CSP blocks its transcoder)', () => {
+    expect(checkTextures('w.glb', [ok], ['EXT_meshopt_compression'])).toEqual([])
+    expect(
+      checkTextures(
+        'w.glb',
+        [
+          { ...ok, name: 'b', hash: undefined },
+          { ...ok, name: 'c', hash: 'XYZ' },
+          { ...ok, name: 'd', mime: 'image/ktx2' },
+        ],
+        ['KHR_texture_basisu'],
+      ),
+    ).toEqual([
+      'w.glb: uses KHR_texture_basisu; the Basis transcoder needs eval, which the CSP forbids (contract §6b)',
+      'w.glb: texture "b" has no extras.hash (12 hex chars of sha1 over its RGBA, contract §6b)',
+      'w.glb: texture "c" has no extras.hash (12 hex chars of sha1 over its RGBA, contract §6b)',
+      'w.glb: texture "d" is KTX2; the Basis transcoder needs eval, which the CSP forbids (contract §6b)',
+    ])
+  })
+
+  it('AV-2: lightmap tiers are images at full, ½ and ¼ size', () => {
+    const refs = tiersFor('m')
+    const sq = (n: number): [number, number] => [n, n]
+    expect(checkLightmapTiers(refs, { full: sq(16), half: sq(8), quarter: sq(4) })).toEqual([])
+    expect(checkLightmapTiers(refs, { full: sq(16), half: sq(16), quarter: null })).toEqual([
+      'm.lightmap.half.png: is 16×16, expected 8×8 (½ of m.lightmap.full.png)',
+      'm.lightmap.quarter.png: is not a PNG or WebP image',
+    ])
+    // A missing file is reported by the loader, not here.
+    expect(checkLightmapTiers(refs, { half: sq(3) })).toEqual([])
+  })
+
+  it('AV-2: the manifest lists the three image tiers for every lightmap', () => {
+    const m = clone(fixtureManifest()) as unknown as Record<string, any>
+    delete m.modules.garden.lightmap.variants
+    m.modules.wing.themes.forest.lightmap.variants.half = 'wing-forest.lightmap.half.ktx2'
+    const errs = checkManifest(m)
+    expect(errs).toContain(
+      'manifest.modules.garden.lightmap.variants: missing { full, half, quarter } size tiers (contract §6)',
+    )
+    expect(errs).toContain(
+      'manifest.modules.wing.themes.forest.lightmap.variants.half: must be a relative .png or .webp path',
+    )
+    m.modules.street.lightmap.file = 'street.lightmap.full.webp'
+    expect(checkManifest(m).filter((e) => e.includes('street'))).toEqual([])
+  })
+
+  it('AV-3: estimates GPU memory as RGBA8 × 4/3, deduped by hash, per lightmap tier', () => {
+    expect(textureBytes(1024, 1024)).toBe((1024 * 1024 * 16) / 3)
+    const e = estimateVram([
+      { key: 'a', width: 1024, height: 1024 },
+      { key: 'a', width: 1024, height: 1024 },
+      { key: 'b', width: 512, height: 512 },
+    ])
+    expect(e).toEqual({ bytes: textureBytes(1024, 1024) + textureBytes(512, 512), unique: 2 })
+    expect(VRAM_MAX_BYTES).toEqual({ full: 340 * MB, half: 150 * MB, quarter: 110 * MB })
+    expect(checkVram(87 * MB, { full: 241 * MB, half: 60 * MB, quarter: 15 * MB })).toEqual([])
+    expect(checkVram(100 * MB, { full: 241 * MB, half: 50 * MB, quarter: 15 * MB })).toEqual([
+      'GPU texture memory estimate at the full lightmap tier 341 MB exceeds the 340 MB budget (all themes, RGBA8 × 4/3, deduped by extras.hash; contract §9)',
+      'GPU texture memory estimate at the quarter lightmap tier 115 MB exceeds the 110 MB budget (all themes, RGBA8 × 4/3, deduped by extras.hash; contract §9)',
+    ])
+  })
+
+  it('AV-4: the published assets stay within 55 MB', () => {
+    expect(checkTotal(TOTAL_MAX_BYTES)).toEqual([])
+    expect(checkTotal(56 * MB)).toEqual(['assets total 56.0 MB exceeds the 55 MB budget'])
+  })
+
+  it('AV-visual: SSIM is 1 for identical images and drops with noise', () => {
+    const w = 32
+    const a = new Uint8Array(w * w * 4).map((_, i) => (i % 4 === 3 ? 255 : ((i >> 2) % w) * 8))
+    const b = a.map((v, i) => (i % 4 === 3 ? v : Math.max(0, Math.min(255, v + ((i * 37) % 61) - 30))))
+    expect(ssim(a, a, w, w)).toBeCloseTo(1, 6)
+    expect(ssim(a, b, w, w)).toBeLessThan(0.97)
+    expect(() => ssim(a, a.subarray(4), w, w)).toThrow(/size/)
+  })
+})
+
 describe('asset validator: a whole assets dir', () => {
   let dir: string
   beforeAll(async () => {
@@ -625,7 +765,12 @@ describe('asset validator: a whole assets dir', () => {
     expect(r.files.map((f) => f.file)).toContain('wing-terracotta.glb')
     expect(r.files).toHaveLength(4 + THEMES.length + 1)
     expect(r.totalBytes).toBeGreaterThan(0)
-  })
+    // Ten modules share one texture hash: it is counted once (AV-3).
+    expect(r.vram.uniqueTextures).toBe(1)
+    expect(r.vram.textures).toBeCloseTo(textureBytes(1, 1), 6)
+    expect(r.vram.lightmaps.full).toBeCloseTo(10 * textureBytes(16, 16), 6)
+    expect(r.vram.lightmaps.quarter).toBeCloseTo(10 * textureBytes(4, 4), 6)
+  }, 30_000)
 
   it('reports missing files, Git LFS pointers, broken glbs and bad PNGs', async () => {
     const broken = await mkdtemp(join(tmpdir(), 'ao-assets-bad-'))
@@ -637,7 +782,21 @@ describe('asset validator: a whole assets dir', () => {
         'version https://git-lfs.github.com/spec/v1\noid sha256:00\n',
       )
       await writeFile(join(broken, 'garden.glb'), Buffer.from('glTF\x02\x00\x00\x00garbage'))
-      await writeFile(join(broken, m.modules.wing.themes.ocean!.lightmap.file), 'not a png')
+      const ocean = m.modules.wing.themes.ocean!.lightmap.variants!
+      await writeFile(join(broken, ocean.half), 'not an image')
+      await rm(join(broken, ocean.quarter))
+      // AV-1: a module with a texture without extras.hash, one with KTX2 (blocked by the CSP).
+      const io = await createIO()
+      await writeFile(
+        join(broken, 'atrium.glb'),
+        await io.writeBinary(moduleDoc('atrium', m.modules.atrium.anchors, { bytes: PNG_1PX, noHash: true })),
+      )
+      await writeFile(
+        join(broken, 'wing-neon.glb'),
+        await io.writeBinary(moduleDoc('wing', m.modules.wing.anchors, { bytes: PNG_1PX, ktx2: true })),
+      )
+      // The street's quarter tier at the wrong size: AV-2.
+      await writeFile(join(broken, m.modules.street.lightmap!.variants!.quarter), await png(8))
       await rm(join(broken, m.hdri))
       const meta = characterMeta() as any
       delete meta.clips.Walk.footPlants
@@ -646,7 +805,17 @@ describe('asset validator: a whole assets dir', () => {
       expect(p).toContain('cap.glb: referenced by manifest.json but missing')
       expect(p.some((e) => e.startsWith('street.glb: is a Git LFS pointer'))).toBe(true)
       expect(p.some((e) => e.startsWith('garden.glb: gltf-validator found'))).toBe(true)
-      expect(p).toContain('wing-ocean.lightmap.png: is not a PNG file')
+      expect(p).toContain('wing-ocean.lightmap.half.png: is not a PNG or WebP image')
+      expect(p).toContain('wing-ocean.lightmap.quarter.png: referenced by manifest.json but missing')
+      expect(p).toContain(
+        'atrium.glb: texture "floor" has no extras.hash (12 hex chars of sha1 over its RGBA, contract §6b)',
+      )
+      expect(p).toContain(
+        'wing-neon.glb: uses KHR_texture_basisu; the Basis transcoder needs eval, which the CSP forbids (contract §6b)',
+      )
+      expect(p).toContain(
+        'street.lightmap.quarter.png: is 8×8, expected 4×4 (¼ of street.lightmap.full.png)',
+      )
       expect(p).toContain('hdri/office.hdr: referenced by manifest.json but missing')
       expect(p).toContain(
         'character.json.clips.Walk.footPlants: must be a non-empty list of phases in [0, 1)',

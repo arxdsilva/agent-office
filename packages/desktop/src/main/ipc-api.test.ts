@@ -147,6 +147,20 @@ describe('connections and clipboard', () => {
   })
 })
 
+describe('power', () => {
+  it('PW-2 app:power-get answers the current power source', async () => {
+    let onBattery = false
+    const h = createIpcHandlers(ports({ power: { state: () => ({ onBattery }) } }))
+    expect(await h[IPC.appPowerGet]!()).toEqual({ onBattery: false })
+    onBattery = true
+    expect(await h[IPC.appPowerGet]!()).toEqual({ onBattery: true })
+  })
+
+  it('without a power source it reads as on AC', async () => {
+    expect(await createIpcHandlers(ports())[IPC.appPowerGet]!()).toEqual({ onBattery: false })
+  })
+})
+
 describe('registerIpc', () => {
   it('rejects calls from untrusted senders before reaching a handler', async () => {
     const registered = new Map<

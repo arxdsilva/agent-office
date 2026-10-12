@@ -14,6 +14,7 @@ import {
   emptyPhase,
   emptyStateVM,
   addContext,
+  graphicsVM,
   composerVM,
   hintFor,
   hookVM,
@@ -75,7 +76,10 @@ describe('panelVM', () => {
       present: true,
       name: 'Ada',
       subtitle: 'main · claude-code · claude-opus-5-5',
+      // Chips send `{provider, id}` refs.
+      provider: 'claude-code',
     })
+    expect(panelVM(s, 'gone', 0).provider).toBe('')
     expect(vm.meta).toEqual([
       ['Topic', 'Refactor auth'],
       ['Status', 'tool (Bash)'],
@@ -1013,5 +1017,173 @@ describe('panelVM: sessions, composer, permission and system lines', () => {
     const vm = panelVM(stateWith([]), 'gone', 0)
     expect(vm).toMatchObject({ session: null, permission: null, draftText: '' })
     expect(vm.composer.disabled).toBe(true)
+  })
+})
+
+describe('graphicsVM', () => {
+  const settings = DEFAULT_SETTINGS
+  const stats = {
+    fps: 61.6,
+    drawCalls: 300,
+    triangles: 500_000,
+    textureMB: 120.4,
+    geometryMB: 19.8,
+    width: 1280,
+    height: 720,
+  }
+
+  it('VM-1: the auto note names the preset Auto picked and why, per tier', () => {
+    const low = { start: 'low', ceiling: 'medium', why: 'integrated' } as const
+    expect(graphicsVM({ settings, tier: low }).autoNote).toBe('Auto picked: Low (integrated GPU)')
+    // The governor stepped up: the note follows.
+    expect(graphicsVM({ settings, tier: low, autoPreset: 'medium' }).autoNote).toBe(
+      'Auto picked: Medium (integrated GPU)',
+    )
+    expect(
+      graphicsVM({ settings, tier: { start: 'minimal', ceiling: 'low', why: 'software' } })
+        .autoNote,
+    ).toBe('Software rendering detected: using Minimal')
+    expect(
+      graphicsVM({ settings, tier: { start: 'high', ceiling: 'ultra', why: 'capable' } }).autoNote,
+    ).toBe('Auto picked: High (capable GPU)')
+    // Hidden for a manual preset, and before the tier is known.
+    expect(
+      graphicsVM({ settings: { ...settings, graphicsQuality: 'high' }, tier: low }).autoNote,
+    ).toBeNull()
+    expect(graphicsVM({ settings }).autoNote).toBeNull()
+  })
+
+  it('VM-2: "(custom)" shows when any advanced option is set; Reset clears it', () => {
+    const plain = graphicsVM({ settings })
+    expect(plain.custom).toBe(false)
+    expect(plain.advancedSummary).toBe('Advanced')
+    const custom = graphicsVM({
+      settings: { ...settings, graphicsAdvanced: { ...settings.graphicsAdvanced, fps: '30' } },
+    })
+    expect(custom.custom).toBe(true)
+    expect(custom.advancedSummary).toBe('Advanced (custom)')
+    expect(custom.advanced.find((r) => r.key === 'fps')!.value).toBe('30')
+  })
+
+  it('VM-3: every advanced option offers "Auto · <preset value>" first', () => {
+    const vm = graphicsVM({ settings: { ...settings, graphicsQuality: 'minimal' } })
+    const autoOf = (k: string) => vm.advanced.find((r) => r.key === k)!.options[0]
+    expect(vm.advanced.map((r) => r.key)).toEqual([
+      'resolution',
+      'fps',
+      'shadows',
+      'effects',
+      'characters',
+      'labels',
+      'links',
+      'building',
+    ])
+    expect(autoOf('fps')).toEqual({ value: 'auto', label: 'Auto · 30' })
+    expect(autoOf('resolution')!.label).toBe('Auto · 75%')
+    expect(autoOf('shadows')!.label).toBe('Auto · Off')
+    expect(autoOf('effects')!.label).toBe('Auto · Off')
+    expect(autoOf('characters')!.label).toBe('Auto · Low')
+    expect(autoOf('labels')!.label).toBe('Auto · Nearby')
+    expect(autoOf('links')!.label).toBe('Auto · Static')
+    expect(autoOf('building')!.label).toBe('Auto · Low')
+    expect(vm.autoHints.fps).toBe('Auto · 30')
+    expect(vm.autoHints.links).toBe('Auto · Static')
+    const high = graphicsVM({ settings: { ...settings, graphicsQuality: 'high' } })
+    const h = (k: string) => high.advanced.find((r) => r.key === k)!
+    expect(h('fps').options.map((o) => o.label)).toEqual([
+      'Auto · Unlimited',
+      '30',
+      '60',
+      'Unlimited',
+    ])
+    expect(h('resolution').options.map((o) => o.label)).toEqual([
+      'Auto · 100%',
+      '50%',
+      '67%',
+      '75%',
+      '100%',
+    ])
+    expect(h('effects').options[0]!.label).toBe('Auto · On')
+    expect(h('shadows').options[0]!.label).toBe('Auto · Full')
+    expect(h('effects').help).toBe('glow, ambient occlusion, anti-aliasing')
+    // Auto follows the governor's preset.
+    const auto = graphicsVM({ settings, autoPreset: 'low' })
+    expect(auto.advanced.find((r) => r.key === 'fps')!.options[0]!.label).toBe('Auto · 60')
+  })
+
+  it('VM-4: the stats line, with "(battery)" while the battery preset is in force', () => {
+    expect(graphicsVM({ settings }).now).toBeUndefined()
+    expect(graphicsVM({ settings, stats, autoPreset: 'low' }).now).toBe(
+      '62 fps · Low · GPU memory ≈ 140 MB · 1280×720',
+    )
+    const battery = { ...settings, batteryPreset: 'minimal' as const }
+    expect(graphicsVM({ settings: battery, stats, onBattery: true }).now).toBe(
+      '62 fps · Minimal (battery) · GPU memory ≈ 140 MB · 1280×720',
+    )
+    expect(graphicsVM({ settings: battery, stats, onBattery: false }).now).toBe(
+      '62 fps · High · GPU memory ≈ 140 MB · 1280×720',
+    )
+  })
+
+  it('carries the quality, power saver, battery and hardware controls', () => {
+    const vm = graphicsVM({ settings })
+    expect(vm.quality).toBe('auto')
+    expect(vm.qualityOptions.map((o) => o.label)).toEqual([
+      'Auto',
+      'Minimal',
+      'Low',
+      'Medium',
+      'High',
+      'Ultra',
+    ])
+    expect(vm.qualityOptions[1]!.help).toBe(
+      'For very old or software-rendered computers. 30 fps, no effects.',
+    )
+    expect(vm).toMatchObject({
+      saverBlur: true,
+      saverHidden: true,
+      batteryPreset: 'off',
+      hardwareAcceleration: true,
+    })
+    expect(vm.batteryOptions).toEqual([
+      { value: 'off', label: 'Off' },
+      { value: 'minimal', label: 'Minimal' },
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+    ])
+  })
+
+  it('settingsVM includes the graphics block', () => {
+    const vm = settingsVM({
+      settings,
+      hook: 'installed',
+      version: '1.0.0',
+      update: { policy: 'off', status: 'idle' },
+      graphics: { stats, autoPreset: 'medium' },
+    })
+    expect(vm.graphics.now).toBe('62 fps · Medium · GPU memory ≈ 140 MB · 1280×720')
+    expect(vm.graphicsQuality).toBe('auto')
+    expect(vm).toMatchObject({
+      graphicsAdvanced: settings.graphicsAdvanced,
+      powerSaverBlur: true,
+      powerSaverHidden: true,
+      batteryPreset: 'off',
+      hardwareAcceleration: true,
+    })
+  })
+})
+
+describe('settingsVM: hardware acceleration toggle', () => {
+  const base = {
+    settings: DEFAULT_SETTINGS,
+    hook: 'not-installed' as const,
+    version: '1.0.0',
+    update: { policy: 'auto' as const, status: 'idle' as const },
+  }
+  // macOS has no working software WebGL (SwiftShader fails on Electron 44), so turning
+  // acceleration off there would leave no 3D at all: the toggle is hidden on macOS.
+  it('offers the toggle except on macOS', () => {
+    expect(settingsVM(base).showHardwareAcceleration).toBe(true)
+    expect(settingsVM({ ...base, isMac: true }).showHardwareAcceleration).toBe(false)
   })
 })

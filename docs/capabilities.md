@@ -59,7 +59,7 @@ Sources may send **only** these forms in `AgentEvent.target` (≤ 100 chars):
 - **Built-in adapters** for `claude-code`: `fs`, `shell`, `web`, `subagents`. They're always declared.
 - **Configured MCP servers:** `ClaudeConfigReader` reads only the **keys** of `mcpServers` in `~/.claude.json`, both top-level and `projects[<cwd>]` for active session cwds. It never reads commands, args or env.
 - **Skills and rules:** `ClaudeKnowledgeReader`, for the user scope and each active cwd.
-  - **Skills:** `~/.claude/skills/*/SKILL.md`, `<cwd>/.claude/skills/*/SKILL.md`, and `~/.claude/plugins/**/skills/*/SKILL.md` (scope `plugin`). It reads the frontmatter `name` and `description`, with the description cut to 160 chars as `summary`.
+  - **Skills:** `~/.claude/skills/*/SKILL.md`, synced skills at exactly `~/.claude/skills/synced/*/*/SKILL.md` (scope `user`), `<cwd>/.claude/skills/*/SKILL.md`, and `~/.claude/plugins/**/skills/*/SKILL.md` (scope `plugin`). It reads the frontmatter `name` and `description`, with the description cut to 160 chars as `summary`.
   - **Rules:** `<cwd>/CLAUDE.md`, `<cwd>/AGENTS.md`, `<cwd>/.claude/rules/*.md`, `~/.claude/CLAUDE.md`, `~/.claude/rules/*.md`. The title is the first `# ` heading (or the file name); the summary is the first prose sentence, up to 160 chars.
   - **Memory:** `~/.claude/projects/<encoded cwd>/memory/*.md`, frontmatter `name` only, with **no summary**.
   - **Limits:** at most 48 skills, 24 rules and 24 memory entries per provider. Files over 256 KB are skipped; only frontmatter and the first 4 KB are parsed. No symlinks are followed. It re-scans every 60 s.

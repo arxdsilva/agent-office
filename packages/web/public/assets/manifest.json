@@ -8,8 +8,13 @@
     "atrium": {
       "file": "atrium.glb",
       "lightmap": {
-        "file": "atrium.lightmap.png",
-        "intensity": 11.258
+        "file": "atrium.lightmap.full.webp",
+        "intensity": 11.258,
+        "variants": {
+          "full": "atrium.lightmap.full.webp",
+          "half": "atrium.lightmap.half.webp",
+          "quarter": "atrium.lightmap.quarter.webp"
+        }
       },
       "bounds": {
         "minX": -33,
@@ -1196,8 +1201,13 @@
     "street": {
       "file": "street.glb",
       "lightmap": {
-        "file": "street.lightmap.png",
-        "intensity": 13.1493
+        "file": "street.lightmap.full.webp",
+        "intensity": 13.1493,
+        "variants": {
+          "full": "street.lightmap.full.webp",
+          "half": "street.lightmap.half.webp",
+          "quarter": "street.lightmap.quarter.webp"
+        }
       },
       "bounds": {
         "minX": -3,
@@ -1277,8 +1287,13 @@
     "garden": {
       "file": "garden.glb",
       "lightmap": {
-        "file": "garden.lightmap.png",
-        "intensity": 13.7346
+        "file": "garden.lightmap.full.webp",
+        "intensity": 13.7346,
+        "variants": {
+          "full": "garden.lightmap.full.webp",
+          "half": "garden.lightmap.half.webp",
+          "quarter": "garden.lightmap.quarter.webp"
+        }
       },
       "bounds": {
         "minX": 0,
@@ -1514,8 +1529,13 @@
     "cap": {
       "file": "cap.glb",
       "lightmap": {
-        "file": "cap.lightmap.png",
-        "intensity": 10.2628
+        "file": "cap.lightmap.full.webp",
+        "intensity": 10.2628,
+        "variants": {
+          "full": "cap.lightmap.full.webp",
+          "half": "cap.lightmap.half.webp",
+          "quarter": "cap.lightmap.quarter.webp"
+        }
       },
       "bounds": {
         "minX": -33,
@@ -1559,8 +1579,13 @@
         "terracotta": {
           "file": "wing-terracotta.glb",
           "lightmap": {
-            "file": "wing-terracotta.lightmap.png",
-            "intensity": 11.1888
+            "file": "wing-terracotta.lightmap.full.webp",
+            "intensity": 11.1888,
+            "variants": {
+              "full": "wing-terracotta.lightmap.full.webp",
+              "half": "wing-terracotta.lightmap.half.webp",
+              "quarter": "wing-terracotta.lightmap.quarter.webp"
+            }
           },
           "signColor": "#F4EDE4",
           "accent": "#D97757"
@@ -1568,8 +1593,13 @@
         "nordic": {
           "file": "wing-nordic.glb",
           "lightmap": {
-            "file": "wing-nordic.lightmap.png",
-            "intensity": 11.5513
+            "file": "wing-nordic.lightmap.full.webp",
+            "intensity": 11.5513,
+            "variants": {
+              "full": "wing-nordic.lightmap.full.webp",
+              "half": "wing-nordic.lightmap.half.webp",
+              "quarter": "wing-nordic.lightmap.quarter.webp"
+            }
           },
           "signColor": "#2E3440",
           "accent": "#5E81AC"
@@ -1577,8 +1607,13 @@
         "forest": {
           "file": "wing-forest.glb",
           "lightmap": {
-            "file": "wing-forest.lightmap.png",
-            "intensity": 11.0807
+            "file": "wing-forest.lightmap.full.webp",
+            "intensity": 11.0807,
+            "variants": {
+              "full": "wing-forest.lightmap.full.webp",
+              "half": "wing-forest.lightmap.half.webp",
+              "quarter": "wing-forest.lightmap.quarter.webp"
+            }
           },
           "signColor": "#E8E2D0",
           "accent": "#3E6B48"
@@ -1586,8 +1621,13 @@
         "ocean": {
           "file": "wing-ocean.glb",
           "lightmap": {
-            "file": "wing-ocean.lightmap.png",
-            "intensity": 10.9961
+            "file": "wing-ocean.lightmap.full.webp",
+            "intensity": 10.9961,
+            "variants": {
+              "full": "wing-ocean.lightmap.full.webp",
+              "half": "wing-ocean.lightmap.half.webp",
+              "quarter": "wing-ocean.lightmap.quarter.webp"
+            }
           },
           "signColor": "#EAF4F4",
           "accent": "#1F6F8B"
@@ -1595,8 +1635,13 @@
         "neon": {
           "file": "wing-neon.glb",
           "lightmap": {
-            "file": "wing-neon.lightmap.png",
-            "intensity": 10.4566
+            "file": "wing-neon.lightmap.full.webp",
+            "intensity": 10.4566,
+            "variants": {
+              "full": "wing-neon.lightmap.full.webp",
+              "half": "wing-neon.lightmap.half.webp",
+              "quarter": "wing-neon.lightmap.quarter.webp"
+            }
           },
           "signColor": "#2CB67D",
           "accent": "#7F5AF0"
@@ -1604,8 +1649,13 @@
         "brass": {
           "file": "wing-brass.glb",
           "lightmap": {
-            "file": "wing-brass.lightmap.png",
-            "intensity": 10.4268
+            "file": "wing-brass.lightmap.full.webp",
+            "intensity": 10.4268,
+            "variants": {
+              "full": "wing-brass.lightmap.full.webp",
+              "half": "wing-brass.lightmap.half.webp",
+              "quarter": "wing-brass.lightmap.quarter.webp"
+            }
           },
           "signColor": "#C8A45D",
           "accent": "#C8A45D"

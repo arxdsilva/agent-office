@@ -30,9 +30,13 @@ export interface ManifestNav {
   edges: [string, string][]
 }
 
+export type LightmapTierName = 'full' | 'half' | 'quarter'
+
 export interface Lightmap {
   file: string
   intensity: number
+  /** Size tiers (contract §6); absent in older manifests → every tier uses `file`. */
+  variants?: Partial<Record<LightmapTierName, string>>
 }
 
 export interface ModuleDef {
@@ -146,7 +150,16 @@ function bounds(v: unknown, path: string): AABB {
 function lightmap(v: unknown, path: string): Lightmap | undefined {
   if (v === undefined) return undefined
   const o = obj(v, path)
-  return { file: str(o, 'file', path), intensity: num(o, 'intensity', path) }
+  const lm: Lightmap = { file: str(o, 'file', path), intensity: num(o, 'intensity', path) }
+  if (o.variants !== undefined) {
+    const vp = `${path}.variants`
+    const vo = obj(o.variants, vp)
+    const variants: Partial<Record<LightmapTierName, string>> = {}
+    for (const tier of ['full', 'half', 'quarter'] as const)
+      if (vo[tier] !== undefined) variants[tier] = str(vo, tier, vp)
+    lm.variants = variants
+  }
+  return lm
 }
 
 function anchor(v: unknown, path: string): ManifestAnchor {

@@ -65,6 +65,7 @@ import {
   type ContextRegistry,
   type IpcRegistrar,
 } from './ipc-api.ts'
+import { createPowerBridge, type PowerMonitorLike } from './power.ts'
 import { isTrustedSender } from './security.ts'
 
 /** Electron-side adapters, built in index.ts (or faked in tests). */
@@ -81,6 +82,8 @@ export interface Shell {
   rendererUrl: string
   /** Native file/folder picker (absolute paths; they never reach the renderer). */
   dialog?: { pick(kind: 'files' | 'folder'): Promise<string[]> }
+  /** Electron's powerMonitor (battery preset); absent reads as on AC. */
+  power?: PowerMonitorLike
   quit(): void
 }
 
@@ -458,6 +461,10 @@ export function compose(o: ComposeOptions) {
       const settings = effective(await office.settings.get())
       office.attention.setNotificationsEnabled(settings.notifications)
       office.updates.setEnabled(settings.autoUpdate)
+      const power = shell.power
+        ? createPowerBridge(shell.power, (channel, payload) => shell.window.send(channel, payload))
+        : undefined
+      if (power) stops.push(power.stop)
 
       registerIpc(
         shell.ipc,
@@ -473,6 +480,7 @@ export function compose(o: ComposeOptions) {
           version: shell.platform.version,
           connections: { info: connectionInfo, test: testEvent },
           copyText: (text) => shell.clipboard.writeText(text),
+          ...(power ? { power } : {}),
           onHookChanged: () => void refreshHookStatus(),
           onReady: () => {
             scheduler.after(0, () => {

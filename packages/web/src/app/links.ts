@@ -3,6 +3,7 @@
 import type { Capability } from '@agent-office/shared'
 import { CALL_FADE_MS, LIBRARY_FADE_MS } from './behavior.ts'
 import { libraryKind, type LibraryMap } from './library.ts'
+import type { LinkMode } from './graphics-types.ts'
 import type { AgentPose, BuildingLayout, Link, Vec3 } from './office-types.ts'
 import type { SlotMap } from './stations.ts'
 
@@ -132,4 +133,14 @@ export function handPort(pose: AgentPose): Vec3 {
     y: pose.posture === 'stand' ? HAND_Y.stand : HAND_Y.sit,
     z: pose.pos.z + Math.cos(pose.heading) * HAND_REACH,
   }
+}
+
+/** A link as drawn: 'line' is the static style (one straight segment, no per-frame update). */
+export type RenderLink = Omit<Link, 'style'> & { style: Link['style'] | 'line' }
+
+/** The Capability links lever (low-spec plan §5.3): none, static lines, or animated as planned. */
+export function linksForMode(links: Link[], mode: LinkMode): RenderLink[] {
+  if (mode === 'off') return []
+  if (mode === 'animated') return links
+  return links.map((l) => ({ ...l, style: 'line' }))
 }

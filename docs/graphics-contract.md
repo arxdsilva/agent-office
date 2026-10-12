@@ -93,6 +93,12 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 - Every mesh with `extras.role = "baked"` has a second UV set (`TEXCOORD_1`) for it.
 - **Runtime:** `material.lightMap = tex` (with `tex.channel = 1`, `tex.colorSpace = SRGBColorSpace`, `flipY = false`) and `material.lightMapIntensity = manifest.modules.<m>.lightmap.intensity`.
 - Baked meshes should not also receive real-time lighting from the scene lights. The runtime handles this by using a dim ambient light plus an environment map for specular only.
+- **Size tiers (additive):** `lightmap.variants?: { full, half, quarter }` lists images at full, ½ and ¼ resolution (e.g. `atrium.lightmap.half.webp`). The build writes WebP q95 from the 24-bit bake (sharp `lanczos3` for the downscales; SSIM ≥ 0.97 against the bake, checked by `--verify --visual`). `lightmap.file` is the full tier; readers fall back to it when `variants` is absent. The presets choose the tier (Minimal ¼, Low and Medium ½, High and Ultra full).
+- The lossless 8-bit PNG bake stays in `assets/out/` as the source for `--repack`; `public/assets` ships only the WebP tiers.
+
+## 6b. Textures (additive)
+- **WebP/PNG only, no KTX2:** three's Basis transcoder (emscripten embind) needs eval (`new Function`), which the app's CSP forbids. Glb textures stay WebP q82 (base colour ≤ 1024², other slots ≤ 512²), and no glb may use `KHR_texture_basisu`.
+- Every glb texture carries `extras.hash` (on the glTF image, so three puts it in `texture.userData.hash`): the first 12 hex chars of sha1 over the shipped image's decoded RGBA pixels. The runtime keeps **one GPU texture per hash across all modules**, so the six wings share their material textures (26 unique images).
 
 ## 7. `manifest.json` (written to `packages/web/public/assets/manifest.json`)
 ```json
@@ -103,13 +109,13 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
   "hash": "<sha256 of build inputs>",
   "hdri": "hdri/office.hdr",
   "modules": {
-    "atrium": { "file": "atrium.glb", "lightmap": { "file": "atrium.lightmap.png", "intensity": 3.2 },
+    "atrium": { "file": "atrium.glb", "lightmap": { "file": "atrium.lightmap.full.webp", "intensity": 3.2, "variants": { "full": "atrium.lightmap.full.webp", "half": "atrium.lightmap.half.webp", "quarter": "atrium.lightmap.quarter.webp" } },
                 "bounds": { "minX": -27, "maxX": 27, "minZ": -24, "maxZ": 0 },
                 "anchors": { "...": {} }, "nav": { "nodes": {}, "edges": [] } },
     "street": { "file": "street.glb", "lightmap": { "...": "" }, "bounds": {}, "anchors": {}, "nav": {} },
     "garden": { "file": "garden.glb", "...": "" },
     "cap":    { "file": "cap.glb", "...": "" },
-    "wing":   { "themes": { "terracotta": { "file": "wing-terracotta.glb", "lightmap": { "file": "wing-terracotta.lightmap.png", "intensity": 2.8 },
+    "wing":   { "themes": { "terracotta": { "file": "wing-terracotta.glb", "lightmap": { "file": "wing-terracotta.lightmap.full.webp", "intensity": 2.8, "variants": {} },
                                             "signColor": "#F4EDE4", "accent": "#D97757" },
                             "nordic": {}, "forest": {}, "ocean": {}, "neon": {}, "brass": {} },
                 "bounds": { "minX": 0, "maxX": 24, "minZ": -9, "maxZ": 9 },
@@ -146,6 +152,7 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 | `street.glb`, `garden.glb`, `cap.glb` | 3 MB each | 60k |
 | `character.glb` | 1.5 MB | — |
 | `packages/web/public/assets/` total | 55 MB | — |
+| GPU texture memory estimate (all 6 themes, RGBA8 × 4/3, deduped by `extras.hash`): full / ½ / ¼ lightmap tier | 340 / 150 / 110 MB | — |
 
 ## 9b. Accepted deviations (reported by the asset builder, all additive)
 - Ceiling meshes also carry `TEXCOORD_1` and `extras.lightmap=true`.
@@ -155,6 +162,8 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 - Anchors live only in the manifest; there are no glTF empties.
 - Static meshes are joined per material and lightmapped, so there's no GPU instancing.
 - Reception monitors are static, not runtime screens.
+- Lightmaps ship as WebP q95 tiers, not PNG. Earlier builds wrote the PNG with sharp's `effort` option, which quietly switched to a 256-colour palette (up to 69 levels off the bake). The tiers now come from the 24-bit bake.
+- Measured after `make assets-repack`: 40.6 MB on disk. GPU estimate: 86.5 MB of glb textures (26 unique) plus lightmaps, giving 328 MB at full, 147 MB at ½ and 102 MB at ¼.
 
 ## 10. Branding
 No logos, trademarks or real company names in any asset. Signs are blank planes; the runtime draws the provider id as text.

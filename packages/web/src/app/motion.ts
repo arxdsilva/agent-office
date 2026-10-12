@@ -137,6 +137,7 @@ const fromPreset = (p: Preset): CharacterQuality => ({
 })
 /** The character half of the quality presets (plan §4.2), derived from `PRESETS`. */
 export const CHARACTER_QUALITY: Readonly<Record<CharacterPreset, CharacterQuality>> = {
+  minimal: fromPreset('minimal'),
   low: fromPreset('low'),
   medium: fromPreset('medium'),
   high: fromPreset('high'),

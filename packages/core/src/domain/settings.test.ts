@@ -11,6 +11,10 @@ describe('mergeSettings', () => {
     })
     expect(mergeSettings(DEFAULT_SETTINGS, { port: 5000 }).restartRequired).toBe(true)
     expect(mergeSettings(DEFAULT_SETTINGS, { claudeAdapter: false }).restartRequired).toBe(true)
+    // Software rendering is an Electron startup switch.
+    expect(mergeSettings(DEFAULT_SETTINGS, { hardwareAcceleration: false }).restartRequired).toBe(
+      true,
+    )
     expect(mergeSettings(DEFAULT_SETTINGS, { discoverCapabilities: false }).restartRequired).toBe(
       true,
     )

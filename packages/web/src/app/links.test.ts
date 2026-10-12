@@ -15,6 +15,7 @@ import {
   arcControl,
   handPort,
   linkColor,
+  linksForMode,
   planLinks,
   type LinkCall,
 } from './links.ts'
@@ -168,5 +169,39 @@ describe('agent ports', () => {
     expect(h.x).toBeCloseTo(0)
     expect(h.z).toBeGreaterThan(0)
     expect(handPort(at({ posture: 'sit' })).y).toBeLessThan(h.y)
+  })
+})
+
+describe('linksForMode (LK-1)', () => {
+  const l = (id: string, style: 'dash' | 'particles') =>
+    ({
+      id,
+      agentId: 'a',
+      capabilityId: id,
+      category: 'adapter',
+      from: { x: 0, y: 1, z: 0 },
+      to: { x: 1, y: 1, z: 1 },
+      control: { x: 0.5, y: 2, z: 0.5 },
+      color: '#fff',
+      label: id,
+      style,
+      state: 'calling',
+      since: 0,
+      opacity: 1,
+    }) as const
+  const links = [l('fs', 'dash'), l('skill:x', 'particles')]
+
+  it('off draws no links', () => {
+    expect(linksForMode(links, 'off')).toEqual([])
+  })
+
+  it('static marks every link as a straight line', () => {
+    const out = linksForMode(links, 'static')
+    expect(out.map((x) => x.style)).toEqual(['line', 'line'])
+    expect(out.map((x) => x.id)).toEqual(['fs', 'skill:x'])
+  })
+
+  it('animated keeps them as planned', () => {
+    expect(linksForMode(links, 'animated')).toBe(links)
   })
 })

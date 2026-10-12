@@ -15,7 +15,7 @@ import {
   type UseMenuVM,
 } from '../../app/session-types.ts'
 import type { PanelVM } from '../../app/view-models.ts'
-import type { PanelView } from '../../ports.ts'
+import type { CapabilityRef, PanelView } from '../../ports.ts'
 import { byId, el } from './el.ts'
 import { openMenu, type MenuGroup } from './menu.ts'
 
@@ -200,6 +200,10 @@ export class DomPanel implements PanelView {
   onDraft(fn: (text: string) => void) {
     this.draftFn = fn
   }
+  private pickCapFn: (ref: CapabilityRef) => void = () => {}
+  onPickCapability(fn: (ref: CapabilityRef) => void) {
+    this.pickCapFn = fn
+  }
 
   open(vm: PanelVM): void {
     this.root.hidden = false
@@ -248,7 +252,7 @@ export class DomPanel implements PanelView {
       rows.push(el('dt', 'Parent'), dd)
     }
     byId('p-meta').replaceChildren(...rows)
-    renderChips(byId('p-used'), vm.used)
+    renderChips(byId('p-used'), vm.used, panelProvider(vm), (ref) => this.pickCapFn(ref))
     this.renderHint(vm)
     this.renderSession(vm.session)
     this.renderPermission(vm.permission)
@@ -453,16 +457,26 @@ export class DomPanel implements PanelView {
 }
 
 /** "Connections used" / "Skills & rules used" rows of colored chips with use counts. */
-function renderChips(root: HTMLElement, used: PanelVM['used']): void {
+function renderChips(
+  root: HTMLElement,
+  used: PanelVM['used'],
+  provider: string,
+  pick: (ref: CapabilityRef) => void,
+): void {
   root.hidden = !used
   if (!used) return root.replaceChildren()
   const group = (title: string, chips: NonNullable<PanelVM['used']>['adapters']) => {
     if (!chips.length) return []
     const list = el('ul', undefined, 'chips')
     for (const c of chips) {
-      const li = el('li', `${c.label} · ${c.count}`, 'chip')
-      li.style.setProperty('--chip', c.color)
-      li.dataset.capabilityId = c.id
+      const li = el('li')
+      // A chip opens the same as a Library row: camera to the surface + Capability panel (L9).
+      const btn = el('button', `${c.label} · ${c.count}`, 'chip')
+      btn.type = 'button'
+      btn.style.setProperty('--chip', c.color)
+      btn.dataset.capabilityId = c.id
+      btn.addEventListener('click', () => pick({ provider, id: c.id }))
+      li.append(btn)
       list.append(li)
     }
     return [el('h3', title), list]
@@ -471,4 +485,9 @@ function renderChips(root: HTMLElement, used: PanelVM['used']): void {
     ...group('Connections used', used.adapters),
     ...group('Skills & rules used', used.library),
   )
+}
+
+/** The agent's provider for chip refs (`PanelVM.provider`); empty → the controller fills it in. */
+function panelProvider(vm: PanelVM): string {
+  return (vm as PanelVM & { provider?: string }).provider ?? ''
 }

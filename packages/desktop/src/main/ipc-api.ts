@@ -24,6 +24,7 @@ import {
   SettingsPatchSchema,
   type ConnectionInfo,
   type ContextRef,
+  type PowerState,
   type StartResult,
   type SendResult,
   type ServerMessage,
@@ -77,6 +78,8 @@ export interface IpcPorts {
   /** Managed Claude Code sessions; the session and context channels exist only with both. */
   sessions?: ManagedSessions
   context?: ContextRegistry
+  /** The power source (Electron powerMonitor via power.ts); absent reads as on AC. */
+  power?: { state(): PowerState }
 }
 
 export type IpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -157,6 +160,7 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
       if (!parsed.success) throw new Error('invalid text')
       p.copyText(parsed.data)
     },
+    [IPC.appPowerGet]: (): PowerState => p.power?.state() ?? { onBattery: false },
   }
   const { sessions, context } = p
   if (!sessions || !context) return handlers

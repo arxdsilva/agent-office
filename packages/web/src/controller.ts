@@ -1,8 +1,8 @@
 import {
   DEFAULT_SETTINGS,
+  type Capability,
   type ConnectionInfo,
   type ContextRef,
-  type GraphicsQuality,
   type Grouping,
   type HookStatus,
   type ModelOption,
@@ -13,6 +13,24 @@ import {
 } from '@agent-office/shared'
 import { capabilityBubbles, capabilityPanelVM, surfacesVM, usedChips } from './app/capability-vm.ts'
 import { createDirector, type Director } from './app/director.ts'
+import { GFX_COPY } from './app/graphics-copy.ts'
+import type { Effective, GraphicsStats, HardwareInfo, Tier } from './app/graphics-types.ts'
+import type { LibraryMap } from './app/library.ts'
+import { LIB_COPY } from './app/library-copy.ts'
+import type { LibrarySort, LibraryTab, LibraryVM } from './app/library-types.ts'
+import {
+  libraryVM,
+  moreTooltipText,
+  overflowCount,
+  parseMore,
+  shelfSlot,
+  tooltipText,
+} from './app/library-vm.ts'
+import { createGovernor, effectiveGraphics, type Governor } from './app/quality.ts'
+import type { SlotMap } from './app/stations.ts'
+import { assignLibrary } from './app/library.ts'
+import { assignStations } from './app/stations.ts'
+import { detectTier } from './app/tier.ts'
 import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
 import { COPY } from './app/connect-copy.ts'
@@ -50,12 +68,15 @@ import type {
   ConnectView,
   EmptyStateView,
   HudView,
+  LibraryView,
   NewSessionView,
   OfficeGateway,
   PanelView,
   SceneView,
   SettingsView,
   ToastView,
+  TooltipView,
+  ViewBarView,
 } from './ports.ts'
 
 export interface ControllerDeps {
@@ -70,6 +91,18 @@ export interface ControllerDeps {
   empty: EmptyStateView
   toast: ToastView
   newSession: NewSessionView
+  /** The Library browser drawer, the hover tooltip and the camera view bar (low-spec plan §B). */
+  library: LibraryView
+  tooltip: TooltipView
+  viewBar: ViewBarView
+  /** `document`: visibility (pause while hidden) and focus at start (low-spec plan §5.2). */
+  doc?: PageVisibility
+  /** `window`: focus/blur events (lower frame rate while unfocused). */
+  win?: WindowFocus
+  /** What the renderer learned about the GPU (Auto's hardware tier); null when unknown. */
+  hardware?: () => HardwareInfo | null
+  /** `window.devicePixelRatio` (read on every graphics update; default: the hardware's, else 1). */
+  devicePixelRatio?: () => number
   /** `window.matchMedia`: the scene follows `prefers-color-scheme` (plan §5.6). */
   matchMedia?: (query: string) => ColorSchemeQuery
   grouping: Grouping
@@ -79,9 +112,33 @@ export interface ControllerDeps {
   after: (ms: number, fn: () => void) => () => void
   /** Windows: the curl snippet gets the PowerShell note. */
   isWindows?: boolean
+  /** macOS: hides the hardware acceleration toggle (no software WebGL there). */
+  isMac?: boolean
   /** Snippet language remembered from last time (the DOM adapter keeps it). */
   snippetLang?: SnippetLang
 }
+
+/** The part of `Document` the controller uses (visibility and focus). */
+export interface PageVisibility {
+  readonly hidden: boolean
+  hasFocus(): boolean
+  addEventListener(type: 'visibilitychange', fn: () => void): void
+  removeEventListener(type: 'visibilitychange', fn: () => void): void
+}
+
+/** The part of `Window` the controller uses (focus and blur). */
+export interface WindowFocus {
+  addEventListener(type: 'focus' | 'blur', fn: () => void): void
+  removeEventListener(type: 'focus' | 'blur', fn: () => void): void
+}
+
+/** Graphics sampling: the Auto governor and the Settings stats line (2 Hz). */
+export const GFX_POLL_MS = 500
+/** Context losses within this window count towards the "switch to Minimal?" prompt. */
+export const LOSS_WINDOW_MS = 5 * 60_000
+export const LOSSES_BEFORE_PROMPT = 3
+/** Capability panel row for a capability without a surface slot. */
+export const NOT_ON_SHELF_ROW: [string, string] = ['Where', LIB_COPY.notOnShelf]
 
 /** The part of `MediaQueryList` the controller uses. */
 export interface ColorSchemeQuery {
@@ -124,8 +181,33 @@ export function createController(d: ControllerDeps) {
   let update: UpdateState = { policy: 'off', status: 'idle' }
   let hook: HookStatus = 'not-installed'
   let restartNote = false
-  let quality: GraphicsQuality | null = null
   let allowBypass = false
+  /** Last settings and version seen (the 2 Hz Settings refresh renders from these, no IPC). */
+  let settingsNow: Settings | undefined
+  let versionNow = ''
+
+  // Graphics (low-spec plan §5): settings ⊕ hardware tier ⊕ power and focus → Effective.
+  let tier: Tier | undefined
+  let governor: Governor = createGovernor()
+  let effective: Effective | undefined
+  let effectiveKey = ''
+  let lastStats: GraphicsStats | undefined
+  let focused = d.doc?.hasFocus() ?? true
+  let hidden = d.doc?.hidden ?? false
+  /** Main's view of the window (hidden/minimized → false); page visibility alone isn't reliable. */
+  let windowVisible = true
+  let onBattery = false
+  let losses: number[] = []
+  let recovering = false
+
+  // Library browser (Part B)
+  let libProvider: string | undefined
+  let libTab: LibraryTab = 'skills'
+  let libQuery = ''
+  let libSort: LibrarySort = 'recent'
+  let libFocus: LibraryVM['focus']
+  let lastLibrary: Map<string, LibraryMap> | undefined
+  let lastStations: Map<string, SlotMap> | undefined
   const stops: (() => void)[] = []
 
   // Managed sessions and the composer (plan §2.1–2.4)
@@ -162,11 +244,77 @@ export function createController(d: ControllerDeps) {
   let demo: DemoStart = 'idle'
   let cancelDemoTimer = () => {}
 
-  /** The scene applies presets live; forward only actual changes. */
-  const applyQuality = (q: GraphicsQuality) => {
-    if (q === quality) return
-    quality = q
-    d.scene.setQuality(q)
+  /** Recomputes the effective graphics and forwards actual changes (or all, with `force`). */
+  const applyGraphics = (force = false) => {
+    const s = settingsNow ?? DEFAULT_SETTINGS
+    const e = effectiveGraphics({
+      preset: s.graphicsQuality === 'auto' ? governor.preset : s.graphicsQuality,
+      advanced: s.graphicsAdvanced,
+      dpr: d.devicePixelRatio?.() ?? d.hardware?.()?.dpr ?? 1,
+      power: { focused, hidden: hidden || !windowVisible, onBattery },
+      saver: { blur: s.powerSaverBlur, hidden: s.powerSaverHidden, battery: s.batteryPreset },
+    })
+    const key = JSON.stringify(e)
+    if (!force && key === effectiveKey) return
+    effectiveKey = key
+    effective = e
+    d.scene.setGraphics(e)
+  }
+
+  /** New settings: a switch back to Auto restarts the governor at the hardware tier. */
+  const applySettings = (s: Settings) => {
+    if (s.graphicsQuality === 'auto' && settingsNow && settingsNow.graphicsQuality !== 'auto')
+      governor.reset()
+    settingsNow = s
+    allowBypass = s.allowBypassPermissions
+    applyGraphics()
+  }
+
+  const graphicsFacts = () => ({
+    ...(tier && { tier }),
+    autoPreset: governor.preset,
+    ...(lastStats && { stats: lastStats }),
+    ...(effective && { effective }),
+    onBattery,
+  })
+
+  /** 2 Hz: feeds the Auto governor and refreshes the Settings stats line while it is open. */
+  const pollGraphics = () => {
+    const settingsOpen = d.settings.isOpen()
+    const auto =
+      settingsNow?.graphicsQuality === 'auto' &&
+      !!effective &&
+      effective.fpsLimit !== 0 &&
+      effective.preset === governor.preset
+    if (!settingsOpen && !auto) return
+    lastStats = d.scene.stats()
+    if (auto && governor.sample(lastStats.fps, GFX_POLL_MS / 1000, effective!.fpsLimit))
+      applyGraphics()
+    if (settingsOpen) showSettings(false)
+  }
+
+  const onPower = (s: { onBattery: boolean }) => {
+    onBattery = s.onBattery
+    applyGraphics()
+    if (d.settings.isOpen()) showSettings(false)
+  }
+
+  const contextLost = () => {
+    const now = d.clock.now()
+    losses = [...losses.filter((t) => now - t <= LOSS_WINDOW_MS), now]
+    recovering = true
+    d.banner.show({ kind: 'info', text: GFX_COPY.recovering })
+    if (losses.length >= LOSSES_BEFORE_PROMPT)
+      d.toast.show(GFX_COPY.keepFailing, {
+        label: GFX_COPY.switchMinimal,
+        run: () => void changeSettings({ graphicsQuality: 'minimal' }),
+      })
+  }
+
+  const contextRestored = () => {
+    if (recovering) d.banner.show(null)
+    recovering = false
+    applyGraphics(true)
   }
 
   /** Where the director has an agent right now, for the panel's "Now" line. */
@@ -256,7 +404,8 @@ export function createController(d: ControllerDeps) {
     if (!openCapability) return
     const c = capabilityOf(openCapability.provider, openCapability.id)
     if (!c) return
-    const vm = capabilityPanelVM(c, d.clock.now(), nameOf, showLinks)
+    const base = capabilityPanelVM(c, d.clock.now(), nameOf, showLinks)
+    const vm = slotOf(c) === undefined ? { ...base, meta: [...base.meta, NOT_ON_SHELF_ROW] } : base
     if (open) d.capabilityPanel.open(vm)
     else d.capabilityPanel.render(vm)
   }
@@ -270,14 +419,75 @@ export function createController(d: ControllerDeps) {
     d.scene.focusCapability(null)
   }
 
+  /** The capability's own surface slot in its provider's wings (undefined: overflow). */
+  const slotOf = (c: Capability) =>
+    shelfSlot(
+      c,
+      lastLibrary?.get(c.provider),
+      lastStations?.get(c.provider),
+      state.capabilities.get(c.provider),
+    )
+
+  /** Opens the Capability panel; the camera flies there only when it has a surface. */
   const pickCapability = (ref: CapabilityRef) => {
-    if (!capabilityOf(ref.provider, ref.id)) return
+    const more = parseMore(ref.id)
+    if (more)
+      return openLibrary({ provider: ref.provider, tab: more.tab ?? libTab, focus: 'overflow' })
+    const c = capabilityOf(ref.provider, ref.id)
+    if (!c) return
     if (selected) select(null)
     openCapability = ref
     showLinks = false
     d.scene.highlightLinks(null)
-    d.scene.focusCapability(ref)
+    if (slotOf(c) !== undefined) d.scene.focusCapability(ref)
+    else d.scene.focusCapability(null)
     renderCapability(true)
+  }
+
+  const selectedProvider = () =>
+    selected ? (state.agents.get(selected) ?? plans.get(selected)?.agent)?.provider : undefined
+
+  const libraryVMNow = () => {
+    const sp = selectedProvider()
+    return libraryVM({
+      capabilities: state.capabilities,
+      ...(libProvider && { provider: libProvider }),
+      ...(sp && { selectedProvider: sp }),
+      tab: libTab,
+      query: libQuery,
+      sort: libSort,
+      ...(lastLibrary && { library: lastLibrary }),
+      ...(lastStations && { stations: lastStations }),
+      now: d.clock.now(),
+      nameOf,
+      ...(libFocus && { focus: libFocus }),
+    })
+  }
+  const renderLibrary = () => {
+    if (d.library.isOpen()) d.library.render(libraryVMNow())
+  }
+  function openLibrary(
+    o: { provider?: string; tab?: LibraryTab; focus?: LibraryVM['focus'] } = {},
+  ) {
+    libProvider = o.provider
+    libTab = o.tab ?? 'skills'
+    libFocus = o.focus
+    const vm = libraryVMNow()
+    libProvider = vm.provider || undefined
+    d.library.open(vm)
+  }
+
+  /** Tooltip text for a hovered surface (null: nothing to say). */
+  const hoverText = (ref: CapabilityRef): string | null => {
+    const more = parseMore(ref.id)
+    if (more) {
+      const caps = state.capabilities.get(ref.provider) ?? []
+      const lib = lastLibrary?.get(ref.provider) ?? assignLibrary(caps)
+      const st = lastStations?.get(ref.provider) ?? assignStations(caps)
+      return moreTooltipText(overflowCount(more.tab ?? 'skills', lib, st))
+    }
+    const c = capabilityOf(ref.provider, ref.id)
+    return c ? tooltipText(c) : null
   }
 
   const renderPanel = () => {
@@ -297,6 +507,8 @@ export function createController(d: ControllerDeps) {
     const u = director.update(state, d.clock.now())
     layout = u.layout
     plans = u.plans
+    lastLibrary = u.library
+    lastStations = u.stations
     if (u.layoutChanged) d.scene.setBuilding(u.layout)
     d.scene.direct(u.plans, u.departed)
     d.scene.setLinks(u.links)
@@ -311,6 +523,7 @@ export function createController(d: ControllerDeps) {
       pendingGoTo = null
     }
     renderCapability()
+    renderLibrary()
     if (selected && vmFor(selected).activity !== shownActivity) renderPanel()
   }
 
@@ -359,13 +572,37 @@ export function createController(d: ControllerDeps) {
       known ?? d.gateway.settings.get(),
       d.gateway.app.version(),
     ])
-    applyQuality(settings.graphicsQuality)
-    allowBypass = settings.allowBypassPermissions
+    applySettings(settings)
+    versionNow = version
     hook = await d.gateway.hook.status()
     renderPanel()
-    const vm = settingsVM({ settings, hook, version, update, restartNote })
+    if (open) lastStats = d.scene.stats()
+    showSettings(open)
+  }
+
+  /** Renders Settings from the last known facts (the 2 Hz refresh uses this, no IPC). */
+  function showSettings(open: boolean) {
+    if (!settingsNow) return
+    const vm = settingsVM({
+      settings: settingsNow,
+      hook,
+      version: versionNow,
+      update,
+      restartNote,
+      graphics: graphicsFacts(),
+      ...(d.isMac && { isMac: true }),
+    })
     if (open) d.settings.open(vm)
     else if (d.settings.isOpen()) d.settings.render(vm)
+  }
+
+  /** A settings patch from any entry point; errors show in Settings. */
+  async function changeSettings(patch: SettingsPatch) {
+    await guarded(async () => {
+      const r = await d.gateway.settings.set(patch)
+      restartNote = restartNote || r.restartRequired
+      await renderSettings(false, r.settings)
+    })()
   }
 
   const connectVMNow = (info: ConnectionInfo) =>
@@ -483,6 +720,45 @@ export function createController(d: ControllerDeps) {
 
   // View intents
   d.scene.onPick(select)
+  d.scene.onContextLost(contextLost)
+  d.scene.onContextRestored(contextRestored)
+  d.scene.onViews((views) => d.viewBar.render(views))
+  d.viewBar.onPick((id) => d.scene.goTo(id))
+  d.scene.onHoverSurface((ref, x, y) => {
+    const text = ref && hoverText(ref)
+    if (text) d.tooltip.show(text, x, y)
+    else d.tooltip.hide()
+  })
+
+  // Library browser (low-spec plan §B2)
+  d.hud.onLibrary(() => openLibrary())
+  d.library.onProvider((p) => {
+    libProvider = p
+    libFocus = undefined
+    renderLibrary()
+  })
+  d.library.onTab((t) => {
+    libTab = t
+    libFocus = undefined
+    renderLibrary()
+  })
+  d.library.onSearch((q) => {
+    libQuery = q
+    renderLibrary()
+  })
+  d.library.onSort((srt) => {
+    libSort = srt
+    renderLibrary()
+  })
+  d.library.onClose(() => {
+    libFocus = undefined
+  })
+  d.library.onPick(pickCapability)
+  // Agent panel chips: the same as a drawer pick; an empty provider means the selected agent's.
+  d.panel.onPickCapability((ref) => {
+    const provider = ref.provider || selectedProvider()
+    if (provider) pickCapability({ provider, id: ref.id })
+  })
   d.scene.onPickCapability(pickCapability)
   d.capabilityPanel.onClose(closeCapability)
   d.capabilityPanel.onToggleLinks((on) => {
@@ -686,13 +962,7 @@ export function createController(d: ControllerDeps) {
     renderNewSession()
   })
   d.hud.onOpenSettings(() => renderSettings(true))
-  d.settings.onChange(async (patch: SettingsPatch) => {
-    await guarded(async () => {
-      const r = await d.gateway.settings.set(patch)
-      restartNote = restartNote || r.restartRequired
-      await renderSettings(false, r.settings)
-    })()
-  })
+  d.settings.onChange(changeSettings)
   d.settings.onHookAction(async (action) => {
     await guarded(async () => {
       hook =
@@ -789,9 +1059,34 @@ export function createController(d: ControllerDeps) {
     stops.push(() => mql.removeEventListener('change', onChange))
   }
 
+  /** Window focus and page visibility drive the power saver (low-spec plan §5.2). */
+  const followPage = () => {
+    const onFocus = () => ((focused = true), applyGraphics())
+    const onBlur = () => ((focused = false), applyGraphics())
+    const onVisibility = () => {
+      hidden = d.doc!.hidden
+      applyGraphics()
+    }
+    if (d.win) {
+      const win = d.win
+      win.addEventListener('focus', onFocus)
+      win.addEventListener('blur', onBlur)
+      stops.push(() => {
+        win.removeEventListener('focus', onFocus)
+        win.removeEventListener('blur', onBlur)
+      })
+    }
+    if (d.doc) {
+      const doc = d.doc
+      doc.addEventListener('visibilitychange', onVisibility)
+      stops.push(() => doc.removeEventListener('visibilitychange', onVisibility))
+    }
+  }
+
   return {
     async start(): Promise<void> {
       followColorScheme()
+      followPage()
       stops.push(
         d.gateway.onMessage((m) => {
           state = applyMessage(state, m)
@@ -818,6 +1113,12 @@ export function createController(d: ControllerDeps) {
           update = s
           void renderSettings(false)
         }),
+        d.gateway.app.onPower(onPower),
+        d.gateway.app.onWindowVisibility((visible) => {
+          windowVisible = visible
+          applyGraphics()
+        }),
+        d.every(GFX_POLL_MS, pollGraphics),
         d.every(1000, renderPanel),
         d.every(DIRECT_MS, () => {
           messageDirected = false
@@ -828,8 +1129,16 @@ export function createController(d: ControllerDeps) {
         d.gateway.ready(),
         d.gateway.settings.get().catch(() => DEFAULT_SETTINGS),
       ])
-      applyQuality(settings.graphicsQuality)
-      allowBypass = settings.allowBypassPermissions
+      const hw = d.hardware?.()
+      if (hw) {
+        tier = detectTier(hw)
+        governor = createGovernor(tier)
+      }
+      applySettings(settings)
+      void d.gateway.app
+        .power()
+        .then(onPower)
+        .catch(() => {})
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       noteArrivals()
       ready = true

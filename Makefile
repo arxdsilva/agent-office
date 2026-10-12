@@ -43,6 +43,9 @@ assets: ## Build all 3D assets with Blender (final quality bake) → packages/we
 assets-draft: ## Fast asset build for iteration (low bake samples, small lightmaps)
 	node assets/build.mjs --quality draft
 
+assets-repack: ## Re-encode published assets (KTX2 textures, lightmap tiers) without a Blender bake
+	node assets/build.mjs --repack
+
 assets-test: ## Run the Blender-side asset tests (naming, counts, loops, budgets)
 	node assets/build.mjs --test
 
@@ -55,8 +58,11 @@ screenshots: ## Capture in-app screenshots from fixed camera bookmarks → docs/
 screenshots-macos: ## macOS only: capture the real tray menu and a native notification (needs Screen Recording + Accessibility)
 	node scripts/capture/macos.mjs
 
-perf: ## Measure FPS with 150 mock agents (needs make build)
+perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs
+
+perf-low: ## Low-end simulation: Minimal and Low on software GL (SwiftShader), 60 agents
+	$(ELECTRON_ENV) node scripts/perf.mjs --low-end
 
 test: ## Run unit tests
 	pnpm test

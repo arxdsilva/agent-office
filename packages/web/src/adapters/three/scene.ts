@@ -1,16 +1,24 @@
 // SceneView port → three.js HQ: assets, building, characters, labels, camera and post-processing.
 // Rendering only: what to show comes from the controller (layout + plans from the director).
-import { STATUS_COLORS, type GraphicsQuality } from '@agent-office/shared'
+// Graphics (low-spec plan §5): `setGraphics` applies every lever; a frame pacer caps or pauses
+// the render loop; `stats()` reports GPU memory; WebGL context loss and restore are surfaced.
+import { GraphicsAdvancedSchema, STATUS_COLORS, type GraphicsQuality } from '@agent-office/shared'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { toWorld } from '../../app/building.ts'
+import { createPacer } from '../../app/frame-pacer.ts'
+import type { Effective, GraphicsStats, HardwareInfo } from '../../app/graphics-types.ts'
+import type { ViewEntry } from '../../app/library-types.ts'
+import { linksForMode, type RenderLink } from '../../app/links.ts'
 import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
-import type { AgentPlan, BuildingLayout, Link } from '../../app/office-types.ts'
+import type { AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/office-types.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
-import { createGovernor, PRESETS, resolvePreset, type Preset } from '../../app/quality.ts'
+import { frameSurfaces } from '../../app/framing.ts'
+import { effectiveGraphics, resolvePreset, type Preset } from '../../app/quality.ts'
 import type { ProviderSurfaces } from '../../app/capability-vm.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../../ports.ts'
-import { AssetStore, LoadingScreen, type LoadingElements } from './assets.ts'
+import { AssetStore, LoadingScreen, textureBytes, within, type LoadingElements } from './assets.ts'
 import { BuildingView, type ScreenState } from './building-view.ts'
 import { anchorBookmark, bookmarksFor, CameraDirector, type Bookmark } from './camera-director.ts'
 import { CharacterSystem, loadCharacterAssets } from './characters.ts'
@@ -25,8 +33,8 @@ export interface SceneElements {
   crosshair: HTMLElement
   walkHelp: HTMLElement
   loading: LoadingElements
-  /** Camera bookmark buttons (Atrium, Main Street, wings, Overview). */
-  views: HTMLElement
+  /** Unused: the view bar is a DOM adapter fed by `onViews` (kept so older wiring compiles). */
+  views?: HTMLElement
   /** Accessible list of wing sign texts (the signs themselves are canvas textures). */
   wingSigns: HTMLElement
   stats: HTMLElement
@@ -47,16 +55,48 @@ const debugEnabled = () => new URLSearchParams(location.search).get('debug') ===
 
 type Vec3T = [number, number, number]
 
+export interface SceneOptions {
+  /** Renderer `powerPreference`, read once at construction (changing it needs a reload). */
+  powerPreference?: Effective['powerPreference']
+}
+
+/** Hemisphere fill multiplier when the environment map is off (Minimal): dynamic objects lose IBL. */
+const NO_ENV_FILL = 2.4
+/** Hover raycasts at most every 100 ms (10 Hz). */
+const HOVER_MS = 100
+/** GPU memory accounting is cached this long (ms). */
+const MEMORY_MS = 2000
+
+/** The effective graphics for a plain preset (the `setQuality` shim and the start-up default). */
+const presetGraphics = (preset: Preset): Effective =>
+  effectiveGraphics({
+    preset,
+    advanced: GraphicsAdvancedSchema.parse({}),
+    dpr: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
+    power: { focused: true, hidden: false, onBattery: false },
+    saver: { blur: false, hidden: false, battery: 'off' },
+  })
+
+const TEXTURE_KEYS = [
+  'map',
+  'lightMap',
+  'aoMap',
+  'emissiveMap',
+  'normalMap',
+  'roughnessMap',
+  'metalnessMap',
+  'alphaMap',
+  'bumpMap',
+  'envMap',
+] as const
+
 const THEMES = {
   light: { background: 0xe9edf3, sky: 0xeef3ff, ground: 0x8a7a66, fill: 0.45, environment: 1.1 },
   dark: { background: 0x1b2028, sky: 0xdfe8ff, ground: 0x6b5a48, fill: 0.35, environment: 1.0 },
 } as const
 
 export class ThreeScene implements SceneView {
-  private renderer = new THREE.WebGLRenderer({
-    antialias: false,
-    powerPreference: 'high-performance',
-  })
+  private renderer: THREE.WebGLRenderer
   private scene = new THREE.Scene()
   private camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500)
   private pipeline: RenderPipeline
@@ -71,9 +111,22 @@ export class ThreeScene implements SceneView {
   private bookmarks: Bookmark[] = []
   private plans = new Map<string, AgentPlan>()
   private desks = new Map<string, string>()
-  private quality: GraphicsQuality = 'auto'
-  private governor = createGovernor()
-  private preset: Preset = 'high'
+  private gfx: Effective = presetGraphics('high')
+  private pacer = createPacer()
+  private looping = false
+  private lastFrame = -1
+  private frameCount = 0
+  private envMap: THREE.Texture | null = null
+  private fillBase = 0.35
+  private lastLinks: Link[] = []
+  /** The bookmark the camera flew to last (view-bar highlight, debug `bookmark()`). */
+  private current: string | null = null
+  private viewsFn: ((views: ViewEntry[]) => void) | null = null
+  private hoverFn: (ref: CapabilityRef | null, x: number, y: number) => void = () => {}
+  private hovered: string | null = null
+  private lostFn: () => void = () => {}
+  private restoredFn: () => void = () => {}
+  private memory = { at: -Infinity, textureMB: 0, geometryMB: 0 }
   private sun = new THREE.DirectionalLight(0xfff4e6, 1.6)
   private catcher = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
@@ -101,7 +154,13 @@ export class ThreeScene implements SceneView {
     private el: SceneElements,
     /** Simulation time shared with the controller's director (debug `timeScale` speeds both up). */
     private clock: SimClock = createSimClock(),
+    opts: SceneOptions = {},
   ) {
+    // Throws when WebGL can't start; the composition root shows the failure card (§2.4).
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      powerPreference: opts.powerPreference ?? 'high-performance',
+    })
     this.renderer.shadowMap.type = THREE.PCFShadowMap
     el.stage.append(this.renderer.domElement)
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera)
@@ -129,16 +188,72 @@ export class ThreeScene implements SceneView {
     this.scene.add(this.sun, this.sun.target, this.fill, this.catcher, this.links.group)
     this.links.onChange = (links) => this.renderLinkList(links)
 
-    this.applyPreset(this.preset)
+    this.applyGraphics(this.gfx)
     addEventListener('resize', () => this.resize())
     this.resize()
     this.bindInput()
+    this.bindContext()
+    // Hidden window: the loop may be paused (fpsLimit 0); coming back re-arms it at once.
+    document.addEventListener('visibilitychange', () => this.arm())
     if (this.debug) this.installDebug()
+    this.arm()
+  }
 
-    const timer = new THREE.Timer()
-    this.renderer.setAnimationLoop((t) => {
-      timer.update(t)
-      this.frame(timer.getDelta())
+  /** The frame limit in force. The controller already combines page and window visibility. */
+  private limit(): number | null {
+    return this.gfx.fpsLimit
+  }
+
+  /** Starts or stops `setAnimationLoop` to match the limit (0 = paused: no rAF at all). */
+  private arm(): void {
+    const run = this.limit() !== 0
+    if (run === this.looping) return
+    this.looping = run
+    if (!run) return this.renderer.setAnimationLoop(null)
+    this.pacer.reset()
+    this.renderer.setAnimationLoop((t) => this.tick(t))
+  }
+
+  /**
+   * One animation frame: the pacer decides whether to render; skipped frames do nothing, so the
+   * next rendered frame advances mixers by the accumulated time (capped at 0.5 s).
+   */
+  private tick(t: number): void {
+    if (!this.pacer.shouldRender(t, this.limit())) return
+    const dt = this.lastFrame < 0 ? 0 : Math.min(0.5, (t - this.lastFrame) / 1000)
+    this.lastFrame = t
+    this.frameCount++
+    this.frame(dt)
+  }
+
+  /** GPU driver reset: three re-uploads buffers and textures; render-target content is rebuilt. */
+  private bindContext(): void {
+    const canvas = this.renderer.domElement
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault() // allow a restore
+      this.lostFn()
+    })
+    canvas.addEventListener('webglcontextrestored', () => {
+      // The PMREM environment lives in a render target: regenerate it.
+      if (this.manifest)
+        void this.loadEnvironment(this.manifest).then((env) => {
+          this.envMap = env
+          this.applyEnv()
+        })
+      this.sun.shadow.map?.dispose()
+      this.sun.shadow.map = null
+      this.resize()
+      this.memory.at = -Infinity
+      this.restoredFn()
+    })
+  }
+
+  private loadEnvironment(manifest: Manifest): Promise<THREE.Texture> {
+    return this.store.environment(manifest.hdri, this.renderer).catch(() => {
+      const pmrem = new THREE.PMREMGenerator(this.renderer)
+      const t = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+      pmrem.dispose()
+      return t
     })
   }
 
@@ -148,31 +263,35 @@ export class ThreeScene implements SceneView {
       const manifest = await this.store.manifest(manifestUrl)
       this.manifest = manifest
       this.building = new BuildingView(this.store, manifest)
-      this.building.onChange = () => this.updateSurfaces()
+      this.building.onChange = () => {
+        this.updateSurfaces()
+        this.updateBookmarks()
+      }
+      this.applyBuildingDetail()
       this.scene.add(this.building.group)
       this.loading.progress(0.08, 'Loading the atrium…')
-      const env = this.store.environment(manifest.hdri, this.renderer).catch(() => {
-        const pmrem = new THREE.PMREMGenerator(this.renderer)
-        const t = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-        pmrem.dispose()
-        return t
-      })
+      const env = this.loadEnvironment(manifest)
       const [character, envMap] = await Promise.all([
         // Without the character the building still renders (tags stay hidden); say why once.
-        loadCharacterAssets(ASSET_BASE, this.store.gltf).catch((err: Error) => {
-          console.warn(`agent-office: character assets unavailable (${err.message})`)
-          return null
-        }),
+        within(loadCharacterAssets(ASSET_BASE, this.store.gltf), 30_000, 'character.glb').catch(
+          (err: Error) => {
+            console.warn(`agent-office: character assets unavailable (${err.message})`)
+            return null
+          },
+        ),
         env,
         // Atrium first: it's where the camera starts. Street/cap come along; wings stream in later.
         this.building.preload(['atrium', 'street', 'cap', 'garden']),
       ])
-      this.scene.environment = envMap
-      if (character)
+      this.envMap = envMap
+      this.applyEnv()
+      if (character) {
         this.characters = new CharacterSystem(this.scene, character, {
-          quality: this.preset,
+          quality: this.gfx.preset,
           renderer: this.renderer,
         })
+        this.applyCharacterDetail()
+      }
       this.loading.progress(1, 'Opening the doors…')
       this.loading.hide()
       // One-shot clip lengths so the director's pose predictions match the real clips.
@@ -194,8 +313,7 @@ export class ThreeScene implements SceneView {
     const b = layout.bounds
     this.catcher.scale.set(b.maxX - b.minX + 4, b.maxZ - b.minZ + 4, 1)
     this.catcher.position.set((b.minX + b.maxX) / 2, 0.004, (b.minZ + b.maxZ) / 2)
-    this.bookmarks = bookmarksFor(layout, this.manifest)
-    this.renderViews()
+    this.updateBookmarks()
     this.renderSigns(layout)
     this.updateSurfaces()
   }
@@ -216,7 +334,8 @@ export class ThreeScene implements SceneView {
   }
 
   setLinks(links: Link[]): void {
-    this.links.set(links, this.camera, this.selected)
+    this.lastLinks = links
+    this.links.set(linksForMode(links, this.gfx.links), this.camera, this.selected)
   }
 
   setSurfaces(s: SceneSurfaces): void {
@@ -232,8 +351,8 @@ export class ThreeScene implements SceneView {
   }
 
   /**
-   * Ease to the capability's surface (the one nearest the current view) and keep it framed with
-   * the agents linked to it: the camera follows the centre of surface + link ends.
+   * Close-up of the capability's surface (the one nearest the current view): head-on from inside
+   * its room, 0.9–2.2 m away so its text is readable (low-spec plan §B3).
    */
   focusCapability(ref: CapabilityRef | null): void {
     this.el.stage.dataset.focus = ref ? `${ref.provider} ${ref.id}` : ''
@@ -242,23 +361,71 @@ export class ThreeScene implements SceneView {
       this.focusRef = null
       return
     }
-    const spots = this.building?.surfacesOf(ref) ?? []
-    const here = this.cam.orbit.target
-    const surface = spots.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0]
-    if (!surface) return
+    const pose = this.closeUp(ref)
+    if (!pose) return
     this.focusRef = ref
     if (this.selected) this.pickFn(null)
-    const box = new THREE.Box3()
-    const center = new THREE.Vector3()
-    const frame = () => {
-      box.makeEmpty().expandByPoint(surface)
-      for (const p of this.links.sources(ref.id))
-        if (p.distanceTo(surface) < 40) box.expandByPoint(p)
-      return box.getCenter(center)
+    this.current = null
+    this.cam.flyTo({ ...pose, closeUp: true })
+    this.emitViews()
+  }
+
+  /** Camera pose facing one surface of `ref` (nearest the current view), or null. */
+  private closeUp(ref: CapabilityRef): { position: THREE.Vector3; target: THREE.Vector3 } | null {
+    if (!this.building || !this.layout) return null
+    const here = this.cam.orbit.target
+    const spot = this.building
+      .surfaceSpots(ref)
+      .sort((a, b) => a.pos.distanceTo(here) - b.pos.distanceTo(here))[0]
+    const placement = spot && this.layout.placements.find((p) => p.id === spot.placement)
+    if (!spot || !placement) return null
+    // Inside the room: reading seats and shelf spots (Library), station spots (Adapters).
+    const re = spot.role === 'station' ? /^spot:station:/ : /^(seat:reading|spot:shelf):/
+    const spots = [...this.layout.anchors.values()].filter(
+      (a) => a.placement === placement.id && re.test(a.local),
+    )
+    const inside = spots.length
+      ? spots.reduce(
+          (s, a) => ({ x: s.x + a.pos.x / spots.length, z: s.z + a.pos.z / spots.length }),
+          {
+            x: 0,
+            z: 0,
+          },
+        )
+      : toWorld({ x: 0, z: 0 }, placement)
+    // Face the surface square-on: snap the direction into the room to the module's nearest axis.
+    const c = Math.cos(placement.yaw)
+    const sn = Math.sin(placement.yaw)
+    const dx = inside.x - spot.pos.x
+    const dz = inside.z - spot.pos.z
+    const lx = dx * c - dz * sn // world → module axes (inverse of toWorld's rotation)
+    const lz = dx * sn + dz * c
+    const [ax, az] =
+      Math.abs(lx) >= Math.abs(lz) ? [Math.sign(lx) || 1, 0] : [0, Math.sign(lz) || 1]
+    const fx = ax * c + az * sn
+    const fz = -ax * sn + az * c
+    // The surface's extent (extras width × height) across the view, so a whole board fits.
+    const hw = spot.width / 2
+    const hh = spot.height / 2
+    const p = spot.pos
+    const corners: Vec3[] = [
+      { x: p.x - fz * hw, y: p.y - hh, z: p.z + fx * hw },
+      { x: p.x + fz * hw, y: p.y + hh, z: p.z - fx * hw },
+    ]
+    const at: Vec2 = { x: p.x + fx, z: p.z + fz }
+    const f = frameSurfaces({
+      surfaces: corners,
+      inside: at,
+      fovDeg: this.camera.fov,
+      aspect: this.camera.aspect,
+      minDist: 0.9,
+      maxDist: 2.2,
+      eyeHeight: p.y + 0.12,
+    })
+    return {
+      position: new THREE.Vector3(f.position.x, f.position.y, f.position.z),
+      target: new THREE.Vector3(f.target.x, f.target.y, f.target.z),
     }
-    frame()
-    const radius = box.getSize(new THREE.Vector3()).length() / 2
-    this.cam.focusOn(frame, THREE.MathUtils.clamp(radius * 2.4, 5, 30))
   }
 
   highlightLinks(capabilityId: string | null): void {
@@ -300,7 +467,7 @@ export class ThreeScene implements SceneView {
     )
   }
 
-  private renderLinkList(links: Link[]): void {
+  private renderLinkList(links: RenderLink[]): void {
     const key = `${this.highlighted}|${links.map((l) => l.id).join('|')}`
     if (this.el.links.dataset.key === key) return
     this.el.links.dataset.key = key
@@ -389,27 +556,169 @@ export class ThreeScene implements SceneView {
     this.background.setHex(t.background)
     this.fill.color.setHex(t.sky)
     this.fill.groundColor.setHex(t.ground)
-    this.fill.intensity = t.fill
+    this.fillBase = t.fill
     this.scene.environmentIntensity = t.environment
+    this.applyEnv()
   }
 
+  /**
+   * Legacy shim (one release): a preset with no overrides (Auto → High). The controller now owns
+   * Auto (its governor samples `stats().fps`) and calls `setGraphics`.
+   */
   setQuality(q: GraphicsQuality): void {
-    this.quality = q
-    if (q === 'auto') this.governor.reset()
-    this.applyPreset(resolvePreset(q, this.governor.preset))
+    this.applyGraphics(presetGraphics(resolvePreset(q, 'high')))
   }
 
-  private applyPreset(p: Preset): void {
-    this.preset = p
-    this.pipeline.setPreset(p)
-    const size = PRESETS[p].shadowMap
+  /** Applies every graphics lever live (low-spec plan §5.3); `e.preset` is already resolved. */
+  setGraphics(e: Effective): void {
+    this.applyGraphics(e)
+  }
+
+  private applyGraphics(e: Effective): void {
+    this.gfx = e
+    this.pipeline.setGraphics(e)
+    // Sun shadows only on Full; the catcher plane only exists to receive them.
+    const size = e.shadows === 'full' ? e.shadowMap : 0
     this.sun.castShadow = size > 0
+    this.catcher.visible = size > 0
     if (size && this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size)
       this.sun.shadow.map?.dispose()
       this.sun.shadow.map = null
     }
-    this.characters?.setQuality(p)
+    this.applyCharacterDetail()
+    this.labels.setMode(e.labels.mode, e.labels.nearbyM)
+    this.links.setMode(e.links)
+    this.setLinks(this.lastLinks)
+    this.applyBuildingDetail()
+    this.applyEnv()
+    if (!e.hover) this.hover(null, 0, 0)
+    this.memory.at = -Infinity
+    this.arm()
+  }
+
+  private applyCharacterDetail(): void {
+    const e = this.gfx
+    this.characters?.setDetail({
+      lod: e.lod,
+      maxAnimated: e.maxAnimated,
+      shadows: e.shadows,
+      impostorAtFar: e.preset === 'minimal',
+    })
+  }
+
+  private applyBuildingDetail(): void {
+    const e = this.gfx
+    this.building?.setDetail({
+      detailCullM: e.detailCullM,
+      lightmapTier: e.lightmapTier,
+      lowCanvas: e.preset === 'low' || e.preset === 'minimal',
+    })
+  }
+
+  /** Environment map on/off; without it the hemisphere fill is raised to keep characters lit. */
+  private applyEnv(): void {
+    this.scene.environment = this.gfx.envMap ? this.envMap : null
+    this.fill.intensity = this.fillBase * (this.gfx.envMap ? 1 : NO_ENV_FILL)
+  }
+
+  /** Live numbers for Settings → Graphics; GPU memory is re-counted at most every 2 s. */
+  stats(): GraphicsStats {
+    const now = performance.now()
+    if (now - this.memory.at > MEMORY_MS) this.countMemory(now)
+    const st = this.pipeline.stats
+    const size = this.pipeline.bufferSize()
+    return {
+      fps: Math.round(st.fps),
+      drawCalls: st.drawCalls,
+      triangles: st.triangles,
+      textureMB: Math.round(this.memory.textureMB),
+      geometryMB: Math.round(this.memory.geometryMB * 10) / 10,
+      width: size.width,
+      height: size.height,
+    }
+  }
+
+  /**
+   * GPU memory estimate (low-spec plan §5.5): unique textures in the scene (shared sources once),
+   * canvas surfaces, the environment, the shadow map and post-processing targets; geometry
+   * buffers by byte length.
+   */
+  private countMemory(now: number): void {
+    const sources = new Map<unknown, number>()
+    const addTex = (t: THREE.Texture | null | undefined) => {
+      if (t && !sources.has(t.source)) sources.set(t.source, textureBytes(t))
+    }
+    const geos = new Set<THREE.BufferGeometry>()
+    let geoBytes = 0
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.geometry && !geos.has(m.geometry)) {
+        geos.add(m.geometry)
+        for (const a of Object.values(m.geometry.attributes))
+          geoBytes += (a as THREE.BufferAttribute).array?.byteLength ?? 0
+        geoBytes += m.geometry.index?.array.byteLength ?? 0
+      }
+      const mats = m.material ? (Array.isArray(m.material) ? m.material : [m.material]) : []
+      for (const mat of mats) {
+        const rec = mat as unknown as Record<string, unknown>
+        for (const k of TEXTURE_KEYS) addTex(rec[k] as THREE.Texture | undefined)
+        const uniforms = (mat as THREE.ShaderMaterial).uniforms
+        if (uniforms)
+          for (const u of Object.values(uniforms))
+            if ((u?.value as THREE.Texture)?.isTexture) addTex(u.value as THREE.Texture)
+      }
+    })
+    for (const t of this.building?.canvasTextures() ?? []) addTex(t)
+    let bytes = [...sources.values()].reduce((a, b) => a + b, 0)
+    const env = this.scene.environment as THREE.Texture | null
+    // PMREM: a half-float CubeUV atlas (~3 × size² texels for a 256 face).
+    if (env) bytes += 768 * 1024 * 8
+    if (this.sun.castShadow) bytes += this.sun.shadow.mapSize.x ** 2 * 4
+    bytes += this.pipeline.targetBytes()
+    this.memory = { at: now, textureMB: bytes / 2 ** 20, geometryMB: geoBytes / 2 ** 20 }
+  }
+
+  /** What the controller needs to pick the hardware tier (low-spec plan §5.1); null if unreadable. */
+  hardwareInfo(): HardwareInfo | null {
+    try {
+      return this.readHardware()
+    } catch {
+      return null
+    }
+  }
+
+  private readHardware(): HardwareInfo {
+    const gl = this.renderer.getContext()
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    const str = (v: unknown) => (typeof v === 'string' ? v : '')
+    const nav = navigator as Navigator & { deviceMemory?: number }
+    return {
+      renderer: str(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
+      vendor: str(gl.getParameter(dbg ? dbg.UNMASKED_VENDOR_WEBGL : gl.VENDOR)),
+      maxTextureSize: this.renderer.capabilities.maxTextureSize,
+      dpr: devicePixelRatio,
+      cores: nav.hardwareConcurrency ?? 4,
+      ...(typeof nav.deviceMemory === 'number' ? { memoryGB: nav.deviceMemory } : {}),
+      webgl2: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext,
+    }
+  }
+
+  onContextLost(fn: () => void): void {
+    this.lostFn = fn
+  }
+
+  onContextRestored(fn: () => void): void {
+    this.restoredFn = fn
+  }
+
+  onHoverSurface(fn: (ref: CapabilityRef | null, x: number, y: number) => void): void {
+    this.hoverFn = fn
+  }
+
+  onViews(fn: (views: ViewEntry[]) => void): void {
+    this.viewsFn = fn
+    this.emitViews()
   }
 
   /** Frame-rate samples (~2 Hz) for the Settings readout. Adapter-level, wired in main.ts. */
@@ -443,10 +752,11 @@ export class ThreeScene implements SceneView {
     this.cam.focusOn(() => chars.positionOf(id))
   }
 
+  /** `rawDt`: real seconds since the last rendered frame (accumulated over skipped ones, ≤ 0.5). */
   private frame(rawDt: number): void {
     const dt = Math.min(rawDt, 0.1)
     // Characters and doors run on simulation time; the camera stays on real time.
-    const simDt = Math.min(dt * this.clock.scale, 0.5)
+    const simDt = Math.min(rawDt * this.clock.scale, 0.5)
     const now = this.clock.now()
     const colliders = this.building?.colliders() ?? []
     this.cam.update(dt, colliders)
@@ -463,15 +773,11 @@ export class ThreeScene implements SceneView {
     if (sample) this.onSample(sample)
   }
 
-  private onSample(s: { fps: number; dt: number }): void {
-    this.statsFn(s.fps, this.preset)
-    if (this.quality === 'auto') {
-      const next = this.governor.sample(s.fps, s.dt)
-      if (next) this.applyPreset(next)
-    }
+  private onSample(s: { fps: number }): void {
+    this.statsFn(s.fps, this.gfx.preset)
     if (!this.el.stats.hidden) {
       const st = this.pipeline.stats
-      this.el.stats.textContent = `${st.fps.toFixed(0)} fps · ${st.drawCalls} calls · ${(st.triangles / 1000).toFixed(0)}k tris · ${this.preset}`
+      this.el.stats.textContent = `${st.fps.toFixed(0)} fps · ${st.drawCalls} calls · ${(st.triangles / 1000).toFixed(0)}k tris · ${this.gfx.preset}`
     }
   }
 
@@ -503,35 +809,46 @@ export class ThreeScene implements SceneView {
     this.sun.target.updateMatrixWorld()
   }
 
-  private renderViews(): void {
-    const pick = (id: string) => this.bookmarks.find((b) => b.id === id)
-    const views: { id: string; label: string }[] = [
-      ...['atrium', 'street'].map(pick).filter((b) => !!b),
-      ...this.bookmarks.filter((b) => b.id.startsWith('wing:')),
+  /** Recomputes the bookmarks (layout, loaded wing surfaces, aspect) and re-emits the views. */
+  private updateBookmarks(): void {
+    if (!this.layout || !this.manifest) return
+    this.bookmarks = bookmarksFor(this.layout, this.manifest, this.building?.wingSurfaces(), {
+      fovDeg: this.camera.fov,
+      aspect: this.camera.aspect,
+    })
+    this.emitViews()
+  }
+
+  /**
+   * The view bar's entries (the DOM adapter renders them): atrium, Main Street, wings, then
+   * Adapters and Library per provider (first wing; grouped into menus), then the overview.
+   */
+  private emitViews(): void {
+    if (!this.viewsFn) return
+    const entry = (b: Bookmark, label = b.label): ViewEntry => ({
+      id: b.id,
+      label,
+      ...(b.group ? { group: b.group } : {}),
+      ...(b.provider ? { provider: b.provider } : {}),
+      ...(b.id === this.current ? { active: true } : {}),
+    })
+    const room = (prefix: string) =>
+      this.bookmarks
+        .filter((b) => b.id.split(':')[0] === prefix && b.id.endsWith(':0'))
+        .map((b) => entry(b, b.label.slice(0, b.label.indexOf(' · ')) || b.label))
+    const byProvider = (group: 'library' | 'adapters', prefixes: string[]) => {
+      const rows = prefixes.flatMap(room)
+      const order = [...new Set(rows.map((r) => r.provider))]
+      return order.flatMap((p) => rows.filter((r) => r.provider === p))
+    }
+    const views: ViewEntry[] = [
+      ...this.bookmarks.filter((b) => b.id === 'atrium' || b.id === 'street').map((b) => entry(b)),
+      ...this.bookmarks.filter((b) => b.id.startsWith('wing:')).map((b) => entry(b)),
+      ...byProvider('adapters', ['adapters', 'adapters-door']),
+      ...byProvider('library', ['library', 'library-rules']),
+      ...this.bookmarks.filter((b) => b.id === 'overview').map((b) => entry(b)),
     ]
-    // The capability rooms of the wing you looked at last (the first wing until then).
-    if (this.bookmarks.some((b) => b.id.startsWith('adapters:')))
-      views.push({ id: 'adapters', label: 'Adapters' })
-    if (this.bookmarks.some((b) => b.id.startsWith('library:')))
-      views.push({ id: 'library', label: 'Library' })
-    views.push(...this.bookmarks.filter((b) => b.id === 'overview'))
-    const key = views.map((v) => `${v.id}=${v.label}`).join('|')
-    if (this.el.views.dataset.key === key) return
-    this.el.views.dataset.key = key
-    this.el.views.replaceChildren(
-      ...views.map((v) => {
-        const b = document.createElement('button')
-        b.type = 'button'
-        b.className = 'view-btn'
-        b.dataset.view = v.id
-        b.textContent = v.label
-        b.addEventListener('click', () => {
-          this.cam.markInput()
-          this.flyTo(v.id)
-        })
-        return b
-      }),
-    )
+    this.viewsFn(views)
   }
 
   private renderSigns(layout: BuildingLayout): void {
@@ -553,6 +870,7 @@ export class ThreeScene implements SceneView {
   }
 
   private flyTo(id: string): boolean {
+    // Plain 'adapters'/'library': the rooms of the wing you looked at last (the first until then).
     if (id === 'adapters' || id === 'library') {
       const wing = this.lastWing ?? this.bookmarks.find((x) => x.id.startsWith('wing:'))?.id
       id = `${id}:${wing?.slice('wing:'.length) ?? ''}`
@@ -561,7 +879,11 @@ export class ThreeScene implements SceneView {
     const b = this.bookmarks.find((x) => x.id === id)
     if (!b) return false
     if (this.selected) this.pickFn(null)
+    this.focusRef = null
+    this.el.stage.dataset.focus = ''
+    this.current = b.id
     this.cam.flyTo(b)
+    this.emitViews()
     return true
   }
 
@@ -570,6 +892,8 @@ export class ThreeScene implements SceneView {
     this.labels.setSize(innerWidth, innerHeight)
     this.camera.aspect = innerWidth / innerHeight
     this.camera.updateProjectionMatrix()
+    // Framed bookmarks depend on the aspect ratio.
+    this.updateBookmarks()
   }
 
   private pick(ndcX: number, ndcY: number): string | null {
@@ -611,10 +935,54 @@ export class ThreeScene implements SceneView {
     return n ? new THREE.Vector3(n.pos.x, 0, n.pos.z) : undefined
   }
 
+  /** Reports the hovered surface (or null) and sets the pointer cursor over one. */
+  private hover(ref: CapabilityRef | null, x: number, y: number): void {
+    const key = ref ? `${ref.provider}|${ref.id}` : null
+    if (!key && !this.hovered) return
+    this.hovered = key
+    this.renderer.domElement.style.cursor = ref ? 'pointer' : ''
+    this.hoverFn(ref, x, y)
+  }
+
+  /** Surface under the pointer (orbit mode only, surfaces only), for the hover tooltip. */
+  private hoverAt(x: number, y: number): void {
+    if (!this.gfx.hover || this.cam.mode !== 'orbit' || !this.building)
+      return this.hover(null, x, y)
+    this.pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1)
+    this.raycaster.setFromCamera(this.pointer, this.camera)
+    this.hover(this.pickSurface(), x, y)
+  }
+
   private bindInput(): void {
     const canvas = this.renderer.domElement
     let downAt: [number, number] | null = null
-    canvas.addEventListener('pointerdown', (e) => (downAt = [e.clientX, e.clientY]))
+    // Hover: at most 10 Hz, never while dragging; the last position is sampled on the next slot.
+    let lastHover = -Infinity
+    let pending: [number, number] | null = null
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const sample = () => {
+      timer = undefined
+      if (!pending) return
+      lastHover = performance.now()
+      const [x, y] = pending
+      pending = null
+      this.hoverAt(x, y)
+    }
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.buttons !== 0 || !this.gfx.hover) return this.hover(null, e.clientX, e.clientY)
+      pending = [e.clientX, e.clientY]
+      const wait = HOVER_MS - (performance.now() - lastHover)
+      if (wait <= 0) sample()
+      else timer ??= setTimeout(sample, wait)
+    })
+    canvas.addEventListener('pointerleave', () => {
+      pending = null
+      this.hover(null, 0, 0)
+    })
+    canvas.addEventListener('pointerdown', (e) => {
+      downAt = [e.clientX, e.clientY]
+      this.hover(null, e.clientX, e.clientY)
+    })
     canvas.addEventListener('pointerup', (e) => {
       if (!downAt || this.cam.mode !== 'orbit') return
       const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1])
@@ -624,6 +992,7 @@ export class ThreeScene implements SceneView {
     })
     this.el.walkButton.addEventListener('click', () => {
       this.cam.markInput()
+      this.current = null
       this.cam.enterWalk(this.walkStart())
     })
     this.el.fitButton.addEventListener('click', () => {
@@ -631,6 +1000,7 @@ export class ThreeScene implements SceneView {
       this.flyTo('overview')
     })
     this.cam.onModeChange = (mode) => {
+      if (mode === 'walk') this.hover(null, 0, 0)
       this.el.crosshair.hidden = mode !== 'walk'
       this.el.walkHelp.hidden = mode !== 'walk'
       this.el.walkButton.textContent = mode === 'walk' ? '🎥 Orbit' : '🚶 Walk'
@@ -679,8 +1049,82 @@ export class ThreeScene implements SceneView {
           position: new THREE.Vector3(...pos),
           target: new THREE.Vector3(...target),
         }),
-      /** Bookmark ids: overview, atrium, street, wing:<provider>:<annex>, adapters:…, library:… */
-      bookmark: (id: string) => api.view(id),
+      /**
+       * With an id, jumps there (overview, atrium, street, wing:<provider>:<annex>, adapters:…,
+       * adapters-door:…, library:…, library-rules:…). Without, the bookmark flown to last.
+       */
+      bookmark: (id?: string) => (id === undefined ? this.current : api.view(id)),
+      /** Capability close-up without the panel (capture scripts). */
+      closeUp: (ref: CapabilityRef) => this.focusCapability(ref),
+      /** The effective graphics applied now. */
+      graphics: () => this.gfx,
+      /** Frames rendered since start (the frame pacer's output; graphics.spec G3). */
+      frames: () => this.frameCount,
+      /** Camera distance (m) to the nearest surface of a capability, or null. */
+      cameraDistanceTo: (ref: CapabilityRef) => {
+        const d = (this.building?.surfacesOf(ref) ?? []).map((p) =>
+          p.distanceTo(this.camera.position),
+        )
+        return d.length ? Math.min(...d) : null
+      },
+      /** A capability surface's centre in CSS px (for hover specs), or null when off screen. */
+      surfaceScreenPos: (ref: CapabilityRef) => {
+        const p = (this.building?.surfacesOf(ref) ?? []).sort(
+          (a, b) => a.distanceTo(this.camera.position) - b.distanceTo(this.camera.position),
+        )[0]
+        if (!p) return null
+        const v = p.clone().project(this.camera)
+        if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null
+        return { x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight }
+      },
+      hardware: () => this.hardwareInfo(),
+      gpu: () => this.stats(),
+      /** Debug: where the texture estimate goes (mesh textures by kind, canvases, targets). */
+      gpuBreakdown: () => {
+        const seen = new Map<
+          unknown,
+          { name: string; w: number; h: number; mb: number; hash?: string }
+        >()
+        this.scene.traverse((o) => {
+          const m = o as THREE.Mesh
+          const mats = m.material ? (Array.isArray(m.material) ? m.material : [m.material]) : []
+          for (const mat of mats) {
+            const rec = mat as unknown as Record<string, unknown>
+            for (const k of TEXTURE_KEYS) {
+              const t = rec[k] as THREE.Texture | undefined
+              if (!t || seen.has(t.source)) continue
+              const img = t.source.data as { width?: number; height?: number } | null
+              seen.set(t.source, {
+                name: `${k}:${t.name || '?'}`,
+                w: img?.width ?? 0,
+                h: img?.height ?? 0,
+                mb: textureBytes(t) / 2 ** 20,
+                ...(t.userData?.hash ? { hash: String(t.userData.hash) } : {}),
+              })
+            }
+          }
+        })
+        const list = [...seen.values()]
+        const canvas = (this.building?.canvasTextures() ?? []).reduce(
+          (a, t) => a + textureBytes(t),
+          0,
+        )
+        return {
+          meshTextures: list.length,
+          withHash: list.filter((t) => t.hash).length,
+          meshMB: list.reduce((a, t) => a + t.mb, 0),
+          byKind: Object.entries(
+            list.reduce<Record<string, number>>((acc, t) => {
+              const k = t.name.split(':')[0]!
+              acc[k] = (acc[k] ?? 0) + t.mb
+              return acc
+            }, {}),
+          ),
+          canvasMB: canvas / 2 ** 20,
+          targetsMB: this.pipeline.targetBytes() / 2 ** 20,
+          top: list.sort((a, b) => b.mb - a.mb).slice(0, 12),
+        }
+      },
       orbitTo: (pos: Vec3T, target: Vec3T, ms = 800) =>
         this.cam.flyTo(
           { position: new THREE.Vector3(...pos), target: new THREE.Vector3(...target) },
@@ -720,7 +1164,14 @@ export class ThreeScene implements SceneView {
       sceneBackground: () => this.background.getHex(),
       stats: () => ({
         ...this.pipeline.stats,
-        preset: this.preset,
+        // GPU memory estimate and drawing-buffer size (Settings → Graphics, make perf).
+        ...(({ textureMB, geometryMB, width, height }) => ({
+          textureMB,
+          geometryMB,
+          width,
+          height,
+        }))(this.stats()),
+        preset: this.gfx.preset,
         ...(this.characters?.count() ?? {}),
       }),
     }

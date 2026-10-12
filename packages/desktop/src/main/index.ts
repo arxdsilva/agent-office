@@ -1,5 +1,6 @@
 // Electron entry (part of the composition root): lifecycle, native shell objects, then compose().
 import { electronDialog } from './adapters/electron-dialog.ts'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -14,6 +15,7 @@ import {
   nativeImage,
   nativeTheme,
   Notification,
+  powerMonitor,
   protocol,
   session,
 } from 'electron'
@@ -34,8 +36,16 @@ import {
   RENDERER_URL,
 } from './renderer-protocol.ts'
 import { contentSecurityPolicy, isAllowedPermission } from './security.ts'
+import {
+  afterHardwareChange,
+  rendererQuery,
+  savedHardwareAcceleration,
+  startupFlags,
+  watchHardwareAcceleration,
+} from './startup-flags.ts'
 import { bindTheme, createQuitGuard, QUIT_COPY } from './theme.ts'
 import { createMainWindow } from './window.ts'
+import { bindWindowVisibility } from './window-visibility.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const RELEASES = 'https://github.com/arxdsilva/agent-office/releases/latest'
@@ -45,6 +55,20 @@ if (process.env.AGENT_OFFICE_USER_DATA) app.setPath('userData', process.env.AGEN
 if (!app.requestSingleInstanceLock()) app.exit(0)
 // The production renderer is served from app://renderer (a real origin for the CSP). Must precede `ready`.
 protocol.registerSchemesAsPrivileged([APP_SCHEME_PRIVILEGES])
+
+/** `hardwareAcceleration` as saved; read synchronously because GPU flags must precede `ready`. */
+const hardwareAcceleration = savedHardwareAcceleration(
+  (() => {
+    try {
+      return readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8')
+    } catch {
+      return undefined
+    }
+  })(),
+)
+const flags = startupFlags({ hardwareAcceleration }, process.env)
+if (flags.disableHardwareAcceleration) app.disableHardwareAcceleration()
+for (const [name, value] of flags.switches) app.commandLine.appendSwitch(name, value)
 
 /** Paths differ between `electron-vite dev` (repo layout) and the packaged app (resources/). */
 function resources() {
@@ -172,6 +196,10 @@ async function main(): Promise<void> {
   })
 
   winRef = win
+  // Power saver: the renderer pauses while the window is hidden or minimized.
+  bindWindowVisibility(win, (channel, visible) => {
+    if (!win.isDestroyed()) win.webContents.send(channel, visible)
+  })
 
   const trayIcon = nativeImage.createFromPath(
     join(paths.icons, process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png'),
@@ -199,6 +227,7 @@ async function main(): Promise<void> {
       dialog: electronDialog(),
       ipc: electronIpc(),
       rendererUrl,
+      power: powerMonitor,
       quit: () => app.quit(),
     },
     env: loadEnv(process.env, homedir()),
@@ -212,13 +241,28 @@ async function main(): Promise<void> {
   await instance.start()
   // Settings → Appearance applies live (the renderer's prefers-color-scheme follows nativeTheme).
   instance.office.settings.onChange(({ settings }) => theme.apply(settings.theme))
+  // The GPU switch only applies at launch: relaunch once the new value is saved.
+  instance.office.settings.onChange(({ settings }) => onHardwareSetting(settings))
   theme.apply((await instance.office.settings.get()).theme)
 
   const saved = (await instance.office.settings.get()).windowBounds
   if (saved) win.setBounds(saved)
-  // Capture scripts only (scripts/screenshots.mjs, perf.mjs): exposes the renderer's camera/stats hook.
-  await win.loadURL(process.env.AGENT_OFFICE_DEBUG === '1' ? `${rendererUrl}?debug=1` : rendererUrl)
+  // debug=1: capture scripts (screenshots.mjs, perf.mjs) get the renderer's camera/stats hook.
+  // forceWebglFail=1: the G5 seam (the renderer's scene factory throws).
+  await win.loadURL(`${rendererUrl}${rendererQuery(process.env)}`)
 }
+
+/** Stops the app (managed sessions included) and starts it again with the new GPU flags. */
+const onHardwareSetting = watchHardwareAcceleration(hardwareAcceleration, () => {
+  const relaunch = afterHardwareChange(process.env) === 'relaunch'
+  quitting = true
+  const stopping = instance
+  instance = undefined
+  void Promise.resolve(stopping?.stop()).finally(() => {
+    if (relaunch) app.relaunch()
+    app.exit(0)
+  })
+})
 
 app.on('second-instance', () => {
   const win = BrowserWindow.getAllWindows()[0]

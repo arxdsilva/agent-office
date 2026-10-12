@@ -11,7 +11,12 @@ test.setTimeout(120_000)
 function lowQualityProfile() {
   const profile = newProfile()
   mkdirSync(profile.userData, { recursive: true })
-  writeFileSync(join(profile.userData, 'settings.json'), JSON.stringify({ graphicsQuality: 'low' }))
+  // Low for software GL in CI, but with animated links (Low defaults to static lines) so the
+  // dash and page-particle styles are what's tested here.
+  writeFileSync(
+    join(profile.userData, 'settings.json'),
+    JSON.stringify({ graphicsQuality: 'low', graphicsAdvanced: { links: 'animated' } }),
+  )
   return profile
 }
 

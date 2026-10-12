@@ -1,6 +1,8 @@
 // Canvas drawing for the capability surfaces (plan §10.6/§10.F): adapter station screens, book
 // spines (one atlas per shelf), rule boards and memory notebooks. Plain fillText only: every
 // string comes from data and is never parsed as markup. Glyphs are simple vector icons, no logos.
+// Text sizes follow the low-spec plan §B4 (readable from the close-up bookmarks); `scale` draws
+// every canvas at half resolution on Low and Minimal (§5.3).
 import * as THREE from 'three'
 import type { BoardVM, BookVM, Glyph, StationVM, SurfaceSlot } from '../../app/capability-vm.ts'
 
@@ -20,6 +22,26 @@ export const BOOKS_PER_SHELF = 12
 const ATLAS_W = 1024
 const ATLAS_H = 384
 const FONT = 'system-ui, -apple-system, sans-serif'
+
+/** Narrower glyphs where the canvas supports it (spines, notebooks). */
+function condensed(c: CanvasRenderingContext2D, on: boolean): void {
+  const ctx = c as CanvasRenderingContext2D & { fontStretch?: string }
+  if ('fontStretch' in ctx) ctx.fontStretch = on ? 'condensed' : 'normal'
+}
+
+/** Relative luminance (0–1) of a #rrggbb colour. */
+function luminance(hex: string): number {
+  const n = Number.parseInt(hex.replace('#', '').slice(0, 6), 16)
+  if (!Number.isFinite(n)) return 0
+  const lin = (v: number) => {
+    const c = v / 255
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+}
+
+/** Light or dark text, whichever contrasts with the background colour. */
+const inkOn = (bg: string) => (luminance(bg) > 0.3 ? '#1c1814' : '#fbf6ec')
 
 /** A per-surface canvas texture shown on its own material copies (map + emissive map). */
 export function canvasFor(sf: Surface, w: number, h: number, screen = false): THREE.CanvasTexture {
@@ -176,45 +198,53 @@ export function drawStation(canvas: HTMLCanvasElement, vm: StationVM | undefined
   c.fillStyle = '#ffffff'
   fit(c, vm.title, w - 260 * u, 700, 48 * u)
   c.fillText(ellipsize(c, vm.title, w - 260 * u), 112 * u, 32 * u)
-  c.fillStyle = 'rgba(255,255,255,0.6)'
-  c.font = `500 ${22 * u}px ${FONT}`
-  c.fillText(vm.subtitle, 112 * u, 88 * u)
+  c.fillStyle = 'rgba(255,255,255,0.7)'
+  c.font = `500 ${30 * u}px ${FONT}`
+  c.fillText(ellipsize(c, vm.subtitle, w - 148 * u), 112 * u, 90 * u)
   if (vm.callers) {
     c.fillStyle = color
-    c.font = `600 ${22 * u}px ${FONT}`
+    c.font = `600 ${28 * u}px ${FONT}`
     c.textAlign = 'right'
-    c.fillText(ellipsize(c, vm.callers, 300 * u), w - 30 * u, 40 * u)
+    c.fillText(ellipsize(c, vm.callers, 280 * u), w - 30 * u, 40 * u)
     c.textAlign = 'left'
   }
-  let y = 140 * u
-  c.fillStyle = 'rgba(255,255,255,0.45)'
-  c.font = `700 ${18 * u}px ${FONT}`
+  // Body lines ≥ 28 px at the 768 px reference width (low-spec plan §B4).
+  const bottom = h - 60 * u
+  let y = 146 * u
+  c.fillStyle = 'rgba(255,255,255,0.5)'
+  c.font = `700 ${22 * u}px ${FONT}`
   if (vm.sees.length) {
     c.fillText('CAN SEE', 36 * u, y)
-    y += 28 * u
-    c.fillStyle = 'rgba(255,255,255,0.85)'
-    c.font = `500 ${22 * u}px ${FONT}`
+    y += 32 * u
+    c.fillStyle = 'rgba(255,255,255,0.88)'
+    c.font = `500 ${28 * u}px ${FONT}`
     for (const line of vm.sees) {
+      if (y + 30 * u > bottom) break
       c.fillText(ellipsize(c, `· ${line}`, w - 72 * u), 36 * u, y)
-      y += 30 * u
+      y += 36 * u
     }
   }
-  if (vm.tools) {
+  if (vm.tools && y + 70 * u <= bottom) {
     y += 8 * u
-    c.fillStyle = 'rgba(255,255,255,0.45)'
-    c.font = `700 ${18 * u}px ${FONT}`
+    c.fillStyle = 'rgba(255,255,255,0.5)'
+    c.font = `700 ${22 * u}px ${FONT}`
     c.fillText('TOOLS', 36 * u, y)
-    y += 28 * u
-    c.fillStyle = 'rgba(255,255,255,0.85)'
-    c.font = `500 ${22 * u}px ${FONT}`
-    for (const line of wrap(c, vm.tools, w - 72 * u, 2)) {
+    y += 32 * u
+    c.fillStyle = 'rgba(255,255,255,0.88)'
+    c.font = `500 ${28 * u}px ${FONT}`
+    const room = Math.max(1, Math.min(2, Math.floor((bottom - y) / (36 * u))))
+    for (const line of wrap(c, vm.tools, w - 72 * u, room)) {
       c.fillText(line, 36 * u, y)
-      y += 30 * u
+      y += 36 * u
     }
   }
-  c.fillStyle = 'rgba(255,255,255,0.55)'
-  c.font = `500 ${20 * u}px ${FONT}`
-  c.fillText([vm.last, vm.calls].filter(Boolean).join(' · '), 36 * u, h - 46 * u)
+  c.fillStyle = 'rgba(255,255,255,0.6)'
+  c.font = `500 ${26 * u}px ${FONT}`
+  c.fillText(
+    ellipsize(c, [vm.last, vm.calls].filter(Boolean).join(' · '), w - 72 * u),
+    36 * u,
+    h - 48 * u,
+  )
 }
 
 const SCOPE_STRIPE: Record<string, string> = {
@@ -223,19 +253,28 @@ const SCOPE_STRIPE: Record<string, string> = {
   plugin: '#b794f6',
 }
 
-/** Redraws the shelf atlases and points every spine at its slice. */
+/**
+ * Redraws the shelf atlases and points every spine at its slice. `scale` < 1 draws them at a
+ * lower resolution (same layout); an atlas of another size is replaced.
+ */
 export function drawBooks(
   atlases: THREE.CanvasTexture[],
   books: Map<string, Surface>,
   slots: (SurfaceSlot<BookVM> | undefined)[],
   accent: string,
+  scale = 1,
 ): void {
   const shelves = Math.ceil((Math.max(...[...books.keys()].map(Number)) + 1) / BOOKS_PER_SHELF)
+  const cw = Math.round(ATLAS_W * scale)
+  const ch = Math.round(ATLAS_H * scale)
   for (let i = 0; i < shelves; i++) {
-    if (atlases[i]) continue
+    const had = atlases[i]
+    const img = had?.image as HTMLCanvasElement | undefined
+    if (had && img && img.width === cw && img.height === ch) continue
+    had?.dispose()
     const canvas = document.createElement('canvas')
-    canvas.width = ATLAS_W
-    canvas.height = ATLAS_H
+    canvas.width = cw
+    canvas.height = ch
     const t = new THREE.CanvasTexture(canvas)
     t.colorSpace = THREE.SRGBColorSpace
     t.flipY = false
@@ -245,6 +284,8 @@ export function drawBooks(
   const colW = ATLAS_W / BOOKS_PER_SHELF
   for (let i = 0; i < shelves; i++) {
     const c = (atlases[i]!.image as HTMLCanvasElement).getContext('2d')!
+    // Draw in reference units (1024 × 384); the transform maps them to the atlas size.
+    c.setTransform(cw / ATLAS_W, 0, 0, ch / ATLAS_H, 0, 0)
     c.fillStyle = '#2b2622'
     c.fillRect(0, 0, ATLAS_W, ATLAS_H)
   }
@@ -265,13 +306,18 @@ export function drawBooks(
       c.fillRect(x + 2, ATLAS_H - 40, colW - 4, 4)
       c.fillStyle = SCOPE_STRIPE[vm.scope] ?? accent
       c.fillRect(x + 2, ATLAS_H - 28, colW - 4, 14)
+      // The name runs down the whole spine between the bands: up to 56 px tall (of the 85 px
+      // column), condensed, in light or dark ink by the cover colour (low-spec plan §B4).
       c.save()
-      c.translate(x + colW / 2, 34)
+      c.translate(x + colW / 2, 26)
       c.rotate(Math.PI / 2)
-      c.fillStyle = '#fbf6ec'
+      c.fillStyle = inkOn(vm.color)
       c.textBaseline = 'middle'
-      fit(c, vm.title, ATLAS_H - 90, 700, 30)
-      c.fillText(ellipsize(c, vm.title, ATLAS_H - 90), 0, 0)
+      condensed(c, true)
+      const run = ATLAS_H - 76
+      fit(c, vm.title, run, 700, 56)
+      c.fillText(ellipsize(c, vm.title, run), 0, 0)
+      condensed(c, false)
       c.restore()
     }
     for (const m of sf.mats) {
@@ -293,8 +339,16 @@ export function drawBooks(
   for (let i = 0; i < shelves; i++) atlases[i]!.needsUpdate = true
 }
 
-/** A framed rule board: title, scope badge, summary and recent reads. */
-export function drawBoard(canvas: HTMLCanvasElement, vm: BoardVM | undefined, accent: string) {
+/**
+ * A framed rule board: title, scope badge, summary and recent reads. Without a rule it is blank,
+ * or shows `placard` (board 0 of an empty Library: "No skills or rules yet").
+ */
+export function drawBoard(
+  canvas: HTMLCanvasElement,
+  vm: BoardVM | undefined,
+  accent: string,
+  placard?: string,
+) {
   const c = canvas.getContext('2d')!
   const { width: w, height: h } = canvas
   const u = w / 384
@@ -303,7 +357,18 @@ export function drawBoard(canvas: HTMLCanvasElement, vm: BoardVM | undefined, ac
   c.strokeStyle = 'rgba(60,45,30,0.25)'
   c.lineWidth = 6 * u
   c.strokeRect(10 * u, 10 * u, w - 20 * u, h - 20 * u)
-  if (!vm) return
+  if (!vm) {
+    if (!placard) return
+    c.fillStyle = '#6b5f52'
+    c.textBaseline = 'top'
+    c.font = `600 ${46 * u}px ${FONT}`
+    let py = h * 0.32
+    for (const line of wrap(c, placard, w - 70 * u, 4)) {
+      c.fillText(line, 35 * u, py)
+      py += 56 * u
+    }
+    return
+  }
   c.textBaseline = 'top'
   let y = 34 * u
   if (vm.scope) {
@@ -315,42 +380,53 @@ export function drawBoard(canvas: HTMLCanvasElement, vm: BoardVM | undefined, ac
     c.fillText(vm.scope, 37 * u, y + 5 * u)
     y += 40 * u
   }
+  // Title at twice the old size, two lines at most (low-spec plan §B4).
   c.fillStyle = '#2a241d'
-  c.font = `700 ${30 * u}px ${FONT}`
+  fit(c, vm.title, (w - 56 * u) * 2, 700, 60 * u)
   for (const line of wrap(c, vm.title, w - 56 * u, 2)) {
     c.fillText(line, 28 * u, y)
-    y += 36 * u
+    y += c.measureText('M').width * 1.25 + 6 * u
   }
-  y += 8 * u
+  y += 10 * u
   c.fillStyle = '#4d443a'
-  c.font = `400 ${19 * u}px ${FONT}`
-  for (const line of wrap(c, vm.summary, w - 56 * u, 7)) {
+  c.font = `400 ${21 * u}px ${FONT}`
+  const lines = Math.max(0, Math.floor((h - 84 * u - y) / (27 * u)))
+  for (const line of lines ? wrap(c, vm.summary, w - 56 * u, lines) : []) {
     c.fillText(line, 28 * u, y)
-    y += 25 * u
+    y += 27 * u
   }
   c.fillStyle = '#7a6e60'
-  c.font = `500 ${16 * u}px ${FONT}`
-  c.fillText(vm.uses, 28 * u, h - 66 * u)
-  c.fillText(ellipsize(c, vm.last, w - 56 * u), 28 * u, h - 44 * u)
+  c.font = `500 ${18 * u}px ${FONT}`
+  c.fillText(ellipsize(c, vm.uses, w - 56 * u), 28 * u, h - 70 * u)
+  c.fillText(ellipsize(c, vm.last, w - 56 * u), 28 * u, h - 46 * u)
 }
 
-/** A memory notebook's cover label. */
+/** Reference width of a notebook cover canvas; drawing is in these units. */
+const NOTEBOOK_W = 128
+
+/** A memory notebook's cover label: twice the old size, on a lighter cover (low-spec plan §B4). */
 export function drawNotebook(canvas: HTMLCanvasElement, title: string | undefined, accent: string) {
   const c = canvas.getContext('2d')!
-  const { width: w, height: h } = canvas
-  c.fillStyle = title ? '#3f6e52' : '#3a3f3c'
+  const k = canvas.width / NOTEBOOK_W
+  c.setTransform(k, 0, 0, k, 0, 0)
+  const w = NOTEBOOK_W
+  const h = canvas.height / k
+  c.fillStyle = title ? '#5e9474' : '#3a3f3c'
   c.fillRect(0, 0, w, h)
   c.fillStyle = accent
   c.fillRect(0, 0, 10, h)
   if (!title) return
-  c.fillStyle = '#f1efe6'
-  c.fillRect(18, h * 0.3, w - 30, h * 0.4)
-  c.fillStyle = '#2b2a26'
+  c.fillStyle = '#f6f4ec'
+  c.fillRect(16, h * 0.16, w - 24, h * 0.68)
+  c.fillStyle = '#1f1e1b'
   c.textBaseline = 'top'
-  c.font = `600 15px ${FONT}`
-  let y = h * 0.3 + 6
-  for (const line of wrap(c, title, w - 40, 3)) {
-    c.fillText(line, 24, y)
-    y += 18
+  condensed(c, true)
+  fit(c, title, (w - 34) * 1.6, 700, 30)
+  const lh = c.measureText('M').width * 1.3
+  let y = h * 0.16 + 6
+  for (const line of wrap(c, title, w - 34, Math.max(1, Math.floor((h * 0.68 - 8) / lh)))) {
+    c.fillText(line, 22, y)
+    y += lh
   }
+  condensed(c, false)
 }

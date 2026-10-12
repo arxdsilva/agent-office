@@ -29,6 +29,8 @@ export function cleanEnv(extra = {}) {
  * @param {number} [o.height] window content height (CSS px)
  * @param {boolean} [o.fakeRunner] managed sessions use the scripted runner (never the real Claude Code)
  * @param {'system'|'light'|'dark'} [o.theme] UI theme written to the profile's settings
+ * @param {Record<string, string>} [o.env] extra environment (e.g. AGENT_OFFICE_FORCE_SOFTWARE_GL=1)
+ * @param {string[]} [o.args] extra Chromium/Electron switches after the app path
  */
 /** A free local port, so concurrent runs (another agent, a dev instance) never share an API. */
 export function freePort() {
@@ -52,6 +54,8 @@ export async function launchApp({
   height = 810,
   fakeRunner = false,
   theme,
+  env = {},
+  args = [],
 } = {}) {
   port ??= await freePort()
   const dir = mkdtempSync(join(tmpdir(), 'ao-shots-'))
@@ -69,7 +73,7 @@ export async function launchApp({
     }),
   )
   const app = await _electron.launch({
-    args: ['.'],
+    args: ['.', ...args],
     cwd: new URL('../../packages/desktop/', import.meta.url).pathname,
     env: cleanEnv({
       // The temp dir is the app's home too, so the UI shows ~/.agent-office/token like a real install
@@ -87,6 +91,7 @@ export async function launchApp({
       AGENT_OFFICE_DEBUG: '1',
       ...(fakeRunner ? { AGENT_OFFICE_FAKE_RUNNER: '1' } : {}),
       PORT: String(port),
+      ...env,
     }),
   })
   const win = await app.firstWindow()

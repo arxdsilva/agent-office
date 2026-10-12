@@ -27,7 +27,41 @@
     <ul id="wing-signs" class="sr-only" aria-label="Wings"></ul>
     <ul id="capability-list" class="sr-only" aria-label="Adapters, skills and rules"></ul>
     <ul id="link-list" class="sr-only" aria-label="Active links"></ul>
+    <!-- region:UI views (ViewBar DOM adapter renders here) -->
     <nav id="views" aria-label="Camera views"></nav>
+    <!-- endregion:UI views -->
+    <!-- region:UI library (Library drawer <aside id="library">, #tooltip, WebGL failure card #gfx-failure) -->
+    <aside id="library" class="card" hidden aria-labelledby="lib-title">
+      <div class="panel-head">
+        <h2 id="lib-title"></h2>
+        <button id="lib-close" class="icon-btn" type="button">✕</button>
+      </div>
+      <select id="lib-provider" hidden></select>
+      <input id="lib-search" type="search" autocomplete="off" spellcheck="false" />
+      <div class="lib-bar">
+        <div id="lib-tabs" role="tablist"></div>
+        <label class="lib-sort"
+          ><span id="lib-sort-l"></span>
+          <select id="lib-sort"></select
+        ></label>
+      </div>
+      <div id="lib-rows" role="listbox" tabindex="-1" aria-labelledby="lib-title"></div>
+      <p id="lib-empty" class="muted" hidden></p>
+    </aside>
+    <div id="tooltip" role="tooltip" hidden></div>
+    <section id="gfx-failure" class="card" role="alertdialog" aria-labelledby="gfx-f-title" hidden>
+      <h2 id="gfx-f-title"></h2>
+      <p id="gfx-f-body"></p>
+      <p class="form-row">
+        <button id="gfx-f-software" class="btn primary" type="button"></button>
+      </p>
+      <p id="gfx-f-status" class="muted small" role="status"></p>
+      <details id="gfx-f-details">
+        <summary></summary>
+        <pre id="gfx-f-error"></pre>
+      </details>
+    </section>
+    <!-- endregion:UI library -->
     <pre id="stats" hidden></pre>
     <div id="banner" class="banner" role="status" hidden></div>
 
@@ -77,7 +111,7 @@
     </dialog>
 
     <div id="crosshair" hidden></div>
-    <p id="walk-help" class="card" hidden>WASD move · Shift sprint · E talk to agent · Esc exit</p>
+    <p id="walk-help" class="card" hidden>WASD move · Shift sprint · E talk / inspect · Esc exit</p>
 
     <!-- region:W2 panel (composer, session header, permission card) -->
     <aside id="panel" class="card" hidden aria-live="polite">
@@ -200,25 +234,39 @@
         <p id="s-restart" class="muted small" hidden>Backend restarted with the new settings.</p>
       </section>
 
-      <section>
-        <h3>Graphics</h3>
+      <section id="s-gfx">
+        <h3 id="s-gfx-h"></h3>
         <p class="row">
-          <label for="s-graphicsQuality">Quality</label>
-          <select id="s-graphicsQuality">
-            <option value="auto">Auto (adapts to frame rate)</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="ultra">Ultra</option>
-          </select>
+          <label id="s-gfx-quality-l" for="s-graphicsQuality"></label>
+          <select id="s-graphicsQuality"></select>
         </p>
+        <p id="s-gfx-auto-note" class="muted small" hidden></p>
+        <p id="s-gfx-help" class="muted small"></p>
         <p class="row muted small" aria-live="off">
-          <span>Now rendering</span><output id="s-fps">—</output>
+          <span id="s-gfx-now-l"></span><output id="s-gfx-now">—</output>
         </p>
-        <p class="muted small">
-          Lower presets turn off shadows and post-processing for older or battery-powered machines.
-          Changes apply immediately.
+        <h4 id="s-saver-h" class="s-sub"></h4>
+        <label class="row"
+          ><input id="s-saver-blur" type="checkbox" /> <span id="s-saver-blur-l"></span
+        ></label>
+        <label class="row"
+          ><input id="s-saver-hidden" type="checkbox" /> <span id="s-saver-hidden-l"></span
+        ></label>
+        <p class="row">
+          <label id="s-battery-l" for="s-battery-preset"></label>
+          <select id="s-battery-preset"></select>
         </p>
+        <details id="s-gfx-advanced">
+          <summary>
+            <span id="s-adv-title"></span> <span id="s-adv-custom" class="muted" hidden></span>
+          </summary>
+          <div id="s-adv-grid" class="adv-grid"></div>
+          <p class="row end"><button id="s-adv-reset" class="btn small" type="button"></button></p>
+        </details>
+        <label class="row"
+          ><input id="s-hw-accel" type="checkbox" /> <span id="s-hw-accel-l"></span>
+          <span id="s-hw-accel-note" class="muted small"></span
+        ></label>
       </section>
 
       <section>
