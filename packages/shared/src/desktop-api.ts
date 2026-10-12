@@ -5,23 +5,7 @@ import { MAX_MESSAGE_CHARS, type Agent, type ChatMessage, type ServerMessage } f
  * IPC contract between the Electron main process and the renderer (exposed by the preload as
  * `window.agentOffice`). Additive changes only — see ARCHITECTURE rule.
  */
-export const IPC = {
-  ready: 'office:ready',
-  push: 'office:push',
-  select: 'office:select',
-  send: 'chat:send',
-  settingsGet: 'settings:get',
-  settingsSet: 'settings:set',
-  hookStatus: 'hook:status',
-  hookInstall: 'hook:install',
-  hookUninstall: 'hook:uninstall',
-  version: 'app:version',
-  banner: 'app:banner',
-  openSettings: 'app:open-settings',
-  updateCheck: 'update:check',
-  updateInstall: 'update:install',
-  updateState: 'update:state',
-} as const
+export { IPC } from './ipc-channels.ts'
 
 export const WindowBoundsSchema = z.object({
   x: z.number().int(),

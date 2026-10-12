@@ -1,5 +1,6 @@
 // Sandboxed preload: exposes exactly the typed AgentOfficeApi; ipcRenderer itself never reaches the page.
-import { IPC, type AgentOfficeApi, type ServerMessage } from '@agent-office/shared'
+import type { AgentOfficeApi, ServerMessage } from '@agent-office/shared'
+import { IPC } from '@agent-office/shared/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 
 function listen<T>(channel: string, cb: (payload: T) => void): () => void {

@@ -33,7 +33,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: make install
-      - name: make check (format, typecheck, coverage ≥70%, E2E, build)
+      - name: make check (format, typecheck, arch, coverage ≥70%, E2E, build)
         run: make check
       - name: Coverage summary
         if: always() && matrix.os == 'ubuntu-latest' && matrix.node == 22
@@ -52,9 +52,14 @@ jobs:
           path: coverage/
           if-no-files-found: ignore
 
-  ui-smoke:
+  app-smoke:
+    name: app-smoke (${{ matrix.os }})
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -63,14 +68,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: make install
+      - name: Electron system libraries and virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1
       - run: make build
-      - run: pnpm --filter @agent-office/web exec playwright install --with-deps chromium
-      - run: make test-ui
+      - name: Drive the built app with Playwright
+        run: make test-ui
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-${{ matrix.os }}
           path: |
-            packages/web/playwright-report/
-            packages/web/test-results/
+            packages/desktop/playwright-report/
+            packages/desktop/test-results/
           if-no-files-found: ignore

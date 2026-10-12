@@ -5,11 +5,12 @@
 ## Checklist
 
 - [ ] Built test-first (red → green → refactor)
-- [ ] `make check` is green (coverage ≥70% on touched packages)
-- [ ] E2E test added/updated for behavior changes (`packages/server/test/`)
-- [ ] UI changes covered by `make test-ui` and a screenshot attached below
-- [ ] README / schema tables updated if a public contract changed (additive only)
-- [ ] `.claude/rules/PRIVACY_SECURITY.md` respected (no raw transcript logging, `textContent` only)
+- [ ] `make check` is green: arch (hexagonal dependency rule) + coverage ≥70% on touched packages
+- [ ] New driven-port implementations pass the port's contract suite
+- [ ] E2E test added/updated for behavior changes (`packages/adapters/test/`)
+- [ ] App/UI changes covered by `make test-ui` (Playwright Electron) and a screenshot below
+- [ ] Public contracts (HTTP, IPC, hook output) changed additively only; README tables updated
+- [ ] `.claude/rules/PRIVACY_SECURITY.md` respected (Electron checklist, `textContent` only, no raw transcript logging)
 
 ## Screenshots
 

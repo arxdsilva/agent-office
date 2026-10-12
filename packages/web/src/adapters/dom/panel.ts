@@ -1,169 +1,124 @@
-import { MAX_MESSAGE_CHARS, type Agent, type ChatMessage } from '@agent-office/shared'
-import type { SendResult } from './api.ts'
-import type { OfficeState } from './socket.ts'
+import { MAX_MESSAGE_CHARS } from '@agent-office/shared'
+import type { PanelVM } from '../../app/view-models.ts'
+import type { PanelView } from '../../ports.ts'
+import { byId, el } from './el.ts'
 
-const STATE_ICON: Record<ChatMessage['state'], string> = {
-  queued: '⏳ queued',
-  delivered: '✓ delivered',
-  replied: '✓✓ replied',
-}
-
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
-
-function ago(ts: number, now: number): string {
-  const s = Math.max(0, Math.round((now - ts) / 1000))
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.round(s / 60)}m ago`
-  return `${Math.round(s / 3600)}h ago`
-}
-
-/** DOM text only via textContent / createElement (PRIVACY_SECURITY rule). */
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string) {
-  const e = document.createElement(tag)
-  if (text !== undefined) e.textContent = text
-  if (className) e.className = className
-  return e
-}
-
-function hintFor(a: Agent): (string | HTMLElement)[] | null {
-  if (a.provider === 'claude-code') {
-    if (!a.interactive) {
-      return [
-        'Not connected. Run ',
-        el('code', 'make install-hook'),
-        ' so this session can read messages.',
-      ]
-    }
-    if (a.status === 'waiting' || a.status === 'idle') {
-      return [
-        'This session is idle: messages are delivered when you next prompt it in Claude Code.',
-      ]
-    }
-    return ['Messages are delivered when the current turn ends.']
-  }
-  if (!a.interactive) return ["This agent isn't reading its inbox. See README → Inbox API."]
-  return null
-}
-
-/** Side panel: agent details and the chat thread. */
-export class Panel {
-  agentId: string | null = null
-  onClose: () => void = () => {}
-  onSelectParent: (id: string) => void = () => {}
-  private root = $<HTMLElement>('panel')
-  private input = $<HTMLTextAreaElement>('p-input')
-  private error = $<HTMLElement>('p-error')
-  private counter = $<HTMLElement>('p-counter')
+/** PanelView port → the chat side panel. */
+export class DomPanel implements PanelView {
+  private root = byId<HTMLElement>('panel')
+  private input = byId<HTMLTextAreaElement>('p-input')
+  private error = byId<HTMLElement>('p-error')
+  private counter = byId<HTMLElement>('p-counter')
   private renderedThread = ''
+  private sendFn: (text: string) => void | Promise<void> = () => {}
+  private closeFn: () => void = () => {}
+  private parentFn: (id: string) => void = () => {}
+  private installFn: () => void | Promise<void> = () => {}
 
-  constructor(private send: (agentId: string, text: string) => Promise<SendResult>) {
-    $('p-close').addEventListener('click', () => this.close())
-    $('p-form').addEventListener('submit', (e) => {
+  constructor() {
+    byId('p-close').addEventListener('click', () => this.closeFn())
+    byId('p-form').addEventListener('submit', (e) => {
       e.preventDefault()
-      void this.submit()
+      this.submit()
     })
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation() // typing must not trigger scene shortcuts
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        void this.submit()
+        this.submit()
       }
-      if (e.key === 'Escape') this.close()
+      if (e.key === 'Escape') this.closeFn()
     })
     this.input.addEventListener('input', () => {
       this.counter.textContent = `${this.input.value.length}/${MAX_MESSAGE_CHARS}`
     })
   }
 
-  get isOpen(): boolean {
-    return !this.root.hidden
+  onSend(fn: (text: string) => void | Promise<void>) {
+    this.sendFn = fn
+  }
+  onClose(fn: () => void) {
+    this.closeFn = fn
+  }
+  onSelectParent(fn: (id: string) => void) {
+    this.parentFn = fn
+  }
+  onInstallHook(fn: () => void | Promise<void>) {
+    this.installFn = fn
   }
 
-  open(agentId: string, state: OfficeState): void {
-    this.agentId = agentId
+  open(vm: PanelVM): void {
     this.root.hidden = false
     this.renderedThread = ''
     this.error.textContent = ''
-    this.render(state)
+    this.render(vm)
     this.input.focus()
   }
 
   close(): void {
-    if (!this.agentId) return
-    this.agentId = null
     this.root.hidden = true
-    this.onClose()
   }
 
-  render(state: OfficeState, now = Date.now()): void {
-    if (!this.agentId) return
-    const a = state.agents.get(this.agentId)
-    if (!a) {
-      $('p-sub').textContent = 'This agent has left the office.'
-      return
-    }
-    $('p-name').textContent = a.name
-    $('p-sub').textContent = [a.kind, a.provider, a.model].filter(Boolean).join(' · ')
+  showError(message: string): void {
+    this.error.textContent = message
+  }
 
-    const meta = $('p-meta')
-    const rows: [string, string | HTMLElement][] = [
-      ['Topic', a.topic],
-      ['Status', a.status + (a.tool ? ` (${a.tool})` : '')],
-      ['Activity', a.text || '—'],
-      ['Active', `for ${ago(a.since, now).replace(' ago', '')}`],
-      ['Last seen', ago(a.lastSeen, now)],
-    ]
-    if (a.parentId) {
-      const parent = state.agents.get(a.parentId)
-      const btn = el('button', parent?.name ?? a.parentId)
+  clearInput(): void {
+    this.input.value = ''
+    this.error.textContent = ''
+    this.counter.textContent = `0/${MAX_MESSAGE_CHARS}`
+  }
+
+  render(vm: PanelVM): void {
+    if (this.root.hidden) return
+    byId('p-name').textContent = vm.name
+    byId('p-sub').textContent = vm.subtitle
+
+    const rows: HTMLElement[] = vm.meta.flatMap(([k, v]) => [el('dt', k), el('dd', v)])
+    if (vm.parent) {
+      const btn = el('button', vm.parent.name)
       btn.type = 'button'
-      btn.addEventListener('click', () => this.onSelectParent(a.parentId!))
-      rows.push(['Parent', btn])
+      const parentId = vm.parent.id
+      btn.addEventListener('click', () => this.parentFn(parentId))
+      const dd = el('dd')
+      dd.append(btn)
+      rows.push(el('dt', 'Parent'), dd)
     }
-    meta.replaceChildren(
-      ...rows.flatMap(([k, v]) => [el('dt', k), typeof v === 'string' ? el('dd', v) : wrap(v)]),
-    )
+    byId('p-meta').replaceChildren(...rows)
 
-    const hint = $('p-hint')
-    const parts = hintFor(a)
-    hint.hidden = !parts
-    hint.replaceChildren(...(parts ?? []))
+    const hint = byId('p-hint')
+    hint.hidden = !vm.hint
+    hint.replaceChildren()
+    if (vm.hint) {
+      hint.append(el('span', vm.hint.text))
+      if (vm.hint.action === 'install-hook') {
+        const btn = el('button', 'Install Claude Code hook', 'btn')
+        btn.type = 'button'
+        btn.addEventListener('click', () => void this.installFn())
+        hint.append(btn)
+      }
+    }
 
-    const thread = state.messages.get(a.id) ?? []
-    const key = JSON.stringify(thread.map((m) => [m.id, m.state]))
+    const key = JSON.stringify(vm.thread.map((m) => [m.id, m.stateLabel]))
     if (key === this.renderedThread) return
     this.renderedThread = key
-    const list = $('p-thread')
-    if (thread.length === 0) {
-      list.replaceChildren(el('li', 'No messages yet. Say hi 👋', 'empty'))
+    const list = byId('p-thread')
+    if (vm.thread.length === 0) {
+      list.replaceChildren(el('li', vm.present ? 'No messages yet. Say hi 👋' : '', 'empty'))
       return
     }
     list.replaceChildren(
-      ...thread.map((m) => {
+      ...vm.thread.map((m) => {
         const li = el('li', m.text, m.from)
-        if (m.from === 'user') li.append(el('span', STATE_ICON[m.state], 'state'))
+        if (m.stateLabel) li.append(el('span', m.stateLabel, 'state'))
         return li
       }),
     )
     list.scrollTop = list.scrollHeight
   }
 
-  private async submit(): Promise<void> {
+  private submit(): void {
     const text = this.input.value.trim()
-    if (!text || !this.agentId) return
-    this.error.textContent = ''
-    const res = await this.send(this.agentId, text)
-    if (res.ok) {
-      this.input.value = ''
-      this.counter.textContent = `0/${MAX_MESSAGE_CHARS}`
-    } else {
-      this.error.textContent = res.error
-    }
+    if (text) void this.sendFn(text)
   }
-}
-
-function wrap(child: HTMLElement): HTMLElement {
-  const dd = el('dd')
-  dd.append(child)
-  return dd
 }

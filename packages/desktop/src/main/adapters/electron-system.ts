@@ -1,4 +1,6 @@
 import type { LoginItem, PlatformInfo } from '@agent-office/core'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
 import type { IpcRegistrar } from '../ipc-api.ts'
 
@@ -14,7 +16,8 @@ export class ElectronLoginItem implements LoginItem {
 export function electronPlatform(): PlatformInfo {
   return {
     platform: process.platform,
-    packaged: app.isPackaged,
+    // Builds without update metadata (e.g. `electron-builder --dir`) can't self-update: treat them like dev.
+    packaged: app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
     signed: typeof __SIGNED__ !== 'undefined' && __SIGNED__,
     linuxAppImage: !!process.env.APPIMAGE,
     version: app.getVersion(),

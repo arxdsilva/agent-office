@@ -28,7 +28,6 @@ export function contentSecurityPolicy(devServerUrl?: string): string {
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-    "frame-ancestors 'none'",
   ].join('; ')
 }
 

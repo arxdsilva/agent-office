@@ -3,6 +3,8 @@
     "allow": [
       "Bash(make *)",
       "Bash(pnpm *)",
+      "Bash(npx electron-builder *)",
+      "Bash(node scripts/arch.mjs)",
       "Bash(curl -s http://127.0.0.1:4317/*)",
       "Bash(curl -s http://localhost:4317/*)"
     ],

@@ -1,0 +1,46 @@
+# Packaging for macOS (.dmg/.zip), Windows (NSIS .exe) and Linux (.AppImage/.deb).
+# Signing/notarization happen automatically when CSC_LINK / APPLE_* secrets are present; otherwise builds are unsigned.
+appId: dev.arxdsilva.agent-office
+productName: agent-office
+copyright: Copyright © 2026 arxdsilva
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+extraResources:
+  # The Claude Code hook runs outside the app (via the generated wrapper), so it ships unpacked.
+  - from: ../../hooks/agent-office-hook.mjs
+    to: hooks/agent-office-hook.mjs
+  - from: build
+    to: icons
+    filter: ['tray*.png']
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  hardenedRuntime: true
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+win:
+  icon: build/icon.png
+  target: [nsis]
+nsis:
+  oneClick: false
+  perMachine: false
+  # Fixed per-user install path keeps the hook wrapper's binary path stable across updates.
+  allowToChangeInstallationDirectory: false
+linux:
+  icon: build/icon.png
+  category: Development
+  maintainer: arxdsilva
+  target: [AppImage, deb]
+publish:
+  provider: github
+  owner: arxdsilva
+  repo: agent-office
+  releaseType: draft

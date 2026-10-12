@@ -1,0 +1,18 @@
+/** IPC channel names. Kept free of runtime deps so the sandboxed preload stays tiny. */
+export const IPC = {
+  ready: 'office:ready',
+  push: 'office:push',
+  select: 'office:select',
+  send: 'chat:send',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set',
+  hookStatus: 'hook:status',
+  hookInstall: 'hook:install',
+  hookUninstall: 'hook:uninstall',
+  version: 'app:version',
+  banner: 'app:banner',
+  openSettings: 'app:open-settings',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  updateState: 'update:state',
+} as const

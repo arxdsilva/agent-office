@@ -1,5 +1,6 @@
 node_modules/
 dist/
+out/
 coverage/
 *.log
 .env
@@ -7,5 +8,5 @@ coverage/
 !.env.example
 .DS_Store
 .vite/
-packages/web/playwright-report/
-packages/web/test-results/
+playwright-report/
+test-results/

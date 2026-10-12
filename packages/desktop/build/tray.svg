@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Monochrome glyph: macOS uses it as a template image (tinted for light/dark menu bars). -->
+  <rect x="5" y="4" width="22" height="15" rx="2.5" fill="none" stroke="#000" stroke-width="2.5"/>
+  <rect x="14.5" y="19" width="3" height="4" fill="#000"/>
+  <rect x="3" y="23" width="26" height="3" rx="1.5" fill="#000"/>
+  <rect x="9" y="9" width="8" height="2" rx="1" fill="#000"/>
+  <rect x="9" y="13" width="12" height="2" rx="1" fill="#000"/>
+</svg>

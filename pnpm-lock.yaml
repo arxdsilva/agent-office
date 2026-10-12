@@ -72,15 +72,6 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@agent-office/adapters':
-        specifier: workspace:*
-        version: link:../adapters
-      '@agent-office/core':
-        specifier: workspace:*
-        version: link:../core
-      '@agent-office/shared':
-        specifier: workspace:*
-        version: link:../shared
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -91,6 +82,15 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@agent-office/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@agent-office/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agent-office/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@playwright/test':
         specifier: ^1.64.0
         version: 1.64.0

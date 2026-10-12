@@ -3,8 +3,10 @@ import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
 import { contentSecurityPolicy } from './src/main/security.ts'
 
-// Workspace packages are TypeScript sources: bundle them. Real npm deps stay external (packed by electron-builder).
+// Workspace packages are TypeScript sources: bundle them. Electron and the real npm runtime deps stay
+// external (electron-builder packs `dependencies` into the app).
 const workspace = ['@agent-office/core', '@agent-office/adapters', '@agent-office/shared']
+const runtimeExternals = [/^electron(\/.*)?$/, /^electron-updater(\/.*)?$/, /^fastify(\/.*)?$/, /^zod(\/.*)?$/, /^node:/]
 
 /** Production CSP as a <meta> tag (file:// pages have no response headers). Dev gets it as a header. */
 const cspMeta = (): Plugin => ({
@@ -18,15 +20,14 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: { exclude: workspace },
-      rollupOptions: { input: resolve(__dirname, 'src/main/index.ts') },
+      rollupOptions: { input: resolve(__dirname, 'src/main/index.ts'), external: runtimeExternals },
     },
     define: { __SIGNED__: JSON.stringify(!!process.env.CSC_LINK) },
   },
   preload: {
-    // Sandboxed preloads must be a single CommonJS file with everything inlined.
+    // Sandboxed preloads must be a single CommonJS file with everything inlined (one entry → no code splitting).
     build: {
       externalizeDeps: false,
-      isolatedEntries: true,
       rollupOptions: {
         input: resolve(__dirname, 'src/preload/index.ts'),
         external: ['electron'],

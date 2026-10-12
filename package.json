@@ -7,18 +7,20 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --filter ./packages/server --filter ./packages/web dev",
-    "dev:mock": "AGENT_OFFICE_MOCK=1 pnpm dev",
-    "build": "pnpm --filter ./packages/web build",
-    "start": "pnpm --filter ./packages/server start",
-    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter @agent-office/desktop dev",
+    "dev:mock": "AGENT_OFFICE_MOCK=1 pnpm --filter @agent-office/desktop dev",
+    "build": "pnpm --filter @agent-office/desktop build",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.scripts.json",
     "test": "vitest run --project unit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "vitest run --project e2e",
     "coverage": "vitest run --project unit --coverage",
-    "test:ui": "pnpm --filter @agent-office/web test:ui",
-    "arch": "node scripts/arch.mjs"
+    "test:ui": "pnpm --filter @agent-office/desktop test:ui",
+    "arch": "node scripts/arch.mjs",
+    "package": "pnpm --filter @agent-office/desktop package",
+    "package:dist": "pnpm --filter @agent-office/desktop package:dist",
+    "icons": "node scripts/render-icons.mjs"
   },
   "devDependencies": {
     "@agent-office/adapters": "workspace:*",

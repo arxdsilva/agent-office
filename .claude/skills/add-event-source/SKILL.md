@@ -9,14 +9,14 @@ Rules that apply: `TESTING.md` (TDD, ≥70%), `ARCHITECTURE.md`, `PRIVACY_SECURI
 
 First ask: can the producer just `POST /api/events`? If yes, document it in the README instead of adding code.
 
-1. **Red** — `packages/server/src/sources/<name>.test.ts`: fixtures shaped like the real data with **invented** content. Test a pure mapper `toEvent(raw, ctx): AgentEvent | null`:
+1. **Red** — `packages/adapters/src/sources/<name>/*.test.ts`: fixtures shaped like the real data with **invented** content. Test a pure mapper `toEvent(raw, ctx): AgentEvent | null`:
    - identity (`agentId` stable and namespaced, e.g. `lg:<id>`), `parentId` for sub-agents
    - `provider` (the zone) and `topic` (the row) — what would a user call this conversation?
    - status mapping onto `idle | thinking | tool | waiting | error | done`
    - malformed input → `null`
-2. **Green** — `packages/server/src/sources/<name>.ts`: the mapper plus a class with `start()` / `stop()` / a testable `tick()`. It may only call `store.apply()` (and `messages.reply()` for replies). Never throw out of `tick()`.
-3. **Config** — flag/env in `config.ts` (+ `config.test.ts`) and `.env.example`; register in `src/index.ts`.
-4. **E2E** — `packages/server/test/e2e.<name>.test.ts`: real source → real server → WebSocket client sees the agent in the right zone/row.
+2. **Green** — `packages/adapters/src/sources/<name>/`: a pure mapper plus a driving adapter with `start()` / `stop()` / a testable `tick()`. It depends only on core ports (`ReportActivity`, optionally `AgentInbox`, `Clock`, `Scheduler`); put file/network access behind an adapter-local interface (like `TranscriptFiles`) so it can be tested in memory. Never throw out of `tick()`.
+3. **Config** — a setting in `shared/src/desktop-api.ts` `SettingsSchema` (additive, with a default, and a restart field in `core/src/domain/settings.ts`), plus an env override in `adapters/src/config.ts` and `.env.example`. Start or stop it in `startBackend` in `desktop/src/main/composition.ts`.
+4. **E2E** — `packages/adapters/test/e2e.<name>.test.ts`: real source → real core → `observe(office)` sees the agent in the right zone and row.
 5. **Docs** — README "Sources" section: what is read, what is ignored, privacy notes.
 6. **Privacy check** — only status, tool, title, model and ≤80-char snippets leave the source; nothing is logged raw.
-7. `make check`, then `/run-office` to see the new zone.
+7. `make check` (including `make arch`), then `/run-office` to see the new zone.

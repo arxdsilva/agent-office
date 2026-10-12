@@ -2,35 +2,44 @@
 
 ## TDD is mandatory for behavior changes
 
-1. **Red** — write a failing test and run it; confirm it fails for the expected reason.
-2. **Green** — write the minimum code to make it pass.
-3. **Refactor** — clean up with tests green.
+1. **Red**: write a failing test and run it; confirm it fails for the expected reason.
+2. **Green**: write the minimum code to make it pass.
+3. **Refactor**: clean up while the tests stay green.
 
-No production code without a red test first. Bug fixes start with a test that reproduces the bug.
+Never write production code without a red test first. Bug fixes start with a test that reproduces the bug.
 
 ## Coverage bar
 
-- Aim for **≥70%** statements/branches/functions/lines on every package you touch — measured on
-  the **whole package**, not just new lines.
-- `make coverage` enforces it. The task is **not done** while any package is below 70%.
+- Aim for **≥70%** statements, branches, functions and lines on every package you touch. This is measured on the **whole package**, not just the new lines.
+- `make coverage` enforces it per package (`shared`, `core`, `adapters`, `desktop`, `web`, `hooks`, `scripts`). The task is **not done** while any package is below 70%.
 
-Excluded from the threshold (rendering-only, covered by the Playwright smoke test instead), listed
-in `vitest.config.ts`: `packages/web/src/{main,office,avatar,controls,panel}.ts`. Do not widen this
-list without saying so in the PR.
+Excluded from the threshold: thin shells covered by the Playwright Electron suite instead. They are listed in `vitest.config.ts`:
+- `desktop/src/main/index.ts`
+- `desktop/src/main/window.ts`
+- `desktop/src/main/adapters/electron-*.ts`
+- `desktop/src/preload/**`
+- `web/src/main.ts`
+- `web/src/adapters/{three,dom}/**`
+- the `scripts/*.mjs` helpers
+
+Do not widen this list without saying so in the PR.
 
 ## Layers
 
-| Layer    | Where                                                                 | Tool                                       | Must                                                                                                        |
-| -------- | --------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Unit     | `packages/*/src/**/*.test.ts`, `hooks/*.test.ts`, `scripts/*.test.ts` | vitest                                     | No network, no real `~/.claude` or `~/.agent-office` — use `os.tmpdir()` fixtures; time injected, not faked |
-| E2E      | `packages/server/test/e2e.*.test.ts`                                  | vitest + real server on port 0 + real `ws` | Every behavior change ships one                                                                             |
-| UI smoke | `packages/web/e2e/*.spec.ts`                                          | Playwright (Chromium)                      | Every UI behavior change ships a case                                                                       |
+| Layer | Where | How |
+|---|---|---|
+| Domain | `core/src/domain/*.test.ts` | Pure; time passed in |
+| Use cases | `core/src/application/*.test.ts` | Fakes from `@agent-office/core/testing`; `ManualScheduler`, `FakeClock`, `FakeSignal` (no real timers) |
+| Port contracts | `core/test/contracts/*` | **Mandatory for every driven-port implementation**: fakes in `core/test/fakes.test.ts`, real adapters next to the adapter |
+| Adapters | `adapters/src/**/*.test.ts`, `desktop/src/main/*.test.ts`, `web/src/**/*.test.ts` | Real core via `adapters/test/support.ts`; temp dirs; in-memory `TranscriptFiles` |
+| Backend E2E | `adapters/test/e2e.*.test.ts` | Real HTTP server on port 0 + real hook script; observe via `OfficeQuery.watch` |
+| App E2E | `desktop/e2e/*.spec.ts` | Playwright `_electron` drives the **built** app with an isolated profile (`AGENT_OFFICE_USER_DATA`, `AGENT_OFFICE_HOME`, `CLAUDE_SETTINGS_FILE`, `AGENT_OFFICE_MOCK=1`, port 4318) |
 
 ## Do / Don't
 
-| Do                                                                      | Don't                                           |
-| ----------------------------------------------------------------------- | ----------------------------------------------- |
-| Fixtures shaped like real transcripts with **invented** content         | Copy real transcript content into fixtures      |
-| A 1–3 line comment before each request in E2E tests saying what and why | Bare URL sequences no one can read              |
-| `it.concurrent` only with no shared state                               | Share stores or servers across concurrent tests |
-| Pass `now` into store/sweep functions                                   | Rely on wall-clock sleeps for logic tests       |
+| Do | Don't |
+|---|---|
+| Use fixtures shaped like real transcripts with **invented** content | Copy real transcript content into fixtures |
+| Put a 1–3 line comment before each request or step in E2E tests saying what and why | Write bare URL sequences no one can read |
+| Point tests at temp files (`CLAUDE_SETTINGS_FILE`, `AGENT_OFFICE_HOME`) | Touch the real `~/.claude` or `~/.agent-office` in any test |
+| Every behavior change ships an E2E test; UI or app changes ship a Playwright case | Rely on unit tests alone for a behavior change |

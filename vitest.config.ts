@@ -24,22 +24,33 @@ export default defineConfig({
       reporter: ['text', 'json-summary', 'html'],
       include: [
         'packages/shared/src/**',
-        'packages/server/src/**',
+        'packages/core/src/**',
+        'packages/adapters/src/**',
+        'packages/desktop/src/**',
         'packages/web/src/**',
         'hooks/**',
         'scripts/**',
       ],
-      // Rendering-only files: covered by the Playwright smoke test, not unit tests.
-      // Keep in sync with .claude/rules/TESTING.md.
+      // Thin rendering/Electron shells: covered by the Playwright Electron suite (packages/desktop/e2e), not unit tests.
+      // Keep in sync with .claude/rules/TESTING.md — do not widen silently.
       exclude: [
         '**/*.test.ts',
-        'packages/server/src/index.ts',
-        'packages/web/src/{main,office,avatar,controls,panel}.ts',
+        'packages/desktop/src/main/index.ts',
+        'packages/desktop/src/main/adapters/electron-*.ts',
+        'packages/desktop/src/main/window.ts',
+        'packages/desktop/src/preload/**',
+        'packages/web/src/main.ts',
+        'packages/web/src/adapters/three/**',
+        'packages/web/src/adapters/dom/**',
+        'scripts/arch.mjs',
+        'scripts/render-icons.mjs',
       ],
-      // 70% per package (aggregated per glob), see .claude/rules/TESTING.md.
+      // ≥70% per package (aggregated per glob), see .claude/rules/TESTING.md.
       thresholds: {
         'packages/shared/src/**': threshold,
-        'packages/server/src/**': threshold,
+        'packages/core/src/**': threshold,
+        'packages/adapters/src/**': threshold,
+        'packages/desktop/src/**': threshold,
         'packages/web/src/**': threshold,
         'hooks/**': threshold,
         'scripts/**': threshold,

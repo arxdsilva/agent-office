@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
-import type { ZoneLayout } from './layout.ts'
+import type { ZoneLayout } from '../../app/layout.ts'
 
 /** Axis-aligned box on the floor, used for walk-mode collision. */
 export interface Collider {
