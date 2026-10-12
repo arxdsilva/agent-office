@@ -1854,3 +1854,324 @@ describe('controller: Library browser, views and hover (Part B)', () => {
     expect(t.tooltip.text).toBeNull()
   })
 })
+
+// ── Optional 2D RPG mode (plan §2.5, §8, §9): C-mode-*. The deps are optional; without them the
+// controller behaves exactly as above (the existing cases run without them).
+import type { DialogueView, ModeToggleView, PixelHudView } from './ports.ts'
+import type {
+  DialogueAction,
+  DialogueVM,
+  DirectoryVM,
+  InteractTarget,
+  MinimapVM,
+  PixelHudVM,
+} from './app/pixel/types.ts'
+import type { ViewMode } from '@agent-office/shared'
+import { PIXEL_COPY } from './app/pixel-copy.ts'
+
+function fakePixel(handlers: Record<string, (...a: any[]) => void> = {}) {
+  const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
+  const dialogue: DialogueView & { vm: DialogueVM | null; opens: DialogueVM[] } = {
+    vm: null,
+    opens: [],
+    open(vm) {
+      this.vm = vm
+      this.opens.push(vm)
+    },
+    render(vm) {
+      this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    isOpen() {
+      return this.vm !== null
+    },
+    onAction: on('action'),
+    onClose: on('dialogueClose'),
+  }
+  const pixelHud: PixelHudView & {
+    shown: boolean[]
+    vm: PixelHudVM | null
+    minimap: MinimapVM | null
+    directory: DirectoryVM | null
+  } = {
+    shown: [],
+    vm: null,
+    minimap: null,
+    directory: null,
+    show(on) {
+      this.shown.push(on)
+    },
+    render(vm) {
+      this.vm = vm
+    },
+    renderMinimap(vm) {
+      this.minimap = vm
+    },
+    renderDirectory(vm) {
+      this.directory = vm
+    },
+    onAlert: on('alert'),
+    onMinimapPick: on('minimapPick'),
+    onDirectory: on('directory'),
+    onDirectorySearch: on('directorySearch'),
+  }
+  const modeToggle: ModeToggleView & { modes: ViewMode[] } = {
+    modes: [],
+    render(m) {
+      this.modes.push(m)
+    },
+    onChange: on('modeChange'),
+  }
+  const viewModes: ViewMode[] = []
+  return { dialogue, pixelHud, modeToggle, viewModes, handlers }
+}
+
+/** The 2D scene's optional methods on the fake scene. */
+function pixelScene(v: ReturnType<typeof fakeViews>) {
+  const s = v.scene as typeof v.scene & {
+    suspended: boolean[]
+    followed: (string | null)[]
+    travels: { agentId?: string; viewId?: string }[]
+  }
+  s.suspended = []
+  s.followed = []
+  s.travels = []
+  s.onInteract = (fn) => void (v.handlers.interact = fn)
+  s.onRoom = (fn) => void (v.handlers.room = fn)
+  s.onPlayerMove = (fn) => void ((v.handlers as Record<string, unknown>).playerMove = fn)
+  s.setInputSuspended = (on) => void s.suspended.push(on)
+  s.follow = (id) => void s.followed.push(id)
+  s.travelTo = (t) => void s.travels.push(t)
+  return s
+}
+
+async function setupPixel(
+  initial: Settings = DEFAULT_SETTINGS,
+  agents: Agent[] = [agent('a', { name: 'Ada', status: 'idle' })],
+) {
+  const g = fakeGateway(initial, agents)
+  const v = fakeViews()
+  const scene = pixelScene(v)
+  const px = fakePixel(v.handlers)
+  const timers: { ms: number; fn: () => void }[] = []
+  let now = 0
+  const { mql, handlers: _h, ...views } = v
+  const c = createController({
+    gateway: g.api,
+    ...views,
+    matchMedia: () => mql,
+    grouping: byProviderAndTopic,
+    clock: { now: () => now },
+    every: (ms, fn) => (timers.push({ ms, fn }), () => {}),
+    after: () => () => {},
+    dialogue: px.dialogue,
+    pixelHud: px.pixelHud,
+    modeToggle: px.modeToggle,
+    onViewMode: (m) => void px.viewModes.push(m),
+  })
+  await c.start()
+  const tick = (ms: number) => timers.filter((t) => t.ms === ms).forEach((t) => t.fn())
+  const push = (m: ServerMessage) => g.listeners.message.forEach((fn) => fn(m))
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+  const advance = (ms: number) => {
+    for (const end = now + ms; now < end;) {
+      now = Math.min(end, now + 250)
+      tick(250)
+    }
+  }
+  const act = (a: DialogueAction) => px.handlers.action!(a)
+  const interact = (t: InteractTarget) => v.handlers.interact!(t)
+  return { ...g, ...v, ...px, scene, c, tick, push, flush, advance, act, interact, timers }
+}
+
+describe('controller: 2D RPG mode (C-mode)', () => {
+  // C-mode-1: the toggle shows the mode; a viewMode settings change switches the scene host.
+  it('renders the mode and calls onViewMode when viewMode changes', async () => {
+    const t = await setupPixel()
+    expect(t.modeToggle.modes.at(-1)).toBe('3d')
+    expect(t.pixelHud.shown.at(-1)).toBe(false)
+    expect(t.viewModes).toEqual([])
+    // The toggle writes the setting; the settings round trip switches the mode.
+    t.handlers.modeChange!('pixel')
+    await t.flush()
+    await t.flush()
+    expect(t.api.settings.set).toHaveBeenCalledWith({ viewMode: 'pixel' })
+    expect(t.viewModes).toEqual(['pixel'])
+    expect(t.modeToggle.modes.at(-1)).toBe('pixel')
+    expect(t.pixelHud.shown.at(-1)).toBe(true)
+    // The same mode again doesn't switch twice.
+    t.handlers.settingsChange!({ viewMode: 'pixel' })
+    await t.flush()
+    await t.flush()
+    expect(t.viewModes).toEqual(['pixel'])
+    t.handlers.settingsChange!({ viewMode: '3d' })
+    await t.flush()
+    await t.flush()
+    expect(t.viewModes).toEqual(['pixel', '3d'])
+    expect(t.pixelHud.minimap).toBeNull()
+  })
+
+  it('starts in 2D without switching (main already built the 2D scene)', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    expect(t.viewModes).toEqual([])
+    expect(t.pixelHud.shown).toEqual([true])
+    expect(t.modeToggle.modes).toEqual(['pixel'])
+  })
+
+  // C-mode-2: E on an agent opens the dialogue; Talk opens the existing panel on it.
+  it('opens the dialogue on interact and Talk selects the agent', async () => {
+    const t = await setupPixel()
+    t.interact({ kind: 'agent', id: 'a' })
+    expect(t.dialogue.vm?.title).toBe('Ada')
+    expect(t.dialogue.vm?.actions.map((a) => a.id)).toEqual(['talk', 'details', 'follow'])
+    expect(t.scene.suspended.at(-1)).toBe(true)
+    t.act('talk')
+    expect(t.dialogue.vm).toBeNull()
+    expect(t.panel.vm?.id).toBe('a')
+    expect(t.scene.selected).toBe('a')
+    // Still suspended while the panel is open; closing it gives control back.
+    expect(t.scene.suspended.at(-1)).toBe(true)
+    t.handlers.close!()
+    expect(t.scene.suspended.at(-1)).toBe(false)
+    // Unknown agents open nothing.
+    t.interact({ kind: 'agent', id: 'nobody' })
+    expect(t.dialogue.vm).toBeNull()
+  })
+
+  // C-mode-3: Review and Details go to the same panel; Follow follows; Esc gives input back.
+  it('routes Review, Details and Follow', async () => {
+    const t = await setupPixel(DEFAULT_SETTINGS, [
+      agent('a', {
+        name: 'Ada',
+        status: 'waiting',
+        managed: { chrome: false, pending: 1, phase: 'running' },
+      }),
+    ])
+    t.push({
+      type: 'permission',
+      agentId: 'a',
+      requests: [{ id: 'perm_1', tool: 'Bash', summary: 'ls' }],
+    })
+    t.interact({ kind: 'agent', id: 'a' })
+    expect(t.dialogue.vm?.actions.map((a) => a.id)).toEqual(['review', 'details', 'follow'])
+    t.act('review')
+    expect(t.panel.vm?.id).toBe('a')
+    expect(t.panel.vm?.permission).toBeTruthy()
+    t.handlers.close!()
+    t.interact({ kind: 'agent', id: 'a' })
+    t.act('details')
+    expect(t.panel.vm?.id).toBe('a')
+    t.handlers.close!()
+    t.interact({ kind: 'agent', id: 'a' })
+    t.act('follow')
+    expect(t.scene.followed).toEqual(['a'])
+    expect(t.toast.shown.at(-1)!.text).toBe(PIXEL_COPY.following('Ada'))
+    t.interact({ kind: 'agent', id: 'a' })
+    t.handlers.dialogueClose!()
+    expect(t.scene.suspended.at(-1)).toBe(false)
+  })
+
+  it('opens capabilities, the Library and the parent from the dialogue', async () => {
+    const t = await setupPixel(DEFAULT_SETTINGS, [
+      agent('a', { name: 'Ada', status: 'idle', provider: 'claude-code' }),
+      agent('s', { name: 'Sub', status: 'thinking', provider: 'claude-code', parentId: 'a' }),
+    ])
+    t.push({
+      type: 'capabilities',
+      provider: 'claude-code',
+      capabilities: [cap('fs'), cap('skill:pdf')],
+    })
+    t.interact({ kind: 'capability', ref: { provider: 'claude-code', id: 'fs' } })
+    t.act('open')
+    expect(t.capabilityPanel.vm).not.toBeNull()
+    t.interact({ kind: 'capability', ref: { provider: 'claude-code', id: 'skill:pdf' } })
+    t.act('open-library')
+    expect(t.library.vm?.provider).toBe('claude-code')
+    expect(t.library.vm?.tab).toBe('skills')
+    t.interact({ kind: 'agent', id: 's' })
+    expect(t.dialogue.vm?.actions.map((a) => a.id)).toContain('go-parent')
+    t.act('go-parent')
+    expect(t.scene.travels).toEqual([{ agentId: 'a' }])
+    expect(t.dialogue.vm?.title).toBe('Ada')
+    // Objects: the stats board.
+    t.interact({ kind: 'object', object: 'stats-board' })
+    expect(t.dialogue.vm?.title).toBe(PIXEL_COPY.dialogue.statsBoard)
+  })
+
+  // HUD, minimap and directory refresh at 2 Hz while 2D is active.
+  // The minimap marks where the player stands (the scene reports it in world metres).
+  it('shows the player on the minimap', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    const move = (t.handlers as Record<string, unknown>).playerMove as (p: {
+      x: number
+      z: number
+    }) => void
+    move({ x: 0, z: 0 })
+    t.tick(500)
+    expect(t.pixelHud.minimap?.player).toBeDefined()
+  })
+
+  it('renders the HUD, minimap and directory at 2 Hz in 2D', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, [
+      agent('a', { name: 'Ada', status: 'waiting' }),
+      agent('b', { name: 'Bo', status: 'error' }),
+    ])
+    t.handlers.room!('p · Pod 2')
+    t.tick(500)
+    expect(t.pixelHud.vm?.room).toBe('p · Pod 2')
+    expect(t.pixelHud.vm?.counts).toEqual({ agents: 2, waiting: 1, errors: 1 })
+    expect(t.pixelHud.vm?.alerts.map((a) => a.agentId)).toEqual(['a', 'b'])
+    expect(t.pixelHud.minimap?.dots.map((d) => d.id)).toEqual(['a', 'b'])
+    expect(t.pixelHud.directory?.wings[0]?.viewId).toBe('wing:p:0')
+    t.handlers.directorySearch!('bo')
+    expect(t.pixelHud.directory?.wings[0]?.topics[0]?.agents.map((a) => a.id)).toEqual(['b'])
+    // Alert → the panel on that agent.
+    t.handlers.alert!('a', false)
+    expect(t.panel.vm?.id).toBe('a')
+    // Directory: pan (select / goTo) or fast-travel.
+    t.handlers.directory!({ viewId: 'wing:p:0', travel: false })
+    expect(t.scene.wentTo.at(-1)).toBe('wing:p:0')
+    t.handlers.directory!({ agentId: 'b', travel: true })
+    expect(t.scene.travels.at(-1)).toEqual({ agentId: 'b' })
+    t.handlers.directory!({ agentId: 'b', travel: false })
+    expect(t.panel.vm?.id).toBe('b')
+    // Minimap click → the view of the module under it.
+    const m = t.pixelHud.minimap!
+    t.handlers.minimapPick!(Math.floor(m.widthTiles / 2), 2)
+    expect(t.scene.wentTo.at(-1)).toBe('atrium')
+  })
+
+  it('stays quiet in 3D and closes a dialogue whose agent left', async () => {
+    const quiet = await setupPixel()
+    quiet.tick(500)
+    expect(quiet.pixelHud.vm).toBeNull()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.interact({ kind: 'agent', id: 'a' })
+    t.push({ type: 'remove', id: 'a' })
+    t.advance(30_000)
+    t.tick(500)
+    expect(t.dialogue.vm).toBeNull()
+    expect(t.toast.shown.some((x) => x.text === PIXEL_COPY.dialogue.left('Ada'))).toBe(true)
+  })
+
+  // Resync for a new scene (plan §2.3): the plans with their remaining steps.
+  it('exposes resync() for the scene host', async () => {
+    const t = await setupPixel()
+    const plans = t.c.resync()
+    expect(plans.get('a')?.steps?.length).toBeGreaterThan(0)
+  })
+
+  it('without the 2D deps, never touches the optional scene methods', async () => {
+    const s = await setup(undefined, (v) => {
+      pixelScene(v)
+    })
+    const scene = s.scene as typeof s.scene & { suspended: boolean[] }
+    s.c.select('a')
+    s.handlers.close!()
+    expect(scene.suspended).toEqual([])
+    expect(s.handlers.interact).toBeUndefined()
+    expect(s.c.resync().size).toBe(1)
+  })
+})

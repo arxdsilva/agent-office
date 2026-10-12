@@ -10,6 +10,7 @@ import {
   type SettingsPatch,
   type TestEventResult,
   type UpdateState,
+  type ViewMode,
 } from '@agent-office/shared'
 import { capabilityBubbles, capabilityPanelVM, surfacesVM, usedChips } from './app/capability-vm.ts'
 import { createDirector, type Director } from './app/director.ts'
@@ -61,17 +62,35 @@ import {
   type DemoStart,
 } from './app/view-models.ts'
 import type { Draft, NewSessionForm } from './app/session-types.ts'
+import type { Manifest } from './app/manifest.ts'
+import { libraryKind } from './app/library.ts'
+import { dialogueVM } from './app/pixel/dialogue-vm.ts'
+import { directoryVM } from './app/pixel/directory-vm.ts'
+import { pixelHudVM } from './app/pixel/hud-vm.ts'
+import { minimapVM } from './app/pixel/minimap.ts'
+import { pixelToWorld, projectionFor } from './app/pixel/project.ts'
+import { placementAt, viewIdOf } from './app/pixel/rooms.ts'
+import {
+  TILE_PX,
+  type DialogueAction,
+  type DialogueVM,
+  type InteractTarget,
+} from './app/pixel/types.ts'
+import { PIXEL_COPY } from './app/pixel-copy.ts'
 import type {
   BannerView,
   CapabilityPanelView,
   CapabilityRef,
   ConnectView,
+  DialogueView,
   EmptyStateView,
   HudView,
   LibraryView,
+  ModeToggleView,
   NewSessionView,
   OfficeGateway,
   PanelView,
+  PixelHudView,
   SceneView,
   SettingsView,
   ToastView,
@@ -116,6 +135,15 @@ export interface ControllerDeps {
   isMac?: boolean
   /** Snippet language remembered from last time (the DOM adapter keeps it). */
   snippetLang?: SnippetLang
+  // ── Optional 2D RPG mode (plan §2.5, §8, §9). Absent: the controller behaves as before. ──
+  /** The RPG dialogue box (`#dialogue`). */
+  dialogue?: DialogueView
+  /** The 2D HUD: room, counts, alerts, minimap and directory. */
+  pixelHud?: PixelHudView
+  /** The `3D Office | 2D RPG` switch. */
+  modeToggle?: ModeToggleView
+  /** A `viewMode` settings change (main.ts wires it to the scene host's `switchTo`). */
+  onViewMode?: (mode: ViewMode) => void
 }
 
 /** The part of `Document` the controller uses (visibility and focus). */
@@ -163,6 +191,8 @@ const emptyForm = (folder?: ContextRef): NewSessionForm => ({
 export const MANIFEST_URL = 'assets/manifest.json'
 /** The director runs at 4 Hz (plan §4.3); messages also trigger an immediate update. */
 export const DIRECT_MS = 250
+/** The 2D HUD, minimap and directory refresh rate (2 Hz). */
+export const PIXEL_HUD_MS = 500
 
 /** Renderer use cases: state → director (building, behavior) → views, and user intents → gateway calls. */
 export function createController(d: ControllerDeps) {
@@ -244,6 +274,17 @@ export function createController(d: ControllerDeps) {
   let demo: DemoStart = 'idle'
   let cancelDemoTimer = () => {}
 
+  // 2D RPG mode (plan §8, §9): inert unless its deps are wired.
+  const pixelDeps = !!(d.dialogue || d.pixelHud || d.modeToggle || d.onViewMode)
+  let viewMode: ViewMode | undefined
+  let manifest: Manifest | undefined
+  let room = ''
+  /** 2D: the player's world position (minimap marker). */
+  let playerPos: { x: number; z: number } | undefined
+  let dirQuery = ''
+  let dialogueAt: { target: InteractTarget; vm: DialogueVM } | null = null
+  let suspended = false
+
   /** Recomputes the effective graphics and forwards actual changes (or all, with `force`). */
   const applyGraphics = (force = false) => {
     const s = settingsNow ?? DEFAULT_SETTINGS
@@ -268,6 +309,23 @@ export function createController(d: ControllerDeps) {
     settingsNow = s
     allowBypass = s.allowBypassPermissions
     applyGraphics()
+    if (pixelDeps) applyViewMode(s.viewMode ?? '3d')
+  }
+
+  /** The first mode only renders (main built that scene); later changes switch the scene host. */
+  function applyViewMode(mode: ViewMode) {
+    if (mode === viewMode) return
+    const first = viewMode === undefined
+    viewMode = mode
+    d.modeToggle?.render(mode)
+    d.pixelHud?.show(mode === 'pixel')
+    if (mode !== 'pixel') {
+      closeDialogue()
+      d.pixelHud?.renderMinimap(null)
+      d.pixelHud?.renderDirectory(null)
+    }
+    if (!first) d.onViewMode?.(mode)
+    if (mode === 'pixel') renderPixel()
   }
 
   const graphicsFacts = () => ({
@@ -417,6 +475,7 @@ export function createController(d: ControllerDeps) {
     showLinks = false
     d.scene.highlightLinks(null)
     d.scene.focusCapability(null)
+    updateSuspension()
   }
 
   /** The capability's own surface slot in its provider's wings (undefined: overflow). */
@@ -442,6 +501,7 @@ export function createController(d: ControllerDeps) {
     if (slotOf(c) !== undefined) d.scene.focusCapability(ref)
     else d.scene.focusCapability(null)
     renderCapability(true)
+    updateSuspension()
   }
 
   const selectedProvider = () =>
@@ -542,7 +602,10 @@ export function createController(d: ControllerDeps) {
     // Agents walking out (removed from state, still planned) stay selectable while they leave.
     selected = id && (state.agents.has(id) || plans.has(id)) ? id : null
     d.scene.select(selected)
-    if (!selected) return d.panel.close()
+    if (!selected) {
+      d.panel.close()
+      return updateSuspension()
+    }
     if (openCapability) {
       d.capabilityPanel.close()
       closeCapability()
@@ -551,11 +614,118 @@ export function createController(d: ControllerDeps) {
     shownActivity = vm.activity
     d.panel.open(vm)
     loadModels(selected)
+    updateSuspension()
+  }
+
+  /** 2D: player input pauses while the dialogue or any panel/drawer/dialog is open. */
+  function updateSuspension() {
+    if (!pixelDeps) return
+    const on =
+      dialogueAt !== null ||
+      selected !== null ||
+      openCapability !== null ||
+      d.library.isOpen() ||
+      d.settings.isOpen() ||
+      d.connect.isOpen() ||
+      d.newSession.isOpen()
+    if (on === suspended) return
+    suspended = on
+    d.scene.setInputSuspended?.(on)
+  }
+
+  const dialogueContext = () => ({ state, plans, activityOf })
+
+  /** E (or a click) on something in 2D: the dialogue box. */
+  function openDialogue(target: InteractTarget) {
+    if (!d.dialogue) return
+    const vm = dialogueVM(target, dialogueContext())
+    if (!vm) return
+    dialogueAt = { target, vm }
+    d.dialogue.open(vm)
+    updateSuspension()
+  }
+
+  function closeDialogue() {
+    if (!dialogueAt) return
+    dialogueAt = null
+    if (d.dialogue?.isOpen()) d.dialogue.close()
+    updateSuspension()
+  }
+
+  /** Keeps an open dialogue current; one whose agent left closes with a toast. */
+  function refreshDialogue() {
+    if (!dialogueAt || !d.dialogue) return
+    const vm = dialogueVM(dialogueAt.target, dialogueContext())
+    if (vm) {
+      dialogueAt.vm = vm
+      return d.dialogue.render(vm)
+    }
+    const name = dialogueAt.vm.title
+    const wasAgent = dialogueAt.target.kind === 'agent'
+    closeDialogue()
+    if (wasAgent) d.toast.show(PIXEL_COPY.dialogue.left(name))
+  }
+
+  function onDialogueAction(a: DialogueAction) {
+    const at = dialogueAt
+    if (!at) return
+    const { agentId, parentId, ref } = at.vm
+    closeDialogue()
+    switch (a) {
+      case 'talk':
+      case 'details':
+      case 'review':
+        // The existing panel; a pending permission shows on its card.
+        if (agentId) select(agentId)
+        return
+      case 'follow':
+        if (!agentId) return
+        d.scene.follow?.(agentId)
+        d.toast.show(PIXEL_COPY.following(at.vm.title))
+        return
+      case 'open':
+        if (ref) pickCapability(ref)
+        return
+      case 'open-library': {
+        if (!ref) return
+        const c = capabilityOf(ref.provider, ref.id)
+        const kind = c && libraryKind(c)
+        const tab = kind === 'rule' ? 'rules' : kind === 'memory' ? 'memory' : 'skills'
+        openLibrary({ provider: ref.provider, tab, focus: ref.id })
+        updateSuspension()
+        return
+      }
+      case 'go-parent':
+        if (!parentId) return
+        d.scene.travelTo?.({ agentId: parentId })
+        openDialogue({ kind: 'agent', id: parentId })
+        return
+    }
+  }
+
+  /** 2 Hz while 2D is active: HUD, minimap, directory and an open dialogue. */
+  function renderPixel() {
+    if (viewMode !== 'pixel') return
+    d.pixelHud?.render(pixelHudVM({ state, room, selected }))
+    if (layout) {
+      const proj = projectionFor(layout.bounds)
+      const now = d.clock.now()
+      const dots: Parameters<typeof minimapVM>[1][number][] = []
+      for (const [id, p] of plans) {
+        const pose = director?.pose(id, now)
+        if (pose?.visible) dots.push({ id, pos: pose.pos, status: p.agent.status })
+      }
+      d.pixelHud?.renderMinimap(minimapVM(proj, dots, playerPos))
+    }
+    d.pixelHud?.renderDirectory(directoryVM(state, layout, d.grouping, dirQuery))
+    refreshDialogue()
+    updateSuspension()
   }
 
   const loadScene = async () => {
     try {
       const assets = await d.scene.load(MANIFEST_URL)
+      manifest = assets.manifest
       const opts: Parameters<typeof createDirector>[1] = { grouping: d.grouping }
       if (assets.clipDurations) opts.clipDurations = assets.clipDurations
       director = createDirector(assets.manifest, opts)
@@ -752,6 +922,7 @@ export function createController(d: ControllerDeps) {
   })
   d.library.onClose(() => {
     libFocus = undefined
+    updateSuspension()
   })
   d.library.onPick(pickCapability)
   // Agent panel chips: the same as a drawer pick; an empty provider means the selected agent's.
@@ -1083,7 +1254,45 @@ export function createController(d: ControllerDeps) {
     }
   }
 
+  // 2D RPG mode wiring (optional deps; the 3D scene doesn't implement the optional events).
+  if (pixelDeps) {
+    d.scene.onInteract?.(openDialogue)
+    d.scene.onRoom?.((name) => void (room = name))
+    d.scene.onPlayerMove?.((pos) => void (playerPos = pos))
+    d.dialogue?.onAction(onDialogueAction)
+    d.dialogue?.onClose(() => {
+      dialogueAt = null
+      updateSuspension()
+    })
+    d.modeToggle?.onChange((mode) => void changeSettings({ viewMode: mode }))
+    d.pixelHud?.onAlert((agentId) => select(agentId))
+    d.pixelHud?.onDirectory((pick) => {
+      if (pick.travel) {
+        const { travel: _, ...target } = pick
+        d.scene.travelTo?.(target)
+      } else if (pick.agentId) select(pick.agentId)
+      else if (pick.viewId) d.scene.goTo(pick.viewId)
+    })
+    d.pixelHud?.onDirectorySearch((q) => {
+      dirQuery = q
+      d.pixelHud?.renderDirectory(directoryVM(state, layout, d.grouping, dirQuery))
+    })
+    d.pixelHud?.onMinimapPick((tx, ty) => {
+      if (!layout || !manifest) return
+      const proj = projectionFor(layout.bounds)
+      const pos = pixelToWorld((tx + 0.5) * TILE_PX, (ty + 0.5) * TILE_PX, proj)
+      const p = placementAt(layout, manifest, pos)
+      d.scene.goTo(p ? viewIdOf(p) : 'overview')
+    })
+    stops.push(d.every(PIXEL_HUD_MS, renderPixel))
+  }
+
   return {
+    /** The last plans with each agent's remaining steps now (the scene host replays them). */
+    resync() {
+      return director?.resync(d.clock.now()) ?? new Map<string, AgentPlan>()
+    },
+
     async start(): Promise<void> {
       followColorScheme()
       followPage()

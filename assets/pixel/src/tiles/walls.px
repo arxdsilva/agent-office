@@ -1,0 +1,308 @@
+# Walls in the 3/4 view: a 16 px top (autotiled: wall/top-<mask>, N=1 E=2 S=4 W=8 = connected) plus a
+# 32 px face (face-hi above face-lo) on the two rows south of an east–west wall. Theme slots: W V U wall
+# ramp, T trim, A B accent. "~ = ^" are translucent glass keys.
+
+@frame wall/top
+@meta {"autotile":true,"edge":"T","solid":true}
+VVVVVVVVVVVVVVVV
+VWWWWWWWWWWWWWWV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VWVVVVVVVVVVVVUV
+VUUUUUUUUUUUUUUV
+VVVVVVVVVVVVVVVV
+
+@frame wall/face-hi
+@meta {"solid":true}
+WWWWWWWWWWWWWWWW
+VVVVVVVVVVVVVVVV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+
+@frame wall/face-lo
+@meta {"solid":true}
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+VVVVVVVVVVVVVVVV
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+
+# Accent band (the wing's colour) for feature walls.
+@frame wall/face-hi-accent
+@meta {"solid":true}
+WWWWWWWWWWWWWWWW
+VVVVVVVVVVVVVVVV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+BBBBBBBBBBBBBBBB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+
+@frame wall/face-lo-accent
+@meta {"solid":true}
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+AAAAAAAAAAAAAAAB
+BBBBBBBBBBBBBBBB
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+
+# End caps beside a doorway or a wall end.
+@frame wall/face-hi-l from=wall/face-hi edgeL=T
+@frame wall/face-hi-r from=wall/face-hi edgeR=T
+@frame wall/face-lo-l from=wall/face-lo edgeL=T
+@frame wall/face-lo-r from=wall/face-lo edgeR=T
+
+# A window in a solid wall face.
+@frame wall/window-hi
+@meta {"solid":true}
+WWWWWWWWWWWWWWWW
+VVVVVVVVVVVVVVVV
+WWWWWWWWWWWWWWWV
+WTTTTTTTTTTTTTTV
+WTbbbbbbTbbbbbTV
+WTbwbbbbTbbwbbTV
+WTbbwbbbTbbbwbTV
+WTbbbwbbTbbbbwTV
+WTcbbbwbTbbbbbTV
+WTccbbbbTcbbbbTV
+WTcccbbbTccbbbTV
+WTccccbbTcccbbTV
+WTcccccbTccccbTV
+WTdcccccTdccccTV
+WTddccccTddcccTV
+WTTTTTTTTTTTTTTV
+
+@frame wall/window-lo
+@meta {"solid":true}
+WTddddccTddddcTV
+WTdddddcTdddddTV
+WTTTTTTTTTTTTTTV
+wwwwwwwwwwwwwwww
+VUUUUUUUUUUUUUUV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+WWWWWWWWWWWWWWWV
+VVVVVVVVVVVVVVVV
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+
+# Interior glass partition (translucent: the floor behind shows through).
+@frame glass/top
+@meta {"autotile":true,"edge":"T","solid":true}
+cccccccccccccccc
+cbbbbbbbbbbbbbbc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cbcccccccccccccc
+cdddddddddddddcc
+cccccccccccccccc
+
+@frame glass/face-hi
+@meta {"solid":true}
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUT
+~~~~~~~~~~~~~~~T
+~^~~~~~~~~~~~~~T
+~~^~~~~~~~~~~~~T
+~~~^~~~~~~~~~~~T
+~~~~^~~~~~~~~~~T
+~~~~~^~~~~^~~~~T
+~~~~~~^~~~~^~~~T
+~~~~~~~~~~~~^~~T
+~~~~~~~~~~~~~^~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+
+@frame glass/face-lo
+@meta {"solid":true}
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+~~~~~~~~~~~~~~~T
+================
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+
+@frame glass/face-hi-l from=glass/face-hi edgeL=T
+@frame glass/face-hi-r from=glass/face-hi edgeR=T
+@frame glass/face-lo-l from=glass/face-lo edgeL=T
+@frame glass/face-lo-r from=glass/face-lo edgeR=T
+
+# Exterior curtain wall: floor-to-ceiling glazing with a sky reflection.
+@frame curtain/face-hi
+@meta {"solid":true}
+TTTTTTTTTTTTTTTT
+TbbbbbbbbbbbbbbT
+TbwbbbbbbbbbbbbT
+TbbwbbbbbbwbbbbT
+TbbbwbbbbbbwbbbT
+TbbbbwbbbbbbwbbT
+TcbbbbwbbbbbbwbT
+TccbbbbbbbbbbbbT
+TcccbbbbbcbbbbbT
+TTTTTTTTTTTTTTTT
+TccccbbbbccbbbbT
+TcccccbbbcccbbbT
+TccccccbbccccbbT
+TdcccccccdccccbT
+TddcccccccdccccT
+TddddcccccddcccT
+
+@frame curtain/face-lo
+@meta {"solid":true}
+TddddccccccdddcT
+TdddddcccccddddT
+TddddddcccccdddT
+TdddddddcccddddT
+TdddddddddddcddT
+TddddddddddddddT
+TjdddddddddddjdT
+TjjdddddddddjjdT
+TfjjddddddjjjjjT
+TffjjjjjjjjjfjjT
+TfffjjjjjjjfffjT
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+UUUUUUUUUUUUUUUU
+TTTTTTTTTTTTTTTT
+
+# Soft contact shadows on the floor next to walls and big furniture (drawn on the walls layer).
+@frame shade/n
+@meta {"solid":false,"layer":"walls"}
+::::::::::::::::
+::::::::::::::::
+;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;
+................
+................
+................
+................
+................
+................
+................
+................
+................
+................
+................
+................
+
+@frame shade/w
+@meta {"solid":false,"layer":"walls"}
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+
+@frame shade/e from=shade/w flip=x
+
+@frame shade/nw
+@meta {"solid":false,"layer":"walls"}
+::::::::::::::::
+::::::::::::::::
+::;;;;;;;;;;;;;;
+::;;;;;;;;;;;;;;
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+::;;............
+
+@frame shade/ne from=shade/nw flip=x

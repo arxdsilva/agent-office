@@ -22,3 +22,5 @@ Rules: `SCENE.md` (budgets, animation rules, no logos), `TESTING.md` (asset vali
    - No logos, trademarks or real company names anywhere (textures, decals, text objects, material names). Wing signs stay blank planes; the runtime draws the provider id.
    - No AI-generated or Sketchfab models.
 8. **Git LFS:** `.glb`, lightmap `.png` and `.hdr` files under `packages/web/public/assets/`, plus `assets/out/**` and `assets/previews/**`, are LFS files (`.gitattributes`). Make sure `git lfs install` has run before the human commits. Prepare the commit commands; never commit yourself.
+
+2D RPG mode: see `docs/2d-architecture.md`. The pure logic is in `web/src/app/pixel/*`, the Canvas2D drawing in `web/src/adapters/pixel/*`, the art in `assets/pixel/src` (`make pixel-assets`), and the floor plans come from `make assets-plan`. Check both modes with `pixel.spec.ts` and the existing 3D specs.

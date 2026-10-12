@@ -20,3 +20,5 @@ Rules: `SCENE.md`, `TESTING.md`, `PRIVACY_SECURITY.md` (text via `textContent`).
 4. **Perf budget**: `make perf` (150 mock agents, FPS report; target ≥ 55 fps average at Medium). Interactively: with `make dev-mock` running, `curl -X POST -H "authorization: Bearer $(cat ~/.agent-office/token)" 'http://127.0.0.1:4317/api/mock?n=150'` and open `?stats` for FPS, draw calls and triangles.
 5. UI or behavior change → add/adjust a spec in `packages/desktop/e2e/` (`building`, `behavior`, `quality`; assert on `data-activity` and panel text); run `make build test-ui`.
 6. `make check`.
+
+2D RPG mode: see `docs/2d-architecture.md`. The pure logic is in `web/src/app/pixel/*`, the Canvas2D drawing in `web/src/adapters/pixel/*`, the art in `assets/pixel/src` (`make pixel-assets`), and the floor plans come from `make assets-plan`. Check both modes with `pixel.spec.ts` and the existing 3D specs.

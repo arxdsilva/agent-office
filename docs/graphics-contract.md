@@ -167,3 +167,23 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 
 ## 10. Branding
 No logos, trademarks or real company names in any asset. Signs are blank planes; the runtime draws the provider id as text.
+
+## 11. Floor plan (additive; used by the optional 2D RPG mode)
+- `manifest.modules.<m>.plan` (the wing plan is shared by every theme), in **module-local metres**, written by the Blender build (`lib/geometry.py`, `lib/furniture.py`, module scripts) and merged by `node assets/build.mjs --plan-only` (`make assets-plan`). It doesn't touch the glbs or lightmaps.
+- `rooms: [{ id, name, rect: [x0, z0, x1, z1], floor? }]`: every anchor's `extras.room` names one of these rooms.
+- `walls: [{ a: [x, z], b: [x, z], kind: 'solid' | 'glass' | 'curtain', openings?: [[t0, t1]] }]`: openings are door and gap intervals in metres along a→b. Every nav edge that crosses a wall must pass through an opening.
+- `furniture: [{ kind, x, z, w, d, yaw, ref? }]`: `kind` is from `FURNITURE_KINDS` (`packages/web/src/app/pixel/types.ts`). `ref` links interactive pieces to anchors (`station:<i>`, `book:<i>`, `board:<i>`, `notebook:<i>`, `booth:<i>`). Only furniture that exists in the 3D module is listed.
+- **Optional:** the 3D renderer ignores it, and the 2D mode shows a "map data missing" card without it.
+- **Details (as exported):**
+  - `rect` is axis-aligned in module space. Rooms tile each module without overlapping (rooms without anchors, such as `hall`, `vestibule`, `plaza`, `court`, `storage`, `pods-north`/`pods-south`, cover the rest of the floor). `floor` is one of `wood`, `carpet`, `tile`, `concrete`.
+  - Walls are centre lines. Only floor-level cuts are `openings` (raised wall cuts are windows); touching cuts are merged. A glass partition's door is its opening. Walls built without the kit (the wing's x = 23.92 front and z = 0 partition, the atrium's reception screen, the cap's outer skin) are recorded with `plan_wall`. A nav edge that only touches a wall line at a node doesn't cross it.
+  - Furniture: `(x, z)` is the footprint centre, `w` runs along the piece's local x and `d` along its local z, and `yaw` is its rotation about +y with the §1 placement convention (`three.js rotation.y`), normalized to (−π, π].
+  - The wing plan is shared by every theme: rooms and walls must match across themes, and furniture is the intersection of all six themes (theme-only decor, such as the neon arcade or extra plants, is left out). Pod chairs are listed at their nominal spot (the 3D chair has a small per-theme jitter).
+  - Mappings where the kit has no exact kind: lounge coffee table → `cafe-table`, wing storage cabinets → `kitchen-counter`, meeting-room whiteboards → `board` (no `ref`), atrium bleachers → `bench`, the garden's reflecting pool → `planter`. Only floor-standing pots are `plant`; tabletop decor, lamps, pendants, living walls, murals and LED rings aren't listed.
+  - `ref` is set on `booth:<i>`, `station:<i>` and `board:<i>`. Books and notebooks are reached through their `port:book:<i>` / `port:notebook:<i>` anchors; the library shelves are one `bookshelf` each and the notebook display is one `notebook-rack`.
+  - Checked by `assets/validate.ts` (`checkPlans`, PLAN-1..5): shape and kinds, walls and openings within the bounds, every seat/spot inside the room its `extras.room` names (or any room when it has none), approach points outside solid furniture (rugs aren't solid), and nav edges crossing walls only through openings.
+
+## 12. Pixel assets (additive; the optional 2D RPG mode)
+- **Sources:** `assets/pixel/src/**`, hand-authored text pixel grids plus palettes (`docs/pixel-style.md`). **Build:** `make pixel-assets` → `packages/web/public/assets/pixel/{tiles,objects,characters,effects,font}.png` + `atlas.json`.
+- **Sizes:** 16×16 px tiles at 0.5 m; characters 16×24 px; a 5×7 bitmap font. Original work (MIT); no copied or traced third-party sprites, tiles or fonts; no logos.
+- **Budget:** ≤ 2 MB total, included in the 55 MB asset budget (§9).

@@ -9,6 +9,10 @@ Groups:
   glass    blended glass, not baked (extras.role = "glass")
 Dynamic surfaces (screens, LEDs, sign, elevator doors) are separate objects with their own material,
 created through `Geo.dynamic()`. Colliders are AABBs exported as invisible boxes.
+
+Floor plan (contract §11, the optional 2D mode): `g.plan` collects rooms, walls (recorded by `wall`,
+`glass_partition`, `curtain_wall` and `Geo.plan_wall`) and furniture footprints (`Geo.furn`, called by the
+furniture kit), all in module-local glTF metres. Recording never touches geometry or the RNG.
 """
 import math
 from contextlib import contextmanager
@@ -19,6 +23,20 @@ from mathutils import Matrix, Vector
 
 from . import materials
 from .scene import GLTF_TO_BLENDER, translation, yaw_matrix
+
+def _r3(v):
+    v = round(v, 3)
+    return 0.0 if v == 0 else v
+
+
+def _norm_yaw(h):
+    h = math.fmod(h, 2 * math.pi)
+    if h <= -math.pi + 1e-9:
+        h += 2 * math.pi
+    elif h > math.pi:
+        h -= 2 * math.pi
+    return h
+
 
 C = GLTF_TO_BLENDER
 C_INV = GLTF_TO_BLENDER.inverted()
@@ -64,6 +82,8 @@ class Geo:
         self._target = None
         self.lights = []  # (kind, glTF pos, params) for lighting.py
         self.tris_estimate = 0
+        self.plan = {'rooms': [], 'walls': [], 'furniture': []}  # contract §11
+        self._plan_mute = 0
 
     # ------------------------------------------------------------------ frames
     @contextmanager
@@ -128,6 +148,53 @@ class Geo:
         xs = [p[0] for p in pts]
         zs = [p[2] for p in pts]
         self.colliders.append((round(min(xs), 4), round(max(xs), 4), round(min(zs), 4), round(max(zs), 4), y0, y1))
+
+    # ------------------------------------------------------------------ floor plan (contract §11)
+    @contextmanager
+    def no_plan(self):
+        """Build without recording furniture (a parent records the piece itself)."""
+        self._plan_mute += 1
+        try:
+            yield
+        finally:
+            self._plan_mute -= 1
+
+    def furn(self, kind, w, d, x=0.0, z=0.0, yaw=0.0, ref=None):
+        """Record a furniture footprint: w along local x, d along local z, centered at local (x, z)."""
+        if self._plan_mute:
+            return
+        wx, _, wz = self.world(x, 0, z)
+        item = {'kind': kind, 'x': _r3(wx), 'z': _r3(wz), 'w': _r3(abs(w)), 'd': _r3(abs(d)),
+                'yaw': _r3(_norm_yaw(self.yaws[-1] + yaw))}
+        if ref is not None:
+            item['ref'] = ref
+        self.plan['furniture'].append(item)
+
+    def plan_wall(self, a, b, kind='solid', openings=()):
+        """Record a wall segment a→b (local XZ); openings are door/gap intervals [t0, t1] along a→b."""
+        pa, pb = self.world(a[0], 0, a[1]), self.world(b[0], 0, b[1])
+        wall_ = {'a': [_r3(pa[0]), _r3(pa[2])], 'b': [_r3(pb[0]), _r3(pb[2])], 'kind': kind}
+        ops = []
+        for (t0, t1) in sorted(openings):  # merge touching cuts (a door next to a storefront gap)
+            if t1 - t0 <= 1e-4:
+                continue
+            if ops and t0 <= ops[-1][1] + 1e-4:
+                ops[-1][1] = max(ops[-1][1], t1)
+            else:
+                ops.append([t0, t1])
+        ops = [[_r3(t0), _r3(t1)] for (t0, t1) in ops]
+        if ops:
+            wall_['openings'] = ops
+        self.plan['walls'].append(wall_)
+
+    def room(self, rid, name, x0, z0, x1, z1, floor=None):
+        """Record a room rect (local, axis-aligned after the current frame)."""
+        pts = [self.world(x, 0, z) for x in (x0, x1) for z in (z0, z1)]
+        xs, zs = [p[0] for p in pts], [p[2] for p in pts]
+        r = {'id': rid, 'name': name, 'rect': [_r3(min(xs)), _r3(min(zs)), _r3(max(xs)), _r3(max(zs))]}
+        if floor:
+            r['floor'] = floor
+        self.plan['rooms'].append(r)
 
     def light(self, kind, pos, **params):
         """Record a light for lighting.py (pos local; direction params are in local glTF axes)."""
@@ -368,6 +435,8 @@ def wall(g, mat, a, b, h, thick=0.15, y0=0.0, openings=(), side=1, bevel=0.003, 
     L = math.hypot(bx - ax, bz - az)
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2  # local +x along a→b
     cuts = sorted(openings)
+    # floor-level cuts are doors/gaps; raised ones are windows (contract §11)
+    g.plan_wall(a, b, 'solid', [(t0, t1) for (t0, t1, yb, yt) in cuts if yb <= y0 + 0.01])
     with g.at(ax, az, yaw):
         zc = side * thick / 2
         spans = []
@@ -404,6 +473,7 @@ def glass_partition(g, P, a, b, h=2.7, spacing=1.2, door=None, frame='metal', to
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2
     fm = P[frame]
     mw = 0.05
+    g.plan_wall(a, b, 'glass', [door] if door else ())
     with g.at(ax, az, yaw):
         g.box_b(fm, 0, L, h - 0.06, h, -0.03, 0.03, bevel=0.003)
         segs = []
@@ -445,6 +515,7 @@ def curtain_wall(g, P, a, b, h, spacing=1.5, transoms=(), thick=0.12, sill=0.0, 
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2
     fm = P[frame]
     zc = side * thick / 2
+    g.plan_wall(a, b, 'curtain')
     with g.at(ax, az, yaw):
         n = max(1, round(L / spacing))
         for i in range(n + 1):

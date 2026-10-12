@@ -1,0 +1,441 @@
+/* The optional 2D RPG mode's DOM (plan §8.2, §9): HUD, alerts, minimap, directory, dialogue box,
+   and the `3D Office | 2D RPG` switch. `body[data-mode]` is set by main.ts: anything but "pixel"
+   hides the 2D UI, so the 3D office looks exactly as before. */
+
+:root {
+  --px-panel: #f4efe2;
+  --px-text: #1f1a2e;
+  --px-muted: #5d5670;
+  --px-border: #2a2340;
+  --px-inner: #c9bfa6;
+  --px-shadow: rgba(20, 16, 32, 0.35);
+  --px-accent: #2b62d1;
+  --px-on-accent: #ffffff;
+  --px-hover: rgba(42, 35, 64, 0.12);
+  --px-waiting: #1f9d63;
+  --px-error: #c42b2b;
+  --px-map-bg: #3a3f4c;
+  --px-map-player: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --px-panel: #1d1a2b;
+    --px-text: #f1ecdf;
+    --px-muted: #b4adc4;
+    --px-border: #0b0912;
+    --px-inner: #4a4366;
+    --px-shadow: rgba(0, 0, 0, 0.55);
+    --px-accent: #6f9dff;
+    --px-on-accent: #0b1020;
+    --px-hover: rgba(241, 236, 223, 0.12);
+    --px-waiting: #3ccf91;
+    --px-error: #ff6b6b;
+    --px-map-bg: #22252e;
+  }
+}
+
+/* ── mode visibility ───────────────────────────────────────────────────────────────────────── */
+body:not([data-mode='pixel']) #pixel-hud,
+body:not([data-mode='pixel']) #ph-selected,
+body:not([data-mode='pixel']) #pixel-alerts,
+body:not([data-mode='pixel']) #minimap,
+body:not([data-mode='pixel']) #directory,
+body:not([data-mode='pixel']) #dialogue {
+  display: none !important;
+}
+/* 3D-only controls: walk mode, its crosshair and help, and Fit (2D centres on the player).
+   The 3D HUD card too: the 2D HUD shows the room and the counts. */
+body[data-mode='pixel'] #walk,
+body[data-mode='pixel'] #fit,
+body[data-mode='pixel'] #crosshair,
+body[data-mode='pixel'] #walk-help,
+body[data-mode='pixel'] #hud {
+  display: none !important;
+}
+#pixel-hud[hidden],
+#ph-selected[hidden],
+#pixel-alerts[hidden],
+#minimap[hidden],
+#directory[hidden],
+#dialogue[hidden] {
+  display: none !important;
+}
+
+/* ── the pixel frame ───────────────────────────────────────────────────────────────────────── */
+/* AR's 9-slice (`frame.png`, 24×24, atlas `ui.frame.slice` = 8 px) drawn at 2×: a 16 px frame,
+   border only (no `fill`), so interiors keep the theme background in light and dark. It sits
+   12 px outside the 4 px layout border so content keeps its spacing. If the image is missing,
+   the browser paints the solid border and the inset line below instead (the CSS fallback). */
+.pixel-frame {
+  background: var(--px-panel);
+  color: var(--px-text);
+  border: 4px solid var(--px-border);
+  border-radius: 0;
+  border-image: url('/assets/pixel/frame.png') 8 / 16px / 12px stretch;
+  box-shadow:
+    inset 0 0 0 2px var(--px-inner),
+    4px 4px 0 var(--px-shadow);
+  font:
+    14px/1.4 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  image-rendering: pixelated;
+}
+.pixel-frame button {
+  font: inherit;
+  color: inherit;
+}
+.px-h {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--px-muted);
+}
+
+/* ── HUD (top-left, under the title card) ──────────────────────────────────────────────────── */
+#pixel-hud {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 2;
+  padding: 8px 12px;
+  min-width: 180px;
+  max-width: calc(100vw - 32px);
+}
+body:has(#hud.with-banner) #pixel-hud {
+  top: 48px;
+}
+.ph-room {
+  margin: 0;
+  font-weight: 700;
+}
+.ph-counts {
+  display: flex;
+  gap: 12px;
+  margin: 2px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.ph-count[data-kind='waiting'][data-active] {
+  color: var(--px-waiting);
+  font-weight: 700;
+}
+.ph-count[data-kind='error'][data-active] {
+  color: var(--px-error);
+  font-weight: 700;
+}
+.ph-tools {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 0;
+}
+.ph-tool {
+  cursor: pointer;
+  font-size: 12px !important;
+  padding: 2px 8px;
+  background: transparent;
+  border: 2px solid var(--px-border);
+  border-radius: 0;
+}
+.ph-tool[aria-expanded='true'] {
+  background: var(--px-accent);
+  color: var(--px-on-accent) !important;
+}
+.ph-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ph-tool:focus-visible,
+.dlg-action:focus-visible,
+.dlg-close:focus-visible,
+.pixel-alert:focus-visible,
+#directory button:focus-visible {
+  outline: 2px solid var(--px-accent);
+  outline-offset: 2px;
+}
+
+#ph-selected {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 2;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+/* ── alerts (top-right, under #actions) ────────────────────────────────────────────────────── */
+#pixel-alerts {
+  position: fixed;
+  top: 64px;
+  right: 20px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+body:has(#actions.with-banner) #pixel-alerts {
+  top: 92px;
+}
+.pixel-alert {
+  cursor: pointer;
+  text-align: left;
+  padding: 6px 10px;
+  background: var(--px-panel);
+  color: var(--px-text);
+  border: 3px solid var(--px-border);
+  border-left-width: 8px;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--px-shadow);
+  font:
+    13px/1.3 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+.pixel-alert:hover {
+  background: color-mix(in srgb, var(--px-panel) 85%, var(--px-text));
+}
+.pixel-alert[data-kind='waiting'] {
+  border-left-color: var(--px-waiting);
+}
+.pixel-alert[data-kind='approval'] {
+  border-left-color: var(--px-accent);
+}
+.pixel-alert[data-kind='error'] {
+  border-left-color: var(--px-error);
+}
+.pixel-alert-more {
+  font-size: 12px;
+  color: var(--px-muted);
+  padding-right: 4px;
+}
+
+/* ── minimap (bottom-right) ────────────────────────────────────────────────────────────────── */
+#minimap {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2;
+  padding: 8px;
+}
+#minimap-canvas {
+  display: block;
+  width: 220px;
+  max-width: calc(100vw - 64px);
+  height: auto;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* ── directory (left drawer) ───────────────────────────────────────────────────────────────── */
+#directory {
+  position: fixed;
+  left: 20px;
+  top: 170px;
+  bottom: 64px;
+  z-index: 3;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+#directory .panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#dir-search {
+  font: inherit;
+  margin: 4px 0 8px;
+  padding: 4px 8px;
+  color: var(--px-text);
+  background: var(--px-panel);
+  border: 2px solid var(--px-border);
+  border-radius: 0;
+}
+#dir-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.dir-wing + .dir-wing {
+  margin-top: 8px;
+  border-top: 2px dashed var(--px-inner);
+  padding-top: 6px;
+}
+.dir-topic {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 10px;
+}
+.dir-topic-name {
+  font-size: 12px;
+  color: var(--px-muted);
+  margin-top: 4px;
+}
+.dir-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dir-name {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  text-align: left;
+  padding: 2px 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.dir-name:hover {
+  background: var(--px-hover);
+}
+.dir-wing-name {
+  font-weight: 700;
+}
+.dir-status {
+  font-size: 12px;
+  color: var(--px-muted);
+}
+.dir-agent[data-status='waiting'] .dir-status {
+  color: var(--px-waiting);
+}
+.dir-agent[data-status='error'] .dir-status {
+  color: var(--px-error);
+}
+.dir-go {
+  font-size: 12px !important;
+  padding: 1px 6px;
+  border-radius: 0;
+  border: 2px solid var(--px-border);
+  background: var(--px-panel);
+  white-space: nowrap;
+}
+
+/* ── dialogue box (bottom centre, above the view bar) ──────────────────────────────────────── */
+#dialogue {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: min(640px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px 16px;
+}
+.dlg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#dlg-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#dlg-sub {
+  color: var(--px-muted);
+}
+#dlg-sub:not(:empty)::before {
+  content: '· ';
+}
+.dlg-status {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 1px 8px;
+  border: 2px solid var(--chip, var(--px-border));
+  color: var(--px-text);
+}
+.dlg-status::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  background: var(--chip, var(--px-border));
+}
+#dlg-lines {
+  margin: 6px 0 10px;
+}
+.dlg-line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#dlg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  flex: 1;
+}
+.dlg-action,
+.dlg-close {
+  cursor: pointer;
+  padding: 2px 4px 2px 16px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  position: relative;
+  font-weight: 600;
+}
+.dlg-action:hover,
+.dlg-action:focus-visible {
+  background: var(--px-hover);
+}
+/* The RPG cursor ▶ marks the focused (or hovered) choice. */
+.dlg-action:focus-visible::before,
+.dlg-action:hover::before {
+  content: '▶';
+  position: absolute;
+  left: 2px;
+  font-size: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.dlg-close {
+  padding-left: 4px;
+  font-weight: 400;
+  color: var(--px-muted);
+  font-size: 12px;
+}
+
+/* ── mode switch in #actions (shares Settings' .segmented look) ───────────────────────────── */
+#mode-toggle {
+  background: var(--card);
+  box-shadow: var(--shadow);
+  align-self: center;
+}
+#mode-toggle [role='radio'] {
+  white-space: nowrap;
+  padding: 4px 10px;
+}
+
+/* Capture mode (debug hook hideHud) hides the 2D overlay too. */
+body.capture #pixel-hud,
+body.capture #pixel-alerts,
+body.capture #ph-selected,
+body.capture #minimap,
+body.capture #directory {
+  display: none !important;
+}

@@ -48,6 +48,8 @@ export default defineConfig({
         'packages/web/src/main.ts',
         'packages/web/src/adapters/three/**',
         'packages/web/src/adapters/dom/**',
+        // Canvas2D drawing for the optional 2D RPG mode; its logic is pure in app/pixel/** (covered).
+        'packages/web/src/adapters/pixel/**',
         'scripts/arch.mjs',
         'scripts/render-icons.mjs',
         'scripts/screenshots.mjs',

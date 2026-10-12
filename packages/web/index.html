@@ -30,6 +30,42 @@
     <!-- region:UI views (ViewBar DOM adapter renders here) -->
     <nav id="views" aria-label="Camera views"></nav>
     <!-- endregion:UI views -->
+    <!-- region:PIXEL ui (2D RPG mode only: #dialogue, #pixel-hud, #pixel-alerts, #minimap, #directory, #mode-toggle lives in #actions) -->
+    <header id="pixel-hud" class="pixel-frame" hidden>
+      <p id="ph-room" class="ph-room" aria-live="polite"></p>
+      <p id="ph-counts" class="ph-counts"></p>
+      <p class="ph-tools">
+        <button id="ph-map-btn" class="ph-tool" type="button" aria-controls="minimap"></button>
+        <button id="ph-dir-btn" class="ph-tool" type="button" aria-controls="directory"></button>
+      </p>
+    </header>
+    <p id="ph-selected" class="pixel-frame" hidden></p>
+    <div id="pixel-alerts" role="status" aria-live="polite" hidden></div>
+    <section id="minimap" class="pixel-frame" aria-labelledby="minimap-title" hidden>
+      <h2 id="minimap-title" class="px-h"></h2>
+      <canvas id="minimap-canvas" width="1" height="1"></canvas>
+    </section>
+    <section id="directory" class="pixel-frame" aria-labelledby="dir-title" hidden>
+      <div class="panel-head">
+        <h2 id="dir-title" class="px-h"></h2>
+        <button id="dir-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <input id="dir-search" type="search" autocomplete="off" spellcheck="false" />
+      <ul id="dir-list"></ul>
+    </section>
+    <section id="dialogue" class="pixel-frame" role="dialog" aria-labelledby="dlg-title" hidden>
+      <div class="dlg-head">
+        <h2 id="dlg-title"></h2>
+        <span id="dlg-sub"></span>
+        <span id="dlg-status" class="dlg-status" hidden></span>
+      </div>
+      <div id="dlg-lines"></div>
+      <div class="dlg-foot">
+        <div id="dlg-actions" role="group"></div>
+        <button id="dlg-close" class="dlg-close" type="button">Esc ✕</button>
+      </div>
+    </section>
+    <!-- endregion:PIXEL ui -->
     <!-- region:UI library (Library drawer <aside id="library">, #tooltip, WebGL failure card #gfx-failure) -->
     <aside id="library" class="card" hidden aria-labelledby="lib-title">
       <div class="panel-head">
@@ -77,6 +113,7 @@
     </header>
 
     <div id="actions">
+      <div id="mode-toggle" class="segmented"></div>
       <button id="fit" class="btn" type="button" title="Fit the whole office in view">⤢ Fit</button>
       <button id="walk" class="btn" type="button" title="Walk around (F)">🚶 Walk</button>
       <button id="new-session-btn" class="btn" type="button"></button>

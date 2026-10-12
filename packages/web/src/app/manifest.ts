@@ -2,6 +2,15 @@
 // zod is not a dependency of packages/web, so this is a small hand-written validator that names the
 // offending path in every error.
 import type { AABB, Pose, ThemeId, Vec3 } from './office-types.ts'
+import {
+  FURNITURE_KINDS,
+  type FurnitureKind,
+  type ModulePlan,
+  type PlanFurniture,
+  type PlanRoom,
+  type PlanWall,
+  type WallKind,
+} from './pixel/types.ts'
 
 export const THEME_IDS: readonly ThemeId[] = [
   'terracotta',
@@ -47,6 +56,8 @@ export interface ModuleDef {
   /** `port:*` anchors: 3D link attach points (y ≠ 0, no heading/pose/approach). */
   ports: Record<string, Vec3>
   nav: ManifestNav
+  /** Floor plan for the 2D mode (contract §11); absent in older manifests. */
+  plan?: ModulePlan
 }
 
 export interface WingTheme {
@@ -78,6 +89,8 @@ export interface WingDef {
   anchors: Record<string, ManifestAnchor>
   ports: Record<string, Vec3>
   nav: ManifestNav
+  /** Floor plan shared by every theme (contract §11); absent in older manifests. */
+  plan?: ModulePlan
 }
 
 export interface Manifest {
@@ -314,6 +327,75 @@ const CONNECTORS: Record<'atrium' | 'street' | 'garden' | 'cap' | 'wing', [numbe
   wing: [[0, 0]],
 }
 
+const WALL_KINDS: readonly WallKind[] = ['solid', 'glass', 'curtain']
+
+function arr(v: unknown, path: string): unknown[] {
+  if (!Array.isArray(v)) throw new ManifestError(path, 'expected an array')
+  return v
+}
+
+function nums(v: unknown, n: number, path: string): number[] {
+  const ok =
+    Array.isArray(v) &&
+    v.length === n &&
+    v.every((x) => typeof x === 'number' && Number.isFinite(x))
+  if (!ok) throw new ManifestError(path, `expected ${n} finite numbers`)
+  return [...(v as number[])]
+}
+
+/** The optional floor plan (contract §11), validated with paths like the rest. */
+function plan(v: unknown, path: string): ModulePlan | undefined {
+  if (v === undefined) return undefined
+  const o = obj(v, path)
+  const rooms = arr(o.rooms, `${path}.rooms`).map((r, i): PlanRoom => {
+    const p = `${path}.rooms[${i}]`
+    const ro = obj(r, p)
+    if (typeof ro.name !== 'string') throw new ManifestError(`${p}.name`, 'expected a string')
+    const room: PlanRoom = {
+      id: str(ro, 'id', p),
+      name: ro.name,
+      rect: nums(ro.rect, 4, `${p}.rect`) as PlanRoom['rect'],
+    }
+    const floor = optStr(ro, 'floor', p)
+    if (floor !== undefined) room.floor = floor
+    return room
+  })
+  const walls = arr(o.walls, `${path}.walls`).map((w, i): PlanWall => {
+    const p = `${path}.walls[${i}]`
+    const wo = obj(w, p)
+    if (!WALL_KINDS.includes(wo.kind as WallKind))
+      throw new ManifestError(`${p}.kind`, `expected one of ${WALL_KINDS.join('|')}`)
+    const wall: PlanWall = {
+      a: nums(wo.a, 2, `${p}.a`) as [number, number],
+      b: nums(wo.b, 2, `${p}.b`) as [number, number],
+      kind: wo.kind as WallKind,
+    }
+    if (wo.openings !== undefined)
+      wall.openings = arr(wo.openings, `${p}.openings`).map(
+        (x, j) => nums(x, 2, `${p}.openings[${j}]`) as [number, number],
+      )
+    return wall
+  })
+  const furniture = arr(o.furniture, `${path}.furniture`).map((f, i): PlanFurniture => {
+    const p = `${path}.furniture[${i}]`
+    const fo = obj(f, p)
+    if (!FURNITURE_KINDS.includes(fo.kind as FurnitureKind))
+      throw new ManifestError(`${p}.kind`, 'unknown furniture kind')
+    const item: PlanFurniture = {
+      kind: fo.kind as FurnitureKind,
+      x: num(fo, 'x', p),
+      z: num(fo, 'z', p),
+      w: num(fo, 'w', p),
+      d: num(fo, 'd', p),
+      yaw: num(fo, 'yaw', p),
+    }
+    const ref = optStr(fo, 'ref', p)
+    if (ref !== undefined) item.ref = ref
+    return item
+  })
+  return { rooms, walls, furniture }
+}
+
 function moduleDef(v: unknown, name: 'atrium' | 'street' | 'garden' | 'cap'): ModuleDef {
   const path = `modules.${name}`
   const o = obj(v, path)
@@ -325,6 +407,8 @@ function moduleDef(v: unknown, name: 'atrium' | 'street' | 'garden' | 'cap'): Mo
   }
   const lm = lightmap(o.lightmap, `${path}.lightmap`)
   if (lm) m.lightmap = lm
+  const pl = plan(o.plan, `${path}.plan`)
+  if (pl) m.plan = pl
   if (name === 'atrium' || name === 'garden')
     requireCounts(Object.keys(m.anchors), REQUIRED[name], `${path}.anchors`)
   return m
@@ -366,13 +450,16 @@ function wingDef(v: unknown): WingDef {
   const a = anchors(o.anchors, `${path}.anchors`)
   const ids = [...Object.keys(a.anchors), ...Object.keys(a.ports)]
   requireCounts(ids, [...REQUIRED.wing, ...capabilityRooms(capacity)], `${path}.anchors`)
-  return {
+  const wing: WingDef = {
     themes,
     bounds: bounds(o.bounds, `${path}.bounds`),
     capacity,
     ...a,
     nav: nav(o.nav, `${path}.nav`, CONNECTORS.wing),
   }
+  const pl = plan(o.plan, `${path}.plan`)
+  if (pl) wing.plan = pl
+  return wing
 }
 
 /** Validates parsed `manifest.json`. Throws `ManifestError` naming the first offending path. */

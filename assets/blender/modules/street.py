@@ -45,12 +45,14 @@ def build(g, A, P, name, t, rng):
             # small tree in each planter
             F.tree(g, P, (s * 2.5, 0.48, zc + rng.uniform(-1.2, 1.2)), 2.3, rng, crown=0.75, leaf_size=0.2)
             # bench on the inner face
+            g.furn('bench', 0.42, L - 0.6, x=s * 1.77, z=zc)
             g.box_b(P['wood'], s * 1.77 - 0.21, s * 1.77 + 0.21, 0.42, 0.47, z0 + 0.3, z1 - 0.3, bevel=0.006, segs=2)
             g.box_b(P['metal'], s * 1.77 - 0.17, s * 1.77 + 0.17, 0.0, 0.42, z0 + 0.5, z0 + 0.56, bevel=0.003)
             g.box_b(P['metal'], s * 1.77 - 0.17, s * 1.77 + 0.17, 0.0, 0.42, z1 - 0.56, z1 - 0.5, bevel=0.003)
             g.collider(min(s * 1.55, s * 2.9), max(s * 1.55, s * 2.9), z0, z1, 0, 0.6)
             g.light('point', (s * 2.45, 0.7, zc), radius=0.3, power=12, kelvin=3000)
 
+    g.room('street', 'Main Street', -3, 0, 3, 18, floor='wood')
     # nav: spine + connectors (contract §3)
     A.node('s:0', 0, 0, 1.6)
     A.node('s:a', 0, 4.5, 1.4)

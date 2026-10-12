@@ -52,6 +52,7 @@ def build(g, A, P, name, t, rng):
     for (a, b, c, d) in ((px0 - 0.3, px1 + 0.3, pz0 - 0.3, pz0), (px0 - 0.3, px1 + 0.3, pz1, pz1 + 0.3),
                          (px0 - 0.3, px0, pz0, pz1), (px1, px1 + 0.3, pz0, pz1)):
         g.box_b(P['stone'], a, b, 0, 0.42, c, d, bevel=0.01, segs=2)
+    g.furn('planter', px1 - px0 + 0.6, pz1 - pz0 + 0.6, x=(px0 + px1) / 2, z=(pz0 + pz1) / 2)  # reflecting pool
     g.box_b(P['black'], px0, px1, 0, 0.34, pz0, pz1, bevel=0)
     g.collider(px0 - 0.3, px1 + 0.3, pz0 - 0.3, pz1 + 0.3, 0, 0.42)
     for k in range(7):  # stepping lily pads / floating planters
@@ -71,6 +72,7 @@ def build(g, A, P, name, t, rng):
     for x in (12.5, 17.5):
         for s in (-1, 1):
             z = s * 2.75
+            g.furn('bench', 1.8, 0.44, x=x, z=z)
             g.box_b(P['wood'], x - 0.9, x + 0.9, 0.42, 0.47, z - 0.22, z + 0.22, bevel=0.006, segs=2)
             for dx in (-0.7, 0.7):
                 g.box_b(P['metal'], x + dx - 0.03, x + dx + 0.03, 0, 0.42, z - 0.18, z + 0.18, bevel=0.003)
@@ -82,6 +84,7 @@ def build(g, A, P, name, t, rng):
         g.light('panel', (x, H - 0.05, -8.1), size=(5.0, 0.6), power=90, kelvin=3500)
         g.light('panel', (x, H - 0.05, 8.1), size=(5.0, 0.6), power=90, kelvin=3500)
 
+    g.room('garden', 'Garden', 0, -9, 30, 9, floor='tile')
     # nav: a loop around the pool, entering from the door
     A.node('g:door', 0, 0, 1.4)
     A.node('g:in', 3.5, 0, 1.2)

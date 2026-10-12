@@ -25,6 +25,7 @@ def build(g, A, P, name, t, rng):
     _plaza(g, A, P, t, rng)
     _murals(g, A, P, t, rng)
     _nav(g, A)
+    _rooms(g)
     return dict(
         bounds={'minX': -33, 'maxX': 33, 'minZ': -24, 'maxZ': 0},
         sky=dict(sun_dir=(0.35, 0.72, -0.6), sun_strength=3.4, sky_strength=0.45),
@@ -127,6 +128,7 @@ def _elevators_reception(g, A, P, t, rng):
             F.task_chair(g, P, color='#2b2b2b')
     g.collider(-20.7, -16.3, -10.0, -8.35, 0, 1.1)
     # backdrop: timber slat screen + planter behind reception
+    g.plan_wall((-22.7, -13.3), (-14.3, -13.3))  # timber slat screen (a free-standing partition)
     with g.at(-18.5, -13.3):
         for k in range(60):
             x = -4.2 + k * 0.14
@@ -159,7 +161,7 @@ def _elevators_reception(g, A, P, t, rng):
 def _cafe(g, A, P, t, rng):
     # back bar + front counter along the back wall
     with g.at(5.0, -0.15):
-        F.counter_run(g, P, 11.0, depth=0.6, h=0.92, top='stone', front='wood')
+        F.counter_run(g, P, 11.0, depth=0.6, h=0.92, top='stone', front='wood', kind='cafe-bar')
     g.box_b(P['tile'], 5.0, 16.0, 0.92, 2.2, -0.17, -0.15, bevel=0)
     for yy in (1.45, 1.95):
         g.box_b(P['wood'], 5.3, 15.7, yy, yy + 0.04, -0.47, -0.15, bevel=0.004, segs=2)
@@ -168,7 +170,7 @@ def _cafe(g, A, P, t, rng):
                 g.cyl(P['gloss'], 0.045, rng.uniform(0.09, 0.2), (5.5 + k * 0.28, yy + 0.04, -0.31), segs=10,
                       color=rng.choice(('#f4f1ea', '#2b2b2b', t['accent'], '#81b29a', '#f2cc8f')))
     with g.at(16.0, -2.4, math.pi):
-        F.counter_run(g, P, 11.0, depth=0.7, h=1.05, top='stone', front='wood')
+        F.counter_run(g, P, 11.0, depth=0.7, h=1.05, top='stone', front='wood', kind='cafe-bar')
     # pastry case + espresso machines on the front counter
     with g.in_group('glass'):
         g.box_b(P['glass'], 6.0, 8.6, 1.05, 1.45, -2.25, -1.85, bevel=0)
@@ -184,6 +186,7 @@ def _cafe(g, A, P, t, rng):
     for x in (6.5, 10.5, 14.5):
         F.dome_pendant(g, P, (x, H, -2.0), drop=4.4, color=t['accent'], kelvin=2700, power=45, r=0.32)
     # LED stats wall (runtime CanvasTexture), framed, above the bar
+    g.furn('led-wall', 12.2, 0.1, x=10.5, z=-0.2, yaw=math.pi)
     g.box_b(P['metal'], 4.4, 16.6, 2.5, 6.7, -0.25, -0.15, bevel=0.008, segs=2)
     d = g.dynamic('ledwall', 'screen', 'ledwall', P['screen'], pivot=(10.5, 4.6, -0.26),
                   extras={'width': 12.0, 'height': 4.0})
@@ -302,6 +305,19 @@ def _nav(g, A):
                 A.edge(ap, hub)
         elif aid.startswith('spot:pingpong'):
             A.edge(ap, _nearest(A, ax, az, ('a:g1', 'a:g2', 'a:g3')))
+
+
+def _rooms(g):
+    """Floor-plan rooms (contract §11); ids match the anchors' extras.room. They tile the atrium."""
+    r = g.room
+    r('elevator', 'Elevators', -33, -4.8, -11, 0, floor='tile')
+    r('reception', 'Reception', -33, -13.4, -11, -4.8, floor='tile')
+    r('waiting', 'Waiting lounge', -33, -24, -11, -13.4, floor='tile')
+    r('plaza', 'Plaza', -11, -24, 3, 0, floor='tile')
+    r('cafe', 'Cafe', 3, -14, 23.5, 0, floor='wood')
+    r('court', 'Courtyard', 3, -24, 23.5, -14, floor='tile')
+    r('pingpong-0', 'Game area', 23.5, -12.75, 33, 0, floor='concrete')
+    r('pingpong-1', 'Game area', 23.5, -24, 33, -12.75, floor='concrete')
 
 
 def _nearest(A, x, z, ids):

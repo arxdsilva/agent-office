@@ -46,6 +46,16 @@ CONNECTORS = {
 
 failures = []
 
+# contract §11: the furniture kinds come from the renderer's contract (one source of truth)
+_TYPES = os.path.join(HERE, '..', '..', '..', 'packages', 'web', 'src', 'app', 'pixel', 'types.ts')
+
+
+def furniture_kinds():
+    import re
+    src = open(_TYPES).read()
+    body = src[src.index('FURNITURE_KINDS = ['):]
+    return set(re.findall(r"'([a-z-]+)'", body[:body.index(']')]))
+
 
 def check(cond, msg):
     if not cond:
@@ -167,8 +177,28 @@ def test(spec):
               f'(x {min(xs):.2f}..{max(xs):.2f}, z {min(zs):.2f}..{max(zs):.2f})')
     tris = sum(geometry.triangle_count(o) for o in ship if o not in objs['collider'])
     check(tris <= BUDGET[kind], f'{tag}: {tris} triangles > {BUDGET[kind]:.0f}')
+    test_plan(tag, g.plan)
     print(f'[test] {spec}: {len(anchors)} anchors, {len(nodes)} nav nodes, {tris} tris', flush=True)
     return m
+
+
+def test_plan(tag, plan):
+    """BL-py (contract §11): the floor plan is non-empty, kinds are in the enum, and there is no NaN."""
+    kinds = furniture_kinds()
+    check(len(plan['rooms']) > 0, f'{tag}: plan has no rooms')
+    check(len(plan['walls']) + len(plan['furniture']) > 0, f'{tag}: plan has no walls or furniture')
+    nums = []
+    for r in plan['rooms']:
+        nums += r['rect']
+        check(r['rect'][0] < r['rect'][2] and r['rect'][1] < r['rect'][3], f'{tag}: room {r["id"]} rect is empty')
+    for w in plan['walls']:
+        nums += w['a'] + w['b'] + [t for o in w.get('openings', []) for t in o]
+        check(w['kind'] in ('solid', 'glass', 'curtain'), f'{tag}: wall kind {w["kind"]}')
+    for f in plan['furniture']:
+        nums += [f['x'], f['z'], f['w'], f['d'], f['yaw']]
+        check(f['kind'] in kinds, f'{tag}: furniture kind {f["kind"]} is not in FURNITURE_KINDS')
+        check(f['w'] > 0 and f['d'] > 0, f'{tag}: {f["kind"]} has an empty footprint')
+    check(all(isinstance(v, (int, float)) and math.isfinite(v) for v in nums), f'{tag}: plan has NaN/inf values')
 
 
 def main():

@@ -1,0 +1,53 @@
+// Every user-facing string of the optional 2D RPG mode (plan §10.4).
+export const PIXEL_COPY = {
+  mode: { label: 'View', office3d: '3D Office', rpg2d: '2D RPG' },
+  prompt: { talk: 'E: Talk', open: 'E: Open', read: 'E: Read' },
+  actions: {
+    talk: 'Talk',
+    details: 'Details',
+    follow: 'Follow',
+    open: 'Open',
+    openLibrary: 'Open in Library',
+    goParent: (name: string) => `Go to ${name}`,
+    review: 'Review',
+  },
+  dialogue: {
+    subagent: (parent: string) => `Subagents can’t read messages. Talk to ${parent} instead.`,
+    approval: (summary: string) => `Needs your approval: ${summary}`,
+    left: (name: string) => `${name} left the office`,
+    elevator: 'The elevators. Agents arrive and leave here.',
+    statsBoard: 'Office board',
+  },
+  alerts: {
+    approval: (name: string) => `! ${name} needs approval`,
+    waiting: (name: string) => `! ${name} is waiting for you`,
+    error: (name: string) => `✖ ${name} hit an error`,
+    more: (n: number) => `+${n} more`,
+  },
+  hud: {
+    agents: (n: number) => `👥 ${n}`,
+    waiting: (n: number) => `! ${n}`,
+    errors: (n: number) => `✖ ${n}`,
+    lobby: 'Lobby',
+    street: 'Main Street',
+    garden: 'Garden',
+  },
+  stats: {
+    active: 'Active',
+    working: 'Working',
+    waiting: 'Waiting',
+    meetings: 'In meetings',
+    errors: 'Errors',
+  },
+  minimap: { title: 'Map', toggle: 'M: map' },
+  directory: {
+    title: 'Directory',
+    search: 'Find an agent, topic or wing…',
+    goThere: 'Go there',
+    toggle: 'J: directory',
+  },
+  overview: 'overview',
+  following: (name: string) => `Following ${name} · move to stop`,
+  missingPlan: '2D map data missing: run make assets-plan',
+  noWebgl: 'Switch to 2D RPG',
+} as const

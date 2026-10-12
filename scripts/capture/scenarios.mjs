@@ -843,6 +843,86 @@ export const SCENARIOS = [
       if (want('graphics-settings')) await c.still('graphics-settings', { hud: true, settle: 1500 })
     },
   },
+  {
+    // The optional 2D RPG mode (2D plan §12): the same busy office drawn top-down. The office
+    // settles in 3D first (the 3D debug hook drives the clock), then the view switches to 2D;
+    // `pixelGoTo` puts the player in front of an agent or object, facing it.
+    name: 'pixel',
+    shots: [
+      'pixel-overview',
+      'pixel-wing',
+      'pixel-dialogue',
+      'pixel-booth',
+      'pixel-library',
+      'pixel-meeting',
+    ],
+    clips: ['pixel-walk'],
+    async run(c, want) {
+      const { win } = c
+      await c.post(OFFICE)
+      await c.fastForward(30)
+      await win.evaluate(() => window.agentOffice.settings.set({ viewMode: 'pixel' }))
+      await win.locator('#pixel').waitFor({ state: 'visible', timeout: 20_000 })
+      await c.sleep(1500)
+      const goTo = (target) => c.dbg('pixelGoTo', target)
+      /** The 2D debug hook has no hideHud: toggle the capture class directly. */
+      const still = async (name, { hud = true, settle = 900 } = {}) => {
+        await win.evaluate((h) => document.body.classList.toggle('capture', !h), hud)
+        await c.sleep(settle)
+        await saveStill(await win.screenshot(), join(c.out, `${name}.png`))
+        await win.evaluate(() => document.body.classList.remove('capture'))
+      }
+      const closeDialogue = async () => {
+        if (await win.locator('#dialogue').isVisible()) await win.keyboard.press('Escape')
+      }
+      if (want('pixel-overview')) {
+        // O: the whole map, scaled down.
+        await win.keyboard.press('o')
+        await still('pixel-overview', { hud: false, settle: 1500 })
+        await win.keyboard.press('o')
+      }
+      if (want('pixel-wing')) {
+        // Desk pods in the terracotta wing, agents typing and thinking.
+        await goTo({ agentId: 'cc:omar' })
+        await still('pixel-wing')
+      }
+      if (want('pixel-dialogue')) {
+        // E on an agent: the RPG dialogue box with Talk / Details / Follow.
+        await goTo({ agentId: 'cc:lena' })
+        await win.keyboard.press('e')
+        await win.locator('#dialogue').waitFor({ state: 'visible', timeout: 5000 })
+        await still('pixel-dialogue')
+        await closeDialogue()
+      }
+      if (want('pixel-booth')) {
+        // A waiting agent on the phone in a booth, with its "!" alert in the HUD.
+        await goTo({ agentId: 'cc:zoe' })
+        await still('pixel-booth')
+      }
+      if (want('pixel-library')) {
+        // The Library: books for skills, boards for rules.
+        await goTo({ object: 'book' })
+        await still('pixel-library')
+      }
+      if (want('pixel-meeting')) {
+        // A parent and its subagents around the meeting table.
+        await goTo({ agentId: 'cc:maya' })
+        await still('pixel-meeting')
+      }
+      if (want('pixel-walk')) {
+        // The player walks east along the pods (D held while frames are taken).
+        await goTo({ agentId: 'cc:omar' })
+        await win.evaluate(() => document.body.classList.add('capture'))
+        await win.keyboard.down('d')
+        const shots = []
+        for (let i = 0; i < 36; i++)
+          shots.push(await win.screenshot({ type: 'jpeg', quality: 90, scale: 'css' }))
+        await win.keyboard.up('d')
+        await win.evaluate(() => document.body.classList.remove('capture'))
+        await saveClip(shots, join(c.out, 'pixel-walk.webp'), { fps: 12 })
+      }
+    },
+  },
 ]
 
 export async function runScenarios({ out, quality = 'high', only, clips = true, port }) {

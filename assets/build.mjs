@@ -9,6 +9,9 @@
 //   node assets/build.mjs --repack                re-run the optimize step (WebP textures + extras.hash, lightmap
 //                                                 tiers) from the last Blender export, no bake
 //   node assets/build.mjs --pin                   download Poly Haven sources and pin their sha256
+//   node assets/build.mjs --plan-only             export the floor plans (contract §11) into the published
+//                                                 manifest.json (public/assets + assets/out); no bake, glbs
+//                                                 and lightmaps untouched
 //
 // Options: --modules atrium,street,garden,cap,wing:terracotta,…  (default: all)   --jobs N (parallel Blender
 // processes; default 3 for draft, 1 for final and previews)   --skip-character
@@ -54,13 +57,14 @@ function parseArgs(argv) {
     else if (k === '--verify') a.mode = 'verify';
     else if (k === '--pin') a.mode = 'pin';
     else if (k === '--repack') a.mode = 'repack';
+    else if (k === '--plan-only') a.mode = 'plan';
     else if (k === '--visual') a.visual = true;
     else if (k === '--skip-character') a.skipCharacter = true;
     else throw new Error(`unknown argument ${k}`);
   }
   if (!['final', 'draft'].includes(a.quality)) throw new Error(`--quality must be final|draft`);
   // GPU memory (unified, shared with any open Blender): final bakes and Cycles previews run one at a time.
-  if (!a.jobs) a.jobs = a.quality === 'final' || a.mode === 'previews' ? 1 : 3;
+  if (!a.jobs) a.jobs = a.mode === 'plan' ? 4 : a.quality === 'final' || a.mode === 'previews' ? 1 : 3;
   for (const m of a.modules) if (!ALL_MODULES.includes(m)) throw new Error(`unknown module ${m}`);
   return a;
 }
@@ -450,6 +454,32 @@ function moduleSlug(m) {
   return m.replace(':', '-');
 }
 
+/**
+ * Contract §11: one floor plan is shared by every wing theme. Rooms and walls must match across themes;
+ * furniture is the multiset intersection, so theme-only decor (an arcade cabinet, extra plants) is left out
+ * and the shared plan lists only what every wing really has.
+ */
+function mergeWingPlans(plans) {
+  const [first, ...rest] = plans;
+  for (const { theme, plan } of rest)
+    for (const k of ['rooms', 'walls'])
+      if (JSON.stringify(plan[k]) !== JSON.stringify(first.plan[k])) throw new Error(`wing:${theme} plan.${k} differ from wing:${first.theme}`);
+  const counts = (plan) => {
+    const c = new Map();
+    for (const f of plan.furniture) c.set(JSON.stringify(f), (c.get(JSON.stringify(f)) ?? 0) + 1);
+    return c;
+  };
+  const others = rest.map(({ plan }) => counts(plan));
+  const used = new Map();
+  const furniture = first.plan.furniture.filter((f) => {
+    const key = JSON.stringify(f);
+    const n = (used.get(key) ?? 0) + 1;
+    used.set(key, n);
+    return others.every((c) => (c.get(key) ?? 0) >= n);
+  });
+  return { rooms: first.plan.rooms, walls: first.plan.walls, furniture };
+}
+
 async function build(args) {
   const t0 = Date.now();
   const blender = await findBlender();
@@ -487,6 +517,7 @@ async function build(args) {
   // Merge module fragments (a partial --modules build reuses earlier fragments from the same work dir).
   const modules = {};
   const wingThemes = {};
+  const wingPlans = [];
   let wingShared = null;
   for (const m of ALL_MODULES) {
     const frag = path.join(work, `${moduleSlug(m)}.json`);
@@ -495,6 +526,7 @@ async function build(args) {
     if (m.startsWith('wing:')) {
       const theme = m.slice(5);
       wingThemes[theme] = f.theme;
+      if (f.module.plan) wingPlans.push({ theme, plan: f.module.plan });
       if (!wingShared) wingShared = f.module;
       else if (JSON.stringify(wingShared.anchors) !== JSON.stringify(f.module.anchors) || JSON.stringify(wingShared.nav) !== JSON.stringify(f.module.nav))
         throw new Error(`wing:${theme} anchors/nav differ from the other themes`);
@@ -504,6 +536,7 @@ async function build(args) {
     const themes = {};
     for (const t of THEMES) if (wingThemes[t]) themes[t] = wingThemes[t];
     modules.wing = { themes, ...wingShared };
+    if (wingPlans.length) modules.wing.plan = mergeWingPlans(wingPlans);
   }
 
   const manifest = { version: 1, blender: blender.version, units: 'm', hash, hdri: 'hdri/office.hdr', modules };
@@ -610,6 +643,60 @@ async function repack() {
   await verify(tools, PUBLIC);
 }
 
+/**
+ * --plan-only (make assets-plan): run each module builder without objects, bake or export, and merge the
+ * floor plans (contract §11) into the published manifest.json in public/assets and assets/out. Nothing
+ * else in the manifest changes; glbs and lightmaps are never touched.
+ */
+async function planOnly(args) {
+  const t0 = Date.now();
+  const targets = [PUBLIC, OUT].map((d) => path.join(d, 'manifest.json')).filter((f) => fs.existsSync(f));
+  if (!targets.length) throw new Error('no manifest.json in public/assets or assets/out; run make assets first');
+  const blender = await findBlender();
+  await ensureSources();
+  const work = path.join(CACHE, 'work-plan');
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.mkdirSync(path.join(work, 'logs'), { recursive: true });
+  await pool(args.modules, args.jobs, (m) =>
+    run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--out', work, '--plan-only', '--modules', m]), {
+      logFile: path.join(work, 'logs', `${moduleSlug(m)}.log`),
+    }),
+  );
+  const plans = {};
+  const wing = [];
+  for (const m of args.modules) {
+    const { plan } = JSON.parse(fs.readFileSync(path.join(work, `${moduleSlug(m)}.plan.json`), 'utf8'));
+    if (m.startsWith('wing:')) wing.push({ theme: m.slice(5), plan });
+    else plans[m] = plan;
+  }
+  if (wing.length) {
+    if (wing.length < THEMES.length) console.warn(`[asset] WARN the wing plan comes from ${wing.length}/${THEMES.length} themes`);
+    plans.wing = mergeWingPlans(wing);
+  }
+  for (const [id, plan] of Object.entries(plans)) {
+    const kinds = {};
+    for (const f of plan.furniture) kinds[f.kind] = (kinds[f.kind] ?? 0) + 1;
+    const openings = plan.walls.reduce((n, w) => n + (w.openings?.length ?? 0), 0);
+    console.log(`[asset] ${id}: ${plan.rooms.length} rooms, ${plan.walls.length} walls (${openings} openings), ${plan.furniture.length} furniture ${JSON.stringify(kinds)}`);
+  }
+  const { checkPlans } = await import('./validate.ts');
+  for (const file of targets) {
+    const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const [id, plan] of Object.entries(plans)) {
+      if (!manifest.modules[id]) throw new Error(`${path.relative(ROOT, file)} has no module ${id}`);
+      manifest.modules[id].plan = plan;
+    }
+    const problems = Object.keys(plans).length === 5 ? checkPlans(manifest) : [];
+    if (problems.length) {
+      for (const p of problems) console.error(`[asset] FAIL ${p}`);
+      throw new Error(`${problems.length} floor-plan problem(s); ${path.relative(ROOT, file)} not written`);
+    }
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`[asset] plans merged into ${path.relative(ROOT, file)}`);
+  }
+  console.log(`[asset] plan-only done in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+}
+
 async function test() {
   const blender = await findBlender();
   await ensureSources();
@@ -644,6 +731,7 @@ try {
   else if (args.mode === 'previews') await previews(args);
   else if (args.mode === 'pin') await ensureSources({ pin: true });
   else if (args.mode === 'repack') await repack();
+  else if (args.mode === 'plan') await planOnly(args);
   else if (args.mode === 'verify') {
     await verify(await gltfTools(), PUBLIC);
     if (args.visual) await visual(await gltfTools());

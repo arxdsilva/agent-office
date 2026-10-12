@@ -390,12 +390,30 @@ export class CameraDirector {
       this.flight = null
       this.markInput()
     })
-    addEventListener('keydown', (e) => {
+    const down = (e: KeyboardEvent) => {
       this.keys.add(e.code)
       if (this.mode === 'walk') this.markInput()
-    })
-    addEventListener('keyup', (e) => this.keys.delete(e.code))
-    addEventListener('blur', () => this.keys.clear())
+    }
+    const up = (e: KeyboardEvent) => this.keys.delete(e.code)
+    const blur = () => this.keys.clear()
+    addEventListener('keydown', down)
+    addEventListener('keyup', up)
+    addEventListener('blur', blur)
+    this.unbind = () => {
+      removeEventListener('keydown', down)
+      removeEventListener('keyup', up)
+      removeEventListener('blur', blur)
+    }
+  }
+
+  private unbind: () => void = () => {}
+
+  /** Removes the window listeners and the controls' DOM listeners (2D RPG plan §11). */
+  dispose(): void {
+    this.unbind()
+    this.orbit.dispose()
+    this.walk.dispose()
+    this.keys.clear()
   }
 
   /** When the user last moved the camera (orbit, zoom, walk, view buttons); -∞ until then. */

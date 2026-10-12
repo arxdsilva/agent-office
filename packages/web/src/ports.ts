@@ -8,6 +8,15 @@ import type {
   SettingsPatch,
 } from '@agent-office/shared'
 import type { Effective, GraphicsStats } from './app/graphics-types.ts'
+import type {
+  DialogueAction,
+  DialogueVM,
+  DirectoryVM,
+  InteractTarget,
+  MinimapVM,
+  PixelHudVM,
+} from './app/pixel/types.ts'
+import type { ViewMode } from '@agent-office/shared'
 import type { LibraryTab, LibrarySort, LibraryVM, ViewEntry } from './app/library-types.ts'
 import type {
   NewSessionVM,
@@ -77,6 +86,21 @@ export interface SceneView {
   onHoverSurface(fn: (ref: CapabilityRef | null, x: number, y: number) => void): void
   /** The camera views available now (the DOM view bar renders them; replaces the scene's own buttons). */
   onViews(fn: (views: ViewEntry[]) => void): void
+  // ── Optional, added for the 2D RPG mode (plan §10.2). The 3D scene may ignore them. ──
+  /** Releases canvases, GPU resources and listeners (before switching view modes). */
+  dispose?(): void
+  /** 2D: the player pressed E on (or clicked) something; the controller shows the dialogue. */
+  onInteract?(fn: (t: InteractTarget) => void): void
+  /** 2D: suspend player input while a DOM dialog or panel has focus. */
+  setInputSuspended?(on: boolean): void
+  /** 2D: the room the player stands in (for the HUD). */
+  onRoom?(fn: (roomName: string) => void): void
+  /** 2D: where the player stands, in world metres (minimap), at most 4 Hz. */
+  onPlayerMove?(fn: (pos: { x: number; z: number }) => void): void
+  /** 2D: the camera follows an agent without moving the player (Follow); null stops. */
+  follow?(agentId: string | null): void
+  /** 2D: move the player next to an agent or view region (directory "Go there"). */
+  travelTo?(target: { agentId?: string; viewId?: string }): void
 }
 
 export interface SceneSurfaces {
@@ -250,4 +274,32 @@ export interface BannerView {
   show(b: Banner | null): void
   /** The banner's action button (e.g. "Fix in Connect"). */
   onAction(fn: (action: NonNullable<Banner['action']>) => void): void
+}
+
+/** The RPG dialogue box (`#dialogue`), 2D mode only (plan §8.2). */
+export interface DialogueView {
+  open(vm: DialogueVM): void
+  render(vm: DialogueVM): void
+  close(): void
+  isOpen(): boolean
+  onAction(fn: (a: DialogueAction) => void): void
+  onClose(fn: () => void): void
+}
+
+/** The 2D HUD: room, counts, alerts, minimap and directory (plan §9). */
+export interface PixelHudView {
+  show(on: boolean): void
+  render(vm: PixelHudVM): void
+  renderMinimap(vm: MinimapVM | null): void
+  renderDirectory(vm: DirectoryVM | null): void
+  onAlert(fn: (agentId: string, opensPermission: boolean) => void): void
+  onMinimapPick(fn: (tx: number, ty: number) => void): void
+  onDirectory(fn: (pick: { agentId?: string; viewId?: string; travel: boolean }) => void): void
+  onDirectorySearch(fn: (q: string) => void): void
+}
+
+/** The `3D Office | 2D RPG` switch in #actions. */
+export interface ModeToggleView {
+  render(mode: ViewMode): void
+  onChange(fn: (mode: ViewMode) => void): void
 }

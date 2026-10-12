@@ -15,6 +15,7 @@ const HELP = `Usage: node scripts/perf.mjs [options]
   --settle <n>       seconds to wait after adding agents (default 8)
   --view <id>        camera bookmark while sampling (default overview)
   --low-end          CPU rendering (SwiftShader via AGENT_OFFICE_FORCE_SOFTWARE_GL=1), DPR 1
+  --mode <3d|pixel>  view mode (default 3d; pixel = the 2D RPG mode, sampled at the claude-code wing)
   -h, --help         this text
 
 Columns: avg fps (rAF), 1% low (rAF), rendered (the scene's own fps; frame pacing caps it),
@@ -30,6 +31,7 @@ const { values: args } = parseArgs({
     settle: { type: 'string', default: '8' },
     view: { type: 'string', default: 'overview' },
     'low-end': { type: 'boolean', default: false },
+    mode: { type: 'string', default: '3d' },
     help: { type: 'boolean', short: 'h', default: false },
   },
 })
@@ -44,6 +46,7 @@ async function measure(preset) {
   const started = Date.now()
   const { win, port, token, close } = await launchApp({
     quality: preset,
+    viewMode: args.mode === 'pixel' ? 'pixel' : undefined,
     env: plan.env,
     args: plan.args,
   })
@@ -57,7 +60,14 @@ async function measure(preset) {
     if (res.status !== 202) throw new Error(`POST /api/mock → ${res.status}`)
     // Let everyone arrive and the wings stream in.
     await win.waitForTimeout(Number(args.settle) * 1000)
-    await win.evaluate((v) => window.__aoDebug.view(v), args.view)
+    // 3D frames a camera view; 2D (no camera views) pans to the busiest wing instead.
+    await win.evaluate(
+      (v) =>
+        window.__aoDebug.view
+          ? window.__aoDebug.view(v)
+          : window.__aoDebug.bookmark('wing:claude-code:0'),
+      args.view,
+    )
     await win.waitForTimeout(2000)
 
     const sample = await win.evaluate(async (seconds) => {

@@ -9,6 +9,7 @@ import { toWorld } from '../../app/building.ts'
 import { createPacer } from '../../app/frame-pacer.ts'
 import type { Effective, GraphicsStats, HardwareInfo } from '../../app/graphics-types.ts'
 import type { ViewEntry } from '../../app/library-types.ts'
+import { viewsFor } from '../../app/views.ts'
 import { linksForMode, type RenderLink } from '../../app/links.ts'
 import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
@@ -149,6 +150,10 @@ export class ThreeScene implements SceneView {
   private focus = new THREE.Vector3()
   private openBanks = new Set<string>()
   private debug = debugEnabled()
+  /** Removes the window, document and persistent-DOM listeners (`dispose`). */
+  private teardown: (() => void)[] = []
+  private disposed = false
+  private debugApi: object | null = null
 
   constructor(
     private el: SceneElements,
@@ -189,14 +194,76 @@ export class ThreeScene implements SceneView {
     this.links.onChange = (links) => this.renderLinkList(links)
 
     this.applyGraphics(this.gfx)
-    addEventListener('resize', () => this.resize())
+    this.listen(window, 'resize', () => this.resize())
     this.resize()
     this.bindInput()
     this.bindContext()
     // Hidden window: the loop may be paused (fpsLimit 0); coming back re-arms it at once.
-    document.addEventListener('visibilitychange', () => this.arm())
+    this.listen(document, 'visibilitychange', () => this.arm())
     if (this.debug) this.installDebug()
     this.arm()
+  }
+
+  /** Adds a listener that `dispose` removes (targets that outlive the scene). */
+  private listen<K extends keyof (WindowEventMap & DocumentEventMap)>(
+    target: Window | Document | HTMLElement,
+    type: K,
+    fn: (e: (WindowEventMap & DocumentEventMap)[K]) => void,
+  ): void {
+    const h = fn as EventListener
+    target.addEventListener(type, h)
+    this.teardown.push(() => target.removeEventListener(type, h))
+  }
+
+  /**
+   * Releases everything (2D RPG plan §11): stops the loop, removes listeners, disposes the
+   * building, characters, links and pipeline, the labels' DOM, the WebGL context and the canvas.
+   * Only called when the scene host switches view modes; the scene is unusable afterwards.
+   */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.renderer.setAnimationLoop(null)
+    this.looping = false
+    for (const off of this.teardown.splice(0)) off()
+    if (this.cam.mode === 'walk') this.cam.exitWalk()
+    this.cam.onModeChange = () => {}
+    this.cam.dispose()
+    this.el.crosshair.hidden = true
+    this.el.walkHelp.hidden = true
+    this.el.walkButton.textContent = '🚶 Walk'
+    this.links.setMode('off')
+    this.scene.remove(this.links.group)
+    this.characters?.dispose()
+    this.characters = null
+    if (this.building) {
+      this.scene.remove(this.building.group)
+      this.building.dispose()
+      this.building = null
+    }
+    this.pipeline.dispose()
+    this.envMap?.dispose()
+    this.envMap = null
+    this.labels.renderer.domElement.remove()
+    // Accessible lists hold buttons bound to this scene: clear them (and their render keys).
+    for (const list of [this.el.capabilities, this.el.links]) {
+      list.replaceChildren()
+      list.dataset.key = ''
+    }
+    this.el.stage.dataset.focus = ''
+    // Our own context loss must not reach the controller ("Recovering graphics…").
+    this.lostFn = () => {}
+    this.restoredFn = () => {}
+    this.statsFn = () => {}
+    if (this.debug) {
+      this.el.stats.hidden = true
+      this.el.stats.textContent = ''
+    }
+    this.renderer.dispose()
+    this.renderer.forceContextLoss()
+    this.renderer.domElement.remove()
+    const w = window as unknown as { __aoDebug?: unknown }
+    if (this.debugApi && w.__aoDebug === this.debugApi) delete w.__aoDebug
   }
 
   /** The frame limit in force. The controller already combines page and window visibility. */
@@ -219,6 +286,7 @@ export class ThreeScene implements SceneView {
    * next rendered frame advances mixers by the accumulated time (capped at 0.5 s).
    */
   private tick(t: number): void {
+    if (this.disposed) return
     if (!this.pacer.shouldRender(t, this.limit())) return
     const dt = this.lastFrame < 0 ? 0 : Math.min(0.5, (t - this.lastFrame) / 1000)
     this.lastFrame = t
@@ -824,31 +892,14 @@ export class ThreeScene implements SceneView {
    * Adapters and Library per provider (first wing; grouped into menus), then the overview.
    */
   private emitViews(): void {
-    if (!this.viewsFn) return
-    const entry = (b: Bookmark, label = b.label): ViewEntry => ({
-      id: b.id,
-      label,
-      ...(b.group ? { group: b.group } : {}),
-      ...(b.provider ? { provider: b.provider } : {}),
-      ...(b.id === this.current ? { active: true } : {}),
-    })
-    const room = (prefix: string) =>
-      this.bookmarks
-        .filter((b) => b.id.split(':')[0] === prefix && b.id.endsWith(':0'))
-        .map((b) => entry(b, b.label.slice(0, b.label.indexOf(' · ')) || b.label))
-    const byProvider = (group: 'library' | 'adapters', prefixes: string[]) => {
-      const rows = prefixes.flatMap(room)
-      const order = [...new Set(rows.map((r) => r.provider))]
-      return order.flatMap((p) => rows.filter((r) => r.provider === p))
-    }
-    const views: ViewEntry[] = [
-      ...this.bookmarks.filter((b) => b.id === 'atrium' || b.id === 'street').map((b) => entry(b)),
-      ...this.bookmarks.filter((b) => b.id.startsWith('wing:')).map((b) => entry(b)),
-      ...byProvider('adapters', ['adapters', 'adapters-door']),
-      ...byProvider('library', ['library', 'library-rules']),
-      ...this.bookmarks.filter((b) => b.id === 'overview').map((b) => entry(b)),
-    ]
-    this.viewsFn(views)
+    if (!this.viewsFn || !this.layout) return
+    // Shared with the 2D scene (app/views.ts); the 3D framing stays per id in the bookmarks.
+    this.viewsFn(
+      viewsFor(this.layout, {
+        available: new Set(this.bookmarks.map((b) => b.id)),
+        current: this.current,
+      }),
+    )
   }
 
   private renderSigns(layout: BuildingLayout): void {
@@ -990,12 +1041,12 @@ export class ThreeScene implements SceneView {
       if (moved > 5) return // it was a drag
       this.pickAt((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
     })
-    this.el.walkButton.addEventListener('click', () => {
+    this.listen(this.el.walkButton, 'click', () => {
       this.cam.markInput()
       this.current = null
       this.cam.enterWalk(this.walkStart())
     })
-    this.el.fitButton.addEventListener('click', () => {
+    this.listen(this.el.fitButton, 'click', () => {
       this.cam.markInput()
       this.flyTo('overview')
     })
@@ -1006,7 +1057,7 @@ export class ThreeScene implements SceneView {
       this.el.walkButton.textContent = mode === 'walk' ? '🎥 Orbit' : '🚶 Walk'
       this.building?.setCeilingsVisible(mode === 'walk')
     }
-    addEventListener('keydown', (e) => {
+    this.listen(window, 'keydown', (e) => {
       const t = e.target
       if (
         t instanceof HTMLTextAreaElement ||
@@ -1175,6 +1226,7 @@ export class ThreeScene implements SceneView {
         ...(this.characters?.count() ?? {}),
       }),
     }
+    this.debugApi = api
     ;(window as unknown as { __aoDebug: typeof api }).__aoDebug = api
   }
 }

@@ -35,6 +35,7 @@ The **Connected** tab lists every provider, its agent count and how it's connect
 - **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they are doing ([Tour](#tour)).
 - **Managed sessions.** Start Claude Code from the app and switch its permission mode and model live, approve tool calls from permission cards, interrupt or stop it ([Managed sessions](#managed-sessions)).
 - **Context and tools in every message.** Attach files and folders, and ask the agent to use the Chrome browser, an MCP server or a skill ([Talk to agents](#talk-to-agents)).
+- **2D RPG mode (optional).** The same live office as a top-down, GBA-style pixel-art world you can walk around; talk to agents with E ([2D RPG mode](#2d-rpg-mode-optional)).
 - **Light and dark themes.** System, Light or Dark, with the same features in both ([Appearance](#appearance)).
 - **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP ([Talk to agents](#talk-to-agents)).
 - **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
@@ -394,6 +395,29 @@ sprint, `E` to talk to the agent (or open the station, book or board) under the 
 Low (left) and Ultra (right), same view:
 
 ![The same desk pod at the Low and Ultra presets](docs/screenshots/quality-compare.png)
+
+## 2D RPG mode (optional)
+
+Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same live office** as a GBA-style, top-down pixel-art world. It's an extra view, not a replacement: the 3D office stays the default, and switching doesn't restart agents or lose chats, sessions or permissions.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/pixel-wing.png" width="100%" alt="The 2D RPG mode: the player character in a provider wing, with agents, name tags and status icons"></td>
+<td width="50%"><img src="docs/screenshots/pixel-dialogue.png" width="100%" alt="An RPG dialogue box for an agent, with Talk, Details and Follow"></td>
+</tr>
+<tr>
+<td>Walk the office with WASD or the arrow keys. Agents act out their real status.</td>
+<td>Walk up to an agent and press <b>E</b>: Talk opens the usual chat panel.</td>
+</tr>
+</table>
+
+![The whole 2D office from above: lobby, Main Street and three themed wings](docs/screenshots/pixel-overview.png)
+
+- **The same agents, the same places:** agents arrive by elevator, sit at their pod, meet with their subagents, wait in phone booths, visit the Library and the Adapters room, and leave by elevator, exactly as in 3D. The 2D view draws the same decisions.
+- **Talk to agents:** **E** (or a click) opens a dialogue. **Talk** opens the regular chat panel, with history, context, tools, and a managed session's mode, model and permission card. Subagents point you to their parent.
+- **Library and Adapters:** E on a bookshelf, board or station opens its details or the Library browser.
+- **Never miss a request:** alerts at the top right ("! Ada is waiting for you", "needs approval") take you there. **M** opens a minimap, **J** a directory with fast travel, **O** an overview, and the mouse wheel zooms.
+- Original pixel art (no third-party sprites), 16 px tiles, crisp integer scaling. It runs at 120 fps with 36 MB of textures, and works without WebGL.
 
 ## Characters
 

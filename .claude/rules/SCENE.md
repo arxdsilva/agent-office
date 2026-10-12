@@ -37,3 +37,12 @@ The contract between the Blender pipeline and the renderer is `docs/graphics-con
 | Ship glb textures as WebP with `extras.hash`, lightmaps as full/½/¼ WebP tiers (`make assets-repack`)                                                             | Use KTX2/Basis: its transcoder needs `eval`, which the CSP forbids |
 | Frame Library and Adapters views with `app/framing.ts` from inside the room                                                                                       | Hand-place camera bookmarks                                        |
 | Check `make perf` (preset matrix) and, on Linux or Windows, `make perf-low`                                                                                       | Call a graphics change done without a before/after number          |
+
+## Two renderers, one office (2D RPG mode)
+
+| Do                                                                                                        | Don't                                                                   |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Keep both renderers behind `SceneView`; the controller talks only to `SceneHost`                          | Import a scene class in the controller, or let one scene call the other |
+| Draw the director's plans in both views (`motion.ts` steps); put 2D logic in `app/pixel/*` (pure, tested) | Add behaviour (where agents go, when) in `adapters/pixel/*`             |
+| Keep the 2D mode additive: 3D stays the default, and the 3D specs pass unchanged                          | Change 3D behaviour or existing specs for 2D                            |
+| Build pixel art from `assets/pixel/src` (`make pixel-assets`), original only                              | Hand-edit the atlas PNGs or use third-party sprites, tiles or fonts     |

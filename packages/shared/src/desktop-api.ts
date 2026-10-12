@@ -39,6 +39,8 @@ export const GraphicsAdvancedSchema = z.object({
   building: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 })
 export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
+export const VIEW_MODES = ['3d', 'pixel'] as const
+export type ViewMode = (typeof VIEW_MODES)[number]
 export const BATTERY_PRESETS = ['off', 'minimal', 'low', 'medium'] as const
 
 export const SettingsSchema = z.object({
@@ -72,6 +74,8 @@ export const SettingsSchema = z.object({
   batteryPreset: z.enum(BATTERY_PRESETS).default('off'),
   /** Off = software rendering (needs a restart). */
   hardwareAcceleration: z.boolean().default(true),
+  /** Optional extra view: '3d' (the office, default) or 'pixel' (the 2D RPG mode). Applied live. */
+  viewMode: z.enum(VIEW_MODES).default('3d'),
   windowBounds: WindowBoundsSchema.optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>

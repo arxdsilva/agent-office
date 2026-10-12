@@ -253,3 +253,55 @@ describe('parseManifest', () => {
     expect(failure(cap).path).toBe('modules.wing.capacity.books')
   })
 })
+
+// Optional floor plan (graphics contract §11) for the 2D RPG mode: parsed when present, typed
+// errors naming the path when malformed, absent in older manifests.
+describe('parseManifest plan (2D floor plan)', () => {
+  const plan = () => ({
+    rooms: [{ id: 'pod-1', name: 'Pod 1', rect: [0, 0, 4, 6], floor: 'wood' }],
+    walls: [{ a: [0, 0], b: [4, 0], kind: 'glass', openings: [[1, 2]] }],
+    furniture: [{ kind: 'station', x: 1, z: 1, w: 1, d: 1, yaw: 0, ref: 'station:0' }],
+  })
+
+  it('is optional', () => {
+    const m = parseManifest(json())
+    expect(m.modules.wing.plan).toBeUndefined()
+    expect(m.modules.atrium.plan).toBeUndefined()
+  })
+
+  it('parses module and wing plans', () => {
+    const j = json()
+    j.modules.wing.plan = plan()
+    j.modules.cap.plan = {
+      rooms: [],
+      walls: [{ a: [-3, 0.5], b: [3, 0.5], kind: 'curtain' }],
+      furniture: [],
+    }
+    const m = parseManifest(j)
+    expect(m.modules.wing.plan).toEqual(plan())
+    expect(m.modules.cap.plan!.walls[0]).toEqual({ a: [-3, 0.5], b: [3, 0.5], kind: 'curtain' })
+  })
+
+  it('names the offending path', () => {
+    const cases: [(p: Json) => void, string][] = [
+      [(p) => (p.rooms[0].rect = [0, 0, 4]), 'modules.wing.plan.rooms[0].rect'],
+      [(p) => (p.rooms[0].id = ''), 'modules.wing.plan.rooms[0].id'],
+      [(p) => (p.walls[0].kind = 'brick'), 'modules.wing.plan.walls[0].kind'],
+      [(p) => (p.walls[0].openings = [[1]]), 'modules.wing.plan.walls[0].openings[0]'],
+      [(p) => (p.walls[0].a = [0, 'x']), 'modules.wing.plan.walls[0].a'],
+      [(p) => (p.furniture[0].kind = 'throne'), 'modules.wing.plan.furniture[0].kind'],
+      [(p) => (p.furniture[0].w = NaN), 'modules.wing.plan.furniture[0].w'],
+      [(p) => (p.furniture[0].ref = 3), 'modules.wing.plan.furniture[0].ref'],
+      [(p) => (p.walls = {}), 'modules.wing.plan.walls'],
+    ]
+    for (const [mutate, path] of cases) {
+      const j = json()
+      j.modules.wing.plan = plan()
+      mutate(j.modules.wing.plan)
+      expect(failure(j).path).toBe(path)
+    }
+    const a = json()
+    a.modules.atrium.plan = 'none'
+    expect(failure(a).path).toBe('modules.atrium.plan')
+  })
+})

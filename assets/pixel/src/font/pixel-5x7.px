@@ -1,0 +1,984 @@
+# Original 5×7 bitmap font for agent-office (MIT). x = ink, . = empty. Caps are 6 rows (0–5), the
+# baseline is row 5, descenders use row 6. Widths are proportional; the build adds 1 px spacing.
+
+@glyph 0
+.xx.
+x..x
+x.xx
+xx.x
+x..x
+.xx.
+....
+
+@glyph 1
+.x.
+xx.
+.x.
+.x.
+.x.
+xxx
+...
+
+@glyph 2
+.xx.
+x..x
+..x.
+.x..
+x...
+xxxx
+....
+
+@glyph 3
+xxx.
+...x
+.xx.
+...x
+...x
+xxx.
+....
+
+@glyph 4
+..x.
+.xx.
+x.x.
+xxxx
+..x.
+..x.
+....
+
+@glyph 5
+xxxx
+x...
+xxx.
+...x
+...x
+xxx.
+....
+
+@glyph 6
+.xx.
+x...
+xxx.
+x..x
+x..x
+.xx.
+....
+
+@glyph 7
+xxxx
+...x
+..x.
+..x.
+.x..
+.x..
+....
+
+@glyph 8
+.xx.
+x..x
+.xx.
+x..x
+x..x
+.xx.
+....
+
+@glyph 9
+.xx.
+x..x
+x..x
+.xxx
+...x
+.xx.
+....
+
+@glyph space
+...
+...
+...
+...
+...
+...
+...
+
+@glyph !
+x
+x
+x
+x
+.
+x
+.
+
+@glyph "
+x.x
+x.x
+...
+...
+...
+...
+...
+
+@glyph U+0023
+.x.x.
+xxxxx
+.x.x.
+.x.x.
+xxxxx
+.x.x.
+.....
+
+@glyph $
+.xxx.
+x.x..
+.xxx.
+..x.x
+.xxx.
+..x..
+.....
+
+@glyph %
+xx..x
+xx.x.
+..x..
+.x...
+x..xx
+...xx
+.....
+
+@glyph &
+.xx..
+x..x.
+.xx..
+x..xx
+x..x.
+.xx.x
+.....
+
+@glyph '
+x
+x
+.
+.
+.
+.
+.
+
+@glyph (
+.x
+x.
+x.
+x.
+x.
+.x
+..
+
+@glyph )
+x.
+.x
+.x
+.x
+.x
+x.
+..
+
+@glyph *
+.....
+x.x.x
+.xxx.
+x.x.x
+.....
+.....
+.....
+
+@glyph +
+...
+.x.
+xxx
+.x.
+...
+...
+...
+
+@glyph ,
+..
+..
+..
+..
+.x
+.x
+x.
+
+@glyph -
+...
+...
+xxx
+...
+...
+...
+...
+
+@glyph .
+.
+.
+.
+.
+.
+x
+.
+
+@glyph /
+...x
+...x
+..x.
+.x..
+x...
+x...
+....
+
+@glyph :
+.
+.
+x
+.
+.
+x
+.
+
+@glyph ;
+..
+..
+.x
+..
+.x
+.x
+x.
+
+@glyph <
+...
+..x
+.x.
+x..
+.x.
+..x
+...
+
+@glyph =
+...
+...
+xxx
+...
+xxx
+...
+...
+
+@glyph >
+...
+x..
+.x.
+..x
+.x.
+x..
+...
+
+@glyph ?
+.xx.
+x..x
+..x.
+.x..
+....
+.x..
+....
+
+@glyph U+0040
+.xxx.
+x...x
+x.xxx
+x.x.x
+x.xx.
+x....
+.xxx.
+
+@glyph A
+.xx.
+x..x
+x..x
+xxxx
+x..x
+x..x
+....
+
+@glyph B
+xxx.
+x..x
+xxx.
+x..x
+x..x
+xxx.
+....
+
+@glyph C
+.xxx
+x...
+x...
+x...
+x...
+.xxx
+....
+
+@glyph D
+xxx.
+x..x
+x..x
+x..x
+x..x
+xxx.
+....
+
+@glyph E
+xxxx
+x...
+xxx.
+x...
+x...
+xxxx
+....
+
+@glyph F
+xxxx
+x...
+xxx.
+x...
+x...
+x...
+....
+
+@glyph G
+.xxx
+x...
+x.xx
+x..x
+x..x
+.xxx
+....
+
+@glyph H
+x..x
+x..x
+xxxx
+x..x
+x..x
+x..x
+....
+
+@glyph I
+xxx
+.x.
+.x.
+.x.
+.x.
+xxx
+...
+
+@glyph J
+..xx
+...x
+...x
+...x
+x..x
+.xx.
+....
+
+@glyph K
+x..x
+x.x.
+xx..
+x.x.
+x..x
+x..x
+....
+
+@glyph L
+x...
+x...
+x...
+x...
+x...
+xxxx
+....
+
+@glyph M
+x...x
+xx.xx
+x.x.x
+x...x
+x...x
+x...x
+.....
+
+@glyph N
+x..x
+xx.x
+x.xx
+x..x
+x..x
+x..x
+....
+
+@glyph O
+.xx.
+x..x
+x..x
+x..x
+x..x
+.xx.
+....
+
+@glyph P
+xxx.
+x..x
+x..x
+xxx.
+x...
+x...
+....
+
+@glyph Q
+.xx.
+x..x
+x..x
+x..x
+x.x.
+.x.x
+....
+
+@glyph R
+xxx.
+x..x
+x..x
+xxx.
+x.x.
+x..x
+....
+
+@glyph S
+.xxx
+x...
+.xx.
+...x
+...x
+xxx.
+....
+
+@glyph T
+xxx
+.x.
+.x.
+.x.
+.x.
+.x.
+...
+
+@glyph U
+x..x
+x..x
+x..x
+x..x
+x..x
+.xx.
+....
+
+@glyph V
+x..x
+x..x
+x..x
+x..x
+.xx.
+.xx.
+....
+
+@glyph W
+x...x
+x...x
+x...x
+x.x.x
+xx.xx
+x...x
+.....
+
+@glyph X
+x..x
+x..x
+.xx.
+.xx.
+x..x
+x..x
+....
+
+@glyph Y
+x.x
+x.x
+x.x
+.x.
+.x.
+.x.
+...
+
+@glyph Z
+xxxx
+...x
+..x.
+.x..
+x...
+xxxx
+....
+
+@glyph [
+xx
+x.
+x.
+x.
+x.
+xx
+..
+
+@glyph \
+x...
+x...
+.x..
+..x.
+...x
+...x
+....
+
+@glyph ]
+xx
+.x
+.x
+.x
+.x
+xx
+..
+
+@glyph ^
+.x.
+x.x
+...
+...
+...
+...
+...
+
+@glyph _
+....
+....
+....
+....
+....
+....
+xxxx
+
+@glyph `
+x.
+.x
+..
+..
+..
+..
+..
+
+@glyph a
+....
+....
+.xxx
+x..x
+x..x
+.xxx
+....
+
+@glyph b
+x...
+x...
+xxx.
+x..x
+x..x
+xxx.
+....
+
+@glyph c
+...
+...
+.xx
+x..
+x..
+.xx
+...
+
+@glyph d
+...x
+...x
+.xxx
+x..x
+x..x
+.xxx
+....
+
+@glyph e
+....
+....
+.xx.
+xxxx
+x...
+.xxx
+....
+
+@glyph f
+.xx
+x..
+xxx
+x..
+x..
+x..
+...
+
+@glyph g
+....
+....
+.xxx
+x..x
+.xxx
+...x
+.xx.
+
+@glyph h
+x...
+x...
+xxx.
+x..x
+x..x
+x..x
+....
+
+@glyph i
+x
+.
+x
+x
+x
+x
+.
+
+@glyph j
+..x
+...
+..x
+..x
+..x
+..x
+xx.
+
+@glyph k
+x...
+x...
+x..x
+xxx.
+x.x.
+x..x
+....
+
+@glyph l
+x.
+x.
+x.
+x.
+x.
+.x
+..
+
+@glyph m
+.....
+.....
+xx.x.
+x.x.x
+x.x.x
+x.x.x
+.....
+
+@glyph n
+....
+....
+xxx.
+x..x
+x..x
+x..x
+....
+
+@glyph o
+....
+....
+.xx.
+x..x
+x..x
+.xx.
+....
+
+@glyph p
+....
+....
+xxx.
+x..x
+xxx.
+x...
+x...
+
+@glyph q
+....
+....
+.xxx
+x..x
+.xxx
+...x
+...x
+
+@glyph r
+...
+...
+x.x
+xx.
+x..
+x..
+...
+
+@glyph s
+...
+...
+.xx
+xx.
+..x
+xx.
+...
+
+@glyph t
+.x.
+.x.
+xxx
+.x.
+.x.
+..x
+...
+
+@glyph u
+....
+....
+x..x
+x..x
+x..x
+.xxx
+....
+
+@glyph v
+...
+...
+x.x
+x.x
+x.x
+.x.
+...
+
+@glyph w
+.....
+.....
+x...x
+x.x.x
+x.x.x
+.x.x.
+.....
+
+@glyph x
+...
+...
+x.x
+.x.
+.x.
+x.x
+...
+
+@glyph y
+....
+....
+x..x
+x..x
+.xxx
+...x
+.xx.
+
+@glyph z
+....
+....
+xxxx
+..x.
+.x..
+xxxx
+....
+
+@glyph {
+.xx
+.x.
+x..
+.x.
+.x.
+.xx
+...
+
+@glyph |
+x
+x
+x
+x
+x
+x
+x
+
+@glyph }
+xx.
+.x.
+..x
+.x.
+.x.
+xx.
+...
+
+@glyph ~
+....
+....
+.x.x
+x.x.
+....
+....
+....
+
+@glyph ·
+.
+.
+.
+x
+.
+.
+.
+
+@glyph →
+.....
+...x.
+xxxxx
+...x.
+.....
+.....
+.....
+
+@glyph ←
+.....
+.x...
+xxxxx
+.x...
+.....
+.....
+.....
+
+@glyph ↑
+..x..
+.xxx.
+x.x.x
+..x..
+..x..
+..x..
+.....
+
+@glyph ↓
+..x..
+..x..
+..x..
+x.x.x
+.xxx.
+..x..
+.....
+
+@glyph ✓
+.....
+....x
+...x.
+x.x..
+.x...
+.....
+.....
+
+@glyph …
+.....
+.....
+.....
+.....
+.....
+x.x.x
+.....
+
+@glyph ✖
+.....
+x...x
+.x.x.
+..x..
+.x.x.
+x...x
+.....
+
+@glyph ⚙
+..x..
+xxxxx
+xx.xx
+x...x
+xx.xx
+xxxxx
+..x..
+
+@glyph ▶
+x...
+xx..
+xxx.
+xx..
+x...
+....
+....
+
+@glyph ▼
+xxxxx
+.xxx.
+..x..
+.....
+.....
+.....
+.....
+
+@glyph ♥
+.....
+xx.xx
+xxxxx
+xxxxx
+.xxx.
+..x..
+.....
+
+@glyph ★
+..x..
+..x..
+xxxxx
+.xxx.
+.x.x.
+x...x
+.....
+
+@glyph •
+...
+...
+.x.
+xxx
+.x.
+...
+...
+

@@ -46,6 +46,12 @@ assets-draft: ## Fast asset build for iteration (low bake samples, small lightma
 assets-repack: ## Re-encode published assets (KTX2 textures, lightmap tiers) without a Blender bake
 	node assets/build.mjs --repack
 
+assets-plan: ## Export the floor plans (2D RPG mode) into manifest.json, without baking or touching glbs
+	node assets/build.mjs --plan-only
+
+pixel-assets: ## Build the 2D RPG pixel-art atlases from assets/pixel/src → public/assets/pixel
+	node assets/pixel/build.mjs
+
 assets-test: ## Run the Blender-side asset tests (naming, counts, loops, budgets)
 	node assets/build.mjs --test
 
@@ -60,6 +66,9 @@ screenshots-macos: ## macOS only: capture the real tray menu and a native notifi
 
 perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs
+
+perf-pixel: ## 2D RPG mode frame rate with 60 mock agents (needs make build)
+	$(ELECTRON_ENV) node scripts/perf.mjs --mode pixel --agents 60 --presets low,high
 
 perf-low: ## Low-end simulation: Minimal and Low on software GL (SwiftShader), 60 agents
 	$(ELECTRON_ENV) node scripts/perf.mjs --low-end

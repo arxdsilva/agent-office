@@ -14,6 +14,7 @@ import {
 import { ALL_EXTENSIONS, type InstancedMesh } from '@gltf-transform/extensions'
 import validator from 'gltf-validator'
 import { MeshoptDecoder } from 'meshoptimizer'
+import { FURNITURE_KINDS, type ModulePlan } from '../packages/web/src/app/pixel/types.ts'
 
 // ── Contract constants ──────────────────────────────────────────────────────────────────────────
 export const MB = 1024 * 1024
@@ -175,12 +176,15 @@ export interface Lightmap {
   intensity: number
   variants?: LightmapVariants
 }
+/** Contract §11: module-local floor plan (optional; the 2D mode). */
+export type PlanJson = ModulePlan
 export interface ModuleJson {
   file: string
   lightmap?: Lightmap
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
   anchors: Record<string, AnchorJson>
   nav: NavJson
+  plan?: PlanJson
 }
 export interface ThemeJson {
   file: string
@@ -492,6 +496,142 @@ export function checkBuildingNav(m: Manifest): string[] {
         `building nav: modules do not join into one graph (${comps.length} parts; e.g. "${comps[1]![0]}" is cut off). Check the connector nodes (contract §3).`,
       ]
     : []
+}
+
+// ── Floor plan (contract §11) ───────────────────────────────────────────────────────────────────
+const PLAN_KINDS: ModuleKind[] = ['atrium', 'street', 'garden', 'cap', 'wing']
+const WALL_KINDS = ['solid', 'glass', 'curtain']
+const FURNITURE = new Set<string>(FURNITURE_KINDS)
+/** Furniture an agent or the player can stand on (contract §11). */
+const NON_SOLID = new Set(['rug'])
+const PLAN_EPS = 0.05
+const fmt = (v: number) => String(Math.round(v * 100) / 100)
+const isPair = (v: unknown): v is [number, number] =>
+  Array.isArray(v) && v.length === 2 && v.every(isNum)
+
+function checkPlanShape(at: string, plan: unknown): string[] {
+  if (!isObj(plan)) return [`${at}: must be an object`]
+  const out: string[] = []
+  for (const k of ['rooms', 'walls', 'furniture'])
+    if (!Array.isArray(plan[k])) out.push(`${at}.${k}: must be a list`)
+  if (out.length) return out
+  ;(plan.rooms as unknown[]).forEach((r, i) => {
+    const p = `${at}.rooms[${i}]`
+    if (!isObj(r) || !isStr(r.id) || typeof r.name !== 'string') return void out.push(`${p}: needs id and name`)
+    const q = r.rect
+    const ok = Array.isArray(q) && q.length === 4 && q.every(isNum)
+    if (!(ok && (q[0] as number) < (q[2] as number) && (q[1] as number) < (q[3] as number)))
+      out.push(`${p}.rect: must be [x0, z0, x1, z1] with x0 < x1 and z0 < z1`)
+  })
+  ;(plan.walls as unknown[]).forEach((w, i) => {
+    const p = `${at}.walls[${i}]`
+    if (!isObj(w) || !isPair(w.a) || !isPair(w.b)) return void out.push(`${p}: a and b must be [x, z]`)
+    if (!WALL_KINDS.includes(String(w.kind))) out.push(`${p}.kind: must be solid, glass or curtain`)
+    if (w.openings !== undefined && !(Array.isArray(w.openings) && w.openings.every(isPair)))
+      out.push(`${p}.openings: must be a list of [t0, t1]`)
+  })
+  ;(plan.furniture as unknown[]).forEach((f, i) => {
+    const p = `${at}.furniture[${i}]`
+    if (!isObj(f)) return void out.push(`${p}: must be an object`)
+    if (!FURNITURE.has(String(f.kind))) out.push(`${p}.kind: ${JSON.stringify(f.kind)} is not a furniture kind`)
+    const nums = [f.x, f.z, f.w, f.d, f.yaw]
+    if (!nums.every(isNum) || !((f.w as number) > 0 && (f.d as number) > 0))
+      out.push(`${p}: x, z, w, d and yaw must be finite numbers (w, d > 0)`)
+    if (f.ref !== undefined && !isStr(f.ref)) out.push(`${p}.ref: must be a string`)
+  })
+  return out
+}
+
+/** Is `p` inside furniture `f` (a w × d rect rotated by yaw, contract §1 placement)? */
+function insideFootprint(p: Vec2, f: PlanJson['furniture'][number], eps = 0.01): boolean {
+  const dx = p.x - f.x
+  const dz = p.z - f.z
+  // inverse of place(): local u along w, v along d
+  const c = Math.cos(f.yaw)
+  const s = Math.sin(f.yaw)
+  const u = dx * c - dz * s
+  const v = dx * s + dz * c
+  return Math.abs(u) < f.w / 2 - eps && Math.abs(v) < f.d / 2 - eps
+}
+
+/** Where segment p→q properly crosses wall a→b: the distance along the wall, or null. */
+function crossing(p: Vec2, q: Vec2, a: Vec2, b: Vec2): { s: number; at: Vec2 } | null {
+  const rx = q.x - p.x
+  const rz = q.z - p.z
+  const sx = b.x - a.x
+  const sz = b.z - a.z
+  const den = rx * sz - rz * sx
+  if (Math.abs(den) < 1e-9) return null // parallel or collinear: walks along it, never through
+  const t = ((a.x - p.x) * sz - (a.z - p.z) * sx) / den
+  const u = ((a.x - p.x) * rz - (a.z - p.z) * rx) / den
+  // touching at an edge end (a node on the wall line) is not a crossing
+  if (t <= 1e-6 || t >= 1 - 1e-6 || u < -1e-9 || u > 1 + 1e-9) return null
+  return { s: u * Math.hypot(sx, sz), at: { x: p.x + t * rx, z: p.z + t * rz } }
+}
+
+/**
+ * Contract §11 for one module: plan shape, walls (and openings) inside the bounds, every seat/spot
+ * anchor inside the room its `extras.room` names, approaches clear of solid furniture, and every nav
+ * edge that crosses a wall going through one of its openings.
+ */
+export function checkPlan(
+  kind: ModuleKind,
+  mod: Pick<ModuleJson, 'bounds' | 'anchors' | 'nav' | 'plan'>,
+): string[] {
+  const at = `${kind}.plan`
+  if (mod.plan === undefined) return [`${at}: missing (run \`make assets-plan\`)`]
+  const shape = checkPlanShape(at, mod.plan)
+  if (shape.length) return shape
+  const plan = mod.plan
+  const out: string[] = []
+  const b = mod.bounds
+  const inBounds = (x: number, z: number) =>
+    x >= b.minX - PLAN_EPS && x <= b.maxX + PLAN_EPS && z >= b.minZ - PLAN_EPS && z <= b.maxZ + PLAN_EPS
+  plan.walls.forEach((w, i) => {
+    for (const [x, z] of [w.a, w.b])
+      if (!inBounds(x, z)) out.push(`${at}.walls[${i}]: (${fmt(x)}, ${fmt(z)}) is outside the module bounds`)
+    const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1])
+    w.openings?.forEach(([t0, t1], k) => {
+      if (!(t0 >= -PLAN_EPS && t1 <= len + PLAN_EPS && t0 < t1))
+        out.push(`${at}.walls[${i}].openings[${k}]: [${fmt(t0)}, ${fmt(t1)}] must lie within 0..${fmt(len)} m along the wall`)
+    })
+  })
+  const inRect = (p: Vec2, r: PlanJson['rooms'][number]) =>
+    p.x >= r.rect[0] - 0.01 && p.x <= r.rect[2] + 0.01 && p.z >= r.rect[1] - 0.01 && p.z <= r.rect[3] + 0.01
+  for (const [id, a] of Object.entries(mod.anchors)) {
+    if (!a.approach) continue // ports are 3D link points, not places
+    const where = `${kind}.anchors["${id}"]`
+    if (a.room) {
+      const rooms = plan.rooms.filter((r) => r.id === a.room)
+      if (!rooms.length) out.push(`${where}: room "${a.room}" is not in the plan`)
+      else if (!rooms.some((r) => inRect(a, r))) out.push(`${where}: is not inside room "${a.room}"`)
+    } else if (!plan.rooms.some((r) => inRect(a, r))) out.push(`${where}: is not inside any room`)
+    const k = plan.furniture.findIndex((f) => !NON_SOLID.has(f.kind) && insideFootprint(a.approach, f))
+    if (k >= 0)
+      out.push(
+        `${where}.approach: (${fmt(a.approach.x)}, ${fmt(a.approach.z)}) is inside furniture[${k}] (${plan.furniture[k]!.kind})`,
+      )
+  }
+  mod.nav.edges.forEach(([ea, eb], i) => {
+    const p = mod.nav.nodes[ea]
+    const q = mod.nav.nodes[eb]
+    if (!p || !q) return // reported by checkNav
+    for (const [k, w] of plan.walls.entries()) {
+      const c = crossing(p, q, { x: w.a[0], z: w.a[1] }, { x: w.b[0], z: w.b[1] })
+      if (!c) continue
+      if ((w.openings ?? []).some(([t0, t1]) => c.s >= t0 - 0.01 && c.s <= t1 + 0.01)) continue
+      out.push(
+        `${kind}.nav.edges[${i}] ${ea}–${eb}: crosses walls[${k}] at (${fmt(c.at.x)}, ${fmt(c.at.z)}) outside its openings`,
+      )
+      break
+    }
+  })
+  return out
+}
+
+/** Contract §11 for the whole manifest: every module has a plan, and each one passes checkPlan. */
+export function checkPlans(m: Manifest): string[] {
+  return PLAN_KINDS.flatMap((k) => checkPlan(k, k === 'wing' ? m.modules.wing : m.modules[k]))
 }
 
 // ── Character metadata ──────────────────────────────────────────────────────────────────────────
@@ -999,6 +1139,9 @@ export async function validateAssets(dir: string): Promise<AssetReport> {
     await lightmap(th.lightmap)
   }
   p.push(...checkBuildingNav(m))
+  // Contract §11: the floor plan is optional (the 2D mode), but once a manifest has one, all of it must hold.
+  if (PLAN_KINDS.some((k) => (k === 'wing' ? m.modules.wing : m.modules[k]).plan !== undefined))
+    p.push(...checkPlans(m))
 
   // Environment and character
   await load(m.hdri)

@@ -47,6 +47,7 @@ def build(g, A, P, name, t, rng):
             continue
         g.box(P['wood'], (0.03, H - 0.1, 0.045), (0.065, (H - 0.1) / 2 + 0.05, z + 0.02), bevel=0.004)
     g.box_b(P['accent'], 0.03, 0.08, 0.0, H, -5.7, -2.3, bevel=0.004)
+    g.furn('sign', 3.4, 0.1, x=0.05, z=-4.0, yaw=-math.pi / 2)
     sign = g.dynamic('sign-wing', 'sign', 'wing', P['sign'], pivot=(0.018, 2.35, -4.0),
                      extras={'width': 3.0, 'height': 0.75})
     with g.into(sign):
@@ -107,6 +108,7 @@ def build(g, A, P, name, t, rng):
     _adapters(g, A, P, t, rng)
     _library(g, A, P, t, rng)
     _decor(g, A, P, name, t, rng)
+    _rooms(g)
 
     return dict(
         bounds={'minX': 0, 'maxX': 30, 'minZ': -9, 'maxZ': 9},
@@ -141,6 +143,7 @@ def _kitchen(g, A, P, t, rng):
         F.kitchen(g, P, rng, length=4.4, accent=accent, kelvin=t['accent_kelvin'], island=False)
     # standing-height island (bar) – spots stand on its street-facing side
     cx, cz = 3.1, -6.45
+    g.furn('island', 2.64, 1.05, x=cx, z=cz + 0.025)
     with g.at(cx, cz):
         g.box_b(P['white'], -1.2, 1.2, 0.1, 1.0, -0.4, 0.4, bevel=0.006, segs=2)
         g.box_b(P['metal'], -1.18, 1.18, 0, 0.1, -0.38, 0.38, bevel=0.002)
@@ -294,6 +297,7 @@ def _booths(g, A, P, t, rng):
             A.edge(f'ap:spot:booth:{i}', f'w:c0:{x:g}')
     g.collider(BOOTH_X[0] - 0.7, BOOTH_X[-1] + 0.7, -8.85, -7.45, 0, 2.3)
     # storage + plants along the rest of the wall
+    g.furn('kitchen-counter', 2.85, 0.5, x=17.025, z=-8.6)  # storage cabinets (no cabinet kind)
     with g.at(15.6, -8.85):
         for k in range(3):
             g.box_b(P['wood'], k * 0.95, k * 0.95 + 0.93, 0.05, 1.05, 0.0, 0.5, bevel=0.005, segs=2)
@@ -370,6 +374,7 @@ STATION_Z = (-7.65, -5.8, -3.95, -2.1)
 
 
 def _room_sign(g, P, ref, z):
+    g.furn('sign', 1.64, 0.05, x=23.84, z=z, yaw=-math.pi / 2)
     g.box_b(P['metal'], 23.845, 23.855, 3.02, 3.48, z - 0.82, z + 0.82, bevel=0.002)
     d = g.dynamic(f'sign-{ref}', 'sign', ref, P['sign'], pivot=(23.838, 3.25, z), extras={'width': 1.5, 'height': 0.36})
     with g.into(d):
@@ -378,6 +383,9 @@ def _room_sign(g, P, ref, z):
 
 def _front(g, A, P, t, rng):
     """x = 24: solid behind the meeting rooms, glass front with two doors between them; z = 0 partition."""
+    g.plan_wall((23.92, -9.0), (23.92, -2.6))
+    g.plan_wall((23.92, 2.6), (23.92, 9.0))
+    g.plan_wall((24.0, 0.0), (30.0, 0.0))
     g.box_b(P['wall'], 23.85, 24.0, 0, H, -8.85, -2.6, bevel=0.003)
     g.box_b(P['wall'], 23.85, 24.0, 0, H, 2.6, 8.85, bevel=0.003)
     glass_partition(g, P, (23.92, -2.6), (23.92, 0.0), h=2.9, spacing=1.3, door=(1.1, 2.2), top=H)
@@ -487,6 +495,7 @@ def _library(g, A, P, t, rng):
             A.port(f'port:board:{k}', *port)
     g.light('wallwash', (25.4, H - 0.15, 5.65), size=(0.15, 5.8), power=70, kelvin=2700, dir=(-0.7, -0.7, 0))
     # notebook display under the window
+    g.furn('notebook-rack', 0.66, 2.96, x=29.45, z=4.5)
     g.box_b(P['wood_dark'], 29.15, 29.75, 0, 0.74, 3.05, 5.95, bevel=0.006, segs=2)
     g.box_b(P['brass'], 29.12, 29.78, 0.74, 0.76, 3.02, 5.98, bevel=0.003)
     cols = ('#7a1f2b', '#1f3a4d', '#2f4a36', '#6b4f2a', '#3a2f4a', '#c9b48a', '#2b2b2b', '#8a5a3b')
@@ -500,6 +509,7 @@ def _library(g, A, P, t, rng):
     tx, tz = 27.0, 4.6
     with g.at(tx, tz):
         F.rug(g, P, 3.6, 3.4, t['rug'], r=0.2)
+    g.furn('reading-table', 2.0, 1.0, x=tx, z=tz)
     g.box_b(P['wood_dark'], tx - 1.0, tx + 1.0, 0.72, 0.76, tz - 0.5, tz + 0.5, bevel=0.006, segs=2)
     for sx in (-0.75, 0.75):
         g.box_b(P['brass'], tx + sx - 0.03, tx + sx + 0.03, 0, 0.72, tz - 0.38, tz + 0.38, bevel=0.004)
@@ -612,6 +622,30 @@ def _decor(g, A, P, name, t, rng):
     if name == 'terracotta':
         for x in (2.0, 4.6):
             F.pot_plant(g, P, (x, 0, 8.45), 0.2, 0.42, 'bush', rng, pot_color='#C26A48')
+
+
+def _rooms(g):
+    """Floor-plan rooms (contract §11); ids match the anchors' extras.room. They tile the wing."""
+    r = g.room
+    r('kitchen', 'Kitchen', 0, -9, 7, -1.2, floor='tile')
+    r('hall', 'Hall', 0, -1.2, 18.6, 1.2, floor='wood')
+    r('lounge', 'Lounge', 0, 1.2, 7, 9, floor='wood')
+    edges = (7.0, 10.2, 11.8, 13.4, 15.0)
+    for i in range(4):
+        r(f'booth-{i}', f'Phone booth {i + 1}', edges[i], -9, edges[i + 1], -7.45, floor='carpet')
+    r('storage', 'Storage', 15.0, -9, 18.6, -7.45, floor='carpet')
+    r('pods-south', 'Pod corridor', 7.0, -7.45, 18.6, -6.25, floor='carpet')
+    r('pods-north', 'Pod corridor', 7.0, 6.25, 18.6, 9, floor='carpet')
+    px = (7.0, 10.8, 14.4, 18.6)
+    for row, (z0, z1) in enumerate(((-6.25, -1.2), (1.2, 6.25))):
+        for col in range(3):
+            pod = row * 3 + col + 1
+            r(f'pod-{pod}', f'Pod {pod}', px[col], z0, px[col + 1], z1, floor='carpet')
+    r('meeting-A', 'Meeting room A', MEET_X0, -9, 24.0, -2.6, floor='carpet')
+    r('vestibule', 'Vestibule', MEET_X0, -2.6, 24.0, 2.6, floor='wood')
+    r('meeting-B', 'Meeting room B', MEET_X0, 2.6, 24.0, 9, floor='carpet')
+    r('adapters', 'Adapters', 24.0, -9, 30, 0, floor='concrete')
+    r('library', 'Library', 24.0, 0, 30, 9, floor='wood')
 
 
 def context(g, P):

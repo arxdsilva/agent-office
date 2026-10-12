@@ -35,6 +35,8 @@ import {
   checkManifest,
   checkModuleGlb,
   checkNav,
+  checkPlan,
+  checkPlans,
   createIO,
   glbStats,
   isSafeRef,
@@ -45,6 +47,7 @@ import {
   type Manifest,
   type ModuleKind,
   type NavJson,
+  type PlanJson,
   type Vec2,
 } from './validate.ts'
 
@@ -846,6 +849,164 @@ describe('asset validator: a whole assets dir', () => {
   })
 })
 
+// ── Floor plan (contract §11, the optional 2D mode) ────────────────────────────────────────────
+/**
+ * A fixture plan: a floor room over the whole module, one room per `extras.room` around its anchors,
+ * the perimeter walls (with the connectors as openings), a rug under the anchors and a desk off to the
+ * side.
+ */
+function planFor(kind: ModuleKind, anchors: Record<string, AnchorJson>): PlanJson {
+  const b = BOUNDS[kind]
+  // The fixture grid spills past the bounds, so the floor room covers every anchor too.
+  const all = Object.values(anchors).filter((a) => a.approach)
+  const rooms: PlanJson['rooms'] = [
+    {
+      id: 'floor',
+      name: 'Floor',
+      rect: [
+        Math.min(b.minX, ...all.map((a) => a.x - 1)),
+        Math.min(b.minZ, ...all.map((a) => a.z - 1)),
+        Math.max(b.maxX, ...all.map((a) => a.x + 1)),
+        Math.max(b.maxZ, ...all.map((a) => a.z + 1)),
+      ],
+    },
+  ]
+  const byRoom = new Map<string, Vec2[]>()
+  for (const a of Object.values(anchors))
+    if (a.room && a.approach) byRoom.set(a.room, [...(byRoom.get(a.room) ?? []), a])
+  for (const [id, pts] of byRoom) {
+    const xs = pts.map((p) => p.x)
+    const zs = pts.map((p) => p.z)
+    rooms.push({
+      id,
+      name: id,
+      rect: [Math.min(...xs) - 0.3, Math.min(...zs) - 0.3, Math.max(...xs) + 0.3, Math.max(...zs) + 0.3],
+    })
+  }
+  return {
+    rooms,
+    walls: [
+      { a: [b.minX, b.minZ], b: [b.maxX, b.minZ], kind: 'solid' },
+      { a: [b.maxX, b.minZ], b: [b.maxX, b.maxZ], kind: 'curtain' },
+    ],
+    furniture: [
+      { kind: 'rug', x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, w: 60, d: 30, yaw: 0 },
+      { kind: 'desk', x: b.maxX - 1, z: b.minZ + 0.25, w: 1.6, d: 0.4, yaw: 0 },
+    ],
+  }
+}
+
+function moduleWithPlan(kind: ModuleKind) {
+  const m = fixtureManifest()
+  const mod = kind === 'wing' ? m.modules.wing : m.modules[kind]
+  return { ...mod, plan: planFor(kind, mod.anchors) }
+}
+
+describe('asset validator: floor plan (contract §11)', () => {
+  it('PLAN-1: every module needs a plan; a fixture plan passes', () => {
+    const m = fixtureManifest()
+    expect(checkPlans(m)).toEqual([
+      'atrium.plan: missing (run `make assets-plan`)',
+      'street.plan: missing (run `make assets-plan`)',
+      'garden.plan: missing (run `make assets-plan`)',
+      'cap.plan: missing (run `make assets-plan`)',
+      'wing.plan: missing (run `make assets-plan`)',
+    ])
+    for (const kind of ['atrium', 'street', 'garden', 'cap', 'wing'] as const) {
+      const mod = kind === 'wing' ? m.modules.wing : m.modules[kind]
+      mod.plan = planFor(kind, mod.anchors)
+    }
+    expect(checkPlans(m)).toEqual([])
+  })
+
+  it('PLAN-1: names the path of a bad kind, a NaN or a degenerate rect', () => {
+    const mod = moduleWithPlan('garden')
+    const plan = mod.plan as any
+    plan.furniture.push({ kind: 'throne', x: 1, z: 1, w: 1, d: 1, yaw: 0 })
+    plan.furniture.push({ kind: 'plant', x: Number.NaN, z: 1, w: 1, d: 1, yaw: 0 })
+    plan.walls.push({ a: [1, 1], b: [2, 1], kind: 'brick' })
+    plan.rooms.push({ id: 'void', name: 'Void', rect: [3, 3, 2, 4] })
+    expect(checkPlan('garden', mod)).toEqual([
+      'garden.plan.rooms[1].rect: must be [x0, z0, x1, z1] with x0 < x1 and z0 < z1',
+      'garden.plan.walls[2].kind: must be solid, glass or curtain',
+      'garden.plan.furniture[2].kind: "throne" is not a furniture kind',
+      'garden.plan.furniture[3]: x, z, w, d and yaw must be finite numbers (w, d > 0)',
+    ])
+  })
+
+  it('PLAN-2: walls lie within the module bounds, openings within the wall', () => {
+    const mod = moduleWithPlan('cap')
+    mod.plan.walls.push({ a: [-3, 0.4], b: [3, 0.9], kind: 'glass' })
+    mod.plan.walls.push({ a: [-3, 0.2], b: [3, 0.2], kind: 'solid', openings: [[5, 7]] })
+    expect(checkPlan('cap', mod)).toEqual([
+      'cap.plan.walls[2]: (3, 0.9) is outside the module bounds',
+      'cap.plan.walls[3].openings[0]: [5, 7] must lie within 0..6 m along the wall',
+    ])
+  })
+
+  it('PLAN-3: every seat/spot anchor stands inside the room its extras.room names', () => {
+    const mod = moduleWithPlan('wing')
+    const pod1 = mod.plan.rooms.find((r) => r.id === 'pod-1')!
+    pod1.rect = [pod1.rect[0] + 20, pod1.rect[1], pod1.rect[2] + 20, pod1.rect[3]]
+    mod.plan.rooms = mod.plan.rooms.filter((r) => r.id !== 'library')
+    const p = checkPlan('wing', mod)
+    expect(p).toContain('wing.anchors["seat:desk:1:0"]: is not inside room "pod-1"')
+    expect(p).toContain('wing.anchors["seat:reading:0"]: room "library" is not in the plan')
+    expect(p.filter((e) => e.includes('anchors["'))).toHaveLength(4 + 6)
+    // An anchor without extras.room only needs to stand in some room.
+    const atrium = moduleWithPlan('atrium')
+    atrium.plan.rooms = []
+    expect(checkPlan('atrium', atrium)).toContain(
+      'atrium.anchors["seat:cafe:0"]: is not inside any room',
+    )
+  })
+
+  it('PLAN-4: approach points are not inside solid furniture (rugs are not solid)', () => {
+    const mod = moduleWithPlan('garden')
+    const a = mod.anchors['spot:garden:0']!.approach
+    expect(checkPlan('garden', mod)).toEqual([]) // the fixture rug covers every approach
+    // A desk rotated 90° over the approach: its 2 m side runs along z.
+    mod.plan.furniture.push({ kind: 'desk', x: a.x, z: a.z + 0.8, w: 2, d: 0.3, yaw: Math.PI / 2 })
+    expect(checkPlan('garden', mod)).toEqual([
+      'garden.anchors["spot:garden:0"].approach: (2, 2.6) is inside furniture[2] (desk)',
+    ])
+  })
+
+  it('PLAN-5: a nav edge that crosses a wall passes through an opening', () => {
+    const mod = moduleWithPlan('wing')
+    // A partition at x = 1 across the connector → approach edges (the hub is at (0, 0)).
+    mod.plan.walls.push({ a: [1, -9], b: [1, 9], kind: 'glass' })
+    const p = checkPlan('wing', mod)
+    expect(p.length).toBeGreaterThan(0)
+    expect(p[0]).toMatch(/^wing\.nav\.edges\[\d+\] c0–ap:.*: crosses walls\[2\] at \(1, -?[\d.]+\) outside its openings$/)
+    // A doorway over the whole crossing span clears it.
+    mod.plan.walls[2]!.openings = [[0, 18]]
+    expect(checkPlan('wing', mod)).toEqual([])
+  })
+
+  it('validateAssets checks the plan once the manifest has one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ao-assets-plan-'))
+    try {
+      const m = await writeFixture(dir)
+      for (const kind of ['atrium', 'street', 'garden', 'cap', 'wing'] as const) {
+        const mod = kind === 'wing' ? m.modules.wing : m.modules[kind]
+        mod.plan = planFor(kind, mod.anchors)
+      }
+      await writeFile(join(dir, 'manifest.json'), JSON.stringify(m))
+      expect((await validateAssets(dir)).problems).toEqual([])
+      delete m.modules.cap.plan
+      m.modules.street.plan!.walls.push({ a: [0, 0], b: [0, 40], kind: 'solid' })
+      await writeFile(join(dir, 'manifest.json'), JSON.stringify(m))
+      expect((await validateAssets(dir)).problems).toEqual([
+        'street.plan.walls[2]: (0, 40) is outside the module bounds',
+        'cap.plan: missing (run `make assets-plan`)',
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+})
+
 // ── 2. The real assets (CI gate) ────────────────────────────────────────────────────────────────
 describe('real assets (packages/web/public/assets)', () => {
   it('exist: manifest.json is built and committed (Git LFS)', () => {
@@ -868,4 +1029,14 @@ describe('real assets (packages/web/public/assets)', () => {
     ).toEqual([])
     expect(JSON.parse(await readFile(join(REAL_ASSETS, 'manifest.json'), 'utf8')).version).toBe(1)
   }, 180_000)
+})
+
+describe('real assets: floor plan (contract §11)', () => {
+  it('PLAN-1..5: every module has a plan that matches its bounds, anchors and nav', async () => {
+    const file = join(REAL_ASSETS, 'manifest.json')
+    if (!existsSync(file)) return // reported by the real-assets test above
+    const m = JSON.parse(await readFile(file, 'utf8')) as Manifest
+    const p = checkPlans(m)
+    expect(p, p.join('\n')).toEqual([])
+  })
 })

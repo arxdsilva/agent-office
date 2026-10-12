@@ -25,6 +25,7 @@ import type {
 } from './office-types.ts'
 import { assignDesks, emptySeating, type SeatingState } from './seating.ts'
 import { assignStations, type SlotMap } from './stations.ts'
+import { remainingSteps, type Issued } from './scene-replay.ts'
 import type { OfficeState } from './state.ts'
 
 export interface DirectorOptions {
@@ -55,6 +56,13 @@ export interface Director {
   pose(id: string, now: number): AgentPose | undefined
   /** Last planned layout. */
   readonly layout: BuildingLayout | undefined
+  /** The last steps issued for an agent, the pose they start from, and when (2D mode resync). */
+  issued(id: string): (Issued & { intent: Intent }) | undefined
+  /**
+   * The last plan of every agent with the steps it still has to play at `now` (a freshly created
+   * scene continues each agent where the director predicts it, without re-deciding anything).
+   */
+  resync(now: number): Map<string, AgentPlan>
 }
 
 interface Track {
@@ -73,6 +81,7 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
   let seating: SeatingState = emptySeating()
   let memory: DirectorMemory = emptyMemory()
   const tracks = new Map<string, Track>()
+  let lastPlans = new Map<string, AgentPlan>()
   let stations = new Map<string, SlotMap>()
   let library = new Map<string, LibraryMap>()
   const cap = manifest.modules.wing.capacity
@@ -91,6 +100,30 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
       return layout
     },
     pose,
+    issued(id) {
+      const t = tracks.get(id)
+      return t && { from: t.from, steps: t.steps, at: t.startedAt, intent: t.intent }
+    },
+    resync(now) {
+      const out = new Map<string, AgentPlan>()
+      for (const [id, plan] of lastPlans) {
+        const t = tracks.get(id)
+        const { steps: _, ...rest } = plan
+        out.set(
+          id,
+          t
+            ? {
+                ...rest,
+                steps: remainingSteps(
+                  { from: t.from, steps: t.steps, at: t.startedAt },
+                  now - t.startedAt,
+                ),
+              }
+            : rest,
+        )
+      }
+      return out
+    },
     update(state, now) {
       const agents = [...state.agents.values()]
       const counts = new Map<string, number>()
@@ -139,6 +172,7 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
         plans.set(id, plan)
       }
       for (const id of [...tracks.keys()]) if (!out.intents.has(id)) tracks.delete(id)
+      lastPlans = plans
 
       // Links: every use still in use or fading, from where the agent is now.
       const calls: LinkCall[] = []

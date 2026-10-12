@@ -29,6 +29,7 @@ export function cleanEnv(extra = {}) {
  * @param {number} [o.height] window content height (CSS px)
  * @param {boolean} [o.fakeRunner] managed sessions use the scripted runner (never the real Claude Code)
  * @param {'system'|'light'|'dark'} [o.theme] UI theme written to the profile's settings
+ * @param {'3d'|'pixel'} [o.viewMode] view mode written to the profile's settings (2D RPG mode)
  * @param {Record<string, string>} [o.env] extra environment (e.g. AGENT_OFFICE_FORCE_SOFTWARE_GL=1)
  * @param {string[]} [o.args] extra Chromium/Electron switches after the app path
  */
@@ -54,6 +55,7 @@ export async function launchApp({
   height = 810,
   fakeRunner = false,
   theme,
+  viewMode,
   env = {},
   args = [],
 } = {}) {
@@ -70,6 +72,7 @@ export async function launchApp({
       notifications,
       claudeAdapter: claude,
       ...(theme ? { theme } : {}),
+      ...(viewMode ? { viewMode } : {}),
     }),
   )
   const app = await _electron.launch({

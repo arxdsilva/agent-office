@@ -1,5 +1,5 @@
 // Renderer composition root: real adapters → controller. Excluded from coverage (rendering only).
-import { byProviderAndTopic } from '@agent-office/shared'
+import { byProviderAndTopic, type ViewMode } from '@agent-office/shared'
 import { DomBanner, DomHud } from './adapters/dom/hud.ts'
 import { byId } from './adapters/dom/el.ts'
 import { DomCapabilityPanel } from './adapters/dom/capability-panel.ts'
@@ -13,6 +13,11 @@ import { showGfxFailure } from './adapters/dom/gfx-failure.ts'
 import { DomLibrary } from './adapters/dom/library-browser.ts'
 import { DomTooltip } from './adapters/dom/tooltip.ts'
 import { DomViewBar } from './adapters/dom/view-bar.ts'
+import { DomDialogue } from './adapters/dom/dialogue.ts'
+import { DomModeToggle } from './adapters/dom/mode-toggle.ts'
+import { DomPixelHud } from './adapters/dom/pixel-hud.ts'
+import { PixelScene } from './adapters/pixel/scene.ts'
+import { SceneHost } from './adapters/scene-host.ts'
 import { preloadGateway } from './adapters/preload-gateway.ts'
 import { ThreeScene, type SceneElements } from './adapters/three/scene.ts'
 import type { SnippetLang } from './app/connect-types.ts'
@@ -20,7 +25,8 @@ import type { Effective } from './app/graphics-types.ts'
 import { PRESETS } from './app/quality.ts'
 import { createSimClock, type SimClock } from './app/sim-clock.ts'
 import { createController } from './controller.ts'
-import type { OfficeGateway } from './ports.ts'
+import type { AgentPlan } from './app/office-types.ts'
+import type { OfficeGateway, SceneView } from './ports.ts'
 
 type PowerPreference = Effective['powerPreference']
 /** The scene's constructor with the startup options (RA: `powerPreference` is read once, at start). */
@@ -30,18 +36,42 @@ type SceneCtor = new (
   opts?: { powerPreference?: PowerPreference },
 ) => ThreeScene
 
-/** Renderer `powerPreference` for the saved preset (Auto: the scene's default). */
-async function startupPowerPreference(
+/** The 2D scene's constructor (Canvas2D; draws into #stage, no WebGL). */
+type PixelSceneCtor = new (el: PixelElements, clock: SimClock) => SceneView
+interface PixelElements {
+  stage: HTMLElement
+  loading: { root: HTMLElement; fill: HTMLElement; label: HTMLElement; tip: HTMLElement }
+  views: HTMLElement
+}
+
+/** Renderer `powerPreference` for the saved preset (Auto: the scene's default), and the view mode. */
+async function startupSettings(
   gateway: OfficeGateway,
-): Promise<PowerPreference | undefined> {
+): Promise<{ powerPreference: PowerPreference | undefined; viewMode: ViewMode }> {
   try {
-    const { graphicsQuality } = await gateway.settings.get()
-    if (graphicsQuality === 'auto') return undefined
+    const { graphicsQuality, viewMode } = await gateway.settings.get()
+    const mode: ViewMode = viewMode === 'pixel' ? 'pixel' : '3d'
+    if (graphicsQuality === 'auto') return { powerPreference: undefined, viewMode: mode }
     const spec = PRESETS[graphicsQuality] as { powerPreference?: PowerPreference } | undefined
-    return spec?.powerPreference
+    return { powerPreference: spec?.powerPreference, viewMode: mode }
   } catch {
-    return undefined
+    return { powerPreference: undefined, viewMode: '3d' }
   }
+}
+
+/** Builds the 2D RPG view (plan §2.1): a Canvas2D scene, so it never touches WebGL. */
+function createPixelScene(clock: SimClock): SceneView {
+  const elements: PixelElements = {
+    stage: byId('stage'),
+    loading: {
+      root: byId('loading'),
+      fill: byId('loading-fill'),
+      label: byId('loading-label'),
+      tip: byId('loading-tip'),
+    },
+    views: byId('views'),
+  }
+  return new (PixelScene as unknown as PixelSceneCtor)(elements, clock)
 }
 
 /** Builds the 3D view; throws when WebGL can't start (or `?forceWebglFail=1`, a test seam). */
@@ -85,18 +115,27 @@ async function boot(): Promise<void> {
   const gateway = preloadGateway()
   // One simulation clock for the director (controller) and the scene, so their timings agree.
   const clock = createSimClock()
-  let scene: ThreeScene
+  const startup = await startupSettings(gateway)
+  // The optional 2D RPG mode (plan §2.5): the host forwards to the active scene and swaps it on a
+  // viewMode change. The saved mode's scene is created first, so a 2D user never starts WebGL.
+  let resync: (() => Map<string, AgentPlan>) | null = null
+  let scene: SceneHost
   try {
-    scene = createScene(clock, await startupPowerPreference(gateway))
+    scene = new SceneHost({
+      mode: startup.viewMode,
+      factory: (mode) =>
+        mode === 'pixel' ? createPixelScene(clock) : createScene(clock, startup.powerPreference),
+      resync: () => resync?.() ?? new Map(),
+    })
   } catch (e) {
     showGfxFailure(gateway, e)
     return
   }
+  document.body.dataset.mode = startup.viewMode
   const settings = new DomSettings()
   // Fallback FPS readout in Settings → Graphics until the controller pushes the full stats line.
-  const frameStats = (scene as { onFrameStats?: (fn: (fps: number, p: string) => void) => void })
-    .onFrameStats
-  frameStats?.call(scene, (fps, preset) => settings.showFrameRate(fps, preset))
+  scene.onFrameStats((fps, preset) => settings.showFrameRate(fps, preset))
+  const toast = new DomToast()
 
   const snippetLang = storedSnippetLang()
   // A variable, not a literal: the Library, tooltip and view-bar views are new ControllerDeps.
@@ -110,7 +149,7 @@ async function boot(): Promise<void> {
     capabilityPanel: new DomCapabilityPanel(),
     connect: new DomConnectPanel(),
     empty: new DomEmptyState(),
-    toast: new DomToast(),
+    toast,
     newSession: new DomNewSession(),
     library: new DomLibrary(),
     tooltip: new DomTooltip(),
@@ -123,6 +162,11 @@ async function boot(): Promise<void> {
     doc: document,
     win: window,
     hardware: () => scene.hardwareInfo(),
+    // The 2D RPG mode's views (plan §8.2, §9); inert while the 3D office is shown.
+    dialogue: new DomDialogue(),
+    pixelHud: new DomPixelHud(),
+    modeToggle: new DomModeToggle(),
+    onViewMode: (mode: ViewMode) => switchMode(mode),
     devicePixelRatio: () => window.devicePixelRatio,
     ...(snippetLang && { snippetLang }),
     grouping: byProviderAndTopic,
@@ -136,6 +180,23 @@ async function boot(): Promise<void> {
       return () => clearTimeout(h)
     },
   }
-  await createController(deps).start()
+  /** Swaps the scene; when the new one can't start (e.g. no WebGL), goes back to the old mode. */
+  const switchMode = async (mode: ViewMode): Promise<void> => {
+    const previous = scene.mode
+    if (mode === previous) return
+    document.body.dataset.mode = mode
+    try {
+      await scene.switchTo(mode)
+    } catch (e) {
+      document.body.dataset.mode = scene.mode
+      toast.show(e instanceof Error ? e.message : String(e))
+      if (scene.mode !== mode) await gateway.settings.set({ viewMode: scene.mode }).catch(() => {})
+    }
+  }
+  const controller = createController(deps)
+  // The director's resync (plan §2.3) lets a freshly shown scene continue agents where they are.
+  const r = (controller as { resync?: (now?: number) => Map<string, AgentPlan> }).resync
+  if (r) resync = () => r.call(controller)
+  await controller.start()
 }
 void boot()

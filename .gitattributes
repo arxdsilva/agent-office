@@ -7,3 +7,4 @@ assets/out/** filter=lfs diff=lfs merge=lfs -text
 assets/previews/** filter=lfs diff=lfs merge=lfs -text
 docs/screenshots/** filter=lfs diff=lfs merge=lfs -text
 packages/web/public/assets/**/*.webp filter=lfs diff=lfs merge=lfs -text
+assets/pixel/previews/** filter=lfs diff=lfs merge=lfs -text

@@ -177,3 +177,13 @@ describe('graphics settings (low-spec plan §4.1)', () => {
     expect(old.hardwareAcceleration).toBe(true)
   })
 })
+
+describe('view mode (2D RPG plan §10.1)', () => {
+  // An optional extra view: everyone stays on the 3D office unless they pick 2D.
+  it('defaults to the 3D office and accepts the 2D RPG mode', () => {
+    expect(DEFAULT_SETTINGS.viewMode).toBe('3d')
+    expect(SettingsPatchSchema.safeParse({ viewMode: 'pixel' }).success).toBe(true)
+    expect(SettingsPatchSchema.safeParse({ viewMode: '2d' }).success).toBe(false)
+    expect(SettingsSchema.parse({ graphicsQuality: 'low' }).viewMode).toBe('3d')
+  })
+})

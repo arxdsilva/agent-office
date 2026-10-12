@@ -1,0 +1,91 @@
+# UI pieces: the 9-slice dialogue frame (frame.png for CSS border-image), a dark variant, the name tag,
+# the menu cursor and a key cap.
+
+@frame frame
+@meta {"slice":8,"fill":"#f4f1ea","css":"border-image: url(frame.png) 8 fill / 16px round"}
+.kkkkkkkkkkkkkkkkkkkkkk.
+kQbbbbbbbbbbbbbbbbbbbbQk
+kcQkkkkkkkkkkkkkkkkkkQQk
+kckiiiiiiiiiiiiiiiiiikQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kckwwwwwwwwwwwwwwwwwwkQk
+kcQkkkkkkkkkkkkkkkkkkQQk
+kQQQQQQQQQQQQQQQQQQQQQQk
+.kkkkkkkkkkkkkkkkkkkkkk.
+
+@frame frame-dark
+@meta {"slice":8,"fill":"#353a48"}
+.kkkkkkkkkkkkkkkkkkkkkk.
+kguuuuuuuuuuuuuuuuuuuugk
+kggkkkkkkkkkkkkkkkkkkggk
+kgkttttttttttttttttttkgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kgksssssssssssssssssskgk
+kggkkkkkkkkkkkkkkkkkkggk
+kggggggggggggggggggggggk
+.kkkkkkkkkkkkkkkkkkkkkk.
+
+@frame tag
+@meta {"slice":3,"fill":"#353a48"}
+.kkkkkkk.
+ktttttttk
+ksssssssk
+ksssssssk
+ksssssssk
+ksssssssk
+ksssssssk
+ksssssssk
+.kkkkkkk.
+
+@frame cursor
+X....
+Xx...
+Xxx..
+Xxxx.
+Xxx..
+Xx...
+X....
+
+@frame key
+@meta {"slice":3}
+.kkkkkkkkk.
+kwwwwwwwwwk
+kwwwwwwwwwk
+kwwwwwwwwwk
+kwwwwwwwwwk
+kwwwwwwwwwk
+kwwwwwwwwwk
+kwwwwwwwwwk
+kiiiiiiiiik
+khhhhhhhhhk
+.kkkkkkkkk.

@@ -1,0 +1,76 @@
+# Held props (motion.ts PropName), drawn at the pose's hand point; ax/ay is the grip.
+# "-e" props are mirrored to "-w" by the build; a prop without a direction suffix is used for every direction.
+# Keys: fixed colours of the "char" palette (s t u dark→light greys, w white, n light grey, x red, y yellow,
+# b lens blue, e ink, m brick).
+
+@frame prop-laptop-s ax=5 ay=0
+.ssssssssss.
+sttttttttts.
+stttuutttts.
+sttttttttts.
+.ssssssssss.
+eeeeeeeeeeee
+
+@frame prop-laptop-n ax=5 ay=5
+.ssssssssss.
+sbbbbbbbbbbs
+sbbbbbbbbbbs
+sbbbbbbbbbbs
+.ssssssssss.
+eunnnnnnnnue
+.eeeeeeeeee.
+
+@frame prop-laptop-e ax=1 ay=4
+....s.
+...st.
+..st..
+.st...
+ssssss
+eeeeee
+
+@frame prop-cup ax=1 ay=2
+ewwe.
+ewwwe
+ennee
+.ee..
+
+@frame prop-phone ax=1 ay=2
+ess
+sbs
+sbs
+ess
+
+@frame prop-paddle-s ax=2 ay=5
+.exxe.
+exxxxe
+exxxxe
+.exxe.
+..mm..
+..mm..
+
+@frame prop-paddle-e ax=1 ay=4
+..exx.
+.exxxe
+exxxxe
+exxxe.
+mm....
+m.....
+
+@frame prop-book-s ax=3 ay=2
+xxxxxxx
+xwwnwwx
+xwwnwwx
+eeeeeee
+
+@frame prop-book-n ax=3 ay=1
+eeeeeee
+xxxxxxx
+xxxxxxx
+
+@frame prop-book-e ax=1 ay=2
+wwx
+wwx
+wwx
+eee
+
+@frame prop-paddle-n from=prop-paddle-s
