@@ -1,0 +1,17 @@
+{
+  "name": "agent-office",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./packages/server --filter ./packages/web dev",
+    "dev:mock": "AGENT_OFFICE_MOCK=1 pnpm dev",
+    "build": "pnpm --filter ./packages/web build",
+    "start": "pnpm --filter ./packages/server start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  }
+}
