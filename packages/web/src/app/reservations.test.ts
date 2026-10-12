@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { fixtureManifest } from './__fixtures__/manifest.ts'
+import { fixtureManifest, fixtureManifestJson } from './__fixtures__/manifest.ts'
 import { planBuilding } from './building.ts'
+import { parseManifest } from './manifest.ts'
 import {
   MEETING_MAX_TEAM,
   emptyReservations,
@@ -47,12 +48,20 @@ describe('reserve', () => {
     // Both rooms are taken: no fallback for meetings.
     expect(grants[2]).toBeUndefined()
     expect(holderOf(state, 'wing:a:0/seat:meeting:A:5')).toBe('team:p')
-    expect(reservationOf(state, 'team:q')).toMatchObject({ kind: 'meeting', room: 'wing:a:0/meeting-B' })
+    expect(reservationOf(state, 'team:q')).toMatchObject({
+      kind: 'meeting',
+      room: 'wing:a:0/meeting-B',
+    })
   })
 
   it('rejects teams larger than a room', () => {
     const before = emptyReservations()
-    const res = reserve(before, L, { kind: 'meeting', holder: 'team:big', wings: A, seats: MEETING_MAX_TEAM + 1 }, 0)
+    const res = reserve(
+      before,
+      L,
+      { kind: 'meeting', holder: 'team:big', wings: A, seats: MEETING_MAX_TEAM + 1 },
+      0,
+    )
     expect(res.grant).toBeUndefined()
     expect(res.state.byHolder.size).toBe(0)
     // A held room is released when the team grows past the limit.
@@ -63,33 +72,53 @@ describe('reserve', () => {
   })
 
   it('is idempotent for a holder that already has the resource', () => {
-    const first = reserve(emptyReservations(), L, { kind: 'meeting', holder: 'team:t', wings: A, seats: 2 }, 0)
-    const again = reserve(first.state, L, { kind: 'meeting', holder: 'team:t', wings: A, seats: 4 }, 5)
+    const first = reserve(
+      emptyReservations(),
+      L,
+      { kind: 'meeting', holder: 'team:t', wings: A, seats: 2 },
+      0,
+    )
+    const again = reserve(
+      first.state,
+      L,
+      { kind: 'meeting', holder: 'team:t', wings: A, seats: 4 },
+      5,
+    )
     expect(again.grant).toEqual(first.grant)
     expect(again.state).toBe(first.state)
   })
 
   it('reserves booths individually and falls back to nothing when they run out', () => {
-    const reqs = Array.from({ length: 5 }, (_, i) => ({ kind: 'booth' as const, holder: `w${i}`, wings: ['wing:b:0'] }))
+    const reqs = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'booth' as const,
+      holder: `w${i}`,
+      wings: ['wing:b:0'],
+    }))
     const { grants } = run(reqs)
     expect(grants.slice(0, 4)).toEqual([0, 1, 2, 3].map((i) => [`wing:b:0/spot:booth:${i}`]))
     expect(grants[4]).toBeUndefined()
   })
 
   it('searches the provider wings in order (main wing, then annex)', () => {
-    const reqs = Array.from({ length: 5 }, (_, i) => ({ kind: 'booth' as const, holder: `w${i}`, wings: ['wing:a:0', 'wing:a:1'] }))
+    const reqs = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'booth' as const,
+      holder: `w${i}`,
+      wings: ['wing:a:0', 'wing:a:1'],
+    }))
     expect(run(reqs).grants[4]).toEqual(['wing:a:1/spot:booth:0'])
   })
 
   it('falls back from kitchen or lounge to the atrium cafe, then to nothing', () => {
     let state = emptyReservations()
-    for (let i = 0; i < 6; i++) state = reserve(state, L, { kind: 'kitchen', holder: `k${i}`, wings: A }, 0).state
+    for (let i = 0; i < 6; i++)
+      state = reserve(state, L, { kind: 'kitchen', holder: `k${i}`, wings: A }, 0).state
     const overflow = reserve(state, L, { kind: 'kitchen', holder: 'k6', wings: A }, 0)
     expect(overflow.grant).toEqual(['atrium/seat:cafe:0'])
     expect(overflow.kind).toBe('cafe')
     expect(reservationOf(overflow.state, 'k6')!.kind).toBe('cafe')
     state = overflow.state
-    for (let i = 1; i < 24; i++) state = reserve(state, L, { kind: 'cafe', holder: `c${i}` }, 0).state
+    for (let i = 1; i < 24; i++)
+      state = reserve(state, L, { kind: 'cafe', holder: `c${i}` }, 0).state
     const none = reserve(state, L, { kind: 'lounge', holder: 'l0', wings: ['wing:zzz:0'] }, 0)
     expect(none.grant).toBeUndefined()
     const lounge = reserve(emptyReservations(), L, { kind: 'lounge', holder: 'l1', wings: A }, 0)
@@ -135,7 +164,9 @@ describe('reserve', () => {
     expect(expired.byHolder.size).toBe(0)
     expect(expired.byAnchor.size).toBe(0)
     // Expired spots are free again.
-    expect(reserve(expired, L, { kind: 'reception', holder: 'z' }, 5000).grant).toEqual(['atrium/spot:reception:0'])
+    expect(reserve(expired, L, { kind: 'reception', holder: 'z' }, 5000).grant).toEqual([
+      'atrium/spot:reception:0',
+    ])
   })
 
   it('is deterministic: the same inputs give the same grants', () => {
@@ -146,5 +177,38 @@ describe('reserve', () => {
       { kind: 'cafe', holder: 'c1' },
     ]
     expect(run(reqs).grants).toEqual(run(reqs).grants)
+  })
+
+  it('defaults a meeting to one seat and needs wings for wing-scoped resources', () => {
+    expect(
+      reserve(emptyReservations(), L, { kind: 'meeting', holder: 'team:solo', wings: A }, 0).grant,
+    ).toHaveLength(6)
+    expect(reserve(emptyReservations(), L, { kind: 'booth', holder: 'b' }, 0).grant).toBeUndefined()
+  })
+
+  it('orders units numerically even when the manifest lists them out of order', () => {
+    const j = fixtureManifestJson() as any
+    const booths = Object.entries(j.modules.wing.anchors).filter(([k]) =>
+      k.startsWith('spot:booth:'),
+    )
+    for (const [k] of booths) delete j.modules.wing.anchors[k]
+    for (const [k, v] of booths.reverse()) j.modules.wing.anchors[k] = v
+    const tables = [
+      'spot:pingpong:1:B',
+      'spot:pingpong:1:A',
+      'spot:pingpong:0:B',
+      'spot:pingpong:0:A',
+    ]
+    const saved = tables.map((k) => [k, j.modules.atrium.anchors[k]] as const)
+    for (const [k] of saved) delete j.modules.atrium.anchors[k]
+    for (const [k, v] of saved) j.modules.atrium.anchors[k] = v
+    const l = planBuilding([{ provider: 'a', agents: 1 }], parseManifest(j), undefined, 0)
+    expect(
+      reserve(emptyReservations(), l, { kind: 'booth', holder: 'x', wings: ['wing:a:0'] }, 0).grant,
+    ).toEqual(['wing:a:0/spot:booth:0'])
+    expect(reserve(emptyReservations(), l, { kind: 'pingpong', holder: 'p' }, 0).grant).toEqual([
+      'atrium/spot:pingpong:0:A',
+      'atrium/spot:pingpong:0:B',
+    ])
   })
 })

@@ -1,21 +1,27 @@
 // Renderer ports: the controller talks to the app (gateway) and to the views only through these.
-import type {
-  Agent,
-  AgentOfficeApi,
-  Banner,
-  GraphicsQuality,
-  SettingsPatch,
-} from '@agent-office/shared'
-import type { layoutOffice } from './app/layout.ts'
+import type { AgentOfficeApi, Banner, GraphicsQuality, SettingsPatch } from '@agent-office/shared'
+import type { Manifest } from './app/manifest.ts'
+import type { AgentPlan, BuildingLayout, ClipName } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 
 /** Everything the renderer can ask of the main process (implemented by the preload bridge). */
 export type OfficeGateway = AgentOfficeApi
 
-export type OfficeLayout = Pick<ReturnType<typeof layoutOffice>, 'zones' | 'slots'>
+/** What the scene learned while loading: the building manifest and the character's clip lengths. */
+export interface SceneAssets {
+  manifest: Manifest
+  /** One-shot clip durations from character.json (seconds), for the director's timing. */
+  clipDurations?: Partial<Record<ClipName, number>>
+}
 
 export interface SceneView {
-  sync(agents: Agent[], layout: OfficeLayout): void
+  /** Loads the manifest and shared assets behind the loading screen; resolves once the atrium renders. */
+  load(manifestUrl: string): Promise<SceneAssets>
+  /** Places the building modules (called only when placements changed). */
+  setBuilding(layout: BuildingLayout): void
+  /** Latest plan per visible agent (steps only when its intent changed); `departed` leave the scene. */
+  direct(plans: Map<string, AgentPlan>, departed: string[]): void
+  /** Highlights an agent and keeps the camera on it while it walks (null clears). */
   select(id: string | null): void
   /** Apply a render quality preset live (`auto` lets the scene's FPS governor pick). */
   setQuality(q: GraphicsQuality): void

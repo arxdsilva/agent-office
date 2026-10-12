@@ -310,3 +310,9 @@ def push_out(f, p, clearance, iters=20):
         g /= max(np.linalg.norm(g), 1e-8)
         p = p + g * (clearance - d)
     return p[0]
+
+
+def scaled(f, c, s):
+    """Uniformly scale an SDF by s about point c."""
+    c = _v(c)
+    return lambda P: f((P - c) / s + c) * s

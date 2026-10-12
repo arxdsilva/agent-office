@@ -129,7 +129,9 @@ function atriumModule() {
   })
   for (let t = 0; t < 2; t++) {
     const cx = 15 + t * 6
-    addAnchor(anchors, nav, `spot:pingpong:${t}:A`, cx, -11.6, 0, 'stand', { room: `pingpong-${t}` })
+    addAnchor(anchors, nav, `spot:pingpong:${t}:A`, cx, -11.6, 0, 'stand', {
+      room: `pingpong-${t}`,
+    })
     addAnchor(anchors, nav, `spot:pingpong:${t}:B`, cx, -8.4, Math.PI, 'stand', {
       room: `pingpong-${t}`,
     })
@@ -202,7 +204,12 @@ export function fixtureManifestJson(themes: string[] = THEMES): Json {
         themes: Object.fromEntries(
           themes.map((t) => [
             t,
-            { file: `wing-${t}.glb`, lightmap: lm(`wing-${t}.lightmap.png`), signColor: '#FFFFFF', accent: '#D97757' },
+            {
+              file: `wing-${t}.glb`,
+              lightmap: lm(`wing-${t}.lightmap.png`),
+              signColor: '#FFFFFF',
+              accent: '#D97757',
+            },
           ]),
         ),
         bounds: { minX: 0, maxX: 24, minZ: -9, maxZ: 9 },

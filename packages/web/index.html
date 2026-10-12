@@ -8,6 +8,24 @@
   </head>
   <body>
     <div id="stage"></div>
+    <div
+      id="loading"
+      role="progressbar"
+      aria-label="Loading the office"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div class="loading-card">
+        <strong class="loading-title">agent-office</strong>
+        <div class="loading-bar"><div id="loading-fill"></div></div>
+        <p id="loading-label">Loading…</p>
+        <p id="loading-tip" class="muted"></p>
+      </div>
+    </div>
+    <ul id="wing-signs" class="sr-only" aria-label="Wings"></ul>
+    <nav id="views" aria-label="Camera views"></nav>
+    <pre id="stats" hidden></pre>
     <div id="banner" class="banner" role="status" hidden></div>
 
     <header id="hud" class="card">

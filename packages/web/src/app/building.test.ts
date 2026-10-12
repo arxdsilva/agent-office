@@ -14,17 +14,21 @@ import { parseManifest } from './manifest.ts'
 import type { BuildingLayout, ModulePlacement } from './office-types.ts'
 
 const m = fixtureManifest
-const d = (...pairs: [string, number][]): ProviderDemand[] => pairs.map(([provider, agents]) => ({ provider, agents }))
+const d = (...pairs: [string, number][]): ProviderDemand[] =>
+  pairs.map(([provider, agents]) => ({ provider, agents }))
 const wing = (l: BuildingLayout, provider: string, annex = 0) =>
   l.placements.find((p) => p.kind === 'wing' && p.provider === provider && p.annex === annex)
 const kinds = (l: BuildingLayout) => l.placements.map((p) => p.id)
-const pose = (p: ModulePlacement | undefined) => p && { bay: p.bay, side: p.side, position: p.position, yaw: p.yaw }
+const pose = (p: ModulePlacement | undefined) =>
+  p && { bay: p.bay, side: p.side, position: p.position, yaw: p.yaw }
 
 /** Ids reachable from `start` in the merged graph. */
 function reachable(l: BuildingLayout, start: string) {
   const seen = new Set([start])
   const stack = [start]
-  while (stack.length) for (const n of l.nav.adj.get(stack.pop()!) ?? []) if (!seen.has(n)) (seen.add(n), stack.push(n))
+  while (stack.length)
+    for (const n of l.nav.adj.get(stack.pop()!) ?? [])
+      if (!seen.has(n)) (seen.add(n), stack.push(n))
   return seen
 }
 
@@ -42,7 +46,12 @@ describe('planBuilding', () => {
     let l: BuildingLayout | undefined
     // Providers arrive one at a time, so the order is arrival order.
     for (let i = 0; i < names.length; i++) {
-      l = planBuilding(d(...names.slice(0, i + 1).map((n) => [n, 1] as [string, number])), m, l, i * 1000)
+      l = planBuilding(
+        d(...names.slice(0, i + 1).map((n) => [n, 1] as [string, number])),
+        m,
+        l,
+        i * 1000,
+      )
       const w = wing(l, names[i]!)!
       expect(w.bay).toBe(Math.floor(i / 2))
       expect(w.side).toBe(i % 2 ? 'L' : 'R')
@@ -72,8 +81,14 @@ describe('planBuilding', () => {
 
   it('never moves existing wings when a provider is added', () => {
     const first = planBuilding(d(['claude-code', 3], ['langgraph', 2]), m, undefined, 0)
-    const second = planBuilding(d(['claude-code', 3], ['langgraph', 2], ['openai-agents', 1]), m, first, 1000)
-    for (const p of ['claude-code', 'langgraph']) expect(pose(wing(second, p))).toEqual(pose(wing(first, p)))
+    const second = planBuilding(
+      d(['claude-code', 3], ['langgraph', 2], ['openai-agents', 1]),
+      m,
+      first,
+      1000,
+    )
+    for (const p of ['claude-code', 'langgraph'])
+      expect(pose(wing(second, p))).toEqual(pose(wing(first, p)))
     // Existing anchors keep their world positions.
     const id = anchorId('wing:claude-code:0', 'seat:desk:2:1')
     expect(second.anchors.get(id)).toEqual(first.anchors.get(id))
@@ -83,7 +98,10 @@ describe('planBuilding', () => {
   it('gives a provider with more than 24 agents an annex in its next free slot', () => {
     const first = planBuilding(d(['claude-code', 10], ['langgraph', 3]), m, undefined, 0)
     const l = planBuilding(d(['claude-code', 30], ['langgraph', 3]), m, first, 1000)
-    expect(l.wingsByProvider.get('claude-code')).toEqual(['wing:claude-code:0', 'wing:claude-code:1'])
+    expect(l.wingsByProvider.get('claude-code')).toEqual([
+      'wing:claude-code:0',
+      'wing:claude-code:1',
+    ])
     const annex = wing(l, 'claude-code', 1)!
     expect(annex.bay).toBe(1)
     expect(annex.side).toBe('R')
@@ -205,10 +223,16 @@ describe('planBuilding', () => {
       // The approach stays behind the seat.
       expect(fwd.x * (a.approach.x - a.pos.x) + fwd.z * (a.approach.z - a.pos.z)).toBeCloseTo(-0.6)
     }
-    expect(right).toMatchObject({ placement: 'wing:a:0', local: 'seat:desk:1:0', pose: 'sit', room: 'pod-1' })
+    expect(right).toMatchObject({
+      placement: 'wing:a:0',
+      local: 'seat:desk:1:0',
+      pose: 'sit',
+      room: 'pod-1',
+    })
     expect(right.screen).toBe('desk:1:0')
     // Headings stay normalized to (−π, π].
-    for (const a of l.anchors.values()) expect(a.heading > -Math.PI - 1e-9 && a.heading <= Math.PI + 1e-9).toBe(true)
+    for (const a of l.anchors.values())
+      expect(a.heading > -Math.PI - 1e-9 && a.heading <= Math.PI + 1e-9).toBe(true)
   })
 
   it('merges module graphs at connector nodes into one connected graph', () => {
@@ -249,7 +273,9 @@ describe('planBuilding', () => {
   it('falls back to the nearest nav node when an anchor has no ap: node', () => {
     const j = fixtureManifestJson() as any
     delete j.modules.wing.nav.nodes['ap:spot:booth:0']
-    j.modules.wing.nav.edges = j.modules.wing.nav.edges.filter((e: string[]) => !e.includes('ap:spot:booth:0'))
+    j.modules.wing.nav.edges = j.modules.wing.nav.edges.filter(
+      (e: string[]) => !e.includes('ap:spot:booth:0'),
+    )
     const l = planBuilding(d(['a', 1]), parseManifest(j), undefined, 0)
     const a = l.anchors.get('wing:a:0/spot:booth:0')!
     expect(l.nav.nodes.has(a.navNode!)).toBe(true)
@@ -273,7 +299,10 @@ describe('planBuilding', () => {
 describe('helpers', () => {
   it('anchor ids round-trip', () => {
     expect(anchorId('wing:a:0', 'seat:desk:3:2')).toBe('wing:a:0/seat:desk:3:2')
-    expect(parseAnchorId('wing:a:0/seat:desk:3:2')).toEqual({ placement: 'wing:a:0', local: 'seat:desk:3:2' })
+    expect(parseAnchorId('wing:a:0/seat:desk:3:2')).toEqual({
+      placement: 'wing:a:0',
+      local: 'seat:desk:3:2',
+    })
     expect(parseAnchorId('nonsense')).toEqual({ placement: '', local: 'nonsense' })
   })
 

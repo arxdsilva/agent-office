@@ -2,7 +2,8 @@
 // elevator). Pure and deterministic: the same requests in the same order give the same grants.
 import type { AnchorId, BuildingLayout } from './office-types.ts'
 
-export type ResourceKind = 'meeting' | 'booth' | 'kitchen' | 'lounge' | 'cafe' | 'pingpong' | 'reception' | 'elevator'
+export type ResourceKind =
+  'meeting' | 'booth' | 'kitchen' | 'lounge' | 'cafe' | 'pingpong' | 'reception' | 'elevator'
 
 /** Largest team a meeting room accepts (one team per room). */
 export const MEETING_MAX_TEAM = 6
@@ -36,7 +37,10 @@ export interface ReservationState {
   byAnchor: Map<AnchorId, string>
 }
 
-export const emptyReservations = (): ReservationState => ({ byHolder: new Map(), byAnchor: new Map() })
+export const emptyReservations = (): ReservationState => ({
+  byHolder: new Map(),
+  byAnchor: new Map(),
+})
 
 interface Unit {
   room: string
@@ -66,7 +70,10 @@ function units(layout: BuildingLayout): Map<ResourceKind, Unit[]> {
   const placementIndex = new Map(layout.placements.map((p, i) => [p.id, i]))
   const out = new Map<ResourceKind, Unit[]>()
   for (const kind of Object.keys(PATTERNS) as ResourceKind[]) {
-    const rooms = new Map<string, { unit: Unit; order: string | number; members: [number, AnchorId][] }>()
+    const rooms = new Map<
+      string,
+      { unit: Unit; order: string | number; members: [number, AnchorId][] }
+    >()
     for (const a of layout.anchors.values()) {
       const m = PATTERNS[kind].exec(a.local)
       if (!m) continue
@@ -76,7 +83,11 @@ function units(layout: BuildingLayout): Map<ResourceKind, Unit[]> {
           : kind === 'pingpong'
             ? [`${a.placement}/pingpong-${m[1]}`, Number(m[1]), m[2] === 'B' ? 1 : 0]
             : [a.id, Number(m[1]), 0]
-      const r = rooms.get(room) ?? { unit: { room, placement: a.placement, anchors: [] }, order, members: [] }
+      const r = rooms.get(room) ?? {
+        unit: { room, placement: a.placement, anchors: [] },
+        order,
+        members: [],
+      }
       r.members.push([member, a.id])
       rooms.set(room, r)
     }
@@ -133,7 +144,13 @@ export function reserve(
   if (!unit && fb) unit = pick((kind = fb))
   if (!unit) return { state: base }
 
-  const r: Reservation = { holder: req.holder, kind, room: unit.room, anchors: unit.anchors, at: now }
+  const r: Reservation = {
+    holder: req.holder,
+    kind,
+    room: unit.room,
+    anchors: unit.anchors,
+    at: now,
+  }
   if (req.ttl !== undefined) r.expires = now + req.ttl
   const byHolder = new Map(base.byHolder).set(req.holder, r)
   const byAnchor = new Map(base.byAnchor)
@@ -154,6 +171,7 @@ export function release(state: ReservationState, holder: string): ReservationSta
 /** Drops reservations whose `ttl` ran out. */
 export function expire(state: ReservationState, now: number): ReservationState {
   let s = state
-  for (const r of state.byHolder.values()) if (r.expires !== undefined && r.expires <= now) s = release(s, r.holder)
+  for (const r of state.byHolder.values())
+    if (r.expires !== undefined && r.expires <= now) s = release(s, r.holder)
   return s
 }

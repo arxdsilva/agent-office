@@ -23,7 +23,8 @@ import type { BuildingLayout, NavGraph, Vec2 } from './office-types.ts'
 /** Builds a NavGraph from [id, x, z] nodes and edges. */
 function graph(nodes: [string, number, number, number?][], edges: [string, string][]): NavGraph {
   const g: NavGraph = { nodes: new Map(), adj: new Map() }
-  for (const [id, x, z, w] of nodes) (g.nodes.set(id, { id, pos: { x, z }, width: w ?? 1 }), g.adj.set(id, []))
+  for (const [id, x, z, w] of nodes)
+    (g.nodes.set(id, { id, pos: { x, z }, width: w ?? 1 }), g.adj.set(id, []))
   for (const [a, b] of edges) (g.adj.get(a)!.push(b), g.adj.get(b)!.push(a))
   return g
 }
@@ -34,7 +35,8 @@ function dijkstra(g: NavGraph, from: string, to: string): number {
   const done = new Set<string>()
   while (true) {
     let cur: string | undefined
-    for (const [id, d] of dist) if (!done.has(id) && (cur === undefined || d < dist.get(cur)!)) cur = id
+    for (const [id, d] of dist)
+      if (!done.has(id) && (cur === undefined || d < dist.get(cur)!)) cur = id
     if (cur === undefined) return Infinity
     if (cur === to) return dist.get(cur)!
     done.add(cur)
@@ -66,7 +68,8 @@ const office = (m: Manifest): BuildingLayout =>
     0,
   )
 const L = office(fixtureManifest)
-const anchorsOf = (l: BuildingLayout, re: RegExp) => [...l.anchors.values()].filter((a) => re.test(a.local))
+const anchorsOf = (l: BuildingLayout, re: RegExp) =>
+  [...l.anchors.values()].filter((a) => re.test(a.local))
 
 describe('astar', () => {
   it('finds the optimal path where a greedy walk would not', () => {
@@ -111,7 +114,9 @@ describe('astar', () => {
       [],
     )
     expect(astar(g, 'a', 'b')).toBeUndefined()
-    expect(planRoute(g, { x: 0, z: 0 }, { x: 5, z: 0 }, { fromNode: 'a', toNode: 'b' })).toBeUndefined()
+    expect(
+      planRoute(g, { x: 0, z: 0 }, { x: 5, z: 0 }, { fromNode: 'a', toNode: 'b' }),
+    ).toBeUndefined()
     expect(nearestNode(graph([], []), { x: 0, z: 0 })).toBeUndefined()
     expect(planRoute(graph([], []), { x: 0, z: 0 }, { x: 1, z: 0 })).toBeUndefined()
   })
@@ -124,8 +129,10 @@ function checkReachability(l: BuildingLayout) {
   for (const e of elevators) {
     const seen = new Set([e.navNode!])
     const stack = [e.navNode!]
-    while (stack.length) for (const n of l.nav.adj.get(stack.pop()!)!) if (!seen.has(n)) (seen.add(n), stack.push(n))
-    for (const a of l.anchors.values()) expect(seen.has(a.navNode!), `${a.id} from ${e.id}`).toBe(true)
+    while (stack.length)
+      for (const n of l.nav.adj.get(stack.pop()!)!) if (!seen.has(n)) (seen.add(n), stack.push(n))
+    for (const a of l.anchors.values())
+      expect(seen.has(a.navNode!), `${a.id} from ${e.id}`).toBe(true)
   }
 }
 
@@ -135,17 +142,26 @@ describe('reachability', () => {
   })
 
   // The real manifest is produced by the asset pipeline; check it whenever it exists.
-  const real = import.meta.glob('../../public/assets/manifest.json', { eager: true, import: 'default' })
-  const realJson = Object.values(real)[0]
-  it.skipIf(!realJson)('reaches every seat and spot from every elevator spot (real manifest)', () => {
-    checkReachability(office(parseManifest(realJson)))
+  const real = import.meta.glob('../../public/assets/manifest.json', {
+    eager: true,
+    import: 'default',
   })
+  const realJson = Object.values(real)[0]
+  it.skipIf(!realJson)(
+    'reaches every seat and spot from every elevator spot (real manifest)',
+    () => {
+      checkReachability(office(parseManifest(realJson)))
+    },
+  )
 })
 
 describe('planRoute + smooth', () => {
   const pairs = () => {
     const seats = anchorsOf(L, /^(seat|spot):/)
-    return Array.from({ length: 30 }, (_, i) => [seats[(i * 37) % seats.length]!, seats[(i * 101 + 7) % seats.length]!] as const)
+    return Array.from(
+      { length: 30 },
+      (_, i) => [seats[(i * 37) % seats.length]!, seats[(i * 101 + 7) % seats.length]!] as const,
+    )
   }
 
   it('routes from anchor to anchor through their approach nodes', () => {
@@ -164,7 +180,8 @@ describe('planRoute + smooth', () => {
       expect(pts[0]).toEqual(r.points[0])
       expect(pts.at(-1)).toEqual(r.points.at(-1))
       for (const p of pts) expect(distanceToRoute(r, p)).toBeLessThanOrEqual(1e-9 + maxWidth(r))
-      for (let i = 1; i < pts.length; i++) expect(dist(pts[i - 1]!, pts[i]!)).toBeLessThanOrEqual(0.25 + 1e-9)
+      for (let i = 1; i < pts.length; i++)
+        expect(dist(pts[i - 1]!, pts[i]!)).toBeLessThanOrEqual(0.25 + 1e-9)
     }
   })
 
@@ -218,9 +235,14 @@ describe('planRoute + smooth', () => {
       ],
       [['a', 'b']],
     )
-    const north = smooth(planRoute(g, { x: 0, z: 0 }, { x: 0, z: 20 }, { fromNode: 'a', toNode: 'b' })!)
-    const south = smooth(planRoute(g, { x: 0, z: 20 }, { x: 0, z: 0 }, { fromNode: 'b', toNode: 'a' })!)
-    const mid = (pts: Vec2[]) => pts.reduce((best, p) => (Math.abs(p.z - 10) < Math.abs(best.z - 10) ? p : best))
+    const north = smooth(
+      planRoute(g, { x: 0, z: 0 }, { x: 0, z: 20 }, { fromNode: 'a', toNode: 'b' })!,
+    )
+    const south = smooth(
+      planRoute(g, { x: 0, z: 20 }, { x: 0, z: 0 }, { fromNode: 'b', toNode: 'a' })!,
+    )
+    const mid = (pts: Vec2[]) =>
+      pts.reduce((best, p) => (Math.abs(p.z - 10) < Math.abs(best.z - 10) ? p : best))
     // Walking +z, the walker's right is −x; walking −z, it is +x.
     expect(mid(north).x).toBeCloseTo(-LANE_OFFSET, 6)
     expect(mid(south).x).toBeCloseTo(LANE_OFFSET, 6)
@@ -237,7 +259,9 @@ describe('planRoute + smooth', () => {
       ],
       [['a', 'b']],
     )
-    for (const p of smooth(planRoute(g, { x: 0, z: 0 }, { x: 0, z: 20 }, { fromNode: 'a', toNode: 'b' })!))
+    for (const p of smooth(
+      planRoute(g, { x: 0, z: 0 }, { x: 0, z: 20 }, { fromNode: 'a', toNode: 'b' })!,
+    ))
       expect(p.x).toBeCloseTo(0, 9)
   })
 })
@@ -258,7 +282,10 @@ function segDist(a: Vec2, b: Vec2, p: Vec2) {
 }
 
 describe('timePath + sampleAt', () => {
-  const straight = (len: number): Vec2[] => Array.from({ length: Math.round(len / 0.2) + 1 }, (_, i) => ({ x: 0, z: i * 0.2 }))
+  const straight = (len: number): Vec2[] => {
+    const n = Math.ceil(len / 0.2)
+    return Array.from({ length: n + 1 }, (_, i) => ({ x: 0, z: (i * len) / n }))
+  }
 
   it('respects vMax and accel, and stops at the end', () => {
     for (const len of [0.5, 3, 20]) {
@@ -312,7 +339,10 @@ describe('timePath + sampleAt', () => {
     const side = timePath(straight(5), { endHeading: 0, startHeading: Math.PI / 2 })
     expect(side.turnDuration ?? 0).toBe(0)
     // Already walking: never turn in place.
-    expect(timePath(straight(5), { endHeading: 0, startHeading: Math.PI, startSpeed: 1 }).turnDuration ?? 0).toBe(0)
+    expect(
+      timePath(straight(5), { endHeading: 0, startHeading: Math.PI, startSpeed: 1 }).turnDuration ??
+        0,
+    ).toBe(0)
     expect(needsTurnInPlace(0, (101 * Math.PI) / 180)).toBe(true)
     expect(needsTurnInPlace(0, (99 * Math.PI) / 180)).toBe(false)
     expect(needsTurnInPlace(3, -3)).toBe(false)
@@ -329,17 +359,63 @@ describe('timePath + sampleAt', () => {
     expect(sampleAt(tp, 0.5).heading).toBeCloseTo(Math.PI / 2)
     const empty = timePath([{ x: 1, z: 1 }], { endHeading: 2 })
     expect(empty.duration).toBe(0)
-    expect(sampleAt(empty, 0)).toMatchObject({ pos: { x: 1, z: 1 }, heading: 2, speed: 0, phase: 'arrived' })
+    expect(sampleAt(empty, 0)).toMatchObject({
+      pos: { x: 1, z: 1 },
+      heading: 2,
+      speed: 0,
+      phase: 'arrived',
+    })
     expect(sampleAt(tp, -1).pos).toEqual({ x: 0, z: 0 })
   })
 
   it('routeToPath plans, smooths and times a walk between anchors', () => {
-    const [a, b] = [L.anchors.get('wing:claude-code:0/seat:desk:1:0')!, L.anchors.get('atrium/spot:elevator:0')!]
+    const [a, b] = [
+      L.anchors.get('wing:claude-code:0/seat:desk:1:0')!,
+      L.anchors.get('atrium/spot:elevator:0')!,
+    ]
     const tp = routeToPath(L.nav, a.pos, b, { startHeading: a.heading })!
     expect(tp.points[0]).toEqual(a.pos)
     expect(tp.points.at(-1)).toEqual(b.pos)
     expect(tp.endHeading).toBe(b.heading)
     expect(tp.duration).toBeGreaterThan(tp.totalLength / WALK_SPEED)
     expect(routeToPath(graph([], []), a.pos, b)).toBeUndefined()
+  })
+})
+
+describe('planRoute: no spur U-turns', () => {
+  // Seat at the origin; its approach node sits 0.6 m "in front", but the corridor continues behind
+  // the seat. Walking out to the approach node and straight back is a visible pivot (≈π heading flip).
+  const g = graph(
+    [
+      ['ap', 0, 0.6, 0.8],
+      ['c1', 0, -2, 1],
+      ['c2', 3, -2, 1],
+    ],
+    [
+      ['ap', 'c1'],
+      ['c1', 'c2'],
+    ],
+  )
+
+  it('drops a start waypoint that would make the agent double back', () => {
+    const r = planRoute(g, { x: 0, z: 0 }, { x: 3, z: -2.5 }, { fromNode: 'ap', toNode: 'c2' })!
+    expect(r.points.slice(0, 2)).toEqual([
+      { x: 0, z: 0 },
+      { x: 0, z: -2 },
+    ])
+    expect(r.widths).toHaveLength(r.points.length - 1)
+  })
+
+  it('drops an end waypoint that would make the agent overshoot and come back', () => {
+    const r = planRoute(g, { x: 3, z: -2.5 }, { x: 0, z: 0 }, { fromNode: 'c2', toNode: 'ap' })!
+    expect(r.points.slice(-2)).toEqual([
+      { x: 0, z: -2 },
+      { x: 0, z: 0 },
+    ])
+  })
+
+  it('keeps a turning waypoint that is not a doubling-back spur', () => {
+    const r = planRoute(g, { x: 0.5, z: 0.6 }, { x: 3, z: -2.5 }, { fromNode: 'ap', toNode: 'c2' })!
+    expect(r.points[1]).toEqual({ x: 0, z: 0.6 })
   })
 })

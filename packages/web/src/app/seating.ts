@@ -19,7 +19,9 @@ export const emptySeating = (): SeatingState => ({ seats: new Map(), freed: new 
 const DESK = /^seat:desk:(\d+):(\d+)$/
 
 /** Parses a world desk anchor id ("wing:a:0/seat:desk:3:2"). */
-export function deskOf(id: AnchorId): { placement: string; pod: number; index: number } | undefined {
+export function deskOf(
+  id: AnchorId,
+): { placement: string; pod: number; index: number } | undefined {
   const i = id.lastIndexOf('/')
   const m = DESK.exec(id.slice(i + 1))
   return m ? { placement: id.slice(0, i), pod: Number(m[1]), index: Number(m[2]) } : undefined
@@ -58,7 +60,10 @@ function podsByProvider(layout: BuildingLayout): Map<string, Pod[]> {
         z: p.seats.reduce((s, a) => s + a.pos.z, 0) / p.seats.length,
       }
     }
-    out.set(provider, [...pods.values()].sort((a, b) => a.wingIndex - b.wingIndex || a.pod - b.pod))
+    out.set(
+      provider,
+      [...pods.values()].sort((a, b) => a.wingIndex - b.wingIndex || a.pod - b.pod),
+    )
   }
   podCache.set(layout, out)
   return out
@@ -86,11 +91,17 @@ export function assignDesks(
   for (const [seat, at] of prev.freed) if (now - at < SEAT_REUSE_MS) freed.set(seat, at)
   const isFree = (seat: AnchorId) => !taken.has(seat) && !freed.has(seat)
   const occupant = new Map<AnchorId, string>()
-  const take = (id: string, seat: AnchorId) => (seats.set(id, seat), taken.add(seat), occupant.set(seat, id))
+  const take = (id: string, seat: AnchorId) => (
+    seats.set(id, seat),
+    taken.add(seat),
+    occupant.set(seat, id)
+  )
   const podOfSeat = (provider: string, seat: AnchorId) =>
     pods.get(provider)?.find((p) => p.seats.some((s) => s.id === seat))
 
-  const ordered = [...agents].sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const ordered = [...agents].sort(
+    (a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
   // 1. Keep every desk that is still valid (same provider's wings, still in the layout).
   for (const a of ordered) {
     const p = prev.seats.get(a.id)
@@ -100,21 +111,25 @@ export function assignDesks(
   // 2. Newcomers: parents before their subagents.
   const depth = (a: Agent) => {
     let d = 0
-    for (let cur = a; d < MAX_PARENT_DEPTH && cur.parentId && byId.has(cur.parentId); d++) cur = byId.get(cur.parentId)!
+    for (let cur = a; d < MAX_PARENT_DEPTH && cur.parentId && byId.has(cur.parentId); d++)
+      cur = byId.get(cur.parentId)!
     return d
   }
   const fresh = ordered.filter((a) => !seats.has(a.id)).sort((a, b) => depth(a) - depth(b))
   for (const a of fresh) {
     const { zone, row } = group.get(a.id)!
     const mine = pods.get(zone) ?? []
-    const seat = (a.parentId && seats.get(a.parentId) && nearParent(seats.get(a.parentId)!)) || byTopic()
+    const seat =
+      (a.parentId && seats.get(a.parentId) && nearParent(seats.get(a.parentId)!)) || byTopic()
     if (seat) take(a.id, seat)
 
     function nearParent(parentSeat: AnchorId): AnchorId | undefined {
       const parentPos = layout.anchors.get(parentSeat)!.pos
       const home = podOfSeat(zone, parentSeat)
       const nearest = (cands: WorldAnchor[]) =>
-        cands.filter((s) => isFree(s.id)).sort((x, y) => dist(x.pos, parentPos) - dist(y.pos, parentPos))[0]?.id
+        cands
+          .filter((s) => isFree(s.id))
+          .sort((x, y) => dist(x.pos, parentPos) - dist(y.pos, parentPos))[0]?.id
       return nearest(home?.seats ?? []) ?? nearest(mine.flatMap((p) => p.seats))
     }
 
@@ -132,7 +147,9 @@ export function assignDesks(
       }
       const origin = topicPods[0]?.center
       const byDistance = (x: Pod, y: Pod) =>
-        x.wingIndex - y.wingIndex || (origin ? dist(x.center, origin) - dist(y.center, origin) : 0) || x.pod - y.pod
+        x.wingIndex - y.wingIndex ||
+        (origin ? dist(x.center, origin) - dist(y.center, origin) : 0) ||
+        x.pod - y.pod
       const empty = mine.filter((p) => p.seats.every((s) => isFree(s.id))).sort(byDistance)
       const any = mine.filter((p) => firstFree(p)).sort(byDistance)
       const pod = empty[0] ?? any[0]
@@ -142,6 +159,7 @@ export function assignDesks(
 
   // 3. Seats given up this update start their reuse timer.
   const held = new Set(seats.values())
-  for (const seat of prev.seats.values()) if (!held.has(seat) && !freed.has(seat)) freed.set(seat, now)
+  for (const seat of prev.seats.values())
+    if (!held.has(seat) && !freed.has(seat)) freed.set(seat, now)
   return { seats, freed }
 }

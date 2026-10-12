@@ -50,7 +50,9 @@ export const anchorId = (placement: string, local: string): AnchorId => `${place
 
 export function parseAnchorId(id: AnchorId): { placement: string; local: string } {
   const i = id.lastIndexOf('/')
-  return i < 0 ? { placement: '', local: id } : { placement: id.slice(0, i), local: id.slice(i + 1) }
+  return i < 0
+    ? { placement: '', local: id }
+    : { placement: id.slice(0, i), local: id.slice(i + 1) }
 }
 
 const snap = (v: number) => (Math.abs(v) < 1e-12 ? 0 : v)
@@ -81,8 +83,14 @@ function availableThemes(m: Manifest): ThemeId[] {
 }
 
 /** Theme for a provider's first wing: pinned, else the first unused theme in hash order. */
-function chooseTheme(provider: string, slots: WingSlot[], themes: ThemeId[]): { theme: ThemeId; signVariant: number } {
-  const usage = (t: ThemeId) => new Set(slots.filter((s) => s.theme === t && s.provider !== provider).map((s) => s.provider)).size
+function chooseTheme(
+  provider: string,
+  slots: WingSlot[],
+  themes: ThemeId[],
+): { theme: ThemeId; signVariant: number } {
+  const usage = (t: ThemeId) =>
+    new Set(slots.filter((s) => s.theme === t && s.provider !== provider).map((s) => s.provider))
+      .size
   const pinned = PINNED_THEMES[provider]
   if (pinned && themes.includes(pinned)) return { theme: pinned, signVariant: usage(pinned) }
   const reserved = new Set(Object.values(PINNED_THEMES))
@@ -108,7 +116,8 @@ export function planBuilding(
 ): BuildingLayout {
   const perWing = Math.max(1, manifest.modules.wing.capacity.desk)
   const needed = new Map<string, number>()
-  for (const { provider, agents } of demand) needed.set(provider, (needed.get(provider) ?? 0) + agents)
+  for (const { provider, agents } of demand)
+    needed.set(provider, (needed.get(provider) ?? 0) + agents)
   for (const [p, n] of needed) needed.set(p, n > 0 ? Math.ceil(n / perWing) : 0)
 
   const slots: WingSlot[] = []
@@ -123,7 +132,9 @@ export function planBuilding(
     for (let annex = 0; annex < needed.get(provider)!; annex++) {
       if (slots.some((s) => s.provider === provider && s.annex === annex)) continue
       const own = slots.find((s) => s.provider === provider)
-      const look = own ? { theme: own.theme, signVariant: own.signVariant } : chooseTheme(provider, slots, themes)
+      const look = own
+        ? { theme: own.theme, signVariant: own.signVariant }
+        : chooseTheme(provider, slots, themes)
       let index = 0
       while (slots.some((s) => s.index === index)) index++
       slots.push({ index, provider, annex, ...look, lastNeeded: now })
@@ -142,12 +153,21 @@ export function planBuilding(
     .join('|')
   const wingsByProvider = new Map<string, string[]>()
   for (const p of placements)
-    if (p.kind === 'wing') wingsByProvider.set(p.provider!, [...(wingsByProvider.get(p.provider!) ?? []), p.id])
+    if (p.kind === 'wing')
+      wingsByProvider.set(p.provider!, [...(wingsByProvider.get(p.provider!) ?? []), p.id])
   for (const ids of wingsByProvider.values()) ids.sort((a, b) => annexOf(a) - annexOf(b))
 
   if (prev && prev.key === key) return { ...prev, placements, wingsByProvider, slots }
   const { anchors, nav } = buildWorld(placements, manifest)
-  return { placements, anchors, nav, bounds: worldBounds(placements, manifest), wingsByProvider, key, slots }
+  return {
+    placements,
+    anchors,
+    nav,
+    bounds: worldBounds(placements, manifest),
+    wingsByProvider,
+    key,
+    slots,
+  }
 }
 
 const annexOf = (placementId: string) => Number(placementId.slice(placementId.lastIndexOf(':') + 1))
@@ -155,9 +175,17 @@ const annexOf = (placementId: string) => Number(placementId.slice(placementId.la
 function placeModules(slots: WingSlot[], needed: Map<string, number>): ModulePlacement[] {
   const maxIndex = slots.reduce((m, s) => Math.max(m, s.index), -1)
   const bays = Math.max(MIN_BAYS, Math.ceil((maxIndex + 1) / 2))
-  const out: ModulePlacement[] = [{ id: 'atrium', kind: 'atrium', position: { x: 0, z: 0 }, yaw: 0 }]
+  const out: ModulePlacement[] = [
+    { id: 'atrium', kind: 'atrium', position: { x: 0, z: 0 }, yaw: 0 },
+  ]
   for (let bay = 0; bay < bays; bay++) {
-    out.push({ id: `street:${bay}`, kind: 'street', bay, position: { x: 0, z: BAY_LENGTH * bay }, yaw: 0 })
+    out.push({
+      id: `street:${bay}`,
+      kind: 'street',
+      bay,
+      position: { x: 0, z: BAY_LENGTH * bay },
+      yaw: 0,
+    })
     for (const side of ['R', 'L'] as const) {
       const index = bay * 2 + (side === 'R' ? 0 : 1)
       const s = slots.find((x) => x.index === index)
@@ -211,7 +239,10 @@ function buildWorld(placements: ModulePlacement[], m: Manifest) {
         for (let dz = -1; dz <= 1 && !match; dz++)
           for (const other of cells.get(`${cx + dx},${cz + dz}`) ?? []) {
             const o = nodes.get(other)!
-            if (owner.get(other) !== pl.id && Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z) <= NAV_JOIN_EPS) {
+            if (
+              owner.get(other) !== pl.id &&
+              Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z) <= NAV_JOIN_EPS
+            ) {
               match = other
               break
             }
@@ -228,7 +259,8 @@ function buildWorld(placements: ModulePlacement[], m: Manifest) {
       const c = `${cx},${cz}`
       cells.set(c, [...(cells.get(c) ?? []), wid])
     }
-    for (const [a, b] of nav.edges) edges.push([alias.get(`${pl.id}/${a}`)!, alias.get(`${pl.id}/${b}`)!])
+    for (const [a, b] of nav.edges)
+      edges.push([alias.get(`${pl.id}/${a}`)!, alias.get(`${pl.id}/${b}`)!])
   }
 
   const adj: NavGraph['adj'] = new Map([...nodes.keys()].map((id) => [id, []]))
@@ -270,7 +302,7 @@ function nearest(nodes: { id: string; pos: Vec2 }[], p: Vec2): string {
   let bestD = Infinity
   for (const n of nodes) {
     const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z)
-    if (d < bestD) (bestD = d), (best = n.id)
+    if (d < bestD) ((bestD = d), (best = n.id))
   }
   return best
 }

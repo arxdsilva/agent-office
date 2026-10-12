@@ -44,7 +44,11 @@ describe('assignDesks', () => {
   })
 
   it('gives each topic its own pod in the provider wing', () => {
-    const agents = [agent('a', { topic: 'X' }), agent('b', { topic: 'Y' }), agent('c', { topic: 'X' })]
+    const agents = [
+      agent('a', { topic: 'X' }),
+      agent('b', { topic: 'Y' }),
+      agent('c', { topic: 'X' }),
+    ]
     const s = assignDesks(agents, L, emptySeating(), 0)
     expect(pod(s, 'a')).toBe('wing:claude-code:0#1')
     expect(pod(s, 'c')).toBe(pod(s, 'a'))
@@ -56,7 +60,9 @@ describe('assignDesks', () => {
   it('overflows a full topic into the nearest free pod', () => {
     const agents = Array.from({ length: 5 }, (_, i) => agent(`t${i}`, { topic: 'Big' }))
     const s = assignDesks([...agents, agent('o', { topic: 'Other' })], L, emptySeating(), 0)
-    expect(new Set(agents.slice(0, 4).map((a) => pod(s, a.id)))).toEqual(new Set(['wing:claude-code:0#1']))
+    expect(new Set(agents.slice(0, 4).map((a) => pod(s, a.id)))).toEqual(
+      new Set(['wing:claude-code:0#1']),
+    )
     // Pods 2 and 4 are both 6 m from pod 1; ties go to the lower pod number.
     expect(pod(s, 't4')).toBe('wing:claude-code:0#2')
     // The next topic claims the next empty pod.
@@ -90,9 +96,13 @@ describe('assignDesks', () => {
     const s = assignDesks([c, o, p], L, emptySeating(), 0)
     expect(pod(s, 'c')).toBe(pod(s, 'p'))
     const free = [...L.anchors.keys()].filter(
-      (id) => id.startsWith('wing:claude-code:0/seat:desk:1:') && ![...s.seats.values()].includes(id),
+      (id) =>
+        id.startsWith('wing:claude-code:0/seat:desk:1:') && ![...s.seats.values()].includes(id),
     )
-    const best = Math.min(dist(L, s.seats.get('p')!, s.seats.get('c')!), ...free.map((f) => dist(L, s.seats.get('p')!, f)))
+    const best = Math.min(
+      dist(L, s.seats.get('p')!, s.seats.get('c')!),
+      ...free.map((f) => dist(L, s.seats.get('p')!, f)),
+    )
     expect(dist(L, s.seats.get('p')!, s.seats.get('c')!)).toBe(best)
   })
 
@@ -104,9 +114,13 @@ describe('assignDesks', () => {
     expect(pod(s, 'c')).not.toBe(pod(s, 'p'))
     const parentSeat = s.seats.get('p')!
     const others = [...L.anchors.values()].filter(
-      (a) => a.placement === 'wing:claude-code:0' && a.local.startsWith('seat:desk:') && ![...s.seats.values()].includes(a.id),
+      (a) =>
+        a.placement === 'wing:claude-code:0' &&
+        a.local.startsWith('seat:desk:') &&
+        ![...s.seats.values()].includes(a.id),
     )
-    for (const a of others) expect(dist(L, parentSeat, s.seats.get('c')!)).toBeLessThanOrEqual(dist(L, parentSeat, a.id))
+    for (const a of others)
+      expect(dist(L, parentSeat, s.seats.get('c')!)).toBeLessThanOrEqual(dist(L, parentSeat, a.id))
   })
 
   it('keeps desks stable when agents join, and for an agent whose topic changes', () => {
@@ -152,7 +166,9 @@ describe('assignDesks', () => {
   })
 
   it('leaves agents of a provider without a wing unseated', () => {
-    expect(assignDesks([agent('q', { provider: 'nobody' })], L, emptySeating(), 0).seats.size).toBe(0)
+    expect(assignDesks([agent('q', { provider: 'nobody' })], L, emptySeating(), 0).seats.size).toBe(
+      0,
+    )
   })
 })
 

@@ -42,6 +42,12 @@ The single source of truth shared by the Blender pipeline (`assets/blender/**`) 
                      "room": "pod-3", "screen": "desk:3:2", "approach": { "x": 1.2, "z": -3.4 } }
   ```
 - `pose` is one of `sit`, `stand`, `lounge`. The anchor's `y` is always the floor (0). Sit clips are authored for a 0.47 m seat, lounge clips for a 0.42 m seat.
+- **An anchor's (x, z) is where the character's root bone stands, not the seat center.** In the sit clips the root is the standing spot in front of the chair:
+  - `sit`: the seat center is **0.29 m behind** the root (opposite the heading), and the desk edge is about 0.13 m in front.
+  - `lounge`: the seat center is **0.36 m behind** the root.
+  - `stand`: the root is the spot itself.
+
+  These offsets are also written to `character.json` (`sit` / `lounge`). The renderer places the root exactly at the anchor, with no extra offset.
 - Optional keys: `room` (`pod-N` / `meeting-A` / `meeting-B` / `booth-N` / `kitchen` / `lounge` / `cafe` / `reception` / `elevator` / `pingpong-N` / `garden`), `screen` (the id of the monitor surface), `led` (id of the booth LED ring).
 - **Required counts per module:**
   - **wing:** 24 desk seats (6 pods × 4); `meeting:A` and `meeting:B` with 6 seats each; 4 booth spots; 6 kitchen spots; 8 lounge seats

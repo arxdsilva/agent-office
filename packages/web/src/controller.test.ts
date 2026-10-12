@@ -8,11 +8,28 @@ import {
   type SettingsPatch,
   type UpdateState,
 } from '@agent-office/shared'
-import { byProviderAndTopic } from '@agent-office/shared'
+import { byProviderAndTopic, type Agent } from '@agent-office/shared'
 import { describe, expect, it, vi } from 'vitest'
+import { fixtureManifest } from './app/__fixtures__/manifest.ts'
+import { LEAVE_MS } from './app/behavior.ts'
+import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 import { createController } from './controller.ts'
 import type { BannerView, HudView, PanelView, SceneView, SettingsView } from './ports.ts'
+
+const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
+  id,
+  name: id.toUpperCase(),
+  provider: 'p',
+  topic: 't',
+  status: 'tool',
+  source: 's',
+  since: 0,
+  lastSeen: 0,
+  interactive: true,
+  unread: 0,
+  ...over,
+})
 
 function fakeGateway(initial: Settings = DEFAULT_SETTINGS) {
   let current = initial
@@ -91,15 +108,33 @@ function fakeViews() {
   const handlers: Record<string, (...a: any[]) => void> = {}
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & {
-    synced: number
+    loads: string[]
+    fail: Error | null
+    buildings: BuildingLayout[]
+    directs: { plans: Map<string, AgentPlan>; departed: string[] }[]
     selected: string | null
     qualities: GraphicsQuality[]
+    last(): Map<string, AgentPlan>
   } = {
-    synced: 0,
+    loads: [],
+    fail: null,
+    buildings: [],
+    directs: [],
     selected: null,
     qualities: [],
-    sync() {
-      this.synced++
+    async load(url) {
+      this.loads.push(url)
+      if (this.fail) throw this.fail
+      return { manifest: fixtureManifest }
+    },
+    setBuilding(layout) {
+      this.buildings.push(layout)
+    },
+    direct(plans, departed) {
+      this.directs.push({ plans, departed })
+    },
+    last() {
+      return this.directs.at(-1)?.plans ?? new Map()
     },
     setQuality(q) {
       this.qualities.push(q)
@@ -172,47 +207,114 @@ function fakeViews() {
   return { scene, panel, hud, settings, banner, handlers }
 }
 
-async function setup(initial?: Settings) {
+async function setup(initial?: Settings, prepare?: (v: ReturnType<typeof fakeViews>) => void) {
   const g = fakeGateway(initial)
   const v = fakeViews()
-  const ticks: (() => void)[] = []
+  prepare?.(v)
+  const timers: { ms: number; fn: () => void }[] = []
+  let now = 0
   const c = createController({
     gateway: g.api,
     ...v,
     grouping: byProviderAndTopic,
-    clock: { now: () => 0 },
-    every: (_ms, fn) => (ticks.push(fn), () => {}),
+    clock: { now: () => now },
+    every: (ms, fn) => (timers.push({ ms, fn }), () => {}),
   })
   await c.start()
-  return { ...g, ...v, c, ticks }
+  /** Fires every timer registered with this interval. */
+  const tick = (ms: number) => timers.filter((t) => t.ms === ms).forEach((t) => t.fn())
+  /** Moves the clock forward in 4 Hz director ticks. */
+  const advance = (ms: number) => {
+    for (const end = now + ms; now < end;) {
+      now = Math.min(end, now + 250)
+      tick(250)
+    }
+  }
+  return { ...g, ...v, c, tick, advance, timers }
 }
 
 describe('controller', () => {
-  it('loads the snapshot, lays out the scene and renders the HUD', async () => {
+  it('loads the manifest after the snapshot, places the building and spawns present agents', async () => {
     const { scene, hud } = await setup()
-    expect(scene.synced).toBe(1)
+    expect(scene.loads).toEqual(['assets/manifest.json'])
+    expect(scene.buildings).toHaveLength(1)
+    expect(scene.buildings[0]!.wingsByProvider.get('p')).toEqual(['wing:p:0'])
+    expect(scene.last().get('a')).toMatchObject({ intent: { spawn: true } })
     expect(hud.vm?.count).toBe('1 agent')
   })
 
-  it('applies pushed messages', async () => {
+  it('runs the director at 4 Hz and re-sends the building only when it changes', async () => {
+    const { scene, timers, advance, listeners } = await setup()
+    expect(timers.map((t) => t.ms)).toContain(250)
+    const before = scene.directs.length
+    advance(1000)
+    expect(scene.directs.length).toBe(before + 4)
+    expect(scene.buildings).toHaveLength(1)
+    // Steps go out only when an intent changes; steady ticks carry plans without steps.
+    expect(scene.last().get('a')!.steps).toBeUndefined()
+
+    // A new provider needs a new wing → one more setBuilding.
+    listeners.message[0]!({ type: 'upsert', agent: agent('q', { provider: 'q' }) })
+    expect(scene.buildings).toHaveLength(2)
+    advance(500)
+    expect(scene.buildings).toHaveLength(2)
+  })
+
+  it('applies pushed messages and directs newcomers right away (they arrive by elevator)', async () => {
     const { listeners, hud, scene } = await setup()
-    listeners.message[0]!({
-      type: 'upsert',
-      agent: {
-        id: 'b',
-        name: 'B',
-        provider: 'p',
-        topic: 't',
-        status: 'tool',
-        source: 's',
-        since: 0,
-        lastSeen: 0,
-        interactive: false,
-        unread: 0,
-      },
-    })
+    listeners.message[0]!({ type: 'upsert', agent: agent('b') })
     expect(hud.vm?.count).toBe('2 agents')
-    expect(scene.synced).toBe(2)
+    expect(scene.last().get('b')).toMatchObject({ intent: { activity: 'arriving' } })
+    expect(scene.last().get('b')!.steps![0]!.kind).toBe('teleport')
+  })
+
+  it('walks removed agents out, then reports them departed', async () => {
+    const { listeners, scene, advance } = await setup()
+    listeners.message[0]!({ type: 'remove', id: 'a' })
+    expect(scene.last().get('a')!.intent.activity).toBe('leaving')
+    advance(LEAVE_MS)
+    expect(scene.directs.flatMap((d) => d.departed)).toEqual(['a'])
+    expect(scene.last().has('a')).toBe(false)
+  })
+
+  it('selection follows a walking agent: panel stays open and says where it is', async () => {
+    const { listeners, handlers, scene, panel, advance } = await setup()
+    listeners.message[0]!({ type: 'upsert', agent: agent('n', { name: 'Newton' }) })
+    handlers.pick!('n')
+    expect(scene.selected).toBe('n')
+    expect(panel.vm).toMatchObject({ name: 'Newton', activity: 'Arriving' })
+    advance(3000) // still walking from the elevator
+    expect(scene.selected).toBe('n')
+    expect(panel.vm?.activity).toBe('Arriving')
+    advance(20_000) // at the desk now
+    expect(scene.selected).toBe('n')
+    expect(panel.vm?.activity).toMatch(/^Working at their desk in pod \d$/)
+  })
+
+  it('a parent with a subagent takes its team into a meeting room', async () => {
+    const { listeners, handlers, panel, scene, advance } = await setup()
+    listeners.message[0]!({ type: 'upsert', agent: agent('s', { parentId: 'a', name: 'Sub' }) })
+    advance(30_000)
+    expect(scene.last().get('a')!.intent.activity).toBe('meeting')
+    handlers.pick!('a')
+    expect(panel.vm?.activity).toMatch(/^In meeting room [AB] with 1 subagent$/)
+    handlers.pick!('s')
+    expect(panel.vm?.activity).toMatch(/^In meeting room [AB] with Ada's team$/)
+  })
+
+  it('keeps the HUD and panel working when the 3D assets fail to load', async () => {
+    const { scene, banner, hud, handlers, panel } = await setup(undefined, (v) => {
+      v.scene.fail = new Error('404 assets/manifest.json')
+    })
+    expect(banner.shown).toEqual({
+      kind: 'error',
+      text: 'Could not load the 3D office: 404 assets/manifest.json',
+    })
+    expect(scene.directs).toHaveLength(0)
+    expect(hud.vm?.count).toBe('1 agent')
+    handlers.pick!('a')
+    expect(panel.vm?.name).toBe('Ada')
+    expect(panel.vm?.activity).toBeUndefined()
   })
 
   it('selecting (pick, tray/notification, parent link) opens the panel; empty pick closes it', async () => {
@@ -249,10 +351,10 @@ describe('controller', () => {
   })
 
   it('refreshes "last seen" on ticks while the panel is open', async () => {
-    const { handlers, panel, ticks } = await setup()
+    const { handlers, panel, tick } = await setup()
     handlers.pick!('a')
     panel.vm = null
-    ticks[0]!()
+    tick(1000)
     expect(panel.vm).not.toBeNull()
   })
 
@@ -320,7 +422,7 @@ describe('controller', () => {
     })
     await c.start()
     expect(v.scene.qualities).toEqual(['auto'])
-    expect(v.scene.synced).toBe(1)
+    expect(v.scene.buildings).toHaveLength(1)
   })
 
   it('stop unsubscribes from the gateway', async () => {

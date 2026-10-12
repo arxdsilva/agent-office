@@ -468,3 +468,131 @@ textarea:focus-visible {
   margin-top: 6px;
   display: block;
 }
+
+/* Loading screen (until the atrium is ready) */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at 50% 40%, #2a3140 0%, #12151b 70%);
+  color: #e8ebf1;
+  transition: opacity 0.4s ease;
+}
+#loading.done {
+  opacity: 0;
+  pointer-events: none;
+}
+#loading[hidden] {
+  display: none;
+}
+.loading-card {
+  width: min(420px, calc(100vw - 48px));
+  text-align: center;
+}
+.loading-title {
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+.loading-bar {
+  margin: 18px 0 10px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#loading-fill {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #4f8cff, #3ccf91);
+  transition: width 0.25s ease;
+}
+#loading-label {
+  margin: 0;
+  font-size: 13px;
+}
+#loading-tip {
+  margin: 10px 0 0;
+  font-size: 12px;
+  min-height: 2.8em;
+  color: #98a0ae;
+}
+#loading.failed #loading-fill {
+  background: #ef4444;
+}
+
+/* Camera bookmarks */
+#views {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+}
+#views:empty {
+  display: none;
+}
+.view-btn {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--text);
+}
+.view-btn:hover,
+.view-btn:focus-visible {
+  background: var(--border);
+  outline: none;
+}
+#walk-help:not([hidden]) ~ #views,
+body:has(#walk-help:not([hidden])) #views {
+  display: none;
+}
+
+#stats {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+  margin: 0;
+  padding: 4px 8px;
+  font:
+    11px/1.4 ui-monospace,
+    monospace;
+  color: #e8ebf1;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tag.sub {
+  font-weight: 500;
+  font-size: 11px;
+}

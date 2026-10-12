@@ -28,7 +28,9 @@ describe('parseManifest', () => {
       'neon',
       'brass',
     ])
-    expect(Object.keys(m.modules.wing.anchors).filter((k) => k.startsWith('seat:desk:'))).toHaveLength(24)
+    expect(
+      Object.keys(m.modules.wing.anchors).filter((k) => k.startsWith('seat:desk:')),
+    ).toHaveLength(24)
     const seat = m.modules.wing.anchors['seat:desk:3:2']!
     expect(seat.pose).toBe('sit')
     expect(seat.room).toBe('pod-3')

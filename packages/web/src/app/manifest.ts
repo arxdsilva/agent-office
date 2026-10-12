@@ -3,7 +3,14 @@
 // offending path in every error.
 import type { AABB, Pose, ThemeId } from './office-types.ts'
 
-export const THEME_IDS: readonly ThemeId[] = ['terracotta', 'nordic', 'forest', 'ocean', 'neon', 'brass']
+export const THEME_IDS: readonly ThemeId[] = [
+  'terracotta',
+  'nordic',
+  'forest',
+  'ocean',
+  'neon',
+  'brass',
+]
 export const POSES: readonly Pose[] = ['sit', 'stand', 'lounge']
 
 export interface ManifestAnchor {
@@ -66,7 +73,13 @@ export interface Manifest {
   units: 'm'
   hash: string
   hdri: string
-  modules: { atrium: ModuleDef; street: ModuleDef; garden: ModuleDef; cap: ModuleDef; wing: WingDef }
+  modules: {
+    atrium: ModuleDef
+    street: ModuleDef
+    garden: ModuleDef
+    cap: ModuleDef
+    wing: WingDef
+  }
   character: { file: string; meta: string }
 }
 
@@ -95,13 +108,15 @@ function obj(v: unknown, path: string): Obj {
 
 function num(o: Obj, k: string, path: string): number {
   const v = o[k]
-  if (typeof v !== 'number' || !Number.isFinite(v)) throw new ManifestError(key(path, k), 'expected a finite number')
+  if (typeof v !== 'number' || !Number.isFinite(v))
+    throw new ManifestError(key(path, k), 'expected a finite number')
   return v
 }
 
 function str(o: Obj, k: string, path: string): string {
   const v = o[k]
-  if (typeof v !== 'string' || v === '') throw new ManifestError(key(path, k), 'expected a non-empty string')
+  if (typeof v !== 'string' || v === '')
+    throw new ManifestError(key(path, k), 'expected a non-empty string')
   return v
 }
 
@@ -111,7 +126,12 @@ function optStr(o: Obj, k: string, path: string): string | undefined {
 
 function bounds(v: unknown, path: string): AABB {
   const o = obj(v, path)
-  return { minX: num(o, 'minX', path), maxX: num(o, 'maxX', path), minZ: num(o, 'minZ', path), maxZ: num(o, 'maxZ', path) }
+  return {
+    minX: num(o, 'minX', path),
+    maxX: num(o, 'maxX', path),
+    minZ: num(o, 'minZ', path),
+    maxZ: num(o, 'maxZ', path),
+  }
 }
 
 function lightmap(v: unknown, path: string): Lightmap | undefined {
@@ -123,7 +143,8 @@ function lightmap(v: unknown, path: string): Lightmap | undefined {
 function anchor(v: unknown, path: string): ManifestAnchor {
   const o = obj(v, path)
   const pose = o.pose
-  if (!POSES.includes(pose as Pose)) throw new ManifestError(`${path}.pose`, `expected one of ${POSES.join('|')}`)
+  if (!POSES.includes(pose as Pose))
+    throw new ManifestError(`${path}.pose`, `expected one of ${POSES.join('|')}`)
   const ap = obj(o.approach, `${path}.approach`)
   const a: ManifestAnchor = {
     x: num(o, 'x', path),
@@ -144,7 +165,8 @@ function anchors(v: unknown, path: string): Record<string, ManifestAnchor> {
   const o = obj(v, path)
   const out: Record<string, ManifestAnchor> = {}
   for (const [id, a] of Object.entries(o)) {
-    if (!ANCHOR_ID.test(id)) throw new ManifestError(key(path, id), 'anchor id must match <seat|spot>:<group>:<index>')
+    if (!ANCHOR_ID.test(id))
+      throw new ManifestError(key(path, id), 'anchor id must match <seat|spot>:<group>:<index>')
     out[id] = anchor(a, key(path, id))
   }
   return out
@@ -162,10 +184,16 @@ function nav(v: unknown, path: string, connectors: [number, number][]): Manifest
     if (width <= 0) throw new ManifestError(`${p}.width`, 'expected a positive corridor half-width')
     nodes[id] = { x: num(no, 'x', p), z: num(no, 'z', p), width }
   }
-  if (!Array.isArray(o.edges)) throw new ManifestError(`${path}.edges`, 'expected an array of [idA, idB]')
+  if (!Array.isArray(o.edges))
+    throw new ManifestError(`${path}.edges`, 'expected an array of [idA, idB]')
   const edges: [string, string][] = o.edges.map((e: unknown, i: number) => {
-    const ok = Array.isArray(e) && e.length === 2 && e.every((id) => typeof id === 'string' && id in nodes)
-    if (!ok) throw new ManifestError(`${path}.edges[${i}]`, 'expected [idA, idB] referencing existing nodes')
+    const ok =
+      Array.isArray(e) && e.length === 2 && e.every((id) => typeof id === 'string' && id in nodes)
+    if (!ok)
+      throw new ManifestError(
+        `${path}.edges[${i}]`,
+        'expected [idA, idB] referencing existing nodes',
+      )
     return [e[0], e[1]] as [string, string]
   })
   for (const [cx, cz] of connectors) {
@@ -174,7 +202,10 @@ function nav(v: unknown, path: string, connectors: [number, number][]): Manifest
   }
   const unreachable = disconnected(Object.keys(nodes), edges)
   if (unreachable.length)
-    throw new ManifestError(path, `graph is not connected (unreachable: ${unreachable.slice(0, 5).join(', ')})`)
+    throw new ManifestError(
+      path,
+      `graph is not connected (unreachable: ${unreachable.slice(0, 5).join(', ')})`,
+    )
   return { nodes, edges }
 }
 
@@ -188,7 +219,8 @@ function disconnected(ids: string[], edges: [string, string][]): string[] {
   }
   const seen = new Set([ids[0]!])
   const stack = [ids[0]!]
-  while (stack.length) for (const n of adj.get(stack.pop()!)!) if (!seen.has(n)) (seen.add(n), stack.push(n))
+  while (stack.length)
+    for (const n of adj.get(stack.pop()!)!) if (!seen.has(n)) (seen.add(n), stack.push(n))
   return ids.filter((id) => !seen.has(id))
 }
 
@@ -217,7 +249,8 @@ function requireCounts(a: Record<string, ManifestAnchor>, reqs: Requirement[], p
   const ids = Object.keys(a)
   for (const [re, min, label] of reqs) {
     const n = ids.filter((id) => re.test(id)).length
-    if (n < min) throw new ManifestError(path, `expected at least ${min} ${label} anchors, found ${n}`)
+    if (n < min)
+      throw new ManifestError(path, `expected at least ${min} ${label} anchors, found ${n}`)
   }
 }
 
@@ -245,7 +278,8 @@ function moduleDef(v: unknown, name: 'atrium' | 'street' | 'garden' | 'cap'): Mo
   }
   const lm = lightmap(o.lightmap, `${path}.lightmap`)
   if (lm) m.lightmap = lm
-  if (name === 'atrium' || name === 'garden') requireCounts(m.anchors, REQUIRED[name], `${path}.anchors`)
+  if (name === 'atrium' || name === 'garden')
+    requireCounts(m.anchors, REQUIRED[name], `${path}.anchors`)
   return m
 }
 
@@ -256,14 +290,20 @@ function wingDef(v: unknown): WingDef {
   const themes: WingDef['themes'] = {}
   for (const [id, t] of Object.entries(rawThemes)) {
     const p = `${path}.themes.${id}`
-    if (!THEME_IDS.includes(id as ThemeId)) throw new ManifestError(p, `unknown theme (expected ${THEME_IDS.join('|')})`)
+    if (!THEME_IDS.includes(id as ThemeId))
+      throw new ManifestError(p, `unknown theme (expected ${THEME_IDS.join('|')})`)
     const to = obj(t, p)
-    const theme: WingTheme = { file: str(to, 'file', p), signColor: str(to, 'signColor', p), accent: str(to, 'accent', p) }
+    const theme: WingTheme = {
+      file: str(to, 'file', p),
+      signColor: str(to, 'signColor', p),
+      accent: str(to, 'accent', p),
+    }
     const lm = lightmap(to.lightmap, `${p}.lightmap`)
     if (lm) theme.lightmap = lm
     themes[id as ThemeId] = theme
   }
-  if (!Object.keys(themes).length) throw new ManifestError(`${path}.themes`, 'expected at least one theme')
+  if (!Object.keys(themes).length)
+    throw new ManifestError(`${path}.themes`, 'expected at least one theme')
   const cp = `${path}.capacity`
   const c = obj(o.capacity, cp)
   const capacity: WingCapacity = {
@@ -276,7 +316,13 @@ function wingDef(v: unknown): WingDef {
   }
   const a = anchors(o.anchors, `${path}.anchors`)
   requireCounts(a, REQUIRED.wing, `${path}.anchors`)
-  return { themes, bounds: bounds(o.bounds, `${path}.bounds`), capacity, anchors: a, nav: nav(o.nav, `${path}.nav`, CONNECTORS.wing) }
+  return {
+    themes,
+    bounds: bounds(o.bounds, `${path}.bounds`),
+    capacity,
+    anchors: a,
+    nav: nav(o.nav, `${path}.nav`, CONNECTORS.wing),
+  }
 }
 
 /** Validates parsed `manifest.json`. Throws `ManifestError` naming the first offending path. */

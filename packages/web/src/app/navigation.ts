@@ -31,7 +31,7 @@ export function nearestNode(nav: NavGraph, p: Vec2): string | undefined {
   let bestD = Infinity
   for (const n of nav.nodes.values()) {
     const d = dist(n.pos, p)
-    if (d < bestD) (bestD = d), (best = n.id)
+    if (d < bestD) ((bestD = d), (best = n.id))
   }
   return best
 }
@@ -50,7 +50,7 @@ export function astar(nav: NavGraph, from: string, to: string): string[] | undef
     if (closed.has(cur)) continue
     if (cur === to) {
       const path = [cur]
-      for (let c = cur; came.has(c); ) path.push((c = came.get(c)!))
+      for (let c = cur; came.has(c);) path.push((c = came.get(c)!))
       return path.reverse()
     }
     closed.add(cur)
@@ -70,7 +70,7 @@ export function astar(nav: NavGraph, from: string, to: string): string[] | undef
 
 function push(heap: [number, string][], item: [number, string]) {
   heap.push(item)
-  for (let i = heap.length - 1; i > 0; ) {
+  for (let i = heap.length - 1; i > 0;) {
     const parent = (i - 1) >> 1
     if (heap[parent]![0] <= heap[i]![0]) break
     ;[heap[parent], heap[i]] = [heap[i]!, heap[parent]!]
@@ -83,7 +83,7 @@ function pop(heap: [number, string][]): [number, string] {
   const last = heap.pop()!
   if (heap.length) {
     heap[0] = last
-    for (let i = 0; ; ) {
+    for (let i = 0; ;) {
       const l = 2 * i + 1
       const r = l + 1
       let m = i
@@ -101,6 +101,8 @@ function pop(heap: [number, string][]): [number, string] {
 export interface Route {
   points: Vec2[]
   widths: number[]
+  /** The first segment is a lead along the current walking direction: keep it straight. */
+  straightStart?: boolean
 }
 
 export interface RouteOptions {
@@ -113,12 +115,22 @@ export interface RouteOptions {
 }
 
 const pathCost = (nav: NavGraph, ids: string[]) =>
-  ids.slice(1).reduce((s, id, i) => s + dist(nav.nodes.get(ids[i]!)!.pos, nav.nodes.get(id)!.pos), 0)
+  ids
+    .slice(1)
+    .reduce((s, id, i) => s + dist(nav.nodes.get(ids[i]!)!.pos, nav.nodes.get(id)!.pos), 0)
 
-export function planRoute(nav: NavGraph, from: Vec2, to: Vec2, opts: RouteOptions = {}): Route | undefined {
+export function planRoute(
+  nav: NavGraph,
+  from: Vec2,
+  to: Vec2,
+  opts: RouteOptions = {},
+): Route | undefined {
   const toNode = opts.toNode ?? nearestNode(nav, to)
   if (toNode === undefined) return undefined
-  const lead = opts.startDir && { x: from.x + opts.startDir.x * LEAD_DIST, z: from.z + opts.startDir.z * LEAD_DIST }
+  const lead = opts.startDir && {
+    x: from.x + opts.startDir.x * LEAD_DIST,
+    z: from.z + opts.startDir.z * LEAD_DIST,
+  }
   const origin = lead ?? from
   const n0 = opts.fromNode ?? nearestNode(nav, origin)!
   // Joining the graph at a neighbour of the nearest node avoids walking back to it mid-corridor.
@@ -129,7 +141,7 @@ export function planRoute(nav: NavGraph, from: Vec2, to: Vec2, opts: RouteOption
     const p = astar(nav, c, toNode)
     if (!p) continue
     const cost = dist(origin, nav.nodes.get(c)!.pos) + pathCost(nav, p)
-    if (cost < bestCost - 1e-9) (bestCost = cost), (best = p)
+    if (cost < bestCost - 1e-9) ((bestCost = cost), (best = p))
   }
   if (!best) return undefined
   const nodes = best.map((id) => nav.nodes.get(id)!)
@@ -146,7 +158,35 @@ export function planRoute(nav: NavGraph, from: Vec2, to: Vec2, opts: RouteOption
   if (lead) add(lead, nodes[0]!.width)
   nodes.forEach((n, i) => add(n.pos, i ? Math.min(n.width, nodes[i - 1]!.width) : n.width))
   add(to, nodes.at(-1)!.width)
-  return { points, widths }
+  if (!lead) pruneSpurs(points, widths)
+  return lead ? { points, widths, straightStart: true } : { points, widths }
+}
+
+/** Above this turn angle at the first/last waypoint, the route doubles back on itself. */
+const SPUR_TURN = (150 * Math.PI) / 180
+
+/**
+ * Removes a waypoint at either end of the route when reaching it means walking out and straight
+ * back (e.g. a seat's approach node lies opposite the corridor), provided the direct segment still
+ * passes through that waypoint's corridor. Avoids a visible ≈π pivot right after standing up.
+ */
+function pruneSpurs(points: Vec2[], widths: number[]): void {
+  const turnAt = (a: Vec2, p: Vec2, b: Vec2) => {
+    const d1 = { x: p.x - a.x, z: p.z - a.z }
+    const d2 = { x: b.x - p.x, z: b.z - p.z }
+    return Math.abs(Math.atan2(d1.x * d2.z - d1.z * d2.x, d1.x * d2.x + d1.z * d2.z))
+  }
+  const isSpur = (a: Vec2, p: Vec2, b: Vec2, w: number) =>
+    turnAt(a, p, b) > SPUR_TURN && segDist(a, b, p).d <= w
+  if (points.length >= 3 && isSpur(points[0]!, points[1]!, points[2]!, widths[0]!)) {
+    points.splice(1, 1)
+    widths.splice(0, 2, Math.min(widths[0]!, widths[1]!))
+  }
+  const n = points.length
+  if (n >= 3 && isSpur(points[n - 3]!, points[n - 2]!, points[n - 1]!, widths[n - 2]!)) {
+    points.splice(n - 2, 1)
+    widths.splice(n - 3, 2, Math.min(widths[n - 3]!, widths[n - 2]!))
+  }
 }
 
 function segDist(a: Vec2, b: Vec2, p: Vec2): { d: number; q: Vec2 } {
@@ -161,7 +201,8 @@ function segDist(a: Vec2, b: Vec2, p: Vec2): { d: number; q: Vec2 } {
 /** Distance from `p` to the route polyline. */
 export function distanceToRoute(r: Route, p: Vec2): number {
   let d = r.points.length === 1 ? dist(r.points[0]!, p) : Infinity
-  for (let i = 0; i + 1 < r.points.length; i++) d = Math.min(d, segDist(r.points[i]!, r.points[i + 1]!, p).d)
+  for (let i = 0; i + 1 < r.points.length; i++)
+    d = Math.min(d, segDist(r.points[i]!, r.points[i + 1]!, p).d)
   return d
 }
 
@@ -179,6 +220,18 @@ function clampToCorridor(r: Route, p: Vec2): Vec2 {
   return { x: best.q.x + (p.x - best.q.x) * k, z: best.q.z + (p.z - best.q.z) * k }
 }
 
+/** Half-width of the route segment nearest to `p`. */
+function widthAt(r: Route, p: Vec2): number {
+  let best = Infinity
+  let w = r.widths[0]!
+  for (let i = 0; i + 1 < r.points.length; i++) {
+    const d = segDist(r.points[i]!, r.points[i + 1]!, p).d
+    if (d < best - 1e-9) ((best = d), (w = r.widths[i]!))
+    else if (Math.abs(d - best) <= 1e-9) w = Math.min(w, r.widths[i]!)
+  }
+  return w
+}
+
 /** Inserts lane points (right of travel) on long, wide segments; endpoints stay on the nodes. */
 function withLanes(r: Route): Vec2[] {
   const out: Vec2[] = [r.points[0]!]
@@ -191,7 +244,10 @@ function withLanes(r: Route): Vec2[] {
       // Right of the walking direction (forward × up), see contract §1.
       const right = { x: -d.z, z: d.x }
       for (const s of [1, 2, len - 2, len - 1])
-        out.push({ x: a.x + d.x * s + right.x * LANE_OFFSET, z: a.z + d.z * s + right.z * LANE_OFFSET })
+        out.push({
+          x: a.x + d.x * s + right.x * LANE_OFFSET,
+          z: a.z + d.z * s + right.z * LANE_OFFSET,
+        })
     }
     out.push(b)
   }
@@ -210,17 +266,23 @@ function cutCorners(pts: Vec2[], r: Route): Vec2[] {
     const lb = dist(p, b)
     const din = { x: (p.x - a.x) / la, z: (p.z - a.z) / la }
     const dout = { x: (b.x - p.x) / lb, z: (b.z - p.z) / lb }
-    const turn = Math.abs(Math.atan2(din.x * dout.z - din.z * dout.x, din.x * dout.x + din.z * dout.z))
-    if (turn < 1e-3) {
+    const turn = Math.abs(
+      Math.atan2(din.x * dout.z - din.z * dout.x, din.x * dout.x + din.z * dout.z),
+    )
+    // Nearly straight, or a U-turn (cutting would fold the two points onto each other).
+    if (turn < 1e-3 || turn > Math.PI * 0.9) {
       out.push(p)
       continue
     }
-    const w = Math.min(...r.widths)
+    const w = widthAt(r, p)
     const rad = Math.min(w / 2, 0.4 * la, 0.4 * lb)
-    out.push({ x: p.x - din.x * rad, z: p.z - din.z * rad }, { x: p.x + dout.x * rad, z: p.z + dout.z * rad })
+    out.push(
+      { x: p.x - din.x * rad, z: p.z - din.z * rad },
+      { x: p.x + dout.x * rad, z: p.z + dout.z * rad },
+    )
   }
   out.push(pts.at(-1)!)
-  return out
+  return out.filter((p, i) => i === 0 || dist(p, out[i - 1]!) > 1e-9)
 }
 
 /** Centripetal Catmull-Rom (α = 0.5) point on span p1 → p2 at u ∈ [0, 1]. */
@@ -247,7 +309,7 @@ function catmullRom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, u: number): Vec2 {
  * then clamped inside the corridor. The first span stays straight when the route has a lead point
  * (re-planning mid-walk), so the heading at t = 0 is unchanged.
  */
-export function smooth(r: Route, opts: { straightStart?: boolean } = {}): Vec2[] {
+export function smooth(r: Route): Vec2[] {
   if (r.points.length < 2) return [...r.points]
   const c = cutCorners(withLanes(r), r)
   const n = c.length
@@ -260,7 +322,7 @@ export function smooth(r: Route, opts: { straightStart?: boolean } = {}): Vec2[]
   const out: Vec2[] = [c[0]!]
   for (let i = 0; i + 1 < n; i++) {
     const steps = Math.max(1, Math.ceil(dist(c[i]!, c[i + 1]!) / SAMPLE_STEP))
-    const linear = i === 0 && opts.straightStart
+    const linear = i === 0 && r.straightStart
     for (let k = 1; k <= steps; k++) {
       const u = k / steps
       const p =
@@ -296,15 +358,28 @@ export function timePath(points: Vec2[], o: TimeOptions): TimedPath {
   const accel = o.accel ?? WALK_ACCEL
   const decel = o.decel ?? Math.min(accel, (vMax * vMax) / (2 * APPROACH_DIST))
   const lengths = [0]
-  for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1]! + dist(points[i - 1]!, points[i]!))
+  for (let i = 1; i < points.length; i++)
+    lengths.push(lengths[i - 1]! + dist(points[i - 1]!, points[i]!))
   const totalLength = lengths.at(-1)!
   const startSpeed = o.startSpeed ?? 0
   let turnDuration = 0
   if (startSpeed <= 0 && o.startHeading !== undefined && totalLength > 0) {
     const h0 = headingOf(points[0]!, points[1]!)
-    if (needsTurnInPlace(o.startHeading, h0)) turnDuration = Math.abs(normalizeAngle(h0 - o.startHeading)) / TURN_RATE
+    if (needsTurnInPlace(o.startHeading, h0))
+      turnDuration = Math.abs(normalizeAngle(h0 - o.startHeading)) / TURN_RATE
   }
-  const tp: TimedPath = { points, lengths, totalLength, vMax, accel, duration: 0, endHeading: o.endHeading, startSpeed, decel, turnDuration }
+  const tp: TimedPath = {
+    points,
+    lengths,
+    totalLength,
+    vMax,
+    accel,
+    duration: 0,
+    endHeading: o.endHeading,
+    startSpeed,
+    decel,
+    turnDuration,
+  }
   if (o.startHeading !== undefined) tp.startHeading = o.startHeading
   tp.duration = turnDuration + profile(tp).total
   return tp
@@ -358,22 +433,37 @@ export function sampleAt(tp: TimedPath, t: number): PathSample {
   const turn = tp.turnDuration ?? 0
   const t0 = Math.max(0, t)
   if (pts.length < 2 || tp.totalLength <= 0)
-    return { pos: { ...pts[0]! }, heading: tp.startHeading ?? tp.endHeading, speed: 0, phase: 'arrived' }
+    return {
+      pos: { ...pts[0]! },
+      heading: tp.startHeading ?? tp.endHeading,
+      speed: 0,
+      phase: 'arrived',
+    }
   const h0 = headingOf(pts[0]!, pts[1]!)
   if (t0 < turn) {
     const from = tp.startHeading ?? h0
-    return { pos: { ...pts[0]! }, heading: normalizeAngle(from + normalizeAngle(h0 - from) * (t0 / turn)), speed: 0, phase: 'turn' }
+    return {
+      pos: { ...pts[0]! },
+      heading: normalizeAngle(from + normalizeAngle(h0 - from) * (t0 / turn)),
+      speed: 0,
+      phase: 'turn',
+    }
   }
   const p = profile(tp)
   const tau = t0 - turn
   if (tau >= p.total) {
     const n = pts.length
-    return { pos: { ...pts[n - 1]! }, heading: headingOf(pts[n - 2]!, pts[n - 1]!), speed: 0, phase: 'arrived' }
+    return {
+      pos: { ...pts[n - 1]! },
+      heading: headingOf(pts[n - 2]!, pts[n - 1]!),
+      speed: 0,
+      phase: 'arrived',
+    }
   }
   let s: number
   let v: number
-  if (tau < p.t1) (v = p.v0 + p.a * tau), (s = p.v0 * tau + 0.5 * p.a * tau * tau)
-  else if (tau < p.t1 + p.t2) (v = p.vp), (s = p.s1 + p.vp * (tau - p.t1))
+  if (tau < p.t1) ((v = p.v0 + p.a * tau), (s = p.v0 * tau + 0.5 * p.a * tau * tau))
+  else if (tau < p.t1 + p.t2) ((v = p.vp), (s = p.s1 + p.vp * (tau - p.t1)))
   else {
     const u = tau - p.t1 - p.t2
     v = Math.max(0, p.vp - p.d * u)
@@ -417,5 +507,5 @@ export function routeToPath(
   const to2: TimeOptions = { endHeading: to.heading }
   if (opts.startSpeed !== undefined) to2.startSpeed = opts.startSpeed
   if (opts.startHeading !== undefined) to2.startHeading = opts.startHeading
-  return timePath(smooth(r, { straightStart: moving }), to2)
+  return timePath(smooth(r), to2)
 }

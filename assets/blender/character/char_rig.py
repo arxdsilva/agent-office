@@ -160,8 +160,10 @@ def cleanup_weights(obj, arm, part_of_vertex, hidden_map=None, smooth_iters=3, m
 
 def auto_weights(obj, arm):
     """Blender bone-heat automatic weights (parent with ARMATURE_AUTO)."""
-    for o in bpy.context.view_layer.objects:
-        o.select_set(False)
+    bpy.context.view_layer.update()
+    for o in bpy.context.scene.objects:
+        if o is not None:
+            o.select_set(False)
     obj.select_set(True)
     arm.select_set(True)
     bpy.context.view_layer.objects.active = arm
@@ -173,12 +175,16 @@ def auto_weights(obj, arm):
 
 
 def rigid_bind(obj, arm, bone):
-    """Parent an object rigidly to a bone, keeping its world transform."""
+    """Parent an object rigidly to a bone (armature must be in its rest pose), keeping its world
+    transform."""
     mw = obj.matrix_world.copy()
     obj.parent = arm
     obj.parent_type = 'BONE'
     obj.parent_bone = bone
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    bpy.context.view_layer.update()
     obj.matrix_world = mw
+    bpy.context.view_layer.update()
 
 
 def nearest_map(src_points, dst_points):

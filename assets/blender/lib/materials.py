@@ -49,7 +49,7 @@ def exists(name):
 
 
 def pbr(name, base='#cccccc', rough=0.5, metal=0.0, tex=None, tile=2.0, normal=1.0, vcol=False,
-        emission=None, strength=0.0, alpha=None, double_sided=False, spec=0.5, rough_tex=True,
+        emission=None, strength=0.0, alpha=None, double_sided=False, spec=0.5, rough_tex=False,
         coat=0.0, bake_emit=False):
     """Create (once) a Principled material.
 
@@ -84,7 +84,20 @@ def pbr(name, base='#cccccc', rough=0.5, metal=0.0, tex=None, tile=2.0, normal=1
         mix.inputs['B'].default_value = rgba(base)
         mix.location = (x - 200, 300)
         nt.links.new(img.outputs['Color'], mix.inputs['A'])
-        nt.links.new(mix.outputs['Result'], color_socket)
+        if vcol:
+            va = nt.nodes.new('ShaderNodeVertexColor')
+            va.layer_name = 'Col'
+            va.location = (x - 500, 600)
+            mix2 = nt.nodes.new('ShaderNodeMix')
+            mix2.data_type = 'RGBA'
+            mix2.blend_type = 'MULTIPLY'
+            mix2.inputs['Factor'].default_value = 1.0
+            mix2.location = (x - 100, 450)
+            nt.links.new(mix.outputs['Result'], mix2.inputs['A'])
+            nt.links.new(va.outputs['Color'], mix2.inputs['B'])
+            nt.links.new(mix2.outputs['Result'], color_socket)
+        else:
+            nt.links.new(mix.outputs['Result'], color_socket)
         if maps['nor_gl'] is not None and normal > 0:
             n_img = nt.nodes.new('ShaderNodeTexImage')
             n_img.image = maps['nor_gl']

@@ -7,9 +7,10 @@ import {
   type SettingsPatch,
   type UpdateState,
 } from '@agent-office/shared'
-import { layoutOffice, type LayoutState } from './app/layout.ts'
+import { createDirector, type Director } from './app/director.ts'
+import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
-import { hudVM, panelVM, settingsVM } from './app/view-models.ts'
+import { hudVM, panelVM, settingsVM, type ActivityInfo } from './app/view-models.ts'
 import type {
   BannerView,
   HudView,
@@ -31,10 +32,17 @@ export interface ControllerDeps {
   every: (ms: number, fn: () => void) => () => void
 }
 
-/** Renderer use cases: state → layout → views, and user intents → gateway calls. */
+export const MANIFEST_URL = 'assets/manifest.json'
+/** The director runs at 4 Hz (plan §4.3); messages also trigger an immediate update. */
+export const DIRECT_MS = 250
+
+/** Renderer use cases: state → director (building, behavior) → views, and user intents → gateway calls. */
 export function createController(d: ControllerDeps) {
   let state: OfficeState = emptyState()
-  let layoutState: LayoutState = new Map()
+  let director: Director | null = null
+  let layout: BuildingLayout | undefined
+  let plans = new Map<string, AgentPlan>()
+  let shownActivity: string | undefined
   let selected: string | null = null
   let update: UpdateState = { policy: 'off', status: 'idle' }
   let hook: HookStatus = 'not-installed'
@@ -49,20 +57,71 @@ export function createController(d: ControllerDeps) {
     d.scene.setQuality(q)
   }
 
+  /** Where the director has an agent right now, for the panel's "Now" line. */
+  const activityOf = (id: string): ActivityInfo | undefined => {
+    const plan = plans.get(id)
+    if (!plan) return undefined
+    const info: ActivityInfo = { activity: plan.intent.activity }
+    const room = layout?.anchors.get(plan.intent.target)?.room
+    if (room) info.room = room
+    if (info.activity === 'meeting') {
+      const parent = plan.agent.parentId
+      if (parent) info.with = (state.agents.get(parent) ?? plans.get(parent)?.agent)?.name ?? parent
+      else
+        info.subagents = [...plans.values()].filter(
+          (p) => p.agent.parentId === id && p.intent.activity === 'meeting',
+        ).length
+    }
+    return info
+  }
+  const vmFor = (id: string) => panelVM(state, id, d.clock.now(), activityOf(id))
+
+  const renderPanel = () => {
+    if (!selected) return
+    const vm = vmFor(selected)
+    shownActivity = vm.activity
+    d.panel.render(vm)
+  }
+
+  /** One director step: building only when it changed, then every agent's plan. */
+  const direct = () => {
+    if (!director) return
+    const u = director.update(state, d.clock.now())
+    layout = u.layout
+    plans = u.plans
+    if (u.layoutChanged) d.scene.setBuilding(u.layout)
+    d.scene.direct(u.plans, u.departed)
+    if (selected && vmFor(selected).activity !== shownActivity) renderPanel()
+  }
+
   const render = () => {
-    const agents = [...state.agents.values()]
-    const layout = layoutOffice(agents, d.grouping, layoutState)
-    layoutState = layout.state
-    d.scene.sync(agents, layout)
+    direct()
     d.hud.render(hudVM(state))
-    if (selected) d.panel.render(panelVM(state, selected, d.clock.now()))
+    renderPanel()
   }
 
   const select = (id: string | null) => {
-    selected = id && state.agents.has(id) ? id : null
+    // Agents walking out (removed from state, still planned) stay selectable while they leave.
+    selected = id && (state.agents.has(id) || plans.has(id)) ? id : null
     d.scene.select(selected)
-    if (selected) d.panel.open(panelVM(state, selected, d.clock.now()))
-    else d.panel.close()
+    if (!selected) return d.panel.close()
+    const vm = vmFor(selected)
+    shownActivity = vm.activity
+    d.panel.open(vm)
+  }
+
+  const loadScene = async () => {
+    try {
+      const assets = await d.scene.load(MANIFEST_URL)
+      const opts: Parameters<typeof createDirector>[1] = { grouping: d.grouping }
+      if (assets.clipDurations) opts.clipDurations = assets.clipDurations
+      director = createDirector(assets.manifest, opts)
+    } catch (err) {
+      d.banner.show({
+        kind: 'error',
+        text: `Could not load the 3D office: ${(err as Error).message}`,
+      })
+    }
   }
 
   const renderSettings = async (open: boolean, known?: Settings) => {
@@ -136,7 +195,8 @@ export function createController(d: ControllerDeps) {
           update = s
           void renderSettings(false)
         }),
-        d.every(1000, () => selected && d.panel.render(panelVM(state, selected, d.clock.now()))),
+        d.every(1000, renderPanel),
+        d.every(DIRECT_MS, direct),
       )
       const [snapshot, settings] = await Promise.all([
         d.gateway.ready(),
@@ -144,6 +204,7 @@ export function createController(d: ControllerDeps) {
       ])
       applyQuality(settings.graphicsQuality)
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
+      await loadScene()
       render()
     },
 

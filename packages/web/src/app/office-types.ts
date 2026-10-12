@@ -181,8 +181,13 @@ export type Step =
   | { kind: 'move'; path: TimedPath }
   | { kind: 'face'; heading: number; duration: number }
   | { kind: 'prop'; prop: PropName; on: boolean }
-  | { kind: 'teleport'; pos: Vec2; heading: number } // only for spawn at the elevator (initial placement)
-  | { kind: 'fade'; to: 0 | 1; duration: number } // only for elevator arrival/exit
+  | {
+      kind: 'teleport'
+      pos: Vec2
+      heading: number
+      /** anchor landed on, if any */ anchor?: AnchorId
+    } // only for spawn at the elevator (initial placement); implies the Idle clip
+  | { kind: 'fade'; to: 0 | 1; duration: number } // only for elevator arrival/exit; non-blocking: runs alongside the following steps
 
 /** What the controller hands the scene for each agent. */
 export interface AgentPlan {
