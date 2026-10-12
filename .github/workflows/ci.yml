@@ -47,7 +47,7 @@ jobs:
               console.log(["### Coverage", "| metric | % |", "|---|---|", ...["statements","branches","functions","lines"].map(row)].join("\n"));
             ' >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.os == 'ubuntu-latest' && matrix.node == 22
         with:
           name: coverage
@@ -78,7 +78,7 @@ jobs:
       - run: make build
       - name: Drive the built app with Playwright
         run: make test-ui
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-${{ matrix.os }}
