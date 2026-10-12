@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { Clock, Logger, ReportActivity, Scheduler } from '@agent-office/core'
 import { lineToEvent, newParseContext } from './line-mapper.ts'
 import type { TranscriptFiles } from './transcript-files.ts'
@@ -17,6 +17,10 @@ export interface ClaudeCodeTailerOptions {
   /** Files and events older than this are ignored. */
   expireAfterMs: number
   log?: Logger
+  /** Usually ~/.claude (user rules, skills); defaults to the parent of `dir`. */
+  claudeHome?: string
+  /** Called once per session cwd the first time it appears (capability discovery). */
+  onNewCwd?: (cwd: string) => void
 }
 
 interface Tail {
@@ -29,13 +33,22 @@ interface Tail {
  * Only short, mapped fields leave this adapter (see line-mapper and PRIVACY_SECURITY rule).
  */
 export class ClaudeCodeTailer {
-  private ctx = newParseContext()
+  private ctx: ReturnType<typeof newParseContext>
   private tails = new Map<string, Tail>()
   private warned = new Set<string>()
+  private announced = new Set<string>()
   private running = false
   private cancel: (() => void) | undefined
 
-  constructor(private o: ClaudeCodeTailerOptions) {}
+  constructor(private o: ClaudeCodeTailerOptions) {
+    this.ctx = newParseContext({ claudeHome: o.claudeHome ?? dirname(o.dir), projectsDir: o.dir })
+  }
+
+  /** Cwds of sessions active within `expireAfterMs`. Stays inside the adapters (discovery only). */
+  activeCwds(): string[] {
+    const cutoff = this.o.clock.now() - this.o.expireAfterMs
+    return [...this.ctx.cwds].filter(([, ts]) => ts >= cutoff).map(([cwd]) => cwd)
+  }
 
   start(pollMs = 1000): void {
     this.cancel = this.o.scheduler.every(pollMs, () => void this.tick())
@@ -138,6 +151,12 @@ export class ClaudeCodeTailer {
   private handle(line: string): void {
     if (!line) return
     const e = lineToEvent(line, this.ctx)
+    if (this.o.onNewCwd && this.announced.size < this.ctx.cwds.size)
+      for (const cwd of this.activeCwds())
+        if (!this.announced.has(cwd)) {
+          this.announced.add(cwd)
+          this.o.onNewCwd(cwd)
+        }
     if (!e) return
     if (e.ts !== undefined && e.ts < this.o.clock.now() - this.o.expireAfterMs) return
     this.o.activity.report([e])

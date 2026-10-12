@@ -13,6 +13,7 @@ import {
 } from '@agent-office/core/testing'
 import {
   InMemoryAgentRepository,
+  InMemoryCapabilityRepository,
   InMemoryEventBus,
   InMemoryMessageRepository,
 } from '../src/memory/index.ts'
@@ -23,6 +24,7 @@ export function makeOffice(opts: { policy?: Partial<SweepPolicy>; rateLimitPerSe
   const bus = new InMemoryEventBus()
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
+    capabilities: new InMemoryCapabilityRepository(),
     messages: new InMemoryMessageRepository(),
     bus,
     clock: new SystemClock(),

@@ -1,11 +1,17 @@
 // In-memory/recording test doubles for every driven port. Each fake passes its port's contract suite.
-import { DEFAULT_SETTINGS, type ChatMessage, type Settings } from '@agent-office/shared'
+import {
+  DEFAULT_SETTINGS,
+  type Capability,
+  type ChatMessage,
+  type Settings,
+} from '@agent-office/shared'
 import type { AgentState } from '../../src/domain/agent.ts'
 import type { Note } from '../../src/domain/attention.ts'
 import { ValidationError } from '../../src/domain/errors.ts'
 import type { TrayModel } from '../../src/domain/tray.ts'
 import type {
   AgentRepository,
+  CapabilityRepository,
   ClaudeSettingsStore,
   Clock,
   EventPublisher,
@@ -109,6 +115,32 @@ export class FakeAgentRepository implements AgentRepository {
   }
   list() {
     return [...this.m.values()].map((a) => ({ ...a }))
+  }
+}
+
+const copyCap = (c: Capability): Capability => ({
+  ...c,
+  sees: [...c.sees],
+  tools: [...c.tools],
+  active: [...c.active],
+})
+
+export class FakeCapabilityRepository implements CapabilityRepository {
+  private m = new Map<string, Map<string, Capability>>()
+  get(provider: string, id: string) {
+    const c = this.m.get(provider)?.get(id)
+    return c && copyCap(c)
+  }
+  put(c: Capability) {
+    const byId = this.m.get(c.provider) ?? new Map<string, Capability>()
+    byId.set(c.id, copyCap(c))
+    this.m.set(c.provider, byId)
+  }
+  listByProvider(provider: string) {
+    return [...(this.m.get(provider)?.values() ?? [])].map(copyCap)
+  }
+  providers() {
+    return [...this.m.keys()]
   }
 }
 

@@ -30,6 +30,18 @@ export class TintCache {
     return e.mat
   }
 
+  /** Shared material for an arbitrary key (e.g. a palette), built once by `make`. */
+  acquireKeyed(key: string, make: () => THREE.Material): THREE.Material {
+    let e = this.byKey.get(key)
+    if (!e) {
+      e = { mat: make(), refs: 0 }
+      this.byKey.set(key, e)
+      this.keyOf.set(e.mat, key)
+    }
+    e.refs++
+    return e.mat
+  }
+
   release(mat: THREE.Material) {
     const key = this.keyOf.get(mat)
     const e = key && this.byKey.get(key)

@@ -9,10 +9,10 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js'
 import {
   CHARACTER_QUALITY,
   SEPARATION,
-  animTier,
   appearanceOf,
   impostorCell,
   impostorMask,
+  lodLevel,
   paletteKey,
   poseRowOf,
   presetOf,
@@ -28,6 +28,7 @@ import { Animator } from './characters/animator.ts'
 import { BlobShadows } from './characters/blobs.ts'
 import { IMPOSTOR_CELLS, Impostors } from './characters/impostors.ts'
 import { FadeMaterials, TintCache, isTintSlot, type TintSlot } from './characters/materials.ts'
+import { SlotMaterial, mergeBody, paintSlots, type BodyLayout } from './characters/slots.ts'
 import { Mover } from './mover.ts'
 
 export interface CharacterMeta {
@@ -135,6 +136,27 @@ function inPlace(clip: THREE.AnimationClip, meta: ClipTable): THREE.AnimationCli
     : new THREE.AnimationClip(clip.name, clip.duration, tracks, clip.blendMode)
 }
 
+/**
+ * Merges every multi-primitive skinned body (LOD0 and LOD1) into one draw each (see slots.ts).
+ * Idempotent: the layout is kept on the template so a second CharacterSystem reuses it.
+ */
+function mergeBodies(template: THREE.Object3D): BodyLayout {
+  const kept = template.userData.aoBodyLayout as BodyLayout | undefined
+  if (kept) return kept
+  const layout: BodyLayout = { names: [], colors: [], rough: [] }
+  const groups: THREE.Object3D[] = []
+  template.traverse((o) => {
+    if (o.children.filter((c) => (c as THREE.SkinnedMesh).isSkinnedMesh).length > 1) groups.push(o)
+  })
+  for (const g of groups) mergeBody(g, layout)
+  template.traverse((o) => {
+    const m = (o as THREE.Mesh).material
+    if (m instanceof SlotMaterial) paintSlots(m, layout, () => undefined)
+  })
+  template.userData.aoBodyLayout = layout
+  return layout
+}
+
 // ── One agent ───────────────────────────────────────────────────────────────────────────────────
 const HIT_GEOMETRY = new THREE.BoxGeometry(0.7, 1.8, 0.7).translate(0, 0.9, 0)
 const HIT_MATERIAL = new THREE.MeshBasicMaterial({ visible: false })
@@ -181,6 +203,7 @@ export class CharacterSystem {
   private readonly clipTable: ClipTable
   private readonly meta: CharacterMeta
   private readonly restHeadTop: number
+  private readonly bodyLayout: BodyLayout
   private readonly agents = new Map<string, Agent>()
   private readonly tints = new TintCache()
   private readonly blobs: BlobShadows
@@ -220,6 +243,7 @@ export class CharacterSystem {
     this.quality = CHARACTER_QUALITY[presetOf(opts.quality ?? 'auto')]
     for (const c of assets.gltf.animations) this.clips.set(c.name, inPlace(c, this.clipTable))
     this.template = assets.gltf.scene
+    this.bodyLayout = mergeBodies(this.template)
     // Clips are in place, so a generous bind-pose sphere covers every pose (skinned meshes
     // otherwise compute bounds from whatever pose they first render in).
     this.template.traverse((o) => {
@@ -242,6 +266,7 @@ export class CharacterSystem {
         template: this.template,
         clips: this.clips,
         height: this.meta.height,
+        layout: this.bodyLayout,
         dress: (model) => {
           const p = partsOf(model)
           dress(p, undefined, false)
@@ -320,7 +345,10 @@ export class CharacterSystem {
       i++
     }
 
-    // 3. Budget: the farthest on-screen agents beyond `maxAnimated`.
+    // 3. Budget: the farthest on-screen agents beyond `maxAnimated` (among those not already
+    //    impostors by distance).
+    for (let k = 0; k < n; k++)
+      if (this.dist[k]! >= q.impostorDist && this.impostors) this.eligible[k] = false
     impostorMask(this.dist, this.eligible, n, q.maxAnimated, this.mask, this.scratch)
 
     // 4. Per agent: LOD, mixer ticks, fades, blobs, impostors, labels.
@@ -332,9 +360,16 @@ export class CharacterSystem {
       const m = a.mover.motion
       const over = this.mask[k] === 1
       a.over = over
-      const asImpostor = over && !!this.impostors
-      let tier = animTier(this.dist[k]!, this.onScreen[k]!, q)
-      if (over && !asImpostor) tier = 'far'
+      const level = lodLevel(
+        this.dist[k]!,
+        this.onScreen[k]!,
+        q,
+        over,
+        !!this.impostors && m.opacity >= 1,
+        a.impostor,
+      )
+      const asImpostor = level === 'impostor'
+      const tier = asImpostor ? 'frozen' : level
       a.pending += dt
       this.setImpostor(a, asImpostor)
       if (asImpostor) {
@@ -443,8 +478,21 @@ export class CharacterSystem {
   }
 
   private tint(a: Agent) {
+    const look = a.look
     for (const [mesh, base] of a.baseMats) {
       const one = (m: THREE.Material) => {
+        if (m instanceof SlotMaterial) {
+          // Merged body: one shared material per palette.
+          const t = this.tints.acquireKeyed(`body:${a.lookKey}`, () => {
+            const mat = m.clone()
+            paintSlots(mat, this.bodyLayout, (slot) =>
+              isTintSlot(slot) ? slotColor(look, slot) : undefined,
+            )
+            return mat
+          })
+          a.tinted.push(t)
+          return t
+        }
         if (!isTintSlot(m.name)) return m
         const hex = slotColor(a.look, m.name)
         if (hex === undefined) return m

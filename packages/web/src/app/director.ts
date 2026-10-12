@@ -1,9 +1,18 @@
-// Façade for the controller: building + seating + behavior (with reservations) + choreography.
+// Façade for the controller: building + seating + behavior (with reservations) + choreography,
+// plus capability rooms (stations, library slots) and links.
 // Deterministic given its inputs; keeps its memory between calls. `now` is epoch ms.
 import { byProviderAndTopic, type Grouping } from '@agent-office/shared'
-import { direct, emptyMemory, type DirectorMemory } from './behavior.ts'
-import { planBuilding, type ProviderDemand } from './building.ts'
+import {
+  CALL_FADE_MS,
+  LIBRARY_FADE_MS,
+  direct,
+  emptyMemory,
+  type DirectorMemory,
+} from './behavior.ts'
+import { parseAnchorId, planBuilding, type ProviderDemand } from './building.ts'
 import { choreograph, hiddenPose, poseAt } from './choreography.ts'
+import { LIBRARY_CAPACITY, assignLibrary, type LibraryMap } from './library.ts'
+import { agentPort, handPort, planLinks, type LinkCall } from './links.ts'
 import type { Manifest } from './manifest.ts'
 import type {
   AgentPlan,
@@ -11,9 +20,11 @@ import type {
   BuildingLayout,
   ClipName,
   Intent,
+  Link,
   Step,
 } from './office-types.ts'
 import { assignDesks, emptySeating, type SeatingState } from './seating.ts'
+import { assignStations, type SlotMap } from './stations.ts'
 import type { OfficeState } from './state.ts'
 
 export interface DirectorOptions {
@@ -30,6 +41,12 @@ export interface DirectorUpdate {
   plans: Map<string, AgentPlan>
   /** Agents whose walk-out finished: remove them from the scene. */
   departed: string[]
+  /** Links to draw this update (calls fading out included). */
+  links: Link[]
+  /** Station slots per provider (same in every wing of the provider). */
+  stations: Map<string, SlotMap>
+  /** Book / board / notebook slots per provider. */
+  library: Map<string, LibraryMap>
 }
 
 export interface Director {
@@ -56,6 +73,14 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
   let seating: SeatingState = emptySeating()
   let memory: DirectorMemory = emptyMemory()
   const tracks = new Map<string, Track>()
+  let stations = new Map<string, SlotMap>()
+  let library = new Map<string, LibraryMap>()
+  const cap = manifest.modules.wing.capacity
+  const libraryCapacity = {
+    books: cap.books ?? LIBRARY_CAPACITY.books,
+    boards: cap.boards ?? LIBRARY_CAPACITY.boards,
+    notebooks: cap.notebooks ?? LIBRARY_CAPACITY.notebooks,
+  }
   const pose = (id: string, now: number) => {
     const t = tracks.get(id)
     return t && poseAt(t.from, t.steps, (now - t.startedAt) / 1000)
@@ -77,7 +102,24 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
       const prev = layout
       layout = planBuilding(demand, manifest, prev, now)
       seating = assignDesks(agents, layout, seating, now, grouping)
-      const out = direct({ agents, layout, seating: seating.seats, memory, now })
+      const nextStations = new Map<string, SlotMap>()
+      const nextLibrary = new Map<string, LibraryMap>()
+      for (const [provider, caps] of state.capabilities) {
+        nextStations.set(provider, assignStations(caps, stations.get(provider)))
+        nextLibrary.set(provider, assignLibrary(caps, library.get(provider), libraryCapacity))
+      }
+      stations = nextStations
+      library = nextLibrary
+      const out = direct({
+        agents,
+        layout,
+        seating: seating.seats,
+        memory,
+        now,
+        capabilities: state.capabilities,
+        stations,
+        library,
+      })
       memory = out.memory
 
       const plans = new Map<string, AgentPlan>()
@@ -97,11 +139,48 @@ export function createDirector(manifest: Manifest, opts: DirectorOptions = {}): 
         plans.set(id, plan)
       }
       for (const id of [...tracks.keys()]) if (!out.intents.has(id)) tracks.delete(id)
+
+      // Links: every use still in use or fading, from where the agent is now.
+      const calls: LinkCall[] = []
+      const here = layout
+      for (const [id, intent] of out.intents) {
+        const m = memory.agents.get(id)!
+        const zone = grouping(m.agent, (x) => state.agents.get(x)).zone
+        const wings = here.wingsByProvider.get(zone) ?? []
+        const seat = seating.seats.get(id)
+        const seatWing = seat && parseAnchorId(seat).placement
+        const wing = seatWing && wings.includes(seatWing) ? seatWing : wings[0]
+        const p = pose(id, now)! // every intent has a track (set above)
+        if (!wing) continue
+        const list = state.capabilities.get(zone) ?? state.capabilities.get(m.agent.provider) ?? []
+        for (const [cid, u] of m.uses ?? []) {
+          const capability = list.find((c) => c.id === cid)
+          if (!capability) continue
+          const visiting =
+            (intent.activity === 'connection-visit' || intent.activity === 'library-visit') &&
+            intent.capability === cid
+          const fade = u.category === 'adapter' ? CALL_FADE_MS : LIBRARY_FADE_MS
+          if (!visiting && now - u.last >= fade) continue
+          const arrived = visiting && p.anchor === intent.target && p.speed === 0
+          calls.push({
+            agentId: id,
+            capability,
+            wing: visiting ? parseAnchorId(intent.target).placement : wing,
+            from: arrived ? handPort(p) : agentPort(p, here),
+            since: u.calls.at(-1) ?? u.last,
+            last: u.since !== undefined ? now : u.last,
+            visiting,
+          })
+        }
+      }
       return {
         layout,
         layoutChanged: !prev || prev.key !== layout.key,
         plans,
         departed: out.departed,
+        links: planLinks(calls, { layout, stations, library }, now),
+        stations,
+        library,
       }
     },
   }

@@ -11,7 +11,7 @@ import { MeshoptDecoder } from 'meshoptimizer'
 // ── Contract constants ──────────────────────────────────────────────────────────────────────────
 export const MB = 1024 * 1024
 /** Contract §9: everything under packages/web/public/assets. */
-export const TOTAL_MAX_BYTES = 45 * MB
+export const TOTAL_MAX_BYTES = 55 * MB
 export const THEMES = ['terracotta', 'nordic', 'forest', 'ocean', 'neon', 'brass'] as const
 export const SINGLE_MODULES = ['atrium', 'street', 'garden', 'cap'] as const
 export type ModuleKind = (typeof SINGLE_MODULES)[number] | 'wing'
@@ -23,7 +23,7 @@ export interface Budget {
 /** Contract §9. Triangles are counted as rendered: every scene node × its GPU instances. */
 export const BUDGETS: Record<ModuleKind | 'character', Budget> = {
   atrium: { maxBytes: 12 * MB, maxTriangles: 250_000 },
-  wing: { maxBytes: 5 * MB, maxTriangles: 150_000 },
+  wing: { maxBytes: 6 * MB, maxTriangles: 190_000 },
   street: { maxBytes: 3 * MB, maxTriangles: 60_000 },
   garden: { maxBytes: 3 * MB, maxTriangles: 60_000 },
   cap: { maxBytes: 3 * MB, maxTriangles: 60_000 },
@@ -52,6 +52,9 @@ export const CLIPS = [
   'Wave',
   'HeadScratch',
   'ElevatorIn',
+  'StandInteract',
+  'SitRead',
+  'ShelfPick',
 ] as const
 export const CHARACTER_MATERIALS = ['skin', 'shirt', 'pants', 'hair', 'shoes', 'eyes', 'badge']
 export const BONES = [
@@ -68,8 +71,22 @@ export const BONES = [
   'prop.R',
 ]
 export const ACCESSORIES = ['hairA', 'hairB', 'hairC', 'hairD', 'glasses', 'headset', 'badge']
-export const PROPS = ['laptop', 'cup', 'phone', 'paddle']
-export const ROLES = ['screen', 'led', 'sign', 'elevatorDoor', 'ceiling', 'collider', 'baked']
+export const PROPS = ['laptop', 'cup', 'phone', 'paddle', 'book']
+export const ROLES = [
+  'screen',
+  'led',
+  'sign',
+  'elevatorDoor',
+  'ceiling',
+  'collider',
+  'baked',
+  // Capability rooms (contract §5) and glass (§9b)
+  'station',
+  'book',
+  'board',
+  'notebook',
+  'glass',
+]
 export const POSES = ['sit', 'stand', 'lounge']
 
 /** Contract §4: required anchor counts per module (by id prefix). */
@@ -82,6 +99,15 @@ export const REQUIRED_ANCHORS: Partial<Record<ModuleKind, [prefix: string, count
     ['spot:booth:', 4],
     ['spot:kitchen:', 6],
     ['seat:lounge:', 8],
+    // Capability rooms (contract §4): Adapters + Library, and link attach points.
+    ['spot:station:', 8],
+    ['seat:reading:', 4],
+    ['spot:shelf:', 2],
+    ['port:desk:', 24],
+    ['port:station:', 8],
+    ['port:book:', 24],
+    ['port:board:', 6],
+    ['port:notebook:', 8],
   ],
   atrium: [
     ['spot:reception:', 4],
@@ -175,7 +201,7 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0
 const HEX = /^#[0-9a-fA-F]{6}$/
-const ANCHOR_ID = /^(seat|spot):[a-z]+(:[A-Za-z0-9]+){1,2}$/
+const ANCHOR_ID = /^(seat|spot|port):[a-z]+(:[A-Za-z0-9]+){1,2}$/
 
 /** A file reference relative to the assets dir; never absolute or escaping it. */
 export function isSafeRef(ref: unknown, ext?: RegExp): ref is string {
@@ -202,8 +228,13 @@ function checkBounds(path: string, v: unknown, out: string[]) {
 export function checkAnchor(path: string, id: string, a: unknown): string[] {
   const out: string[] = []
   const at = `${path}["${id}"]`
-  if (!ANCHOR_ID.test(id)) out.push(`${at}: id must match <seat|spot>:<group>:<index>[:<sub>]`)
+  if (!ANCHOR_ID.test(id)) out.push(`${at}: id must match <seat|spot|port>:<group>:<index>[:<sub>]`)
   if (!isObj(a)) return [...out, `${at}: must be an object`]
+  // Ports are 3D link attach points (contract §4): only a position, y may be off the floor.
+  if (id.startsWith('port:')) {
+    for (const k of ['x', 'y', 'z']) if (!isNum(a[k])) out.push(`${at}.${k}: not a number`)
+    return out
+  }
   for (const k of ['x', 'y', 'z', 'heading']) if (!isNum(a[k])) out.push(`${at}.${k}: not a number`)
   if (isNum(a.y) && Math.abs(a.y) > 1e-6) out.push(`${at}.y: anchors sit on the floor (y = 0)`)
   if (!POSES.includes(a.pose as string)) out.push(`${at}.pose: unknown pose "${String(a.pose)}"`)
@@ -384,7 +415,7 @@ export function checkNav(kind: ModuleKind, nav: NavJson, anchors: Record<string,
       `${kind}.nav: graph is not connected (${comps.length} parts; e.g. "${comps[1]![0]}" is cut off)`,
     )
   for (const [id, a] of Object.entries(anchors))
-    if (!onGraph(a.approach, nav))
+    if (a.approach && !onGraph(a.approach, nav))
       out.push(
         `${kind}.anchors["${id}"].approach: (${a.approach.x}, ${a.approach.z}) is not on the nav graph`,
       )

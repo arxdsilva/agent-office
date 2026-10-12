@@ -207,3 +207,70 @@ describe('ClaudeCodeTailer (in-memory files)', () => {
     expect(warnings).toHaveLength(1)
   })
 })
+
+describe('ClaudeCodeTailer: active cwds and Claude paths (capability discovery)', () => {
+  function setup(now = T0 + 10) {
+    const files = new MemoryTranscriptFiles()
+    const got: AgentEvent[] = []
+    const seen: string[] = []
+    const clock = new FakeClock(now)
+    const t = new ClaudeCodeTailer({
+      dir: '/h/.claude/projects',
+      files,
+      activity: { report: (e) => (got.push(...e), e.length) },
+      clock,
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 1_000,
+      onNewCwd: (cwd) => seen.push(cwd),
+    })
+    return { files, got, seen, clock, t }
+  }
+
+  it('exposes recent session cwds and announces each new one once', async () => {
+    const { files, seen, clock, t } = setup()
+    const f = '/h/.claude/projects/-home-dev-projects-shop/s.jsonl'
+    files.write(f, user('hi') + '\n' + user('again') + '\n', T0)
+    await t.tick()
+    expect(t.activeCwds()).toEqual(['/home/dev/projects/shop'])
+    expect(seen).toEqual(['/home/dev/projects/shop'])
+    files.append(f, user('third', { cwd: '/home/dev/projects/web' }) + '\n', T0)
+    await t.tick()
+    expect(seen).toEqual(['/home/dev/projects/shop', '/home/dev/projects/web'])
+    // Sessions that went quiet longer than expireAfterMs are no longer active.
+    clock.advance(5_000)
+    expect(t.activeCwds()).toEqual([])
+  })
+
+  it('recognizes user rules under the Claude home derived from the projects dir', async () => {
+    const { files, got, t } = setup()
+    files.write(
+      '/h/.claude/projects/p/s.jsonl',
+      assistant([
+        { type: 'tool_use', name: 'Read', input: { file_path: '/h/.claude/rules/style.md' } },
+      ]) + '\n',
+      T0,
+    )
+    await t.tick()
+    expect(got[0]?.target).toBe('rule:user:style.md')
+  })
+})
+
+describe('ClaudeCodeTailer: stale cwds', () => {
+  it('does not announce cwds whose sessions are already expired', async () => {
+    const files = new MemoryTranscriptFiles()
+    const seen: string[] = []
+    const t = new ClaudeCodeTailer({
+      dir: '/h/.claude/projects',
+      files,
+      activity: { report: () => 0 },
+      clock: new FakeClock(T0 + 10_000),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 1_000,
+      onNewCwd: (cwd) => seen.push(cwd),
+    })
+    files.write('/h/.claude/projects/p/s.jsonl', user('old') + '\n', T0 + 10_000)
+    await t.tick()
+    expect(seen).toEqual([])
+    expect(t.activeCwds()).toEqual([])
+  })
+})

@@ -1,0 +1,3984 @@
+{
+  "version": 1,
+  "blender": "5.2.2",
+  "units": "m",
+  "hash": "ea483b87002dfe3e62121d8f24277d0525806d33d36d525902d82b227195bc92",
+  "hdri": "hdri/office.hdr",
+  "modules": {
+    "atrium": {
+      "file": "atrium.glb",
+      "lightmap": {
+        "file": "atrium.lightmap.png",
+        "intensity": 11.258
+      },
+      "bounds": {
+        "minX": -33,
+        "maxX": 33,
+        "minZ": -24,
+        "maxZ": 0
+      },
+      "anchors": {
+        "seat:cafe:0": {
+          "x": 5.9101,
+          "y": 0,
+          "z": -6.0899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 6.5394,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:1": {
+          "x": 5.9101,
+          "y": 0,
+          "z": -6.9101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 6.5394,
+            "z": -7.5394
+          }
+        },
+        "seat:cafe:10": {
+          "x": 14.0899,
+          "y": 0,
+          "z": -6.9101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 13.4606,
+            "z": -7.5394
+          }
+        },
+        "seat:cafe:11": {
+          "x": 14.0899,
+          "y": 0,
+          "z": -6.0899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 13.4606,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:12": {
+          "x": 5.9101,
+          "y": 0,
+          "z": -10.5899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 6.5394,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:13": {
+          "x": 5.9101,
+          "y": 0,
+          "z": -11.4101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 6.5394,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:14": {
+          "x": 5.0899,
+          "y": 0,
+          "z": -11.4101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 4.4606,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:15": {
+          "x": 5.0899,
+          "y": 0,
+          "z": -10.5899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 4.4606,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:16": {
+          "x": 10.4101,
+          "y": 0,
+          "z": -10.5899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 11.0394,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:17": {
+          "x": 10.4101,
+          "y": 0,
+          "z": -11.4101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 11.0394,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:18": {
+          "x": 9.5899,
+          "y": 0,
+          "z": -11.4101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 8.9606,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:19": {
+          "x": 9.5899,
+          "y": 0,
+          "z": -10.5899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 8.9606,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:2": {
+          "x": 5.0899,
+          "y": 0,
+          "z": -6.9101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 4.4606,
+            "z": -7.5394
+          }
+        },
+        "seat:cafe:20": {
+          "x": 14.9101,
+          "y": 0,
+          "z": -10.5899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 15.5394,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:21": {
+          "x": 14.9101,
+          "y": 0,
+          "z": -11.4101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 15.5394,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:22": {
+          "x": 14.0899,
+          "y": 0,
+          "z": -11.4101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 13.4606,
+            "z": -12.0394
+          }
+        },
+        "seat:cafe:23": {
+          "x": 14.0899,
+          "y": 0,
+          "z": -10.5899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 13.4606,
+            "z": -9.9606
+          }
+        },
+        "seat:cafe:3": {
+          "x": 5.0899,
+          "y": 0,
+          "z": -6.0899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 4.4606,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:4": {
+          "x": 10.4101,
+          "y": 0,
+          "z": -6.0899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 11.0394,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:5": {
+          "x": 10.4101,
+          "y": 0,
+          "z": -6.9101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 11.0394,
+            "z": -7.5394
+          }
+        },
+        "seat:cafe:6": {
+          "x": 9.5899,
+          "y": 0,
+          "z": -6.9101,
+          "heading": 0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 8.9606,
+            "z": -7.5394
+          }
+        },
+        "seat:cafe:7": {
+          "x": 9.5899,
+          "y": 0,
+          "z": -6.0899,
+          "heading": 2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 8.9606,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:8": {
+          "x": 14.9101,
+          "y": 0,
+          "z": -6.0899,
+          "heading": -2.3562,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 15.5394,
+            "z": -5.4606
+          }
+        },
+        "seat:cafe:9": {
+          "x": 14.9101,
+          "y": 0,
+          "z": -6.9101,
+          "heading": -0.7854,
+          "pose": "sit",
+          "room": "cafe",
+          "approach": {
+            "x": 15.5394,
+            "z": -7.5394
+          }
+        },
+        "spot:elevator:0": {
+          "x": -14.95,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -14.95,
+            "z": -4.45
+          }
+        },
+        "spot:elevator:1": {
+          "x": -15.65,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -15.65,
+            "z": -4.45
+          }
+        },
+        "spot:elevator:2": {
+          "x": -18.15,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -18.15,
+            "z": -4.45
+          }
+        },
+        "spot:elevator:3": {
+          "x": -18.85,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -18.85,
+            "z": -4.45
+          }
+        },
+        "spot:elevator:4": {
+          "x": -21.35,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -21.35,
+            "z": -4.45
+          }
+        },
+        "spot:elevator:5": {
+          "x": -22.05,
+          "y": 0,
+          "z": -3.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -22.05,
+            "z": -4.45
+          }
+        },
+        "spot:pingpong:0:A": {
+          "x": 27.5,
+          "y": 0,
+          "z": -6.63,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "pingpong-0",
+          "approach": {
+            "x": 27.5,
+            "z": -6.03
+          }
+        },
+        "spot:pingpong:0:B": {
+          "x": 27.5,
+          "y": 0,
+          "z": -10.37,
+          "heading": 0,
+          "pose": "stand",
+          "room": "pingpong-0",
+          "approach": {
+            "x": 27.5,
+            "z": -10.97
+          }
+        },
+        "spot:pingpong:1:A": {
+          "x": 27.5,
+          "y": 0,
+          "z": -13.63,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "pingpong-1",
+          "approach": {
+            "x": 27.5,
+            "z": -13.03
+          }
+        },
+        "spot:pingpong:1:B": {
+          "x": 27.5,
+          "y": 0,
+          "z": -17.37,
+          "heading": 0,
+          "pose": "stand",
+          "room": "pingpong-1",
+          "approach": {
+            "x": 27.5,
+            "z": -17.97
+          }
+        },
+        "spot:reception:0": {
+          "x": -17.4739,
+          "y": 0,
+          "z": -8.1809,
+          "heading": -2.7925,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": -17.2687,
+            "z": -7.6171
+          }
+        },
+        "spot:reception:1": {
+          "x": -18.1344,
+          "y": 0,
+          "z": -8.0224,
+          "heading": -3.0194,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": -18.0613,
+            "z": -7.4268
+          }
+        },
+        "spot:reception:2": {
+          "x": -18.8656,
+          "y": 0,
+          "z": -8.0224,
+          "heading": 3.0194,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": -18.9387,
+            "z": -7.4268
+          }
+        },
+        "spot:reception:3": {
+          "x": -19.5261,
+          "y": 0,
+          "z": -8.1809,
+          "heading": 2.7925,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": -19.7313,
+            "z": -7.6171
+          }
+        }
+      },
+      "nav": {
+        "nodes": {
+          "a:c00": {
+            "x": 3.25,
+            "z": -4,
+            "width": 0.8
+          },
+          "a:c01": {
+            "x": 7.75,
+            "z": -4,
+            "width": 0.8
+          },
+          "a:c02": {
+            "x": 12.25,
+            "z": -4,
+            "width": 0.8
+          },
+          "a:c03": {
+            "x": 16.75,
+            "z": -4,
+            "width": 0.8
+          },
+          "a:c10": {
+            "x": 3.25,
+            "z": -8.75,
+            "width": 0.8
+          },
+          "a:c11": {
+            "x": 7.75,
+            "z": -8.75,
+            "width": 0.8
+          },
+          "a:c12": {
+            "x": 12.25,
+            "z": -8.75,
+            "width": 0.8
+          },
+          "a:c13": {
+            "x": 16.75,
+            "z": -8.75,
+            "width": 0.8
+          },
+          "a:c20": {
+            "x": 3.25,
+            "z": -13.25,
+            "width": 0.8
+          },
+          "a:c21": {
+            "x": 7.75,
+            "z": -13.25,
+            "width": 0.8
+          },
+          "a:c22": {
+            "x": 12.25,
+            "z": -13.25,
+            "width": 0.8
+          },
+          "a:c23": {
+            "x": 16.75,
+            "z": -13.25,
+            "width": 0.8
+          },
+          "a:center": {
+            "x": -1.5,
+            "z": -11,
+            "width": 1.4
+          },
+          "a:g1": {
+            "x": 24.6,
+            "z": -5,
+            "width": 0.9
+          },
+          "a:g2": {
+            "x": 24.6,
+            "z": -12,
+            "width": 0.9
+          },
+          "a:g3": {
+            "x": 24.6,
+            "z": -18.8,
+            "width": 0.9
+          },
+          "a:hub": {
+            "x": 0,
+            "z": -5.2,
+            "width": 1.6
+          },
+          "a:lobby_c": {
+            "x": -18.5,
+            "z": -5.6,
+            "width": 1.2
+          },
+          "a:lobby_e": {
+            "x": -13,
+            "z": -5.6,
+            "width": 1.2
+          },
+          "a:lobby_w": {
+            "x": -22.8,
+            "z": -5.6,
+            "width": 1
+          },
+          "a:lounge": {
+            "x": -11.8,
+            "z": -16.5,
+            "width": 1
+          },
+          "a:portal": {
+            "x": 0,
+            "z": -2.2,
+            "width": 1.6
+          },
+          "a:south": {
+            "x": -3.2,
+            "z": -21,
+            "width": 1.2
+          },
+          "a:street": {
+            "x": 0,
+            "z": 0,
+            "width": 1.6
+          },
+          "a:west": {
+            "x": -11,
+            "z": -10,
+            "width": 1.2
+          },
+          "ap:seat:cafe:0": {
+            "x": 6.5394,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:1": {
+            "x": 6.5394,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:10": {
+            "x": 13.4606,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:11": {
+            "x": 13.4606,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:12": {
+            "x": 6.5394,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:13": {
+            "x": 6.5394,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:14": {
+            "x": 4.4606,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:15": {
+            "x": 4.4606,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:16": {
+            "x": 11.0394,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:17": {
+            "x": 11.0394,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:18": {
+            "x": 8.9606,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:19": {
+            "x": 8.9606,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:2": {
+            "x": 4.4606,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:20": {
+            "x": 15.5394,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:21": {
+            "x": 15.5394,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:22": {
+            "x": 13.4606,
+            "z": -12.0394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:23": {
+            "x": 13.4606,
+            "z": -9.9606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:3": {
+            "x": 4.4606,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:4": {
+            "x": 11.0394,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:5": {
+            "x": 11.0394,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:6": {
+            "x": 8.9606,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:seat:cafe:7": {
+            "x": 8.9606,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:8": {
+            "x": 15.5394,
+            "z": -5.4606,
+            "width": 0.35
+          },
+          "ap:seat:cafe:9": {
+            "x": 15.5394,
+            "z": -7.5394,
+            "width": 0.35
+          },
+          "ap:spot:elevator:0": {
+            "x": -14.95,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:elevator:1": {
+            "x": -15.65,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:elevator:2": {
+            "x": -18.15,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:elevator:3": {
+            "x": -18.85,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:elevator:4": {
+            "x": -21.35,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:elevator:5": {
+            "x": -22.05,
+            "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:pingpong:0:A": {
+            "x": 27.5,
+            "z": -6.03,
+            "width": 0.35
+          },
+          "ap:spot:pingpong:0:B": {
+            "x": 27.5,
+            "z": -10.97,
+            "width": 0.35
+          },
+          "ap:spot:pingpong:1:A": {
+            "x": 27.5,
+            "z": -13.03,
+            "width": 0.35
+          },
+          "ap:spot:pingpong:1:B": {
+            "x": 27.5,
+            "z": -17.97,
+            "width": 0.35
+          },
+          "ap:spot:reception:0": {
+            "x": -17.2687,
+            "z": -7.6171,
+            "width": 0.35
+          },
+          "ap:spot:reception:1": {
+            "x": -18.0613,
+            "z": -7.4268,
+            "width": 0.35
+          },
+          "ap:spot:reception:2": {
+            "x": -18.9387,
+            "z": -7.4268,
+            "width": 0.35
+          },
+          "ap:spot:reception:3": {
+            "x": -19.7313,
+            "z": -7.6171,
+            "width": 0.35
+          }
+        },
+        "edges": [
+          [
+            "a:c00",
+            "a:c01"
+          ],
+          [
+            "a:c00",
+            "a:c10"
+          ],
+          [
+            "a:c00",
+            "a:hub"
+          ],
+          [
+            "a:c00",
+            "ap:seat:cafe:3"
+          ],
+          [
+            "a:c01",
+            "a:c02"
+          ],
+          [
+            "a:c01",
+            "a:c11"
+          ],
+          [
+            "a:c01",
+            "ap:seat:cafe:0"
+          ],
+          [
+            "a:c01",
+            "ap:seat:cafe:7"
+          ],
+          [
+            "a:c02",
+            "a:c03"
+          ],
+          [
+            "a:c02",
+            "a:c12"
+          ],
+          [
+            "a:c02",
+            "ap:seat:cafe:11"
+          ],
+          [
+            "a:c02",
+            "ap:seat:cafe:4"
+          ],
+          [
+            "a:c03",
+            "a:c13"
+          ],
+          [
+            "a:c03",
+            "a:g1"
+          ],
+          [
+            "a:c03",
+            "ap:seat:cafe:8"
+          ],
+          [
+            "a:c10",
+            "a:c11"
+          ],
+          [
+            "a:c10",
+            "a:c20"
+          ],
+          [
+            "a:c10",
+            "a:center"
+          ],
+          [
+            "a:c10",
+            "ap:seat:cafe:1"
+          ],
+          [
+            "a:c10",
+            "ap:seat:cafe:12"
+          ],
+          [
+            "a:c10",
+            "ap:seat:cafe:15"
+          ],
+          [
+            "a:c10",
+            "ap:seat:cafe:2"
+          ],
+          [
+            "a:c10",
+            "ap:seat:cafe:3"
+          ],
+          [
+            "a:c11",
+            "a:c12"
+          ],
+          [
+            "a:c11",
+            "a:c21"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:0"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:1"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:12"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:15"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:16"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:18"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:19"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:2"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:5"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:6"
+          ],
+          [
+            "a:c11",
+            "ap:seat:cafe:7"
+          ],
+          [
+            "a:c12",
+            "a:c13"
+          ],
+          [
+            "a:c12",
+            "a:c22"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:10"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:11"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:16"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:17"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:19"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:20"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:22"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:23"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:4"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:5"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:6"
+          ],
+          [
+            "a:c12",
+            "ap:seat:cafe:9"
+          ],
+          [
+            "a:c13",
+            "a:c23"
+          ],
+          [
+            "a:c13",
+            "a:g2"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:10"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:20"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:21"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:23"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:8"
+          ],
+          [
+            "a:c13",
+            "ap:seat:cafe:9"
+          ],
+          [
+            "a:c20",
+            "a:c21"
+          ],
+          [
+            "a:c20",
+            "a:center"
+          ],
+          [
+            "a:c20",
+            "a:south"
+          ],
+          [
+            "a:c20",
+            "ap:seat:cafe:13"
+          ],
+          [
+            "a:c20",
+            "ap:seat:cafe:14"
+          ],
+          [
+            "a:c21",
+            "a:c22"
+          ],
+          [
+            "a:c21",
+            "ap:seat:cafe:13"
+          ],
+          [
+            "a:c21",
+            "ap:seat:cafe:14"
+          ],
+          [
+            "a:c21",
+            "ap:seat:cafe:18"
+          ],
+          [
+            "a:c22",
+            "a:c23"
+          ],
+          [
+            "a:c22",
+            "ap:seat:cafe:17"
+          ],
+          [
+            "a:c22",
+            "ap:seat:cafe:22"
+          ],
+          [
+            "a:c23",
+            "a:g2"
+          ],
+          [
+            "a:c23",
+            "ap:seat:cafe:21"
+          ],
+          [
+            "a:center",
+            "a:hub"
+          ],
+          [
+            "a:center",
+            "a:south"
+          ],
+          [
+            "a:center",
+            "a:west"
+          ],
+          [
+            "a:g1",
+            "a:g2"
+          ],
+          [
+            "a:g1",
+            "ap:spot:pingpong:0:A"
+          ],
+          [
+            "a:g2",
+            "a:g3"
+          ],
+          [
+            "a:g2",
+            "ap:spot:pingpong:0:B"
+          ],
+          [
+            "a:g2",
+            "ap:spot:pingpong:1:A"
+          ],
+          [
+            "a:g3",
+            "ap:spot:pingpong:1:B"
+          ],
+          [
+            "a:hub",
+            "a:lobby_e"
+          ],
+          [
+            "a:hub",
+            "a:portal"
+          ],
+          [
+            "a:lobby_c",
+            "a:lobby_e"
+          ],
+          [
+            "a:lobby_c",
+            "a:lobby_w"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:elevator:2"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:elevator:3"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:reception:0"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:reception:1"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:reception:2"
+          ],
+          [
+            "a:lobby_c",
+            "ap:spot:reception:3"
+          ],
+          [
+            "a:lobby_e",
+            "a:west"
+          ],
+          [
+            "a:lobby_e",
+            "ap:spot:elevator:0"
+          ],
+          [
+            "a:lobby_e",
+            "ap:spot:elevator:1"
+          ],
+          [
+            "a:lobby_w",
+            "ap:spot:elevator:4"
+          ],
+          [
+            "a:lobby_w",
+            "ap:spot:elevator:5"
+          ],
+          [
+            "a:lounge",
+            "a:south"
+          ],
+          [
+            "a:lounge",
+            "a:west"
+          ],
+          [
+            "a:portal",
+            "a:street"
+          ]
+        ]
+      }
+    },
+    "street": {
+      "file": "street.glb",
+      "lightmap": {
+        "file": "street.lightmap.png",
+        "intensity": 13.1493
+      },
+      "bounds": {
+        "minX": -3,
+        "maxX": 3,
+        "minZ": 0,
+        "maxZ": 18
+      },
+      "bayLength": 18,
+      "width": 6,
+      "anchors": {},
+      "nav": {
+        "nodes": {
+          "s:0": {
+            "x": 0,
+            "z": 0,
+            "width": 1.6
+          },
+          "s:L": {
+            "x": -3,
+            "z": 9,
+            "width": 1
+          },
+          "s:R": {
+            "x": 3,
+            "z": 9,
+            "width": 1
+          },
+          "s:a": {
+            "x": 0,
+            "z": 4.5,
+            "width": 1.4
+          },
+          "s:b": {
+            "x": 0,
+            "z": 13.5,
+            "width": 1.4
+          },
+          "s:end": {
+            "x": 0,
+            "z": 18,
+            "width": 1.6
+          },
+          "s:mid": {
+            "x": 0,
+            "z": 9,
+            "width": 1.6
+          }
+        },
+        "edges": [
+          [
+            "s:0",
+            "s:a"
+          ],
+          [
+            "s:L",
+            "s:mid"
+          ],
+          [
+            "s:R",
+            "s:mid"
+          ],
+          [
+            "s:a",
+            "s:mid"
+          ],
+          [
+            "s:b",
+            "s:end"
+          ],
+          [
+            "s:b",
+            "s:mid"
+          ]
+        ]
+      }
+    },
+    "garden": {
+      "file": "garden.glb",
+      "lightmap": {
+        "file": "garden.lightmap.png",
+        "intensity": 13.7346
+      },
+      "bounds": {
+        "minX": 0,
+        "maxX": 30,
+        "minZ": -9,
+        "maxZ": 9
+      },
+      "anchors": {
+        "spot:garden:0": {
+          "x": 6,
+          "y": 0,
+          "z": 3.6,
+          "heading": 0,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 6,
+            "z": 3.25
+          }
+        },
+        "spot:garden:1": {
+          "x": 15,
+          "y": 0,
+          "z": 3.9,
+          "heading": 0,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 15,
+            "z": 3.55
+          }
+        },
+        "spot:garden:2": {
+          "x": 24,
+          "y": 0,
+          "z": 3.6,
+          "heading": 0,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 24,
+            "z": 3.25
+          }
+        },
+        "spot:garden:3": {
+          "x": 6,
+          "y": 0,
+          "z": -3.6,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 6,
+            "z": -3.25
+          }
+        },
+        "spot:garden:4": {
+          "x": 15,
+          "y": 0,
+          "z": -3.9,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 15,
+            "z": -3.55
+          }
+        },
+        "spot:garden:5": {
+          "x": 24,
+          "y": 0,
+          "z": -3.6,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "garden",
+          "approach": {
+            "x": 24,
+            "z": -3.25
+          }
+        }
+      },
+      "nav": {
+        "nodes": {
+          "ap:spot:garden:0": {
+            "x": 6,
+            "z": 3.25,
+            "width": 0.35
+          },
+          "ap:spot:garden:1": {
+            "x": 15,
+            "z": 3.55,
+            "width": 0.35
+          },
+          "ap:spot:garden:2": {
+            "x": 24,
+            "z": 3.25,
+            "width": 0.35
+          },
+          "ap:spot:garden:3": {
+            "x": 6,
+            "z": -3.25,
+            "width": 0.35
+          },
+          "ap:spot:garden:4": {
+            "x": 15,
+            "z": -3.55,
+            "width": 0.35
+          },
+          "ap:spot:garden:5": {
+            "x": 24,
+            "z": -3.25,
+            "width": 0.35
+          },
+          "g:door": {
+            "x": 0,
+            "z": 0,
+            "width": 1.4
+          },
+          "g:in": {
+            "x": 3.5,
+            "z": 0,
+            "width": 1.2
+          },
+          "g:n1": {
+            "x": 8,
+            "z": 3.3,
+            "width": 0.9
+          },
+          "g:n2": {
+            "x": 15,
+            "z": 3.5,
+            "width": 0.9
+          },
+          "g:n3": {
+            "x": 22.5,
+            "z": 3.3,
+            "width": 0.9
+          },
+          "g:out": {
+            "x": 26,
+            "z": 0,
+            "width": 1.2
+          },
+          "g:s1": {
+            "x": 8,
+            "z": -3.3,
+            "width": 0.9
+          },
+          "g:s2": {
+            "x": 15,
+            "z": -3.5,
+            "width": 0.9
+          },
+          "g:s3": {
+            "x": 22.5,
+            "z": -3.3,
+            "width": 0.9
+          },
+          "g:w": {
+            "x": 9.6,
+            "z": 0,
+            "width": 0.6
+          }
+        },
+        "edges": [
+          [
+            "ap:spot:garden:0",
+            "g:n1"
+          ],
+          [
+            "ap:spot:garden:1",
+            "g:n2"
+          ],
+          [
+            "ap:spot:garden:2",
+            "g:n3"
+          ],
+          [
+            "ap:spot:garden:3",
+            "g:s1"
+          ],
+          [
+            "ap:spot:garden:4",
+            "g:s2"
+          ],
+          [
+            "ap:spot:garden:5",
+            "g:s3"
+          ],
+          [
+            "g:door",
+            "g:in"
+          ],
+          [
+            "g:in",
+            "g:n1"
+          ],
+          [
+            "g:in",
+            "g:s1"
+          ],
+          [
+            "g:in",
+            "g:w"
+          ],
+          [
+            "g:n1",
+            "g:n2"
+          ],
+          [
+            "g:n2",
+            "g:n3"
+          ],
+          [
+            "g:n3",
+            "g:out"
+          ],
+          [
+            "g:out",
+            "g:s3"
+          ],
+          [
+            "g:s1",
+            "g:s2"
+          ],
+          [
+            "g:s2",
+            "g:s3"
+          ]
+        ]
+      }
+    },
+    "cap": {
+      "file": "cap.glb",
+      "lightmap": {
+        "file": "cap.lightmap.png",
+        "intensity": 10.2628
+      },
+      "bounds": {
+        "minX": -33,
+        "maxX": 33,
+        "minZ": 0,
+        "maxZ": 0.5
+      },
+      "anchors": {},
+      "nav": {
+        "nodes": {
+          "c:0": {
+            "x": 0,
+            "z": 0,
+            "width": 1.4
+          },
+          "c:e": {
+            "x": 2,
+            "z": 0,
+            "width": 0.8
+          },
+          "c:w": {
+            "x": -2,
+            "z": 0,
+            "width": 0.8
+          }
+        },
+        "edges": [
+          [
+            "c:0",
+            "c:e"
+          ],
+          [
+            "c:0",
+            "c:w"
+          ]
+        ]
+      }
+    },
+    "wing": {
+      "themes": {
+        "terracotta": {
+          "file": "wing-terracotta.glb",
+          "lightmap": {
+            "file": "wing-terracotta.lightmap.png",
+            "intensity": 11.1888
+          },
+          "signColor": "#F4EDE4",
+          "accent": "#D97757"
+        },
+        "nordic": {
+          "file": "wing-nordic.glb",
+          "lightmap": {
+            "file": "wing-nordic.lightmap.png",
+            "intensity": 11.5513
+          },
+          "signColor": "#2E3440",
+          "accent": "#5E81AC"
+        },
+        "forest": {
+          "file": "wing-forest.glb",
+          "lightmap": {
+            "file": "wing-forest.lightmap.png",
+            "intensity": 11.0807
+          },
+          "signColor": "#E8E2D0",
+          "accent": "#3E6B48"
+        },
+        "ocean": {
+          "file": "wing-ocean.glb",
+          "lightmap": {
+            "file": "wing-ocean.lightmap.png",
+            "intensity": 10.9961
+          },
+          "signColor": "#EAF4F4",
+          "accent": "#1F6F8B"
+        },
+        "neon": {
+          "file": "wing-neon.glb",
+          "lightmap": {
+            "file": "wing-neon.lightmap.png",
+            "intensity": 10.4566
+          },
+          "signColor": "#2CB67D",
+          "accent": "#7F5AF0"
+        },
+        "brass": {
+          "file": "wing-brass.glb",
+          "lightmap": {
+            "file": "wing-brass.lightmap.png",
+            "intensity": 10.4268
+          },
+          "signColor": "#C8A45D",
+          "accent": "#C8A45D"
+        }
+      },
+      "bounds": {
+        "minX": 0,
+        "maxX": 30,
+        "minZ": -9,
+        "maxZ": 9
+      },
+      "capacity": {
+        "desk": 24,
+        "meeting": 2,
+        "meetingSeats": 6,
+        "booth": 4,
+        "kitchen": 6,
+        "lounge": 8,
+        "stations": 8,
+        "books": 24,
+        "boards": 6,
+        "notebooks": 8,
+        "readingSeats": 4
+      },
+      "anchors": {
+        "port:board:0": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 3.2
+        },
+        "port:board:1": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 4.18
+        },
+        "port:board:2": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 5.16
+        },
+        "port:board:3": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 6.14
+        },
+        "port:board:4": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 7.12
+        },
+        "port:board:5": {
+          "x": 24.06,
+          "y": 1.55,
+          "z": 8.1
+        },
+        "port:book:0": {
+          "x": 25.85,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:1": {
+          "x": 26,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:10": {
+          "x": 28.1,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:book:11": {
+          "x": 28.25,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:book:12": {
+          "x": 28.25,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:13": {
+          "x": 28.1,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:14": {
+          "x": 27.95,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:15": {
+          "x": 26.15,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:16": {
+          "x": 26,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:17": {
+          "x": 25.85,
+          "y": 1.2107,
+          "z": 8.465
+        },
+        "port:book:18": {
+          "x": 28.25,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:19": {
+          "x": 28.1,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:2": {
+          "x": 26.15,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:20": {
+          "x": 27.95,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:21": {
+          "x": 26.15,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:22": {
+          "x": 26,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:23": {
+          "x": 25.85,
+          "y": 1.7036,
+          "z": 8.465
+        },
+        "port:book:3": {
+          "x": 27.95,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:4": {
+          "x": 28.1,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:5": {
+          "x": 28.25,
+          "y": 1.2107,
+          "z": 0.465
+        },
+        "port:book:6": {
+          "x": 25.85,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:book:7": {
+          "x": 26,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:book:8": {
+          "x": 26.15,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:book:9": {
+          "x": 27.95,
+          "y": 1.7036,
+          "z": 0.465
+        },
+        "port:desk:1:0": {
+          "x": 8.2,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:1:1": {
+          "x": 9.8,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:1:2": {
+          "x": 8.2,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:1:3": {
+          "x": 9.8,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:2:0": {
+          "x": 11.8,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:2:1": {
+          "x": 13.4,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:2:2": {
+          "x": 11.8,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:2:3": {
+          "x": 13.4,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:3:0": {
+          "x": 15.4,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:3:1": {
+          "x": 17,
+          "y": 1.255,
+          "z": -4.41
+        },
+        "port:desk:3:2": {
+          "x": 15.4,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:3:3": {
+          "x": 17,
+          "y": 1.255,
+          "z": -4.79
+        },
+        "port:desk:4:0": {
+          "x": 8.2,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:4:1": {
+          "x": 9.8,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:4:2": {
+          "x": 8.2,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:desk:4:3": {
+          "x": 9.8,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:desk:5:0": {
+          "x": 11.8,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:5:1": {
+          "x": 13.4,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:5:2": {
+          "x": 11.8,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:desk:5:3": {
+          "x": 13.4,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:desk:6:0": {
+          "x": 15.4,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:6:1": {
+          "x": 17,
+          "y": 1.255,
+          "z": 4.79
+        },
+        "port:desk:6:2": {
+          "x": 15.4,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:desk:6:3": {
+          "x": 17,
+          "y": 1.255,
+          "z": 4.41
+        },
+        "port:notebook:0": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 3.32
+        },
+        "port:notebook:1": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 3.655
+        },
+        "port:notebook:2": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 3.99
+        },
+        "port:notebook:3": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 4.325
+        },
+        "port:notebook:4": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 4.66
+        },
+        "port:notebook:5": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 4.995
+        },
+        "port:notebook:6": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 5.33
+        },
+        "port:notebook:7": {
+          "x": 29.47,
+          "y": 0.89,
+          "z": 5.665
+        },
+        "port:station:0": {
+          "x": 29.25,
+          "y": 2.3,
+          "z": -7.65
+        },
+        "port:station:1": {
+          "x": 29.25,
+          "y": 2.3,
+          "z": -5.8
+        },
+        "port:station:2": {
+          "x": 29.25,
+          "y": 2.3,
+          "z": -3.95
+        },
+        "port:station:3": {
+          "x": 29.25,
+          "y": 2.3,
+          "z": -2.1
+        },
+        "port:station:4": {
+          "x": 24.45,
+          "y": 2.3,
+          "z": -7.65
+        },
+        "port:station:5": {
+          "x": 24.45,
+          "y": 2.3,
+          "z": -5.8
+        },
+        "port:station:6": {
+          "x": 24.45,
+          "y": 2.3,
+          "z": -3.95
+        },
+        "port:station:7": {
+          "x": 24.45,
+          "y": 2.3,
+          "z": -2.1
+        },
+        "seat:desk:1:0": {
+          "x": 8.2,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-1",
+          "screen": "desk:1:0",
+          "approach": {
+            "x": 8.2,
+            "z": -2.78
+          }
+        },
+        "seat:desk:1:1": {
+          "x": 9.8,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-1",
+          "screen": "desk:1:1",
+          "approach": {
+            "x": 9.8,
+            "z": -2.78
+          }
+        },
+        "seat:desk:1:2": {
+          "x": 8.2,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-1",
+          "screen": "desk:1:2",
+          "approach": {
+            "x": 8.2,
+            "z": -6.42
+          }
+        },
+        "seat:desk:1:3": {
+          "x": 9.8,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-1",
+          "screen": "desk:1:3",
+          "approach": {
+            "x": 9.8,
+            "z": -6.42
+          }
+        },
+        "seat:desk:2:0": {
+          "x": 11.8,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-2",
+          "screen": "desk:2:0",
+          "approach": {
+            "x": 11.8,
+            "z": -2.78
+          }
+        },
+        "seat:desk:2:1": {
+          "x": 13.4,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-2",
+          "screen": "desk:2:1",
+          "approach": {
+            "x": 13.4,
+            "z": -2.78
+          }
+        },
+        "seat:desk:2:2": {
+          "x": 11.8,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-2",
+          "screen": "desk:2:2",
+          "approach": {
+            "x": 11.8,
+            "z": -6.42
+          }
+        },
+        "seat:desk:2:3": {
+          "x": 13.4,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-2",
+          "screen": "desk:2:3",
+          "approach": {
+            "x": 13.4,
+            "z": -6.42
+          }
+        },
+        "seat:desk:3:0": {
+          "x": 15.4,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-3",
+          "screen": "desk:3:0",
+          "approach": {
+            "x": 15.4,
+            "z": -2.78
+          }
+        },
+        "seat:desk:3:1": {
+          "x": 17,
+          "y": 0,
+          "z": -3.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-3",
+          "screen": "desk:3:1",
+          "approach": {
+            "x": 17,
+            "z": -2.78
+          }
+        },
+        "seat:desk:3:2": {
+          "x": 15.4,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-3",
+          "screen": "desk:3:2",
+          "approach": {
+            "x": 15.4,
+            "z": -6.42
+          }
+        },
+        "seat:desk:3:3": {
+          "x": 17,
+          "y": 0,
+          "z": -5.53,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-3",
+          "screen": "desk:3:3",
+          "approach": {
+            "x": 17,
+            "z": -6.42
+          }
+        },
+        "seat:desk:4:0": {
+          "x": 8.2,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-4",
+          "screen": "desk:4:0",
+          "approach": {
+            "x": 8.2,
+            "z": 6.42
+          }
+        },
+        "seat:desk:4:1": {
+          "x": 9.8,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-4",
+          "screen": "desk:4:1",
+          "approach": {
+            "x": 9.8,
+            "z": 6.42
+          }
+        },
+        "seat:desk:4:2": {
+          "x": 8.2,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-4",
+          "screen": "desk:4:2",
+          "approach": {
+            "x": 8.2,
+            "z": 2.78
+          }
+        },
+        "seat:desk:4:3": {
+          "x": 9.8,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-4",
+          "screen": "desk:4:3",
+          "approach": {
+            "x": 9.8,
+            "z": 2.78
+          }
+        },
+        "seat:desk:5:0": {
+          "x": 11.8,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-5",
+          "screen": "desk:5:0",
+          "approach": {
+            "x": 11.8,
+            "z": 6.42
+          }
+        },
+        "seat:desk:5:1": {
+          "x": 13.4,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-5",
+          "screen": "desk:5:1",
+          "approach": {
+            "x": 13.4,
+            "z": 6.42
+          }
+        },
+        "seat:desk:5:2": {
+          "x": 11.8,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-5",
+          "screen": "desk:5:2",
+          "approach": {
+            "x": 11.8,
+            "z": 2.78
+          }
+        },
+        "seat:desk:5:3": {
+          "x": 13.4,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-5",
+          "screen": "desk:5:3",
+          "approach": {
+            "x": 13.4,
+            "z": 2.78
+          }
+        },
+        "seat:desk:6:0": {
+          "x": 15.4,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-6",
+          "screen": "desk:6:0",
+          "approach": {
+            "x": 15.4,
+            "z": 6.42
+          }
+        },
+        "seat:desk:6:1": {
+          "x": 17,
+          "y": 0,
+          "z": 5.53,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "pod-6",
+          "screen": "desk:6:1",
+          "approach": {
+            "x": 17,
+            "z": 6.42
+          }
+        },
+        "seat:desk:6:2": {
+          "x": 15.4,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-6",
+          "screen": "desk:6:2",
+          "approach": {
+            "x": 15.4,
+            "z": 2.78
+          }
+        },
+        "seat:desk:6:3": {
+          "x": 17,
+          "y": 0,
+          "z": 3.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "pod-6",
+          "screen": "desk:6:3",
+          "approach": {
+            "x": 17,
+            "z": 2.78
+          }
+        },
+        "seat:lounge:0": {
+          "x": 2.91,
+          "y": 0,
+          "z": 3.06,
+          "heading": 0,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 2.91,
+            "z": 3.32
+          }
+        },
+        "seat:lounge:1": {
+          "x": 3.6,
+          "y": 0,
+          "z": 3.06,
+          "heading": 0,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 3.6,
+            "z": 3.32
+          }
+        },
+        "seat:lounge:2": {
+          "x": 4.29,
+          "y": 0,
+          "z": 3.06,
+          "heading": 0,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 4.29,
+            "z": 3.32
+          }
+        },
+        "seat:lounge:3": {
+          "x": 2.91,
+          "y": 0,
+          "z": 7.49,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 2.91,
+            "z": 7.23
+          }
+        },
+        "seat:lounge:4": {
+          "x": 3.6,
+          "y": 0,
+          "z": 7.49,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 3.6,
+            "z": 7.23
+          }
+        },
+        "seat:lounge:5": {
+          "x": 4.29,
+          "y": 0,
+          "z": 7.49,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 4.29,
+            "z": 7.23
+          }
+        },
+        "seat:lounge:6": {
+          "x": 1.57,
+          "y": 0,
+          "z": 5.3,
+          "heading": 1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 1.83,
+            "z": 5.3
+          }
+        },
+        "seat:lounge:7": {
+          "x": 5.53,
+          "y": 0,
+          "z": 5.3,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 5.27,
+            "z": 5.3
+          }
+        },
+        "seat:meeting:A:0": {
+          "x": 20.52,
+          "y": 0,
+          "z": -4.95,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 19.63,
+            "z": -4.95
+          }
+        },
+        "seat:meeting:A:1": {
+          "x": 20.52,
+          "y": 0,
+          "z": -5.7,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 19.63,
+            "z": -5.7
+          }
+        },
+        "seat:meeting:A:2": {
+          "x": 20.52,
+          "y": 0,
+          "z": -6.45,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 19.63,
+            "z": -6.45
+          }
+        },
+        "seat:meeting:A:3": {
+          "x": 21.88,
+          "y": 0,
+          "z": -4.95,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 22.77,
+            "z": -4.95
+          }
+        },
+        "seat:meeting:A:4": {
+          "x": 21.88,
+          "y": 0,
+          "z": -5.7,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 22.77,
+            "z": -5.7
+          }
+        },
+        "seat:meeting:A:5": {
+          "x": 21.88,
+          "y": 0,
+          "z": -6.45,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 22.77,
+            "z": -6.45
+          }
+        },
+        "seat:meeting:B:0": {
+          "x": 20.52,
+          "y": 0,
+          "z": 4.95,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 19.63,
+            "z": 4.95
+          }
+        },
+        "seat:meeting:B:1": {
+          "x": 20.52,
+          "y": 0,
+          "z": 5.7,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 19.63,
+            "z": 5.7
+          }
+        },
+        "seat:meeting:B:2": {
+          "x": 20.52,
+          "y": 0,
+          "z": 6.45,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 19.63,
+            "z": 6.45
+          }
+        },
+        "seat:meeting:B:3": {
+          "x": 21.88,
+          "y": 0,
+          "z": 4.95,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 22.77,
+            "z": 4.95
+          }
+        },
+        "seat:meeting:B:4": {
+          "x": 21.88,
+          "y": 0,
+          "z": 5.7,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 22.77,
+            "z": 5.7
+          }
+        },
+        "seat:meeting:B:5": {
+          "x": 21.88,
+          "y": 0,
+          "z": 6.45,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 22.77,
+            "z": 6.45
+          }
+        },
+        "seat:reading:0": {
+          "x": 26.5,
+          "y": 0,
+          "z": 3.97,
+          "heading": 0,
+          "pose": "sit",
+          "room": "library",
+          "approach": {
+            "x": 26.5,
+            "z": 3.08
+          }
+        },
+        "seat:reading:1": {
+          "x": 27.5,
+          "y": 0,
+          "z": 3.97,
+          "heading": 0,
+          "pose": "sit",
+          "room": "library",
+          "approach": {
+            "x": 27.5,
+            "z": 3.08
+          }
+        },
+        "seat:reading:2": {
+          "x": 26.5,
+          "y": 0,
+          "z": 5.23,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "library",
+          "approach": {
+            "x": 26.5,
+            "z": 6.12
+          }
+        },
+        "seat:reading:3": {
+          "x": 27.5,
+          "y": 0,
+          "z": 5.23,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "library",
+          "approach": {
+            "x": 27.5,
+            "z": 6.12
+          }
+        },
+        "spot:booth:0": {
+          "x": 9.4,
+          "y": 0,
+          "z": -8.1,
+          "heading": 0,
+          "pose": "stand",
+          "room": "booth-0",
+          "led": "booth:0",
+          "approach": {
+            "x": 9.4,
+            "z": -6.95
+          }
+        },
+        "spot:booth:1": {
+          "x": 11,
+          "y": 0,
+          "z": -8.1,
+          "heading": 0,
+          "pose": "stand",
+          "room": "booth-1",
+          "led": "booth:1",
+          "approach": {
+            "x": 11,
+            "z": -6.95
+          }
+        },
+        "spot:booth:2": {
+          "x": 12.6,
+          "y": 0,
+          "z": -8.1,
+          "heading": 0,
+          "pose": "stand",
+          "room": "booth-2",
+          "led": "booth:2",
+          "approach": {
+            "x": 12.6,
+            "z": -6.95
+          }
+        },
+        "spot:booth:3": {
+          "x": 14.2,
+          "y": 0,
+          "z": -8.1,
+          "heading": 0,
+          "pose": "stand",
+          "room": "booth-3",
+          "led": "booth:3",
+          "approach": {
+            "x": 14.2,
+            "z": -6.95
+          }
+        },
+        "spot:kitchen:0": {
+          "x": 1.85,
+          "y": 0,
+          "z": -7.8,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 1.85,
+            "z": -7.45
+          }
+        },
+        "spot:kitchen:1": {
+          "x": 3.1,
+          "y": 0,
+          "z": -7.8,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 3.1,
+            "z": -7.45
+          }
+        },
+        "spot:kitchen:2": {
+          "x": 4.35,
+          "y": 0,
+          "z": -7.8,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 4.35,
+            "z": -7.45
+          }
+        },
+        "spot:kitchen:3": {
+          "x": 2.3,
+          "y": 0,
+          "z": -5.55,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 2.3,
+            "z": -4.95
+          }
+        },
+        "spot:kitchen:4": {
+          "x": 3.1,
+          "y": 0,
+          "z": -5.55,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 3.1,
+            "z": -4.95
+          }
+        },
+        "spot:kitchen:5": {
+          "x": 3.9,
+          "y": 0,
+          "z": -5.55,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "kitchen",
+          "approach": {
+            "x": 3.9,
+            "z": -4.95
+          }
+        },
+        "spot:shelf:0": {
+          "x": 27,
+          "y": 0,
+          "z": 1.1,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "library",
+          "approach": {
+            "x": 27,
+            "z": 1.7
+          }
+        },
+        "spot:shelf:1": {
+          "x": 27,
+          "y": 0,
+          "z": 7.85,
+          "heading": 0,
+          "pose": "stand",
+          "room": "library",
+          "approach": {
+            "x": 27,
+            "z": 7.25
+          }
+        },
+        "spot:station:0": {
+          "x": 28.65,
+          "y": 0,
+          "z": -7.65,
+          "heading": 1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:0",
+          "approach": {
+            "x": 28.05,
+            "z": -7.65
+          }
+        },
+        "spot:station:1": {
+          "x": 28.65,
+          "y": 0,
+          "z": -5.8,
+          "heading": 1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:1",
+          "approach": {
+            "x": 28.05,
+            "z": -5.8
+          }
+        },
+        "spot:station:2": {
+          "x": 28.65,
+          "y": 0,
+          "z": -3.95,
+          "heading": 1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:2",
+          "approach": {
+            "x": 28.05,
+            "z": -3.95
+          }
+        },
+        "spot:station:3": {
+          "x": 28.65,
+          "y": 0,
+          "z": -2.1,
+          "heading": 1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:3",
+          "approach": {
+            "x": 28.05,
+            "z": -2.1
+          }
+        },
+        "spot:station:4": {
+          "x": 25.05,
+          "y": 0,
+          "z": -7.65,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:4",
+          "approach": {
+            "x": 25.65,
+            "z": -7.65
+          }
+        },
+        "spot:station:5": {
+          "x": 25.05,
+          "y": 0,
+          "z": -5.8,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:5",
+          "approach": {
+            "x": 25.65,
+            "z": -5.8
+          }
+        },
+        "spot:station:6": {
+          "x": 25.05,
+          "y": 0,
+          "z": -3.95,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:6",
+          "approach": {
+            "x": 25.65,
+            "z": -3.95
+          }
+        },
+        "spot:station:7": {
+          "x": 25.05,
+          "y": 0,
+          "z": -2.1,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "adapters",
+          "led": "station:7",
+          "approach": {
+            "x": 25.65,
+            "z": -2.1
+          }
+        }
+      },
+      "nav": {
+        "nodes": {
+          "ap:seat:desk:1:0": {
+            "x": 8.2,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:1:1": {
+            "x": 9.8,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:1:2": {
+            "x": 8.2,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:1:3": {
+            "x": 9.8,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:2:0": {
+            "x": 11.8,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:2:1": {
+            "x": 13.4,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:2:2": {
+            "x": 11.8,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:2:3": {
+            "x": 13.4,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:3:0": {
+            "x": 15.4,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:3:1": {
+            "x": 17,
+            "z": -2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:3:2": {
+            "x": 15.4,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:3:3": {
+            "x": 17,
+            "z": -6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:4:0": {
+            "x": 8.2,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:4:1": {
+            "x": 9.8,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:4:2": {
+            "x": 8.2,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:4:3": {
+            "x": 9.8,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:5:0": {
+            "x": 11.8,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:5:1": {
+            "x": 13.4,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:5:2": {
+            "x": 11.8,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:5:3": {
+            "x": 13.4,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:6:0": {
+            "x": 15.4,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:6:1": {
+            "x": 17,
+            "z": 6.42,
+            "width": 0.35
+          },
+          "ap:seat:desk:6:2": {
+            "x": 15.4,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:desk:6:3": {
+            "x": 17,
+            "z": 2.78,
+            "width": 0.35
+          },
+          "ap:seat:lounge:0": {
+            "x": 2.91,
+            "z": 3.32,
+            "width": 0.35
+          },
+          "ap:seat:lounge:1": {
+            "x": 3.6,
+            "z": 3.32,
+            "width": 0.35
+          },
+          "ap:seat:lounge:2": {
+            "x": 4.29,
+            "z": 3.32,
+            "width": 0.35
+          },
+          "ap:seat:lounge:3": {
+            "x": 2.91,
+            "z": 7.23,
+            "width": 0.35
+          },
+          "ap:seat:lounge:4": {
+            "x": 3.6,
+            "z": 7.23,
+            "width": 0.35
+          },
+          "ap:seat:lounge:5": {
+            "x": 4.29,
+            "z": 7.23,
+            "width": 0.35
+          },
+          "ap:seat:lounge:6": {
+            "x": 1.83,
+            "z": 5.3,
+            "width": 0.35
+          },
+          "ap:seat:lounge:7": {
+            "x": 5.27,
+            "z": 5.3,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:0": {
+            "x": 19.63,
+            "z": -4.95,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:1": {
+            "x": 19.63,
+            "z": -5.7,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:2": {
+            "x": 19.63,
+            "z": -6.45,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:3": {
+            "x": 22.77,
+            "z": -4.95,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:4": {
+            "x": 22.77,
+            "z": -5.7,
+            "width": 0.35
+          },
+          "ap:seat:meeting:A:5": {
+            "x": 22.77,
+            "z": -6.45,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:0": {
+            "x": 19.63,
+            "z": 4.95,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:1": {
+            "x": 19.63,
+            "z": 5.7,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:2": {
+            "x": 19.63,
+            "z": 6.45,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:3": {
+            "x": 22.77,
+            "z": 4.95,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:4": {
+            "x": 22.77,
+            "z": 5.7,
+            "width": 0.35
+          },
+          "ap:seat:meeting:B:5": {
+            "x": 22.77,
+            "z": 6.45,
+            "width": 0.35
+          },
+          "ap:seat:reading:0": {
+            "x": 26.5,
+            "z": 3.08,
+            "width": 0.35
+          },
+          "ap:seat:reading:1": {
+            "x": 27.5,
+            "z": 3.08,
+            "width": 0.35
+          },
+          "ap:seat:reading:2": {
+            "x": 26.5,
+            "z": 6.12,
+            "width": 0.35
+          },
+          "ap:seat:reading:3": {
+            "x": 27.5,
+            "z": 6.12,
+            "width": 0.35
+          },
+          "ap:spot:booth:0": {
+            "x": 9.4,
+            "z": -6.95,
+            "width": 0.35
+          },
+          "ap:spot:booth:1": {
+            "x": 11,
+            "z": -6.95,
+            "width": 0.35
+          },
+          "ap:spot:booth:2": {
+            "x": 12.6,
+            "z": -6.95,
+            "width": 0.35
+          },
+          "ap:spot:booth:3": {
+            "x": 14.2,
+            "z": -6.95,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:0": {
+            "x": 1.85,
+            "z": -7.45,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:1": {
+            "x": 3.1,
+            "z": -7.45,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:2": {
+            "x": 4.35,
+            "z": -7.45,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:3": {
+            "x": 2.3,
+            "z": -4.95,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:4": {
+            "x": 3.1,
+            "z": -4.95,
+            "width": 0.35
+          },
+          "ap:spot:kitchen:5": {
+            "x": 3.9,
+            "z": -4.95,
+            "width": 0.35
+          },
+          "ap:spot:shelf:0": {
+            "x": 27,
+            "z": 1.7,
+            "width": 0.35
+          },
+          "ap:spot:shelf:1": {
+            "x": 27,
+            "z": 7.25,
+            "width": 0.35
+          },
+          "ap:spot:station:0": {
+            "x": 28.05,
+            "z": -7.65,
+            "width": 0.35
+          },
+          "ap:spot:station:1": {
+            "x": 28.05,
+            "z": -5.8,
+            "width": 0.35
+          },
+          "ap:spot:station:2": {
+            "x": 28.05,
+            "z": -3.95,
+            "width": 0.35
+          },
+          "ap:spot:station:3": {
+            "x": 28.05,
+            "z": -2.1,
+            "width": 0.35
+          },
+          "ap:spot:station:4": {
+            "x": 25.65,
+            "z": -7.65,
+            "width": 0.35
+          },
+          "ap:spot:station:5": {
+            "x": 25.65,
+            "z": -5.8,
+            "width": 0.35
+          },
+          "ap:spot:station:6": {
+            "x": 25.65,
+            "z": -3.95,
+            "width": 0.35
+          },
+          "ap:spot:station:7": {
+            "x": 25.65,
+            "z": -2.1,
+            "width": 0.35
+          },
+          "w:ad:in": {
+            "x": 24.6,
+            "z": -0.95,
+            "width": 0.45
+          },
+          "w:ad:out": {
+            "x": 23.2,
+            "z": -0.95,
+            "width": 0.5
+          },
+          "w:ad:r0a": {
+            "x": 28.05,
+            "z": -0.95,
+            "width": 0.45
+          },
+          "w:ad:r0b": {
+            "x": 28.05,
+            "z": -8.4,
+            "width": 0.4
+          },
+          "w:ad:r1a": {
+            "x": 25.65,
+            "z": -0.95,
+            "width": 0.45
+          },
+          "w:ad:r1b": {
+            "x": 25.65,
+            "z": -8.4,
+            "width": 0.4
+          },
+          "w:c0:10.8": {
+            "x": 10.8,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:12.6": {
+            "x": 12.6,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:14.4": {
+            "x": 14.4,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:16.2": {
+            "x": 16.2,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:18": {
+            "x": 18,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:7.6": {
+            "x": 7.6,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c0:9": {
+            "x": 9,
+            "z": -6.85,
+            "width": 0.6
+          },
+          "w:c1:10.8": {
+            "x": 10.8,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:12.6": {
+            "x": 12.6,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:14.4": {
+            "x": 14.4,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:16.2": {
+            "x": 16.2,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:18": {
+            "x": 18,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:7.6": {
+            "x": 7.6,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:c1:9": {
+            "x": 9,
+            "z": 6.85,
+            "width": 0.6
+          },
+          "w:door": {
+            "x": 0,
+            "z": 0,
+            "width": 1.1
+          },
+          "w:e0": {
+            "x": 18.1,
+            "z": -2.2,
+            "width": 0.4
+          },
+          "w:e1": {
+            "x": 18.1,
+            "z": 2.2,
+            "width": 0.4
+          },
+          "w:k:ae": {
+            "x": 4.95,
+            "z": -7.45,
+            "width": 0.5
+          },
+          "w:k:aw": {
+            "x": 1.25,
+            "z": -7.45,
+            "width": 0.5
+          },
+          "w:k:fe": {
+            "x": 4.95,
+            "z": -4.95,
+            "width": 0.7
+          },
+          "w:k:fw": {
+            "x": 1.25,
+            "z": -4.95,
+            "width": 0.7
+          },
+          "w:l:ne": {
+            "x": 5.5,
+            "z": 6.75,
+            "width": 0.6
+          },
+          "w:l:nw": {
+            "x": 1.75,
+            "z": 6.75,
+            "width": 0.6
+          },
+          "w:l:se": {
+            "x": 5.5,
+            "z": 3.9,
+            "width": 0.6
+          },
+          "w:l:sw": {
+            "x": 1.75,
+            "z": 3.9,
+            "width": 0.6
+          },
+          "w:lib:h": {
+            "x": 25.4,
+            "z": 1.9,
+            "width": 0.5
+          },
+          "w:lib:in": {
+            "x": 24.6,
+            "z": 0.95,
+            "width": 0.45
+          },
+          "w:lib:ne": {
+            "x": 28.45,
+            "z": 6.12,
+            "width": 0.45
+          },
+          "w:lib:nw": {
+            "x": 25.55,
+            "z": 6.12,
+            "width": 0.45
+          },
+          "w:lib:out": {
+            "x": 23.2,
+            "z": 0.95,
+            "width": 0.5
+          },
+          "w:lib:se": {
+            "x": 28.45,
+            "z": 3.08,
+            "width": 0.45
+          },
+          "w:lib:sw": {
+            "x": 25.55,
+            "z": 3.08,
+            "width": 0.45
+          },
+          "w:mA:far": {
+            "x": 22.77,
+            "z": -3.35,
+            "width": 0.5
+          },
+          "w:mA:in": {
+            "x": 19.5,
+            "z": -3.35,
+            "width": 0.6
+          },
+          "w:mA:out": {
+            "x": 19.5,
+            "z": -1.9,
+            "width": 0.6
+          },
+          "w:mB:far": {
+            "x": 22.77,
+            "z": 3.35,
+            "width": 0.5
+          },
+          "w:mB:in": {
+            "x": 19.5,
+            "z": 3.35,
+            "width": 0.6
+          },
+          "w:mB:out": {
+            "x": 19.5,
+            "z": 1.9,
+            "width": 0.6
+          },
+          "w:s1": {
+            "x": 2.5,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s2": {
+            "x": 5.5,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s3": {
+            "x": 9,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s4": {
+            "x": 12.6,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s5": {
+            "x": 16.2,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s6": {
+            "x": 19.5,
+            "z": 0,
+            "width": 1.2
+          },
+          "w:s7": {
+            "x": 21.8,
+            "z": 0,
+            "width": 1.2
+          }
+        },
+        "edges": [
+          [
+            "ap:seat:desk:1:0",
+            "w:s3"
+          ],
+          [
+            "ap:seat:desk:1:1",
+            "w:s3"
+          ],
+          [
+            "ap:seat:desk:1:2",
+            "w:c0:9"
+          ],
+          [
+            "ap:seat:desk:1:3",
+            "w:c0:9"
+          ],
+          [
+            "ap:seat:desk:2:0",
+            "w:s4"
+          ],
+          [
+            "ap:seat:desk:2:1",
+            "w:s4"
+          ],
+          [
+            "ap:seat:desk:2:2",
+            "w:c0:12.6"
+          ],
+          [
+            "ap:seat:desk:2:3",
+            "w:c0:12.6"
+          ],
+          [
+            "ap:seat:desk:3:0",
+            "w:s5"
+          ],
+          [
+            "ap:seat:desk:3:1",
+            "w:s5"
+          ],
+          [
+            "ap:seat:desk:3:2",
+            "w:c0:16.2"
+          ],
+          [
+            "ap:seat:desk:3:3",
+            "w:c0:16.2"
+          ],
+          [
+            "ap:seat:desk:4:0",
+            "w:c1:9"
+          ],
+          [
+            "ap:seat:desk:4:1",
+            "w:c1:9"
+          ],
+          [
+            "ap:seat:desk:4:2",
+            "w:s3"
+          ],
+          [
+            "ap:seat:desk:4:3",
+            "w:s3"
+          ],
+          [
+            "ap:seat:desk:5:0",
+            "w:c1:12.6"
+          ],
+          [
+            "ap:seat:desk:5:1",
+            "w:c1:12.6"
+          ],
+          [
+            "ap:seat:desk:5:2",
+            "w:s4"
+          ],
+          [
+            "ap:seat:desk:5:3",
+            "w:s4"
+          ],
+          [
+            "ap:seat:desk:6:0",
+            "w:c1:16.2"
+          ],
+          [
+            "ap:seat:desk:6:1",
+            "w:c1:16.2"
+          ],
+          [
+            "ap:seat:desk:6:2",
+            "w:s5"
+          ],
+          [
+            "ap:seat:desk:6:3",
+            "w:s5"
+          ],
+          [
+            "ap:seat:lounge:0",
+            "ap:seat:lounge:1"
+          ],
+          [
+            "ap:seat:lounge:0",
+            "w:l:sw"
+          ],
+          [
+            "ap:seat:lounge:1",
+            "ap:seat:lounge:2"
+          ],
+          [
+            "ap:seat:lounge:2",
+            "w:l:se"
+          ],
+          [
+            "ap:seat:lounge:3",
+            "ap:seat:lounge:4"
+          ],
+          [
+            "ap:seat:lounge:3",
+            "w:l:nw"
+          ],
+          [
+            "ap:seat:lounge:4",
+            "ap:seat:lounge:5"
+          ],
+          [
+            "ap:seat:lounge:5",
+            "w:l:ne"
+          ],
+          [
+            "ap:seat:lounge:6",
+            "w:l:nw"
+          ],
+          [
+            "ap:seat:lounge:6",
+            "w:l:sw"
+          ],
+          [
+            "ap:seat:lounge:7",
+            "w:l:ne"
+          ],
+          [
+            "ap:seat:lounge:7",
+            "w:l:se"
+          ],
+          [
+            "ap:seat:meeting:A:0",
+            "ap:seat:meeting:A:1"
+          ],
+          [
+            "ap:seat:meeting:A:0",
+            "w:mA:in"
+          ],
+          [
+            "ap:seat:meeting:A:1",
+            "ap:seat:meeting:A:2"
+          ],
+          [
+            "ap:seat:meeting:A:3",
+            "ap:seat:meeting:A:4"
+          ],
+          [
+            "ap:seat:meeting:A:3",
+            "w:mA:far"
+          ],
+          [
+            "ap:seat:meeting:A:4",
+            "ap:seat:meeting:A:5"
+          ],
+          [
+            "ap:seat:meeting:B:0",
+            "ap:seat:meeting:B:1"
+          ],
+          [
+            "ap:seat:meeting:B:0",
+            "w:mB:in"
+          ],
+          [
+            "ap:seat:meeting:B:1",
+            "ap:seat:meeting:B:2"
+          ],
+          [
+            "ap:seat:meeting:B:3",
+            "ap:seat:meeting:B:4"
+          ],
+          [
+            "ap:seat:meeting:B:3",
+            "w:mB:far"
+          ],
+          [
+            "ap:seat:meeting:B:4",
+            "ap:seat:meeting:B:5"
+          ],
+          [
+            "ap:seat:reading:0",
+            "ap:seat:reading:1"
+          ],
+          [
+            "ap:seat:reading:0",
+            "w:lib:sw"
+          ],
+          [
+            "ap:seat:reading:1",
+            "w:lib:se"
+          ],
+          [
+            "ap:seat:reading:2",
+            "ap:seat:reading:3"
+          ],
+          [
+            "ap:seat:reading:2",
+            "w:lib:nw"
+          ],
+          [
+            "ap:seat:reading:3",
+            "w:lib:ne"
+          ],
+          [
+            "ap:spot:booth:0",
+            "w:c0:10.8"
+          ],
+          [
+            "ap:spot:booth:0",
+            "w:c0:9"
+          ],
+          [
+            "ap:spot:booth:1",
+            "w:c0:10.8"
+          ],
+          [
+            "ap:spot:booth:1",
+            "w:c0:12.6"
+          ],
+          [
+            "ap:spot:booth:2",
+            "w:c0:10.8"
+          ],
+          [
+            "ap:spot:booth:2",
+            "w:c0:12.6"
+          ],
+          [
+            "ap:spot:booth:3",
+            "w:c0:12.6"
+          ],
+          [
+            "ap:spot:booth:3",
+            "w:c0:14.4"
+          ],
+          [
+            "ap:spot:kitchen:0",
+            "ap:spot:kitchen:1"
+          ],
+          [
+            "ap:spot:kitchen:0",
+            "w:k:aw"
+          ],
+          [
+            "ap:spot:kitchen:1",
+            "ap:spot:kitchen:2"
+          ],
+          [
+            "ap:spot:kitchen:2",
+            "w:k:ae"
+          ],
+          [
+            "ap:spot:kitchen:3",
+            "ap:spot:kitchen:4"
+          ],
+          [
+            "ap:spot:kitchen:3",
+            "w:k:fw"
+          ],
+          [
+            "ap:spot:kitchen:4",
+            "ap:spot:kitchen:5"
+          ],
+          [
+            "ap:spot:kitchen:5",
+            "w:k:fe"
+          ],
+          [
+            "ap:spot:shelf:0",
+            "w:lib:h"
+          ],
+          [
+            "ap:spot:shelf:0",
+            "w:lib:se"
+          ],
+          [
+            "ap:spot:shelf:1",
+            "w:lib:ne"
+          ],
+          [
+            "ap:spot:shelf:1",
+            "w:lib:nw"
+          ],
+          [
+            "ap:spot:station:0",
+            "ap:spot:station:1"
+          ],
+          [
+            "ap:spot:station:0",
+            "w:ad:r0b"
+          ],
+          [
+            "ap:spot:station:1",
+            "ap:spot:station:2"
+          ],
+          [
+            "ap:spot:station:2",
+            "ap:spot:station:3"
+          ],
+          [
+            "ap:spot:station:3",
+            "w:ad:r0a"
+          ],
+          [
+            "ap:spot:station:4",
+            "ap:spot:station:5"
+          ],
+          [
+            "ap:spot:station:4",
+            "w:ad:r1b"
+          ],
+          [
+            "ap:spot:station:5",
+            "ap:spot:station:6"
+          ],
+          [
+            "ap:spot:station:6",
+            "ap:spot:station:7"
+          ],
+          [
+            "ap:spot:station:7",
+            "w:ad:r1a"
+          ],
+          [
+            "w:ad:in",
+            "w:ad:out"
+          ],
+          [
+            "w:ad:in",
+            "w:ad:r1a"
+          ],
+          [
+            "w:ad:out",
+            "w:s7"
+          ],
+          [
+            "w:ad:r0a",
+            "w:ad:r1a"
+          ],
+          [
+            "w:ad:r0b",
+            "w:ad:r1b"
+          ],
+          [
+            "w:c0:10.8",
+            "w:c0:12.6"
+          ],
+          [
+            "w:c0:10.8",
+            "w:c0:9"
+          ],
+          [
+            "w:c0:12.6",
+            "w:c0:14.4"
+          ],
+          [
+            "w:c0:14.4",
+            "w:c0:16.2"
+          ],
+          [
+            "w:c0:16.2",
+            "w:c0:18"
+          ],
+          [
+            "w:c0:18",
+            "w:e0"
+          ],
+          [
+            "w:c0:7.6",
+            "w:c0:9"
+          ],
+          [
+            "w:c0:7.6",
+            "w:s2"
+          ],
+          [
+            "w:c1:10.8",
+            "w:c1:12.6"
+          ],
+          [
+            "w:c1:10.8",
+            "w:c1:9"
+          ],
+          [
+            "w:c1:12.6",
+            "w:c1:14.4"
+          ],
+          [
+            "w:c1:14.4",
+            "w:c1:16.2"
+          ],
+          [
+            "w:c1:16.2",
+            "w:c1:18"
+          ],
+          [
+            "w:c1:18",
+            "w:e1"
+          ],
+          [
+            "w:c1:7.6",
+            "w:c1:9"
+          ],
+          [
+            "w:c1:7.6",
+            "w:l:ne"
+          ],
+          [
+            "w:door",
+            "w:s1"
+          ],
+          [
+            "w:e0",
+            "w:s6"
+          ],
+          [
+            "w:e1",
+            "w:s6"
+          ],
+          [
+            "w:k:ae",
+            "w:k:fe"
+          ],
+          [
+            "w:k:aw",
+            "w:k:fw"
+          ],
+          [
+            "w:k:fe",
+            "w:s1"
+          ],
+          [
+            "w:k:fe",
+            "w:s2"
+          ],
+          [
+            "w:k:fw",
+            "w:s1"
+          ],
+          [
+            "w:l:ne",
+            "w:l:se"
+          ],
+          [
+            "w:l:nw",
+            "w:l:sw"
+          ],
+          [
+            "w:l:se",
+            "w:s2"
+          ],
+          [
+            "w:l:sw",
+            "w:s1"
+          ],
+          [
+            "w:lib:h",
+            "w:lib:in"
+          ],
+          [
+            "w:lib:h",
+            "w:lib:sw"
+          ],
+          [
+            "w:lib:in",
+            "w:lib:out"
+          ],
+          [
+            "w:lib:ne",
+            "w:lib:se"
+          ],
+          [
+            "w:lib:nw",
+            "w:lib:sw"
+          ],
+          [
+            "w:lib:out",
+            "w:s7"
+          ],
+          [
+            "w:mA:far",
+            "w:mA:in"
+          ],
+          [
+            "w:mA:in",
+            "w:mA:out"
+          ],
+          [
+            "w:mA:out",
+            "w:s6"
+          ],
+          [
+            "w:mB:far",
+            "w:mB:in"
+          ],
+          [
+            "w:mB:in",
+            "w:mB:out"
+          ],
+          [
+            "w:mB:out",
+            "w:s6"
+          ],
+          [
+            "w:s1",
+            "w:s2"
+          ],
+          [
+            "w:s2",
+            "w:s3"
+          ],
+          [
+            "w:s3",
+            "w:s4"
+          ],
+          [
+            "w:s4",
+            "w:s5"
+          ],
+          [
+            "w:s5",
+            "w:s6"
+          ],
+          [
+            "w:s6",
+            "w:s7"
+          ]
+        ]
+      }
+    }
+  },
+  "character": {
+    "file": "character.glb",
+    "meta": "character.json"
+  }
+}

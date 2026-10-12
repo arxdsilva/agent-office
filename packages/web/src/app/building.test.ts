@@ -38,7 +38,7 @@ describe('planBuilding', () => {
     expect(kinds(l)).toEqual(['atrium', 'street:0', 'garden:0:R', 'garden:0:L', 'cap'])
     expect(l.placements.find((p) => p.id === 'cap')!.position).toEqual({ x: 0, z: BAY_LENGTH })
     expect(l.wingsByProvider.size).toBe(0)
-    expect(l.bounds).toEqual({ minX: -27, maxX: 27, minZ: -24, maxZ: 18.5 })
+    expect(l.bounds).toEqual({ minX: -33, maxX: 33, minZ: -24, maxZ: 18.5 })
   })
 
   it('places 1–7 providers in bay order: bay0-R, bay0-L, bay1-R, …', () => {
@@ -292,7 +292,25 @@ describe('planBuilding', () => {
 
   it('computes world bounds over all modules', () => {
     const l = planBuilding(d(['a', 1], ['b', 1], ['c', 1]), m, undefined, 0)
-    expect(l.bounds).toEqual({ minX: -27, maxX: 27, minZ: -24, maxZ: 36.5 })
+    expect(l.bounds).toEqual({ minX: -33, maxX: 33, minZ: -24, maxZ: 36.5 })
+  })
+})
+
+describe('ports', () => {
+  it('places every port in world space with its height, rotated with the wing', () => {
+    const l = planBuilding(d(['a', 1], ['b', 1]), m, undefined, 0)
+    const local = m.modules.wing.ports['port:book:3']!
+    const right = l.ports!.get('wing:a:0/port:book:3')!
+    const left = l.ports!.get('wing:b:0/port:book:3')!
+    expect(right).toEqual({ x: local.x + 3, y: local.y, z: local.z + 9 })
+    expect(left.x).toBeCloseTo(-local.x - 3)
+    expect(left.z).toBeCloseTo(-local.z + 9)
+    expect(left.y).toBe(local.y)
+    expect([...l.ports!.keys()].filter((k) => k.startsWith('wing:a:0/'))).toHaveLength(
+      Object.keys(m.modules.wing.ports).length,
+    )
+    // Ports are not walk-to anchors.
+    expect(l.anchors.has('wing:a:0/port:book:3')).toBe(false)
   })
 })
 

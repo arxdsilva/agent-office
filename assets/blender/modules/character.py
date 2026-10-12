@@ -37,6 +37,10 @@ CLIP_EXTRAS = {
     'PhoneCall': {'prop': 'phone'},
     'DrinkCoffee': {'prop': 'cup'},
     'PingPong': {'prop': 'paddle', 'hitPhase': 0.25, 'pairOffset': 0.5},
+    'StandInteract': {'pose': 'stand', 'screen': {'z': -C.SCREEN_CENTER[1], 'y': C.SCREEN_CENTER[2]}},
+    'SitRead': {'pose': 'sit', 'prop': 'book'},
+    'ShelfPick': {'pose': 'stand', 'prop': 'book', 'shelf': {'z': -C.SHELF_BOOK[1], 'y': C.SHELF_BOOK[2]},
+                  'holdFrom': 52},
 }
 
 
@@ -97,7 +101,7 @@ def character_json(res):
         'lounge': {'seatCenterZ': -C.LOUNGE_CENTER_Y, 'hipContactZ': round(-lounge_pt.y, 3)},
         'accessories': {'hairA': True, 'hairB': False, 'hairC': False, 'hairD': False, 'glasses': False,
                         'headset': False, 'badge': False},
-        'props': ['laptop', 'cup', 'phone', 'paddle'],
+        'props': ['laptop', 'cup', 'phone', 'paddle', 'book'],
         'clips': clips,
     }
 

@@ -9,10 +9,14 @@ import re
 ANCHOR_RE = re.compile(
     r'^(seat:desk:[1-6]:[0-3]'
     r'|seat:meeting:[AB]:[0-5]'
-    r'|seat:(lounge|cafe):\d+'
-    r'|spot:(kitchen|booth|reception|elevator|garden):\d+'
+    r'|seat:(lounge|cafe|reading):\d+'
+    r'|spot:(kitchen|booth|reception|elevator|garden|station|shelf):\d+'
     r'|spot:pingpong:\d+:[AB])$')
+PORT_RE = re.compile(r'^port:(desk:[1-6]:[0-3]|station:[0-7]|book:\d+|board:[0-5]|notebook:[0-7])$')
 POSES = ('sit', 'stand', 'lounge')
+# Contract §4 / character.json: the anchor is where the character's root stands. The seat center is this
+# far behind the root (opposite the heading); `stand` spots are the root itself.
+ROOT_OFFSET = {'sit': 0.29, 'lounge': 0.36, 'stand': 0.0}
 AP_WIDTH = 0.35
 
 
@@ -35,6 +39,8 @@ class Anchors:
         self.geo = geo
         self.prefix = prefix
         self.anchors = {}
+        self.seat_centers = {}  # internal (tests): seat center of every seat anchor
+        self.ports = {}
         self.nodes = {}
         self.edges = set()
 
@@ -77,12 +83,17 @@ class Anchors:
             raise ValueError(f'duplicate anchor {aid}')
         if pose not in POSES:
             raise ValueError(f'bad pose {pose}')
-        wx, _, wz = self.geo.world(x, 0, z)
+        # (x, z) is the seat center (or the standing spot); approach distances are measured from it
+        cx, _, cz = self.geo.world(x, 0, z)
         h = norm_heading(self.geo.heading(heading))
+        off = ROOT_OFFSET[pose]
+        wx, wz = cx + off * math.sin(h), cz + off * math.cos(h)
         if isinstance(approach, (int, float)):
-            ax, az = wx + approach * math.sin(h), wz + approach * math.cos(h)
+            ax, az = cx + approach * math.sin(h), cz + approach * math.cos(h)
         else:
             ax, _, az = self.geo.world(approach[0], 0, approach[1])
+        if aid.startswith('seat:'):
+            self.seat_centers[aid] = (cx, cz)
         a = {'x': _r(wx), 'y': 0, 'z': _r(wz), 'heading': _r(h), 'pose': pose}
         if room:
             a['room'] = room
@@ -107,6 +118,17 @@ class Anchors:
 
     def spot(self, aid, x, z, heading, room=None, approach=-0.6, hubs=None, **extra):
         return self._add(aid, x, z, heading, 'stand', room, approach, hubs, extra)
+
+    def port(self, pid, x, y, z):
+        """3D link attach point (local coords), the only anchor kind with y ≠ 0 (contract §4)."""
+        if not PORT_RE.match(pid):
+            raise ValueError(f'port id {pid} breaks the grammar')
+        if pid in self.anchors:
+            raise ValueError(f'duplicate port {pid}')
+        wx, wy, wz = self.geo.world(x, y, z)
+        self.anchors[pid] = {'x': _r(wx), 'y': _r(wy), 'z': _r(wz)}
+        self.ports[pid] = True
+        return pid
 
     # ----------------------------------------------------------------- output
     def manifest(self):

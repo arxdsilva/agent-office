@@ -1,7 +1,9 @@
-import type { Agent } from '@agent-office/shared'
+import type { Agent, Capability } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
-import { fixtureManifest } from './__fixtures__/manifest.ts'
-import { ARRIVE_MS, DWELL_MS, LEAVE_MS, WAITING_TO_BOOTH_MS } from './behavior.ts'
+import { builtins, cap } from './__fixtures__/capabilities.ts'
+import { fixtureManifest, fixtureManifestJson } from './__fixtures__/manifest.ts'
+import { parseManifest } from './manifest.ts'
+import { ARRIVE_MS, CALL_FADE_MS, DWELL_MS, LEAVE_MS, WAITING_TO_BOOTH_MS } from './behavior.ts'
 import { poseAt } from './choreography.ts'
 import { createDirector } from './director.ts'
 import type { OfficeState } from './state.ts'
@@ -22,7 +24,21 @@ const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
 const state = (...agents: Agent[]): OfficeState => ({
   agents: new Map(agents.map((a) => [a.id, a])),
   messages: new Map(),
+  capabilities: new Map(),
 })
+/** Claude Code capabilities with `active` set from `uses` (capability id → agent ids). */
+const withCaps = (s: OfficeState, uses: Record<string, string[]> = {}): OfficeState => {
+  const caps: Capability[] = [
+    ...builtins(),
+    cap('mcp:github'),
+    cap('skill:run-office'),
+    cap('rule:project:TESTING.md'),
+  ]
+  return {
+    ...s,
+    capabilities: new Map([['claude-code', caps.map((c) => ({ ...c, active: uses[c.id] ?? [] }))]]),
+  }
+}
 
 describe('createDirector', () => {
   it('plans the building and spawns agents present at startup', () => {
@@ -121,5 +137,93 @@ describe('createDirector', () => {
       return out
     }
     expect(run()).toEqual(run())
+  })
+})
+
+describe('createDirector: capabilities', () => {
+  it('assigns stations and library slots per provider, stable across updates', () => {
+    const d = createDirector(fixtureManifest)
+    const u = d.update(withCaps(state(agent('a'))), 0)
+    expect(u.stations.get('claude-code')!.slot.get('mcp:github')).toBe(4)
+    expect(u.library.get('claude-code')!.books.slot.get('skill:run-office')).toBe(0)
+    expect(u.library.get('claude-code')!.boards.slot.get('rule:project:TESTING.md')).toBe(0)
+    const again = d.update(withCaps(state(agent('a'))), 250)
+    expect(again.stations.get('claude-code')!.slot).toEqual(u.stations.get('claude-code')!.slot)
+    expect(u.links).toEqual([])
+  })
+
+  it('draws a call link from the desk monitor to the station while the adapter is in use', () => {
+    const d = createDirector(fixtureManifest)
+    d.update(withCaps(state(agent('a'))), 0)
+    const u = d.update(withCaps(state(agent('a')), { fs: ['a'] }), 250)
+    expect(u.plans.get('a')!.intent).toMatchObject({
+      activity: 'connection-call',
+      capability: 'fs',
+    })
+    const seat = u.plans.get('a')!.intent.target
+    const desk = seat.replace('seat:desk:', 'port:desk:')
+    expect(u.links).toHaveLength(1)
+    expect(u.links[0]).toMatchObject({
+      agentId: 'a',
+      capabilityId: 'fs',
+      from: u.layout.ports!.get(desk),
+      to: u.layout.ports!.get('wing:claude-code:0/port:station:0'),
+      state: 'calling',
+      opacity: 1,
+    })
+    // Gone after the fade.
+    d.update(withCaps(state(agent('a'))), 500)
+    expect(d.update(withCaps(state(agent('a'))), 250 + CALL_FADE_MS + 250).links).toEqual([])
+  })
+
+  it('keeps a visiting link from the hand once the agent is at the station', () => {
+    const d = createDirector(fixtureManifest)
+    let u = d.update(withCaps(state(agent('a'))), 0)
+    for (let t = 250; t <= 60_000; t += 250)
+      u = d.update(withCaps(state(agent('a')), { fs: ['a'] }), t)
+    expect(u.plans.get('a')!.intent.activity).toBe('connection-visit')
+    const link = u.links[0]!
+    expect(link.state).toBe('visiting')
+    const station = u.layout.anchors.get('wing:claude-code:0/spot:station:0')!
+    expect(Math.hypot(link.from.x - station.pos.x, link.from.z - station.pos.z)).toBeLessThan(0.5)
+  })
+
+  it('drops links to capabilities that disappeared, and links library visits to the book', () => {
+    const d = createDirector(fixtureManifest)
+    d.update(withCaps(state(agent('a'))), 0)
+    const using = d.update(withCaps(state(agent('a')), { 'mcp:github': ['a'] }), 250)
+    expect(using.links).toHaveLength(1)
+    const gone = {
+      ...withCaps(state(agent('a'))),
+      capabilities: new Map([['claude-code', builtins()]]),
+    }
+    expect(d.update(gone, 300).links).toEqual([])
+    // Two library uses → a visit; the link stays (visiting) and points at the book.
+    const lib = createDirector(fixtureManifest)
+    lib.update(withCaps(state(agent('b'))), 0)
+    lib.update(withCaps(state(agent('b')), { 'skill:run-office': ['b'] }), 1000)
+    lib.update(withCaps(state(agent('b'))), 1500)
+    let u = lib.update(withCaps(state(agent('b')), { 'rule:project:TESTING.md': ['b'] }), 2000)
+    expect(u.plans.get('b')!.intent.activity).toBe('library-visit')
+    for (let t = 2250; t <= 9000; t += 250) u = lib.update(withCaps(state(agent('b'))), t)
+    const visit = u.links.find((l) => l.state === 'visiting')!
+    expect(visit).toMatchObject({ capabilityId: 'rule:project:TESTING.md', style: 'particles' })
+    expect(visit.to).toEqual(u.layout.ports!.get('wing:claude-code:0/port:board:0'))
+  })
+
+  it('works with an older manifest (default library capacity) and character clip lengths', () => {
+    const j = fixtureManifestJson() as { modules: { wing: { capacity: Record<string, number> } } }
+    for (const k of ['stations', 'books', 'boards', 'notebooks', 'readingSeats'])
+      delete j.modules.wing.capacity[k]
+    const d = createDirector(parseManifest(j), { clipDurations: { StandUp: 2 } })
+    d.update(withCaps(state(agent('a'))), 0)
+    d.update(withCaps(state(agent('a', { status: 'thinking' }))), 1000)
+    const u = d.update(withCaps(state(agent('a', { status: 'error' }))), 3000)
+    expect(u.plans.get('a')!.steps![0]).toMatchObject({
+      kind: 'clip',
+      clip: 'StandUp',
+      duration: 2,
+    })
+    expect(u.library.get('claude-code')!.books.occupant).toHaveLength(24)
   })
 })

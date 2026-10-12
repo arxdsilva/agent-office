@@ -20,7 +20,9 @@ import {
   createMotion,
   impostorCell,
   impostorMask,
+  fallbackLoop,
   isWalking,
+  lodLevel,
   pairedOffset,
   paletteKey,
   poseRowOf,
@@ -141,9 +143,23 @@ describe('walk timing', () => {
 
 describe('paired loops (ping-pong)', () => {
   it('phase-locks both players to a shared clock, player B half a cycle later', () => {
-    expect(pairedOffset(10.4, 1.6, 0.5, false)).toBeCloseTo(10.4 % 1.6)
-    expect(pairedOffset(10.4, 1.6, 0.5, true)).toBeCloseTo((10.4 + 0.8) % 1.6)
+    expect(pairedOffset(10, 1.6, 0.5, false)).toBeCloseTo(0.4)
+    expect(pairedOffset(10, 1.6, 0.5, true)).toBeCloseTo(1.2)
     expect(pairedOffset(3, 0, 0.5, true)).toBe(0)
+  })
+
+  it('stays within [0, duration) and half a cycle apart across the wrap', () => {
+    for (const clock of [10.4, 11.2, 0, 7.9999999, 1e5 + 0.3]) {
+      const a = pairedOffset(clock, 1.6, 0.5, false)
+      const b = pairedOffset(clock, 1.6, 0.5, true)
+      for (const t of [a, b]) {
+        expect(t).toBeGreaterThanOrEqual(0)
+        expect(t).toBeLessThan(1.6)
+      }
+      const gap = (((b - a) % 1.6) + 1.6) % 1.6
+      expect(Math.min(gap, 1.6 - gap)).toBeCloseTo(0.8, 6)
+    }
+    expect(pairedOffset(-0.4, 1.6, 0.5, false)).toBeCloseTo(1.2)
   })
 })
 
@@ -212,6 +228,23 @@ describe('quality and animation LOD', () => {
     expect(animTier(5, false, q)).toBe('frozen')
   })
 
+  it('turns agents into impostors beyond the impostor distance (far + 10 m) or the budget', () => {
+    const q = CHARACTER_QUALITY.medium
+    expect(q.impostorDist).toBe(45)
+    expect(CHARACTER_QUALITY.low.impostorDist).toBe(30)
+    expect(lodLevel(10, true, q, false, true, false)).toBe('full')
+    expect(lodLevel(40, true, q, false, true, false)).toBe('far')
+    expect(lodLevel(46, true, q, false, true, false)).toBe('impostor')
+    expect(lodLevel(10, true, q, true, true, false)).toBe('impostor')
+    // Hysteresis: an impostor comes back only once clearly inside the distance.
+    expect(lodLevel(44, true, q, false, true, true)).toBe('impostor')
+    expect(lodLevel(42, true, q, false, true, true)).toBe('far')
+    // Without impostors (no renderer to bake them): LOD1 at the far rate instead.
+    expect(lodLevel(60, true, q, false, false, false)).toBe('far')
+    expect(lodLevel(10, true, q, true, false, false)).toBe('far')
+    expect(lodLevel(60, false, q, true, true, false)).toBe('frozen')
+  })
+
   it('ticks full every frame, half every other frame (staggered), far at 10 Hz, frozen never', () => {
     expect(tickDue('full', 7, 0, 0)).toBe(true)
     expect([0, 1, 2, 3].map((f) => tickDue('half', f, 0, 0))).toEqual([true, false, true, false])
@@ -253,6 +286,14 @@ describe('quality and animation LOD', () => {
     expect(poseRowOf(undefined)).toBe(0)
     expect(poseRowOf('SitType')).toBe(1)
     expect(poseRowOf('LoungeSit')).toBe(2)
+    expect(poseRowOf('SitRead')).toBe(1)
+    expect(poseRowOf('StandInteract')).toBe(0)
+  })
+
+  it('falls back to the posture-matching loop when the glb lacks a clip', () => {
+    expect(fallbackLoop('SitRead')).toBe('SitIdle')
+    expect(fallbackLoop('LoungeSit')).toBe('SitIdle')
+    expect(fallbackLoop('StandInteract')).toBe('Idle')
   })
 })
 
@@ -508,6 +549,39 @@ describe('step player', () => {
     expect(maxOff).toBeGreaterThan(0.05)
     expect(maxOff).toBeLessThanOrEqual(SEPARATION.maxOffset + 1e-9)
     expect(dist(m.pos, { x: 0, z: 5 })).toBeLessThan(1e-6)
+  })
+
+  it('holds the last frame of a one-shot marked `hold` (ShelfPick) until new steps arrive', () => {
+    const m = createMotion()
+    setSteps(m, [
+      { kind: 'teleport', pos: { x: 0, z: 0 }, heading: 0 },
+      { kind: 'prop', prop: 'book', on: true },
+      { kind: 'clip', clip: 'ShelfPick', loop: false, fadeIn: 0.25, duration: 1.5, hold: true },
+      { kind: 'clip', clip: 'Idle', loop: true, fadeIn: 0.25 },
+    ])
+    const ev = run(m, 5)
+    expect(m.clip).toBe('ShelfPick')
+    expect(m.clipTime).toBeCloseTo(1.5)
+    expect(m.props).toEqual(['book'])
+    expect(clipsOf(ev)).toEqual(['Idle', 'ShelfPick'])
+    // Held (finished) → a new sequence cuts in at once, like a loop.
+    setSteps(m, [{ kind: 'clip', clip: 'StandInteract', loop: true, fadeIn: 0.25 }])
+    const out: MotionEvent[] = []
+    advanceMotion(m, DT, CLIPS, undefined, out)
+    expect(clipsOf(out)).toEqual(['StandInteract'])
+  })
+
+  it('finishes a held one-shot still in progress before new steps, then moves on', () => {
+    const m = createMotion()
+    setSteps(m, [
+      { kind: 'teleport', pos: { x: 0, z: 0 }, heading: 0 },
+      { kind: 'clip', clip: 'ShelfPick', loop: false, fadeIn: 0, duration: 1.5, hold: true },
+    ])
+    run(m, 0.5)
+    setSteps(m, [{ kind: 'clip', clip: 'Idle', loop: true, fadeIn: 0.25 }])
+    expect(clipsOf(run(m, 0.9))).toEqual([])
+    expect(m.clip).toBe('ShelfPick')
+    expect(clipsOf(run(m, 0.2))).toEqual(['Idle'])
   })
 
   it('uses clip lengths from the step, then the clip table, then the defaults', () => {

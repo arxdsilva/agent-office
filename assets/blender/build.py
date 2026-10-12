@@ -28,7 +28,7 @@ ALL = ['atrium', 'street', 'garden', 'cap'] + [f'wing:{t}' for t in themes.ORDER
 PREFIX = {'atrium': 'a', 'street': 's', 'garden': 'g', 'cap': 'c', 'wing': 'w'}
 # (lightmap px, samples) per quality
 BAKE = {
-    'final': {'atrium': (4096, 512), 'wing': (2048, 512), 'garden': (2048, 512), 'street': (1024, 512),
+    'final': {'atrium': (4096, 384), 'wing': (2048, 512), 'garden': (2048, 384), 'street': (1024, 512),
               'cap': (512, 256)},
     'draft': {'atrium': (2048, 32), 'wing': (1024, 32), 'garden': (1024, 32), 'street': (512, 32), 'cap': (256, 16)},
 }
@@ -68,6 +68,17 @@ def make(spec):
     rng = scene.rng(zlib.crc32(spec.encode()))
     t = time.time()
     info = mod.build(g, A, P, theme_name, theme, rng)
+    b = info['bounds']  # colliders never leave the module footprint (contract §2)
+    g.colliders = [(max(x0, b['minX']), min(x1, b['maxX']), max(z0, b['minZ']), min(z1, b['maxZ']), y0, y1)
+                   for (x0, x1, z0, z1, y0, y1) in g.colliders]
+    # foliage never pokes through the perimeter walls (it would show from the next module)
+    inset = info.get('foliage_inset', 0.17)
+    for (group, mat), batch in g.batches.items():
+        if mat != P['leaf']:
+            continue
+        for v in batch.bm.verts:
+            v.co.x = min(max(v.co.x, b['minX'] + inset), b['maxX'] - inset)
+            v.co.y = min(max(v.co.y, -(b['maxZ'] - inset)), -(b['minZ'] + inset))
     col = scene.new_collection(slug(spec))
     objs = export.create_objects(g, col, slug(spec))
     lcol = scene.new_collection('lights')
@@ -79,7 +90,7 @@ def make(spec):
         mod.context(cg, P)
         ccol = scene.new_collection('bake-context')
         c = export.create_objects(cg, ccol, 'context')
-        objs['context'] = c['static'] + c['ceiling'] + c['glass']
+        objs['context'] = c['static'] + c['ceiling'] + c['glass'] + c['roofglass']
         lighting.add_lights(cg.lights, lcol)
     print(f'[asset] {spec}: built {sum(len(v) for v in objs.values())} objects in {time.time() - t:.1f} s', flush=True)
     return kind, theme_name, theme, g, A, info, objs, P
@@ -95,18 +106,20 @@ def build_one(spec, quality, out, bake=True):
     if bake:
         res, samples = BAKE[quality][kind]
         baked, binfo, tris = export.bake_and_split(objs, res, samples, os.path.join(out, png), out, name,
-                                                   hide=objs['glass'] + objs['collider'])
+                                                   hide=objs['glass'] + objs['roofglass'] + objs['collider'])
         stats.update(bake_seconds=binfo['bake_seconds'], lightmap=res, samples=samples)
         intensity = binfo['intensity']
     else:
         export.tag_unbaked(objs)
         baked = objs['static'] + objs['ceiling']
         intensity = 1.0
-    for o in objs['glass']:
+    for o in objs['glass'] + objs['roofglass']:
         o['role'] = 'glass'
+    for o in objs['roofglass']:  # additive: glass above the cut height (skylights), hidden with ceilings
+        o['ceiling'] = True
     for o in objs['context']:
         bpy.data.objects.remove(o)
-    ship = baked + objs['glass'] + objs['dynamic'] + objs['collider']
+    ship = baked + objs['glass'] + objs['roofglass'] + objs['dynamic'] + objs['collider']
     stats['triangles'] = export.count_triangles([o for o in ship if o.get('role') != 'collider'])
     stats['draw_calls'] = len([o for o in ship if o.get('role') != 'collider'])
     stats['objects'] = {r: len([o for o in ship if o.get('role') == r]) for r in

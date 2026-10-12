@@ -19,7 +19,13 @@ export async function startServer(policy: Partial<SweepPolicy> = {}) {
     tokenOk: (t) => current.tokenOk(t),
   }
   const app = buildHttpApi(
-    { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query },
+    {
+      activity: office.activity,
+      inbox: office.inbox,
+      chat: office.chat,
+      query: office.query,
+      capabilities: office.capabilities,
+    },
     auth,
   )
   const server = await startHttpServer(app, { host: '127.0.0.1', port: 0 })

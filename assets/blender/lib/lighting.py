@@ -296,14 +296,27 @@ def _look_at(cam, pos, target):
     cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 
 
-def render_previews(spec, shots, objs, out, quality, engine='EEVEE'):
-    """Eevee stills (AgX) of a module: shots = [(slug, pos, target, lens_mm, hide_ceiling)]."""
+def render_previews(spec, shots, objs, out, quality, engine=None):
+    """Preview stills (AgX) of a module: shots = [(slug, pos, target, lens_mm, hide_ceiling)].
+
+    Cycles (Metal GPU, OIDN) by default: it matches the baked look and, unlike Eevee in background mode on this
+    machine, never stalls. Set ASSET_PREVIEW_ENGINE=EEVEE to use Eevee."""
+    engine = engine or os.environ.get('ASSET_PREVIEW_ENGINE', 'CYCLES').upper()
     sc = bpy.context.scene
     final = quality == 'final'
     if engine == 'CYCLES':
         enable_gpu()
-        sc.cycles.samples = 256 if final else 64
+        sc.cycles.samples = 160 if final else 48
+        sc.cycles.use_adaptive_sampling = True
         sc.cycles.use_denoising = True
+        sc.cycles.denoiser = 'OPENIMAGEDENOISE'
+        sc.cycles.max_bounces = 6
+        sc.cycles.diffuse_bounces = 3
+        sc.cycles.glossy_bounces = 2
+        sc.cycles.transmission_bounces = 4
+        sc.cycles.sample_clamp_indirect = 6.0
+        sc.cycles.caustics_reflective = False
+        sc.cycles.caustics_refractive = False
     else:
         sc.render.engine = 'BLENDER_EEVEE'
         ee = sc.eevee

@@ -43,6 +43,17 @@ function addAnchor(
 
 const round = (v: number) => Math.round(v * 1e6) / 1e6
 
+/** A 3D link attach point (contract §4: the only kind with y ≠ 0). */
+function addPort(anchors: Json, id: string, x: number, y: number, z: number) {
+  anchors[id] = { x: round(x), y, z: round(z) }
+}
+
+/** Point `d` m in front of (x, z) facing `heading`. */
+const ahead = (x: number, z: number, heading: number, d: number) => ({
+  x: x + d * Math.sin(heading),
+  z: z + d * Math.cos(heading),
+})
+
 /** Grid of nodes `g:<x>:<z>` with 4-neighbour edges. */
 function grid(xs: number[], zs: number[], width: number): Nav {
   const nav: Nav = { nodes: {}, edges: [] }
@@ -63,7 +74,7 @@ const range = (from: number, to: number, step: number) => {
 }
 
 function wingModule() {
-  const nav = grid(range(2, 22, 2), range(-8, 8, 2), 1)
+  const nav = grid(range(2, 28, 2), range(-8, 8, 2), 1)
   nav.nodes.door = { x: 0, z: 0, width: 1.2 }
   nav.edges.push(['door', 'g:2:0'])
   const anchors: Json = {}
@@ -74,10 +85,13 @@ function wingModule() {
     for (let i = 0; i < 4; i++) {
       const x = cx + (i % 2 ? 0.8 : -0.8)
       const z = cz + (i < 2 ? -0.7 : 0.7)
-      addAnchor(anchors, nav, `seat:desk:${p}:${i}`, x, z, i < 2 ? 0 : Math.PI, 'sit', {
+      const h = i < 2 ? 0 : Math.PI
+      addAnchor(anchors, nav, `seat:desk:${p}:${i}`, x, z, h, 'sit', {
         room: `pod-${p}`,
         screen: `desk:${p}:${i}`,
       })
+      const mon = ahead(x, z, h, 0.55)
+      addPort(anchors, `port:desk:${p}:${i}`, mon.x, 1.25, mon.z)
     }
   }
   for (const [room, cx] of [
@@ -101,6 +115,44 @@ function wingModule() {
     addAnchor(anchors, nav, `spot:kitchen:${i}`, 3 + i, -7.5, Math.PI, 'stand', { room: 'kitchen' })
   for (let i = 0; i < 8; i++)
     addAnchor(anchors, nav, `seat:lounge:${i}`, 13 + i, -7.5, Math.PI, 'lounge', { room: 'lounge' })
+  // Adapters room (x ∈ [24, 30], z ∈ [−9, 0]): two rows of four stations, screens 0.6 m ahead.
+  for (let i = 0; i < 8; i++) {
+    const x = 25 + (i % 4) * 1.4
+    const [z, h] = i < 4 ? [-7.6, Math.PI] : [-1.4, 0]
+    addAnchor(anchors, nav, `spot:station:${i}`, x, z, h, 'stand', { room: 'adapters' })
+    const scr = ahead(x, z, h, 0.6)
+    addPort(anchors, `port:station:${i}`, scr.x, 2.3, scr.z)
+  }
+  // Library (x ∈ [24, 30], z ∈ [0, 9]): shelves A/B along z = 8.4, boards on the far wall,
+  // a notebook rack and a reading table with four seats.
+  for (let n = 0; n < 2; n++)
+    addAnchor(anchors, nav, `spot:shelf:${n}`, 25.5 + n * 3, 7.4, 0, 'stand', { room: 'library' })
+  for (let b = 0; b < 24; b++) {
+    const shelf = b < 12 ? 0 : 1
+    const k = b % 12
+    addPort(
+      anchors,
+      `port:book:${b}`,
+      24.6 + shelf * 3 + (k % 6) * 0.35,
+      1.2 + Math.floor(k / 6) * 0.4,
+      8.4,
+    )
+  }
+  for (let i = 0; i < 6; i++) addPort(anchors, `port:board:${i}`, 29.8, 1.5, 1 + i * 0.9)
+  for (let i = 0; i < 8; i++) addPort(anchors, `port:notebook:${i}`, 24.3, 1.0, 1.5 + i * 0.35)
+  for (let i = 0; i < 4; i++)
+    addAnchor(
+      anchors,
+      nav,
+      `seat:reading:${i}`,
+      26.2 + (i % 2) * 1.6,
+      i < 2 ? 3 : 4,
+      i < 2 ? 0 : Math.PI,
+      'sit',
+      {
+        room: 'library',
+      },
+    )
   return { anchors, nav }
 }
 
@@ -181,7 +233,7 @@ export function fixtureManifestJson(themes: string[] = THEMES): Json {
       atrium: {
         file: 'atrium.glb',
         lightmap: lm('atrium.lightmap.png'),
-        bounds: { minX: -27, maxX: 27, minZ: -24, maxZ: 0 },
+        bounds: { minX: -33, maxX: 33, minZ: -24, maxZ: 0 },
         ...atriumModule(),
       },
       street: {
@@ -191,12 +243,12 @@ export function fixtureManifestJson(themes: string[] = THEMES): Json {
       },
       garden: {
         file: 'garden.glb',
-        bounds: { minX: 0, maxX: 24, minZ: -9, maxZ: 9 },
+        bounds: { minX: 0, maxX: 30, minZ: -9, maxZ: 9 },
         ...gardenModule(),
       },
       cap: {
         file: 'cap.glb',
-        bounds: { minX: -27, maxX: 27, minZ: 0, maxZ: 0.5 },
+        bounds: { minX: -33, maxX: 33, minZ: 0, maxZ: 0.5 },
         anchors: {},
         nav: { nodes: { end: { x: 0, z: 0, width: 2 } }, edges: [] },
       },
@@ -212,8 +264,20 @@ export function fixtureManifestJson(themes: string[] = THEMES): Json {
             },
           ]),
         ),
-        bounds: { minX: 0, maxX: 24, minZ: -9, maxZ: 9 },
-        capacity: { desk: 24, meeting: 2, meetingSeats: 6, booth: 4, kitchen: 6, lounge: 8 },
+        bounds: { minX: 0, maxX: 30, minZ: -9, maxZ: 9 },
+        capacity: {
+          desk: 24,
+          meeting: 2,
+          meetingSeats: 6,
+          booth: 4,
+          kitchen: 6,
+          lounge: 8,
+          stations: 8,
+          books: 24,
+          boards: 6,
+          notebooks: 8,
+          readingSeats: 4,
+        },
         ...wingModule(),
       },
     },

@@ -19,9 +19,9 @@ def task_chair(g, P, color='#2b2b2b', frame='#1b1b1b'):
         a = TAU * i / 5 + 0.3
         dx, dz = math.sin(a), math.cos(a)
         g.box(P['paint'], (0.045, 0.03, 0.30), (dx * 0.15, 0.085, dz * 0.15), yaw=a, color=frame, bevel=0.006)
-        g.cyl(P['paint'], 0.025, 0.045, (dx * 0.29, 0.0, dz * 0.29), segs=8, pitch=math.pi / 2, color='#111111')
-    g.cyl(P['steel'], 0.028, 0.30, (0, 0.09, 0), segs=10)
-    g.cyl(P['paint'], 0.04, 0.06, (0, 0.36, 0), segs=10, color=frame)
+        g.box(P['paint'], (0.045, 0.045, 0.045), (dx * 0.29, 0.0225, dz * 0.29), yaw=a, color='#111111', bevel=0)
+    g.cyl(P['steel'], 0.028, 0.30, (0, 0.09, 0), segs=6, caps=False)
+    g.cyl(P['paint'], 0.04, 0.06, (0, 0.36, 0), segs=6, color=frame)
     g.box(P['paint'], (0.40, 0.03, 0.36), (0, 0.405, 0), color=frame, bevel=0.01)
     g.box(P['fabric'], (0.50, 0.07, 0.48), (0, 0.44, 0.0), bevel=0.025, segs=2, color=color)
     # back: frame spine + cushioned back
@@ -126,8 +126,8 @@ def keyboard(g, P, pos, yaw=0.0):
 
 def mug(g, P, pos, color):
     x, y, z = pos
-    g.cyl(P['gloss'], 0.04, 0.095, (x, y, z), segs=12, color=color)
-    g.torus(P['gloss'], 0.028, 0.008, (x + 0.045, y + 0.05, z), segs=8, rsegs=4, pitch=math.pi / 2, color=color)
+    g.cyl(P['gloss'], 0.04, 0.095, (x, y, z), segs=8, color=color)
+    g.torus(P['gloss'], 0.028, 0.008, (x + 0.045, y + 0.05, z), segs=6, rsegs=3, pitch=math.pi / 2, color=color)
 
 
 def laptop(g, P, pos, yaw=0.0, open_=True):
@@ -167,7 +167,7 @@ def pod(g, P, pod_index, rng, chair_color, mug_colors, divider_color='#8a8f94', 
             sz = side * 1.22
             with g.at(x + rng.uniform(-0.04, 0.04), sz, math.pi if side == 1 else 0.0):
                 task_chair(g, P, color=chair_color)
-            seats.append((i, x, sz, math.pi if side == 1 else 0.0))
+            seats.append((i, x, sz, math.pi if side == 1 else 0.0, (x, 1.255, side * 0.19)))
     # privacy divider (felt) on the center line + cable spine
     g.box(P['felt'], (3.2, 0.42, 0.04), (0, 0.95, 0), bevel=0.01, segs=2, color=divider_color)
     g.box(P['metal'], (3.2, 0.02, 0.05), (0, 1.17, 0), bevel=0.004)
@@ -271,7 +271,7 @@ def fridge(g, P, pos, w=0.7, h=1.9):
             g.box(P['white'], (w - 0.12, 0.012, 0.5), (0, yy, -0.3), bevel=0)
             for k in range(6):
                 c = ('#2a9d8f', '#e9c46a', '#f4a261', '#e76f51', '#a8dadc', '#ffffff')[(i + k) % 6]
-                g.cyl(P['gloss'], 0.032, 0.2, (-w / 2 + 0.1 + k * 0.095, yy + 0.012, -0.1), segs=8, color=c)
+                g.cyl(P['gloss'], 0.032, 0.2, (-w / 2 + 0.1 + k * 0.095, yy + 0.012, -0.1), segs=5, color=c)
         g.box(P['metal'], (0.02, 0.8, 0.03), (w / 2 - 0.06, h / 2 + 0.1, 0.02), bevel=0.004)
         g.box_b(P['light'], -w / 2 + 0.06, w / 2 - 0.06, h - 0.2, h - 0.18, -0.6, -0.05, bevel=0)
 
@@ -417,12 +417,12 @@ def bookshelf(g, P, w=1.8, h=2.0, d=0.35, rng=None, frame='wood'):
             bw = rng.uniform(0.025, 0.05)
             bh = rng.uniform(0.18, 0.3)
             g.box(P['paint'], (bw, bh, rng.uniform(0.18, 0.24)), (x + bw / 2, y + bh / 2, -d / 2), color=rng.choice(cols),
-                  bevel=0.002)
+                  bevel=0)
             x += bw + 0.004
 
 
 # ============================================================================== plants
-def leaf(g, P, base, yaw, pitch, length, width, droop=0.3, color='#4E7D3A', segs=4, fold=0.15):
+def leaf(g, P, base, yaw, pitch, length, width, droop=0.3, color='#4E7D3A', segs=3, fold=0.15):
     """A curved, pointed leaf blade as a ribbon (6 tris at segs=4). pitch: elevation of the start."""
     bx, by, bz = base
     cy, sy = math.cos(yaw), math.sin(yaw)
@@ -442,7 +442,7 @@ def leaf(g, P, base, yaw, pitch, length, width, droop=0.3, color='#4E7D3A', segs
     g.ribbon(P['leaf'], L, R, color=color)
 
 
-def bush(g, P, pos, radius, height, rng, n=None, palette=GREENS, leaf_len=None, leaf_w=None):
+def bush(g, P, pos, radius, height, rng, n=None, palette=GREENS, leaf_len=None, leaf_w=None, segs=3):
     x0, y0, z0 = pos
     n = n or int(30 + 120 * radius)
     ll = leaf_len or max(0.08, radius * 0.6)
@@ -453,7 +453,7 @@ def bush(g, P, pos, radius, height, rng, n=None, palette=GREENS, leaf_len=None, 
         h = rng.uniform(0.15, 1.0) * height
         base = (x0 + math.sin(a) * r * 0.6, y0 + h * 0.6, z0 + math.cos(a) * r * 0.6)
         leaf(g, P, base, a + rng.uniform(-0.4, 0.4), rng.uniform(0.2, 1.1), ll * rng.uniform(0.75, 1.2),
-             lw * rng.uniform(0.8, 1.2), droop=rng.uniform(0.15, 0.4), color=rng.choice(palette))
+             lw * rng.uniform(0.8, 1.2), droop=rng.uniform(0.15, 0.4), color=rng.choice(palette), segs=segs)
 
 
 def snake_plant(g, P, pos, height, rng, n=10):
@@ -470,7 +470,7 @@ def tree(g, P, pos, height, rng, crown=0.7, leaf_size=0.2, n=None):
     """Indoor tree (fiddle-leaf / olive style): trunk + a few branches with leaf clusters."""
     x0, y0, z0 = pos
     g.cyl(P['wood_dark'], 0.03, height * 0.65, (x0, y0, z0), r2=0.02, segs=6)
-    n = n or int(170 * crown)
+    n = n or int(110 * crown)
     tips = []
     for b in range(5):
         a = TAU * b / 5 + rng.uniform(-0.3, 0.3)
@@ -524,11 +524,11 @@ def planter(g, P, w, d, h, rng, kind='mixed', color='#3a3a3a', mat='paint', dens
         if k == 'snake':
             snake_plant(g, P, top, rng.uniform(0.5, 0.9), rng, n=8)
         elif k == 'fern':
-            bush(g, P, top, 0.35, 0.25, rng, n=22, leaf_len=0.32, leaf_w=0.07)
+            bush(g, P, top, 0.35, 0.25, rng, n=22, leaf_len=0.32, leaf_w=0.07, segs=2)
         elif k == 'tree':
             tree(g, P, top, rng.uniform(1.8, 2.4), rng, crown=0.8, leaf_size=0.2)
         else:
-            bush(g, P, top, rng.uniform(0.25, 0.4), rng.uniform(0.3, 0.5), rng)
+            bush(g, P, top, rng.uniform(0.25, 0.45), rng.uniform(0.3, 0.6), rng, segs=2)
 
 
 def living_wall(g, P, w, h, rng, y0=0.3, density=1.0, frame='wood'):
@@ -685,12 +685,12 @@ def cafe_chair(g, P, color='#2b2b2b'):
     """Bent-wood cafe chair, seat top 0.47 m, facing +z."""
     for sx in (-1, 1):
         for sz in (-1, 1):
-            g.cyl(P['metal'], 0.012, 0.45, (sx * 0.19, 0, sz * 0.19), segs=6)
-    g.box(P['wood'], (0.44, 0.03, 0.44), (0, 0.455, 0), bevel=0.01, segs=2)
+            g.cyl(P['metal'], 0.012, 0.41, (sx * 0.19, 0, sz * 0.19), segs=6)
+    g.box(P['wood'], (0.44, 0.03, 0.44), (0, 0.425, 0), bevel=0.01, segs=2)
     g.box(P['wood'], (0.42, 0.22, 0.02), (0, 0.72, -0.22), pitch=-0.1, bevel=0.008, segs=2)
     for sx in (-1, 1):
         g.cyl(P['metal'], 0.01, 0.35, (sx * 0.19, 0.46, -0.2), segs=6, pitch=-0.1)
-    g.box(P['fabric'], (0.40, 0.03, 0.40), (0, 0.485, 0.0), bevel=0.012, segs=2, color=color)
+    g.box(P['fabric'], (0.40, 0.03, 0.40), (0, 0.455, 0.0), bevel=0.012, segs=2, color=color)
 
 
 def round_table(g, P, r=0.45, h=0.74, top='wood'):
@@ -716,3 +716,187 @@ def round_planter(g, P, rng, r=1.4, h=0.55, tree_h=4.2, bench=True):
             a = TAU * k / 8
             g.box(P['metal'], (0.05, 0.42, 0.3), (math.cos(a) * (r + 0.28), 0.21, math.sin(a) * (r + 0.28)),
                   yaw=-a + math.pi / 2, bevel=0.003)
+
+
+# ============================================================================== capability rooms
+def station_kiosk(g, P, index, accent_mat):
+    """Adapter station facing +z: slim pillar, 1.6 × 0.9 holo screen (role station, top at 2.3 m),
+    base plinth. Returns the local port position (top-center of the screen)."""
+    g.cyl(P['metal'], 0.32, 0.04, (0, 0, -0.05), segs=24, bevel=0.004)
+    g.box(P['metal'], (0.12, 2.6, 0.1), (0, 1.3, -0.12), bevel=0.006, segs=2)
+    g.box(P['metal'], (1.68, 0.98, 0.035), (0, 1.85, -0.02), bevel=0.006, segs=2)
+    g.box(accent_mat, (1.6, 0.012, 0.012), (0, 1.39, 0.0), bevel=0)  # under-glow edge
+    g.box(accent_mat, (0.012, 0.9, 0.012), (-0.835, 1.85, 0.0), bevel=0)
+    g.box(accent_mat, (0.012, 0.9, 0.012), (0.835, 1.85, 0.0), bevel=0)
+    d = g.dynamic(f'station-{index}', 'station', str(index), P['screen'], pivot=(0, 1.85, 0.0),
+                  extras={'width': 1.6, 'height': 0.9})
+    with g.into(d):
+        g.quad(P['screen'], 1.6, 0.9, (0, 1.85, 0.0))
+    return (0.0, 2.3, 0.0)
+
+
+def led_ring(g, P, index_ref, pos, R=0.42):
+    """Floor LED ring around a standing spot (role led, ref `index_ref`)."""
+    x, y, z = pos
+    d = g.dynamic(f'led-{index_ref.replace(":", "-")}', 'led', index_ref, P['led'], pivot=(x, 0.006, z))
+    with g.into(d):
+        g.torus(P['led'], R, 0.018, (x, 0.006, z), segs=40, rsegs=4)
+
+
+def core_column(g, P, accent_mat, H=3.6, w=0.9):
+    """Server-rack core column centered at the origin; emissive strips are one runtime node."""
+    g.box(P['metal'], (w, H, w), (0, H / 2, 0), bevel=0.01, segs=2)
+    for k in range(16):  # rack unit grooves
+        y = 0.35 + k * 0.18
+        for (sx, sz, yaw) in ((0, 1, 0), (0, -1, math.pi), (1, 0, math.pi / 2), (-1, 0, -math.pi / 2)):
+            g.box(P['black'], (w - 0.16, 0.012, 0.006), (sx * (w / 2 + 0.002), y, sz * (w / 2 + 0.002)), yaw=yaw, bevel=0)
+    g.box(accent_mat, (w + 0.06, 0.04, w + 0.06), (0, 0.04, 0), bevel=0)
+    g.box(accent_mat, (w + 0.06, 0.04, w + 0.06), (0, H - 0.06, 0), bevel=0)
+    d = g.dynamic('adapters-core', 'screen', 'adapters-core', P['screen'], pivot=(0, H / 2, 0))
+    with g.into(d):
+        for (sx, sz, yaw) in ((0, 1, 0), (0, -1, math.pi), (1, 0, math.pi / 2), (-1, 0, -math.pi / 2)):
+            for off in (-0.3, 0.0, 0.3):
+                px = sx * (w / 2 + 0.004) + (off if sx == 0 else 0)
+                pz = sz * (w / 2 + 0.004) + (off if sz == 0 else 0)
+                g.quad(P['screen'], 0.035, H - 0.7, (px, H / 2, pz), yaw=yaw)
+
+
+def library_shelf(g, P, w, h, d, rng, feature, frame='wood_dark'):
+    """Floor-to-ceiling bookcase on z ∈ [−d, 0], x from 0 to w, books facing +z.
+    feature: list of (ref, local x) for the capability books on the two eye-level shelves (refs i) —
+    returns {ref: spine center (local)}."""
+    levels = 7
+    pitch = (h - 0.05) / levels
+    for i in range(levels + 1):
+        y = i * pitch
+        g.box_b(P[frame], 0, w, y, y + 0.035, -d, 0, bevel=0.003)
+    nv = max(2, round(w / 1.0))
+    for k in range(nv + 1):
+        x = k * (w - 0.04) / nv
+        g.box_b(P[frame], x, x + 0.04, 0, h, -d, 0, bevel=0.003)
+    g.box_b(P[frame], 0, w, 0, h, -d - 0.02, -d, bevel=0)
+    cols = ('#5b2a1f', '#1f3a4d', '#2f4a36', '#6b4f2a', '#3a2f4a', '#7a1f2b', '#2b2b2b', '#c9b48a', '#8a5a3b')
+    spines = {}
+    feat_levels = (2, 3)  # shelf levels whose top is at eye level
+    feat_by_level = {2: feature[:len(feature) // 2], 3: feature[len(feature) // 2:]}
+    for i in range(levels):
+        y = i * pitch + 0.035
+        x = 0.06
+        busy = []
+        if i in feat_levels:
+            for ref, fx in feat_by_level[i]:
+                bw, bh, bd = 0.09, 0.38, 0.27
+                g.box(P['paint'], (bw, bh, bd), (fx, y + bh / 2, -d / 2 + 0.02), color='#2a2724', bevel=0.004, segs=2)
+                dd = g.dynamic(f'book-{ref}', 'book', str(ref), P['screen'], pivot=(fx, y + bh / 2, -d / 2 + 0.02 + bd / 2 + 0.001),
+                               extras={'width': bw - 0.008, 'height': bh - 0.02})
+                with g.into(dd):
+                    g.quad(P['screen'], bw - 0.008, bh - 0.02, (fx, y + bh / 2, -d / 2 + 0.02 + bd / 2 + 0.001))
+                spines[ref] = (fx, y + bh / 2, -d / 2 + 0.02 + bd / 2 + 0.02)
+                busy.append((fx - bw / 2 - 0.02, fx + bw / 2 + 0.02))
+        while x < w - 0.1:
+            if any(a - 0.06 < x < b for a, b in busy):
+                x = max(b for a, b in busy if a - 0.06 < x < b) + 0.01
+                continue
+            if rng.random() < 0.2:
+                x += rng.uniform(0.15, 0.4)
+                continue
+            bw = rng.uniform(0.04, 0.08)
+            bh = rng.uniform(0.2, min(0.36, pitch - 0.06))
+            g.box(P['paint'], (bw, bh, rng.uniform(0.2, 0.26)), (x + bw / 2, y + bh / 2, -d / 2 + 0.02),
+                  color=rng.choice(cols), bevel=0)
+            x += bw + 0.003
+    return spines
+
+
+def rule_board(g, P, ref, frame='brass'):
+    """Framed 0.9 × 1.2 m rule board facing +z (role board); returns the local port."""
+    g.box(P[frame], (0.98, 1.28, 0.03), (0, 0, 0.015), bevel=0.006, segs=2)
+    g.box(P['paint'], (0.92, 1.22, 0.01), (0, 0, 0.032), color='#efe7d6', bevel=0)
+    d = g.dynamic(f'board-{ref}', 'board', str(ref), P['screen'], pivot=(0, 0, 0.0385),
+                  extras={'width': 0.9, 'height': 1.2})
+    with g.into(d):
+        g.quad(P['screen'], 0.9, 1.2, (0, 0, 0.0385))
+    # brass picture light
+    g.box(P[frame], (0.5, 0.03, 0.06), (0, 0.72, 0.09), bevel=0.004)
+    g.box(P['light_warm'], (0.46, 0.006, 0.03), (0, 0.704, 0.09), bevel=0)
+    g.cyl(P[frame], 0.008, 0.08, (0, 0.65, 0.03), segs=6, pitch=math.pi / 4)
+    return (0.0, 0.0, 0.06)
+
+
+def memory_notebook(g, P, ref, color):
+    """Hard-cover notebook standing face-out (front faces +z), label surface = role notebook."""
+    g.box(P['paint'], (0.17, 0.23, 0.025), (0, 0.115, 0), color=color, bevel=0.003, segs=2)
+    g.box(P['paint'], (0.16, 0.22, 0.02), (0.004, 0.115, -0.001), color='#f1ead8', bevel=0)
+    d = g.dynamic(f'notebook-{ref}', 'notebook', str(ref), P['screen'], pivot=(0, 0.13, 0.0131),
+                  extras={'width': 0.13, 'height': 0.16})
+    with g.into(d):
+        g.quad(P['screen'], 0.13, 0.16, (0, 0.13, 0.0131))
+    return (0.0, 0.13, 0.03)
+
+
+def bankers_lamp(g, P, pos, kelvin=2700):
+    x, y, z = pos
+    g.cyl(P['brass'], 0.08, 0.02, (x, y, z), segs=16)
+    g.cyl(P['brass'], 0.01, 0.32, (x, y + 0.02, z), segs=6)
+    g.cyl(P['gloss'], 0.13, 0.08, (x, y + 0.3, z), r2=0.07, segs=16, color='#2f5d3a', caps=False)
+    g.cyl(P['light_warm'], 0.11, 0.004, (x, y + 0.3, z), segs=14)
+    g.light('point', (x, y + 0.27, z), radius=0.05, power=12, kelvin=kelvin)
+
+
+def ladder(g, P, x0, x1, h, d, at=None):
+    """Rolling library ladder on a brass rail from x0 to x1 (shelf face at z = 0), leaning at `at`."""
+    g.cyl(P['brass'], 0.015, x1 - x0, (x0, h - 0.25, 0.08), segs=8, roll=-math.pi / 2)
+    x0 = at if at is not None else x0
+    lean = 0.28
+    L = math.hypot(h - 0.2, d)
+    ang = math.atan2(d, h - 0.2)
+    for sx in (-0.22, 0.22):
+        g.box(P['wood_dark'], (0.04, L, 0.05), (x0 + sx, (h - 0.2) / 2, 0.08 + d / 2), pitch=-ang, bevel=0.004)
+    n = int((h - 0.4) / 0.3)
+    for k in range(n):
+        t = (k + 1) / (n + 1)
+        g.box(P['wood_dark'], (0.44, 0.03, 0.08), (x0, (h - 0.2) * t, 0.08 + d * (1 - t)), bevel=0.003)
+
+
+def mural(g, P, w, h, rng, colors, base='#efe9df'):
+    """Abstract felt supergraphic (no text) on the plane z = 0 facing +z, x ∈ [0, w], y ∈ [0, h]."""
+    g.box_b(P['felt'], 0, w, 0, h, 0, 0.02, bevel=0.004, color=base)
+    z = 0.02
+    for k in range(7):
+        c = colors[k % len(colors)]
+        kind = rng.random()
+        if kind < 0.45:  # rectangle block
+            bw, bh = rng.uniform(0.15, 0.4) * w, rng.uniform(0.2, 0.55) * h
+            x0, y0 = rng.uniform(0, w - bw), rng.uniform(0, h - bh)
+            g.box_b(P['felt'], x0, x0 + bw, y0, y0 + bh, z, z + 0.015, bevel=0.003, color=c)
+        elif kind < 0.8:  # quarter / half disc
+            r = rng.uniform(0.18, 0.35) * min(w, h)
+            cx, cy = rng.uniform(r, w - r), rng.uniform(r, h - r)
+            a0 = rng.choice((0, math.pi / 2, math.pi, 1.5 * math.pi))
+            span = rng.choice((math.pi / 2, math.pi))
+            for i in range(16):
+                a1, a2 = a0 + span * i / 16, a0 + span * (i + 1) / 16
+                g.tri_fan(P['felt'], [(cx, cy, z + 0.016),
+                                      (cx + r * math.cos(a1), cy + r * math.sin(a1), z + 0.016),
+                                      (cx + r * math.cos(a2), cy + r * math.sin(a2), z + 0.016)], color=c)
+        else:  # stripes
+            n = rng.randint(3, 6)
+            sw = rng.uniform(0.03, 0.06) * w
+            x0, y0 = rng.uniform(0, w * 0.6), rng.uniform(0, h * 0.5)
+            for i in range(n):
+                g.box_b(P['felt'], x0 + i * sw * 2, x0 + i * sw * 2 + sw, y0, min(h, y0 + h * 0.45), z, z + 0.015,
+                        bevel=0.002, color=c)
+        z += 0.004
+
+
+def bleachers(g, P, w, steps=3, rise=0.42, run=0.9, colors=('#E07A5F', '#3D5A80', '#81B29A', '#F2CC8F'), rng=None):
+    """Timber bleacher seating along local x (0..w), rising towards −z, front edge at z = 0."""
+    for i in range(steps):
+        z0 = -i * run
+        g.box_b(P['wood'], 0, w, 0, rise * (i + 1), z0 - run, z0, bevel=0.006, segs=2)
+        for k in range(int(w / 1.1)):
+            if rng and rng.random() < 0.55:
+                c = rng.choice(colors)
+                x = 0.25 + k * 1.1 + rng.uniform(-0.1, 0.1)
+                g.box(P['fabric'], (0.55, 0.08, 0.5), (x + 0.28, rise * (i + 1) + 0.04, z0 - run / 2), bevel=0.03, segs=2,
+                      color=c)

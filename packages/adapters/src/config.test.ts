@@ -9,6 +9,8 @@ describe('loadEnv', () => {
       home: '/home/u/.agent-office',
       claudeProjectsDir: '/home/u/.claude/projects',
       claudeSettingsFile: '/home/u/.claude/settings.json',
+      claudeHome: '/home/u/.claude',
+      claudeConfigFile: '/home/u/.claude.json',
       overrides: {},
       sweep: {},
     })
@@ -39,6 +41,16 @@ describe('loadEnv', () => {
       overrides: { port: 9000, claudeAdapter: false, mock: true },
       sweep: { idleAfterMs: 5, expireAfterMs: 10 },
     })
+  })
+
+  it('Claude home and config follow the projects dir unless set explicitly', () => {
+    expect(loadEnv({ CLAUDE_PROJECTS_DIR: '/t/c/projects' }, '/home/u')).toMatchObject({
+      claudeHome: '/t/c',
+      claudeConfigFile: '/t/.claude.json',
+    })
+    expect(
+      loadEnv({ CLAUDE_HOME: '~/ch', CLAUDE_CONFIG_FILE: '/t/cfg.json' }, '/home/u'),
+    ).toMatchObject({ claudeHome: '/home/u/ch', claudeConfigFile: '/t/cfg.json' })
   })
 
   it('rejects invalid numbers', () => {

@@ -3,7 +3,20 @@
 import type { AnchorId, BuildingLayout } from './office-types.ts'
 
 export type ResourceKind =
-  'meeting' | 'booth' | 'kitchen' | 'lounge' | 'cafe' | 'pingpong' | 'reception' | 'elevator'
+  | 'meeting'
+  | 'booth'
+  | 'kitchen'
+  | 'lounge'
+  | 'cafe'
+  | 'pingpong'
+  | 'reception'
+  | 'elevator'
+  | 'station'
+  | 'reading-seat'
+  | 'shelf-spot'
+
+/** How many people can hold one anchor at once (shelf spots: side by side, 0.6 m apart). */
+export const SHARES: Readonly<Partial<Record<ResourceKind, number>>> = { 'shelf-spot': 2 }
 
 /** Largest team a meeting room accepts (one team per room). */
 export const MEETING_MAX_TEAM = 6
@@ -18,6 +31,8 @@ export interface ReservationRequest {
   seats?: number
   /** Auto-expire after this many ms (see `expire`). */
   ttl?: number
+  /** Only this anchor will do (e.g. the station of a given adapter, the shelf holding a book). */
+  anchor?: AnchorId
 }
 
 export interface Reservation {
@@ -30,6 +45,8 @@ export interface Reservation {
   anchors: AnchorId[]
   at: number
   expires?: number
+  /** For shared anchors: which share (0 = on the spot, 1 = the offset place next to it). */
+  share?: number
 }
 
 export interface ReservationState {
@@ -57,8 +74,22 @@ const PATTERNS: Record<ResourceKind, RegExp> = {
   pingpong: /^spot:pingpong:(\d+):([AB])$/,
   reception: /^spot:reception:(\d+)$/,
   elevator: /^spot:elevator:(\d+)$/,
+  station: /^spot:station:(\d+)$/,
+  'reading-seat': /^seat:reading:(\d+)$/,
+  'shelf-spot': /^spot:shelf:(\d+)$/,
 }
-const WING_SCOPED = new Set<ResourceKind>(['meeting', 'booth', 'kitchen', 'lounge'])
+const WING_SCOPED = new Set<ResourceKind>([
+  'meeting',
+  'booth',
+  'kitchen',
+  'lounge',
+  'station',
+  'reading-seat',
+  'shelf-spot',
+])
+/** byAnchor key of share `k` of a shared anchor. */
+const shareKey = (anchor: AnchorId, k: number) => (k ? `${anchor}#${k}` : anchor)
+const keysOf = (r: Reservation) => r.anchors.map((a) => shareKey(a, r.share ?? 0))
 const FALLBACK: Partial<Record<ResourceKind, ResourceKind>> = { kitchen: 'cafe', lounge: 'cafe' }
 
 const unitCache = new WeakMap<BuildingLayout, Map<ResourceKind, Unit[]>>()
@@ -118,16 +149,34 @@ export function reserve(
   layout: BuildingLayout,
   req: ReservationRequest,
   now: number,
-): { state: ReservationState; grant?: AnchorId[]; kind?: ResourceKind } {
+): { state: ReservationState; grant?: AnchorId[]; kind?: ResourceKind; share?: number } {
   const held = state.byHolder.get(req.holder)
   const tooBig = req.kind === 'meeting' && (req.seats ?? 1) > MEETING_MAX_TEAM
-  if (held && !tooBig && (held.kind === req.kind || held.kind === FALLBACK[req.kind]))
-    return { state, grant: held.anchors, kind: held.kind }
+  const same =
+    held &&
+    (held.kind === req.kind || held.kind === FALLBACK[req.kind]) &&
+    (!req.anchor || held.anchors.includes(req.anchor))
+  if (held && same && !tooBig) {
+    const res: { state: ReservationState; grant: AnchorId[]; kind: ResourceKind; share?: number } =
+      {
+        state,
+        grant: held.anchors,
+        kind: held.kind,
+      }
+    if (held.share !== undefined) res.share = held.share
+    return res
+  }
   const base = held ? release(state, req.holder) : state
   if (tooBig) return { state: base }
 
   const all = units(layout)
-  const isFree = (u: Unit) => u.anchors.every((a) => !base.byAnchor.has(a))
+  const shares = SHARES[req.kind] ?? 1
+  const freeShare = (u: Unit) => {
+    for (let k = 0; k < shares; k++)
+      if (u.anchors.every((a) => !base.byAnchor.has(shareKey(a, k)))) return k
+    return -1
+  }
+  const isFree = (u: Unit) => (!req.anchor || u.anchors.includes(req.anchor)) && freeShare(u) >= 0
   const fits = (u: Unit) => req.kind !== 'meeting' || (req.seats ?? 1) <= u.anchors.length
   const pick = (kind: ResourceKind): Unit | undefined => {
     const list = all.get(kind)!
@@ -152,10 +201,17 @@ export function reserve(
     at: now,
   }
   if (req.ttl !== undefined) r.expires = now + req.ttl
+  if (shares > 1) r.share = freeShare(unit)
   const byHolder = new Map(base.byHolder).set(req.holder, r)
   const byAnchor = new Map(base.byAnchor)
-  for (const a of unit.anchors) byAnchor.set(a, req.holder)
-  return { state: { byHolder, byAnchor }, grant: unit.anchors, kind }
+  for (const k of keysOf(r)) byAnchor.set(k, req.holder)
+  const out: { state: ReservationState; grant: AnchorId[]; kind: ResourceKind; share?: number } = {
+    state: { byHolder, byAnchor },
+    grant: unit.anchors,
+    kind,
+  }
+  if (r.share !== undefined) out.share = r.share
+  return out
 }
 
 export function release(state: ReservationState, holder: string): ReservationState {
@@ -164,7 +220,7 @@ export function release(state: ReservationState, holder: string): ReservationSta
   const byHolder = new Map(state.byHolder)
   byHolder.delete(holder)
   const byAnchor = new Map(state.byAnchor)
-  for (const a of r.anchors) byAnchor.delete(a)
+  for (const k of keysOf(r)) byAnchor.delete(k)
   return { byHolder, byAnchor }
 }
 

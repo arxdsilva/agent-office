@@ -92,3 +92,48 @@ describe('toDto', () => {
     expect(toDto(s)).not.toHaveProperty('inboxReadAt')
   })
 })
+
+describe('tool target and capability (docs/capabilities.md)', () => {
+  const tool = (over: Record<string, unknown>, prev?: AgentState, now = 2) =>
+    applyEvent(prev, { agentId: 'a', status: 'tool', ...over }, now)!
+
+  it('keeps target and capability internally; a new tool call replaces both', () => {
+    const a = tool({ tool: 'Bash', target: 'cmd:git', capability: 'shell' })
+    expect(a).toMatchObject({ target: 'cmd:git', capability: 'shell' })
+    const b = tool({ tool: 'Read' }, a, 3)
+    expect(b.target).toBeUndefined()
+    expect(b.capability).toBeUndefined()
+    const c = tool({ target: 'project:x' }, b, 4)
+    expect(c.target).toBe('project:x')
+  })
+
+  it('clears them when the agent leaves tool status', () => {
+    const a = tool({ tool: 'Bash', target: 'cmd:git', capability: 'shell' })
+    const idle = applyEvent(a, { agentId: 'a', status: 'thinking' }, 3)!
+    expect(idle.target).toBeUndefined()
+    expect(idle.capability).toBeUndefined()
+  })
+
+  it('a target change is a visible change (a new use), but never reaches the DTO', () => {
+    const a = tool({ tool: 'Read', target: 'rule:project:A.md' })
+    const b = tool({ tool: 'Read', target: 'rule:project:B.md' }, a, 3)
+    expect(isVisibleChange(a, b)).toBe(true)
+    expect(toDto(b)).not.toHaveProperty('target')
+    expect(toDto(b)).not.toHaveProperty('capability')
+  })
+})
+
+describe('sweepAgent and capability use', () => {
+  it('idling a tool agent clears its target and capability', () => {
+    const a = applyEvent(
+      undefined,
+      { agentId: 'a', status: 'tool', tool: 'Bash', target: 'cmd:git', capability: 'shell' },
+      1,
+    )!
+    const r = sweepAgent(a, 1 + policy.idleAfterMs + 1, policy)
+    expect(r.kind).toBe('update')
+    const next = (r as { agent: AgentState }).agent
+    expect(next.target).toBeUndefined()
+    expect(next.capability).toBeUndefined()
+  })
+})

@@ -3,7 +3,13 @@ import type { SettingsVM } from '../../app/view-models.ts'
 import type { SettingsView } from '../../ports.ts'
 import { byId } from './el.ts'
 
-const CHECKBOXES = ['notifications', 'launchAtLogin', 'claudeAdapter', 'autoUpdate'] as const
+const CHECKBOXES = [
+  'notifications',
+  'launchAtLogin',
+  'claudeAdapter',
+  'discoverCapabilities',
+  'autoUpdate',
+] as const
 
 /** SettingsView port → the native <dialog> in index.html. */
 export class DomSettings implements SettingsView {
@@ -49,6 +55,13 @@ export class DomSettings implements SettingsView {
   }
   onInstallUpdate(fn: () => void | Promise<void>) {
     this.installFn = fn
+  }
+
+  /** Live readout under the quality select (only refreshed while the dialog is open). */
+  showFrameRate(fps: number, preset: string): void {
+    if (!this.dialog.open) return
+    const name = preset.charAt(0).toUpperCase() + preset.slice(1)
+    byId('s-fps').textContent = `${name} · ${Math.round(fps)} fps`
   }
 
   isOpen(): boolean {

@@ -1,4 +1,4 @@
-import type { ServerMessage } from '@agent-office/shared'
+import type { Capability, ServerMessage } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import {
   FakeAgentRepository,
@@ -27,7 +27,7 @@ function setup() {
     ids: new SeqIds(),
     scheduler: new ManualScheduler(),
   })
-  return { activity, inbox, clock, query: new OfficeQueryService({ agents, messages, bus }) }
+  return { activity, inbox, clock, bus, query: new OfficeQueryService({ agents, messages, bus }) }
 }
 
 describe('OfficeQueryService', () => {
@@ -61,5 +61,36 @@ describe('OfficeQueryService', () => {
     off()
     activity.report([{ agentId: 'b' }])
     expect(got).toEqual(['upsert', 'chat', 'upsert', 'remove'])
+  })
+})
+
+describe('OfficeQueryService: capabilities', () => {
+  const cap: Capability = {
+    id: 'fs',
+    provider: 'p',
+    category: 'adapter',
+    kind: 'filesystem',
+    label: 'Filesystem',
+    sees: [],
+    tools: [],
+    declared: true,
+    calls: 0,
+    active: [],
+  }
+
+  it('snapshot includes capabilities when a catalog is wired, and none otherwise', () => {
+    const bus = new FakeEventBus()
+    const deps = { agents: new FakeAgentRepository(), messages: new FakeMessageRepository(), bus }
+    expect(new OfficeQueryService(deps).snapshot()).not.toHaveProperty('capabilities')
+    const q = new OfficeQueryService({ ...deps, capabilities: { list: () => [cap] } })
+    expect(q.snapshot().capabilities).toEqual([cap])
+  })
+
+  it('watch maps capabilities.changed to a capabilities message', () => {
+    const { query, bus } = setup()
+    const got: ServerMessage[] = []
+    query.watch((m) => got.push(m))
+    bus.publish({ type: 'capabilities.changed', provider: 'p', capabilities: [cap] })
+    expect(got).toEqual([{ type: 'capabilities', provider: 'p', capabilities: [cap] }])
   })
 })

@@ -1,4 +1,4 @@
-"""Atrium, x ∈ [−27, 27], z ∈ [−24, 0], double height (7.2 m). Main Street opens at local (0, 0).
+"""Atrium, x ∈ [−33, 33], z ∈ [−24, 0], double height (7.2 m). Main Street opens at local (0, 0).
 
     z = 0  ┌ elevator core ┐        [street portal]     cafe bar + LED wall (12 × 4)
            │  ▼ ▼ ▼        │                                                   game area:
@@ -23,54 +23,56 @@ def build(g, A, P, name, t, rng):
     _cafe(g, A, P, t, rng)
     _game(g, A, P, t, rng)
     _plaza(g, A, P, t, rng)
+    _murals(g, A, P, t, rng)
     _nav(g, A)
     return dict(
-        bounds={'minX': -27, 'maxX': 27, 'minZ': -24, 'maxZ': 0},
+        bounds={'minX': -33, 'maxX': 33, 'minZ': -24, 'maxZ': 0},
         sky=dict(sun_dir=(0.35, 0.72, -0.6), sun_strength=3.4, sky_strength=0.45),
         previews=[
-            ('overview', (-34.0, 26.0, -40.0), (0.0, 0.0, -11.0), 24, True),
+            ('overview', (-40.0, 30.0, -46.0), (0.0, 0.0, -11.0), 24, True),
             ('entrance', (0.5, 1.7, -1.2), (-4.0, 2.4, -20.0), 16, False),
             ('lobby', (-8.0, 1.7, -14.0), (-19.0, 1.8, -4.0), 18, False),
             ('cafe', (6.0, 1.7, -17.5), (10.0, 2.6, -1.0), 18, False),
-            ('game', (16.0, 1.8, -21.5), (23.0, 0.9, -9.0), 18, False),
+            ('game', (21.0, 1.8, -21.5), (28.0, 0.9, -9.0), 18, False),
         ],
     )
 
 
 # ============================================================================== shell
 def _shell(g, A, P, t, rng):
-    g.plane_y(P['floor'], -27, 27, -24, 0, 0.0)
-    wall(g, P['wall'], (-27, 0), (27, 0), H, thick=0.15, side=-1, openings=[(24.0, 30.0, 0, 3.6)])
-    wall(g, P['wall'], (-27, -24), (-27, 0), H, thick=0.15, side=-1)
-    wall(g, P['wall'], (27, -24), (27, 0), H, thick=0.15, side=1)
-    curtain_wall(g, P, (-27, -24), (27, -24), H, spacing=1.8, transoms=(3.55,), thick=0.16, side=1)
-    for x in (-18, -9, 0, 9, 18):  # facade piers
+    g.plane_y(P['floor'], -33, 33, -24, 0, 0.0)
+    wall(g, P['wall'], (-33, 0), (33, 0), H, thick=0.15, side=-1, openings=[(30.0, 36.0, 0, 3.6)])
+    wall(g, P['wall'], (-33, -24), (-33, 0), H, thick=0.15, side=-1)
+    wall(g, P['wall'], (33, -24), (33, 0), H, thick=0.15, side=1)
+    curtain_wall(g, P, (-33, -24), (33, -24), H, spacing=1.8, transoms=(3.55,), thick=0.16, side=1)
+    for x in (-27, -18, -9, 0, 9, 18, 27):  # facade piers
         g.box_b(P['concrete'], x - 0.3, x + 0.3, 0, H, -23.84, -23.3, bevel=0.012, segs=2)
     # street portal: timber-lined frame
     for s in (-1, 1):
         g.box_b(P['wood'], s * 3.0 - 0.35 * (s > 0), s * 3.0 + 0.35 * (s < 0), 0, 3.95, -0.75, 0, bevel=0.008, segs=2)
     g.box_b(P['wood'], -3.35, 3.35, 3.6, 3.95, -0.75, 0, bevel=0.008, segs=2)
-    g.collider(-27, 27, -0.15, 0.2, 0, H)
-    g.collider(-27.2, -26.85, -24, 0, 0, H)
-    g.collider(26.85, 27.2, -24, 0, 0, H)
-    g.collider(-27, 27, -24.2, -23.84, 0, H)
+    g.collider(-33, -3, -0.15, 0.2, 0, H)
+    g.collider(3, 33, -0.15, 0.2, 0, H)
+    g.collider(-33.2, -32.85, -24, 0, 0, H)
+    g.collider(32.85, 33.2, -24, 0, 0, H)
+    g.collider(-33, 33, -24.2, -23.84, 0, H)
     # living wall on the west wall
-    with g.at(-26.85, -5.2, math.pi / 2):
+    with g.at(-32.85, -5.2, math.pi / 2):
         F.living_wall(g, P, 17.0, 5.6, rng, y0=0.7, density=0.55)
-    with g.at(-26.4, -13.7, math.pi / 2):
+    with g.at(-32.4, -13.7, math.pi / 2):
         F.planter(g, P, 17.0, 0.8, 0.55, rng, kind='fern', color='#2f2f2f', density=0.7)
-    g.collider(-26.85, -25.95, -22.3, -5.1, 0, 3)
+    g.collider(-32.85, -31.95, -22.3, -5.1, 0, 3)
 
 
 def _ceiling(g, P, t):
     (ax0, ax1, az0, az1), (bx0, bx1, bz0, bz1) = SKY
     with g.in_group('ceiling'):
         # slab with two skylight openings
-        g.plane_y(P['ceiling'], -27, 27, -24, az0, H, up=False)
-        g.plane_y(P['ceiling'], -27, 27, az1, 0, H, up=False)
-        g.plane_y(P['ceiling'], -27, ax0, az0, az1, H, up=False)
+        g.plane_y(P['ceiling'], -33, 33, -24, az0, H, up=False)
+        g.plane_y(P['ceiling'], -33, 33, az1, 0, H, up=False)
+        g.plane_y(P['ceiling'], -33, ax0, az0, az1, H, up=False)
         g.plane_y(P['ceiling'], ax1, bx0, az0, az1, H, up=False)
-        g.plane_y(P['ceiling'], bx1, 27, az0, az1, H, up=False)
+        g.plane_y(P['ceiling'], bx1, 33, az0, az1, H, up=False)
         for (x0, x1, z0, z1) in SKY:
             for (a, b, c, d) in ((x0, x1, z0 - 0.06, z0), (x0, x1, z1, z1 + 0.06), (x0 - 0.06, x0, z0, z1),
                                  (x1, x1 + 0.06, z0, z1)):
@@ -81,19 +83,19 @@ def _ceiling(g, P, t):
         # timber slat ceiling (gaps over the skylights)
         z = -23.7
         while z < -0.2:
-            spans = [(-26.8, 26.8)]
+            spans = [(-32.8, 32.8)]
             if az0 - 0.1 < z < az1 + 0.1:
-                spans = [(-26.8, ax0 - 0.1), (ax1 + 0.1, bx0 - 0.1), (bx1 + 0.1, 26.8)]
+                spans = [(-32.8, ax0 - 0.1), (ax1 + 0.1, bx0 - 0.1), (bx1 + 0.1, 32.8)]
             for x0, x1 in spans:
                 g.box_b(P['wood'], x0, x1, H - 0.28, H - 0.2, z - 0.025, z + 0.025, bevel=0.004)
             z += 0.22
-        for x in range(-24, 25, 6):  # slat carriers
+        for x in range(-30, 31, 6):  # slat carriers
             g.box_b(P['metal'], x - 0.02, x + 0.02, H - 0.2, H - 0.01, -23.8, -0.2, bevel=0)
-    with g.in_group('glass'):
+    with g.in_group('roofglass'):
         for (x0, x1, z0, z1) in SKY:
             g.box_b(P['glass'], x0, x1, H + 0.9, H + 0.91, z0, z1, bevel=0)
     # downlights between the slats
-    for x in range(-24, 25, 6):
+    for x in range(-30, 31, 6):
         for z in (-21.0, -16.5, -12.0, -7.5, -3.0):
             if any(x0 - 1 < x < x1 + 1 and z0 - 1 < z < z1 + 1 for (x0, x1, z0, z1) in SKY):
                 continue
@@ -136,7 +138,7 @@ def _elevators_reception(g, A, P, t, rng):
     for x in (-23.3, -13.7):
         F.pot_plant(g, P, (x, 0, -6.2), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
     # waiting lounge by the facade
-    with g.at(-19.0, -19.5):
+    with g.at(-23.0, -19.5):
         F.rug(g, P, 9.0, 5.0, t['rug'], r=0.3)
         with g.at(0, 1.6, math.pi):
             F.sofa(g, P, length=3.0, color=t['fabric'][1], cushions=3)
@@ -150,7 +152,7 @@ def _elevators_reception(g, A, P, t, rng):
             F.pot_plant(g, P, (x, 0, 1.9), 0.28, 0.55, 'tree', rng, pot_color=t['pot'])
         with g.at(3.8, -1.8):
             F.floor_lamp(g, P, kelvin=2700)
-    g.collider(-22.0, -16.0, -21.6, -17.4, 0, 0.9)
+    g.collider(-26.0, -20.0, -21.6, -17.4, 0, 0.9)
 
 
 # ============================================================================== cafe + LED wall
@@ -196,7 +198,7 @@ def _cafe(g, A, P, t, rng):
                 F.pot_plant(g, P, (0.0, 0.74, 0.0), 0.04, 0.07, 'succulent', rng)
                 for k in range(4):
                     phi = k * math.pi / 2 + math.pi / 4
-                    sx, sz = 0.62 * math.sin(phi), 0.62 * math.cos(phi)
+                    sx, sz = 0.87 * math.sin(phi), 0.87 * math.cos(phi)  # root lands 0.13 m off the edge
                     with g.at(sx, sz, phi + math.pi):
                         F.cafe_chair(g, P, color=t['fabric'][k % len(t['fabric'])])
                     A.seat(f'seat:cafe:{idx}', sx, sz, phi + math.pi, pose='sit', room='cafe', approach=-0.6, hubs=[])
@@ -209,29 +211,41 @@ def _cafe(g, A, P, t, rng):
 
 # ============================================================================== game area
 def _game(g, A, P, t, rng):
-    g.box_b(P['paint'], 18.8, 26.7, 0.0, 0.012, -21.5, -4.0, bevel=0.002, color='#2f4b6e')
-    g.box_b(P['paint'], 18.8, 26.7, 0.012, 0.014, -12.85, -12.65, bevel=0, color='#f4f1ea')
+    g.box_b(P['paint'], 23.8, 32.7, 0.0, 0.012, -21.5, -4.0, bevel=0.002, color='#2f4b6e')
+    g.box_b(P['paint'], 23.8, 32.7, 0.012, 0.014, -12.85, -12.65, bevel=0, color='#f4f1ea')
     for ti, cz in enumerate((-8.5, -15.5)):
-        with g.at(22.5, cz, math.pi / 2):
+        with g.at(27.5, cz, math.pi / 2):
             F.ping_pong(g, P, top_color='#1d4e89' if ti == 0 else '#2a6f4f')
-        g.collider(21.7, 23.3, cz - 1.4, cz + 1.4, 0, 0.8)
-        A.spot(f'spot:pingpong:{ti}:A', 22.5, cz + 1.87, math.pi, room=f'pingpong-{ti}', approach=-0.6, hubs=[])
-        A.spot(f'spot:pingpong:{ti}:B', 22.5, cz - 1.87, 0.0, room=f'pingpong-{ti}', approach=-0.6, hubs=[])
-        g.light('panel', (22.5, H - 0.35, cz), size=(1.2, 3.0), power=160, kelvin=5000)
+        g.collider(26.7, 28.3, cz - 1.4, cz + 1.4, 0, 0.8)
+        A.spot(f'spot:pingpong:{ti}:A', 27.5, cz + 1.87, math.pi, room=f'pingpong-{ti}', approach=-0.6, hubs=[])
+        A.spot(f'spot:pingpong:{ti}:B', 27.5, cz - 1.87, 0.0, room=f'pingpong-{ti}', approach=-0.6, hubs=[])
+        g.light('panel', (27.5, H - 0.35, cz), size=(1.2, 3.0), power=160, kelvin=5000)
     for k, z in enumerate((-19.6, -20.5)):
-        with g.at(26.4, z, -math.pi / 2):
+        with g.at(32.4, z, -math.pi / 2):
             F.arcade(g, P, f'arcade:{k}', body='#1b1b2f', accent=t['accent'] if k == 0 else '#7F5AF0')
-    g.collider(26.0, 26.85, -20.9, -19.2, 0, 1.9)
+    g.collider(32.0, 32.85, -20.9, -19.2, 0, 1.9)
     for z in (-17.8, -18.8):
-        with g.at(25.8, z):
+        with g.at(31.8, z):
             F.bean_bag(g, P, rng.choice(t['fabric']))
-    F.pot_plant(g, P, (26.2, 0, -4.8), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
-    F.pot_plant(g, P, (19.2, 0, -21.6), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
+    F.pot_plant(g, P, (32.2, 0, -4.8), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
+    F.pot_plant(g, P, (24.2, 0, -21.6), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
 
 
 # ============================================================================== central plaza
+def _murals(g, A, P, t, rng):
+    cols = t['felt'] + [t['fabric'][2], '#2f2f2f']
+    with g.at(-4.0, -0.16, math.pi, y=1.2):  # back wall between the elevator core and the street portal
+        F.mural(g, P, 8.0, 4.6, rng, cols)
+    with g.at(32.84, -17.5, -math.pi / 2, y=1.6):  # game-area wall
+        F.mural(g, P, 11.0, 4.2, rng, [t['felt'][1], t['felt'][2], '#E07A5F', '#81B29A', '#2f2f2f'])
+    # game-area bleachers against the back wall
+    with g.at(32.4, -2.85, math.pi):
+        F.bleachers(g, P, 7.6, steps=3, rise=0.42, run=0.9, rng=rng)
+    g.collider(24.8, 32.4, -2.85, -0.15, 0, 1.3)
+
+
 def _plaza(g, A, P, t, rng):
-    for (x, z, r, th) in ((-6.5, -14.5, 1.5, 4.6), (2.0, -19.5, 1.3, 4.0)):
+    for (x, z, r, th) in ((-6.5, -14.5, 1.5, 4.6), (2.0, -19.5, 1.3, 4.0), (20.5, -17.5, 1.3, 4.2)):
         with g.at(x, z):
             F.round_planter(g, P, rng, r=r, tree_h=th)
         g.collider(x - r - 0.5, x + r + 0.5, z - r - 0.5, z + r + 0.5, 0, 0.6)
@@ -270,9 +284,9 @@ def _nav(g, A):
     A.edge('a:center', 'a:c10')
     A.edge('a:south', 'a:c20')
     # game area corridor
-    n('a:g1', 19.6, -5.0, 0.9)
-    n('a:g2', 19.6, -12.0, 0.9)
-    n('a:g3', 19.6, -18.8, 0.9)
+    n('a:g1', 24.6, -5.0, 0.9)
+    n('a:g2', 24.6, -12.0, 0.9)
+    n('a:g3', 24.6, -18.8, 0.9)
     A.chain('a:g1', 'a:g2', 'a:g3')
     A.edge('a:c03', 'a:g1')
     A.edge('a:c13', 'a:g2')

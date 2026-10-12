@@ -11,6 +11,7 @@ import type {
   NavGraph,
   ThemeId,
   Vec2,
+  Vec3,
   WingSlot,
   WorldAnchor,
 } from './office-types.ts'
@@ -158,10 +159,11 @@ export function planBuilding(
   for (const ids of wingsByProvider.values()) ids.sort((a, b) => annexOf(a) - annexOf(b))
 
   if (prev && prev.key === key) return { ...prev, placements, wingsByProvider, slots }
-  const { anchors, nav } = buildWorld(placements, manifest)
+  const { anchors, nav, ports } = buildWorld(placements, manifest)
   return {
     placements,
     anchors,
+    ports,
     nav,
     bounds: worldBounds(placements, manifest),
     wingsByProvider,
@@ -212,7 +214,10 @@ function placeModules(slots: WingSlot[], needed: Map<string, number>): ModulePla
   return out
 }
 
-function moduleOf(kind: ModuleKind, m: Manifest): Pick<ModuleDef, 'anchors' | 'nav' | 'bounds'> {
+function moduleOf(
+  kind: ModuleKind,
+  m: Manifest,
+): Pick<ModuleDef, 'anchors' | 'ports' | 'nav' | 'bounds'> {
   return kind === 'wing' ? m.modules.wing : m.modules[kind]
 }
 
@@ -271,8 +276,11 @@ function buildWorld(placements: ModulePlacement[], m: Manifest) {
   }
 
   const anchors = new Map<AnchorId, WorldAnchor>()
+  const ports = new Map<AnchorId, Vec3>()
   for (const pl of placements) {
     const def = moduleOf(pl.kind, m)
+    for (const [local, p] of Object.entries(def.ports ?? {}))
+      ports.set(anchorId(pl.id, local), { ...toWorld(p, pl), y: p.y })
     const own = [...nodes.values()].filter((n) => owner.get(n.id) === pl.id)
     for (const [local, a] of Object.entries(def.anchors)) {
       const id = anchorId(pl.id, local)
@@ -294,7 +302,7 @@ function buildWorld(placements: ModulePlacement[], m: Manifest) {
       anchors.set(id, wa)
     }
   }
-  return { anchors, nav: { nodes, adj } satisfies NavGraph }
+  return { anchors, ports, nav: { nodes, adj } satisfies NavGraph }
 }
 
 function nearest(nodes: { id: string; pos: Vec2 }[], p: Vec2): string {

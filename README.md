@@ -1,23 +1,335 @@
 # agent-office
 
 **Walk through your AI agents like an office.** agent-office is a desktop app (macOS, Windows,
-Linux) that shows every running AI agent as a worker at a desk in a 3D office:
+Linux) that shows every running AI agent as a worker in a 3D office:
 
 - Agents are grouped into **wings by provider** and **desk pods by conversation topic**.
-- You see at a glance who is thinking, who is running a tool and who is waiting for you.
+- Where an agent is tells you what it is doing: working at its desk, in a meeting with its
+  subagents, waiting for you in a phone booth, on a coffee break, at a station in the Adapters
+  room, or reading in the Library.
 - You can **message them** without leaving the app.
 
-![agent-office](docs/screenshot.png)
+![The whole office from above: the atrium, Main Street and three provider wings](docs/screenshots/hero-overview.png)
+
+<img src="docs/screenshots/walkthrough.webp" width="100%" alt="A camera fly-through: the atrium, Main Street, then the claude-code wing with its desks, meeting room, Adapters room and Library">
 
 ## Features
 
-- **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every conversation topic gets a desk pod, and subagents sit next to their parent. Agents walk to meeting rooms, phone booths and the kitchen to act out what they are doing (see [The office](#the-office)).
-- **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP.
-- **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error.
-- **Zero-config Claude Code.** Running sessions and their subagents appear automatically, read from the transcripts Claude Code already writes.
-- **Walk mode.** First-person WASD through the office. Press `E` to talk to the agent you're looking at.
-- **One-click hook setup** from Settings, with a backup of your Claude Code settings.
-- **Auto-update** from GitHub Releases. See the platform notes below.
+- **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they are doing ([Tour](#tour)).
+- **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP ([Talk to agents](#talk-to-agents)).
+- **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
+- **Library.** Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
+- **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error ([Tray and notifications](#tray-and-notifications)).
+- **Zero-config Claude Code.** Running sessions, their subagents, configured MCP servers, skills and rules appear automatically ([Using it with Claude Code](#using-it-with-claude-code)).
+- **Any agent framework.** A local HTTP API takes status events, capability declarations and chat replies ([Adapters](#adapters), [HTTP API](#http-api-for-any-agent-framework)).
+- **Walk mode.** First-person WASD through the office. Press `E` to talk to the agent you're looking at ([Walk mode](#walk-mode)).
+- **One-click hook setup and auto-update** from Settings, with a backup of your Claude Code settings ([Settings](#settings)).
+- **Graphics presets** from Low to Ultra, with an Auto mode that keeps the frame rate smooth ([Graphics](#graphics)).
+- **Hand-made characters** with 22 animation clips, built in Blender by committed scripts ([Characters](#characters)).
+
+## Tour
+
+The office is one floor of a big-tech-style headquarters. Where an agent is tells you what it is
+doing. Name tags and the chat panel say it in words too, for example "In meeting room A with 2
+subagents" or "Waiting for you in booth 3".
+
+### Atrium
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/atrium-reception.png" width="100%" alt="Agents stepping out of an elevator and walking past reception"></td>
+<td width="50%"><img src="docs/screenshots/atrium-cafe-ledwall.png" width="100%" alt="The cafe tables under the LED stats wall"></td>
+</tr>
+<tr>
+<td>New agents step out of the elevators and check in at reception.</td>
+<td>Idle agents take a coffee at the cafe; the LED wall counts agents, work, waits and meetings live.</td>
+</tr>
+</table>
+
+### Main Street
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/main-street.png" width="100%" alt="Main Street from above, with an agent walking to its wing"></td>
+<td width="50%"><img src="docs/screenshots/game-area.png" width="100%" alt="Two ping-pong matches in the game area"></td>
+</tr>
+<tr>
+<td>The boulevard between the wings: agents walk it on their way in, out and to breaks.</td>
+<td>The game area: two agents on a long idle break pair up for ping-pong.</td>
+</tr>
+</table>
+
+### Wings and themes
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/wing-terracotta.png" width="100%" alt="The claude-code wing in the terracotta theme"></td>
+<td width="50%"><img src="docs/screenshots/wing-nordic.png" width="100%" alt="The openai-agents wing in the nordic theme"></td>
+</tr>
+<tr>
+<td><code>claude-code</code> (terracotta): desk pods by topic, booths, meeting rooms, kitchen and lounge.</td>
+<td><code>openai-agents</code> (nordic). A provider with more than 24 agents gets an annex wing.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/wing-forest.png" width="100%" alt="The langgraph wing in the forest theme"></td>
+<td width="50%"><img src="docs/screenshots/themes-gallery.png" width="100%" alt="The six wing themes side by side"></td>
+</tr>
+<tr>
+<td><code>langgraph</code> (forest). Wing signs show the provider id as plain text.</td>
+<td>All six themes: terracotta, nordic, forest, ocean, brass and neon.</td>
+</tr>
+</table>
+
+### Desks
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/desk-pod.png" width="100%" alt="A desk pod with agents typing and thinking"></td>
+<td width="50%"><img src="docs/screenshots/error-state.png" width="100%" alt="An agent scratching its head at a red monitor"></td>
+</tr>
+<tr>
+<td>One pod per topic: agents type (amber monitor, running a tool) or think (blue).</td>
+<td>An agent that hit an error stands up and scratches its head at a red monitor.</td>
+</tr>
+</table>
+
+### Meeting rooms
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/meeting-room.png" width="100%" alt="A parent agent and two subagents around the meeting table"></td>
+<td width="50%"><img src="docs/screenshots/team-meeting.webp" width="100%" alt="Clip: a parent and its new subagents get up and walk into meeting room A"></td>
+</tr>
+<tr>
+<td>A parent agent and its active subagents work as a team in meeting room A or B.</td>
+<td>When subagents spawn, the team gets up and walks into a free meeting room.</td>
+</tr>
+</table>
+
+### Phone booths
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/phone-booth.png" width="100%" alt="Two agents on the phone in booths with green lights"></td>
+<td width="50%"><img src="docs/screenshots/booth-waiting.webp" width="100%" alt="Clip: an agent finishes its turn and walks to a booth"></td>
+</tr>
+<tr>
+<td>A green booth light means the agent finished its turn and is <strong>waiting for you</strong>.</td>
+<td>The moment an agent starts waiting, it walks to a free booth. Click it to reply.</td>
+</tr>
+</table>
+
+### Kitchen and lounge
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/kitchen-lounge.png" width="100%" alt="Idle agents at the kitchen island and on the lounge sofas"></td>
+<td width="50%"><img src="docs/screenshots/atrium-cafe-ledwall.png" width="100%" alt="Idle agents at the cafe"></td>
+</tr>
+<tr>
+<td>After 45 seconds idle, agents take a break in the kitchen or on the lounge sofas…</td>
+<td>…or at the atrium cafe. Pairs on a long break go to ping-pong.</td>
+</tr>
+</table>
+
+### Arrival and leaving
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/elevator-arrival.webp" width="100%" alt="Clip: new agents arrive through the elevators and walk past reception to their wings"></td>
+<td width="50%"><img src="docs/screenshots/atrium-reception.png" width="100%" alt="Agents at reception"></td>
+</tr>
+<tr>
+<td>New agents arrive through the elevators, check in and walk to their wing.</td>
+<td>Finished (<code>done</code>) agents walk back to the elevators and leave.</td>
+</tr>
+</table>
+
+## Talk to agents
+
+Click an agent (or its name tag) to open the chat panel: the camera follows it, the panel says
+what it is doing, and you can send it a message. Delivery state shows as ✓ (delivered to the
+agent) and ✓✓ (replied).
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/chat-panel.png" width="100%" alt="The chat panel next to the selected agent, with a message and its reply"></td>
+<td width="50%"><img src="docs/screenshots/chat-roundtrip.webp" width="100%" alt="Clip: typing a message, the hook delivering it, and the agent's answer arriving"></td>
+</tr>
+<tr>
+<td>The chat panel: activity, model, connections and skills used, and the thread.</td>
+<td>A round trip: the hook hands Claude the message when its turn ends and posts the answer back.</td>
+</tr>
+</table>
+
+![The chat and capability panels in light and dark mode](docs/screenshots/light-dark.png)
+
+The panels follow your system's light or dark appearance.
+
+## Adapters
+
+Every wing has an **Adapters room**: one **station** per connection its agents can use. Each
+station's screen lists what it **can see** (for example `project: shop-api`, `cmd: git`,
+`host: docs.example.com`) and its tools; a ring on the floor lights up in the connection's color
+while it's in use.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/adapters-room.png" width="100%" alt="The Adapters room: eight stations around the core column, agents working at three of them"></td>
+<td width="50%"><img src="docs/screenshots/adapters-links.png" width="100%" alt="Agents at their desks calling tools, with links to the Adapters room"></td>
+</tr>
+<tr>
+<td>Stations: Filesystem, Shell, Web, Subagents, then MCP servers, APIs and databases.</td>
+<td>A tool call draws a flowing link from the agent's desk to the station, colored by kind.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/adapters-visit.png" width="100%" alt="An agent working standing at the Mail station"></td>
+<td width="50%"><img src="docs/screenshots/connection-panel.png" width="100%" alt="The connection panel for the Web station"></td>
+</tr>
+<tr>
+<td>Sustained use: the agent walks to the station and works there standing.</td>
+<td>Click a station for its panel: what it can see, its tools, who uses it and how often.</td>
+</tr>
+</table>
+
+<img src="docs/screenshots/adapter-link.webp" width="100%" alt="Clip: a web call raises a link from a desk to the Web station; with sustained use the agent walks there">
+
+- **Call vs visit.** A tool call that uses a connection shows a link while the tool runs (plus a
+  0.6 s fade); the agent stays at its desk. Using the same connection for 20 s continuously, or 4
+  times within 60 s, sends the agent to the station. It returns after 8 s without use.
+- **Where connections come from:**
+  - **Built-ins** for Claude Code: Filesystem, Shell, Web and Subagents.
+  - **Configured MCP servers:** only the server **names** from `~/.claude.json` (never commands,
+    arguments or env). `claude_ai_*` connectors appear once used.
+  - **Observed tools:** a tool used but not declared appears as an undeclared station.
+  - **Declared by any framework** through the HTTP API (below).
+- **Privacy:** sources send only names, host names, project basenames and the first word of a
+  command (`cmd:git`); never URLs, paths, arguments, command lines, file contents or env values.
+  See [`docs/capabilities.md`](docs/capabilities.md).
+
+```sh
+TOKEN=$(cat ~/.agent-office/token)
+curl -s -X POST http://127.0.0.1:4317/api/providers/langgraph/capabilities \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '[
+    {"id": "mcp:postgres", "category": "adapter", "kind": "database", "label": "Postgres", "sees": ["db: analytics"]},
+    {"id": "api:chat", "category": "adapter", "kind": "api", "label": "Chat", "tools": ["post_message"]}
+  ]'
+# A tool call that uses it: classified from tool + target, or named explicitly with "capability".
+curl -s -X POST http://127.0.0.1:4317/api/events \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"agentId": "bot-1", "provider": "langgraph", "status": "tool", "tool": "run_query", "capability": "mcp:postgres"}'
+```
+
+## Library
+
+Next to the Adapters room, every wing has a **Library**: the provider's **skills** are books with
+readable spines, its **rules** are boards on the wall with their title and first sentence, and
+its **memory** entries are notebooks on a rack. There's a reading table for agents who need to
+sit down with a book.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/library-room.png" width="100%" alt="The Library: shelves of skill books, rule boards on the wall, two agents reading at the table"></td>
+<td width="50%"><img src="docs/screenshots/library-call.png" width="100%" alt="Agents consulting a skill and reading a rule from their desks"></td>
+</tr>
+<tr>
+<td>Skill books on the shelves, rule boards on the wall, the reading table.</td>
+<td>Consulting a skill or reading a rule from the desk: a stream of pages, and the spine or board glows.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/library-reading.png" width="100%" alt="An agent reading a skill book at the table"></td>
+<td width="50%"><img src="docs/screenshots/capability-panel-skill.png" width="100%" alt="The capability panel for a skill"></td>
+</tr>
+<tr>
+<td>Several uses in a row: the agent picks the book from the shelf and reads it at the table.</td>
+<td>Click a book, board or notebook: its description, scope and who used it.</td>
+</tr>
+</table>
+
+<img src="docs/screenshots/library-visit.webp" width="100%" alt="Clip: an agent invokes a skill, reads a rule, then walks to the Library, picks the book and sits down to read">
+
+- **What's discovered** (Claude Code; Settings → "Discover capabilities"):
+  - **Skills:** `~/.claude/skills`, the project's `.claude/skills` and plugin skills: name and
+    description (first 160 characters).
+  - **Rules:** the project's `CLAUDE.md`, `AGENTS.md` and `.claude/rules/*.md`, and your
+    `~/.claude/CLAUDE.md` and `~/.claude/rules`: title and first sentence.
+  - **Memory:** titles only, never the content.
+- **Call vs visit.** A `Skill` call or a `Read` of a rule glows its book or board for 6 s and
+  draws a page link; the agent stays put. Two different skills or rules within 60 s (or a skill
+  while idle or thinking for 10 s) send the agent to the Library to pick the book and read. It
+  returns after 10 s without library use.
+- **Other frameworks** declare skills and rules with the same capabilities API, and report use
+  with `"tool": "Skill", "target": "skill:<name>"` or `"tool": "Read", "target": "rule:project:<file>"`:
+
+```sh
+curl -s -X POST http://127.0.0.1:4317/api/providers/langgraph/capabilities \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '[
+    {"id": "skill:triage", "category": "skill", "kind": "skill", "label": "triage", "summary": "Sort incoming tickets."},
+    {"id": "rule:project:AGENTS.md", "category": "rule", "kind": "project-rules", "label": "AGENTS.md (support-bot)", "scope": "project"}
+  ]'
+```
+
+## Tray and notifications
+
+The app keeps running in the tray (menu bar on macOS) when you close the window. The tray menu
+shows live counts per status, the agents waiting for you, and shortcuts to the hook and settings.
+A native notification tells you when an agent starts waiting, replies to you, or hits an error;
+click it to jump to that agent.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/tray-menu.png" width="100%" alt="The macOS menu-bar menu with live agent counts"></td>
+<td width="50%"><img src="docs/screenshots/notification.png" width="100%" alt="A native notification: an agent is waiting for you"></td>
+</tr>
+<tr>
+<td>The tray menu: counts, who's waiting, hook and settings.</td>
+<td>A notification when an agent waits for you.</td>
+</tr>
+</table>
+
+## Settings
+
+⚙ Settings: install or remove the Claude Code hook, turn sessions and capability discovery on or
+off, notifications, open at login, the local API port, the graphics preset (with the live frame
+rate) and updates.
+
+![The settings dialog](docs/screenshots/settings.png)
+
+## Walk mode
+
+Press `F` or **🚶 Walk** to walk through the office in first person: WASD to move, Shift to
+sprint, `E` to talk to the agent (or open the station, book or board) under the crosshair, and
+`Esc` to go back to orbiting. Ceilings appear while you walk.
+
+![First-person view inside the claude-code wing](docs/screenshots/walk-mode.png)
+
+## Graphics
+
+⚙ Settings → **Graphics** picks a quality preset. It applies immediately and is saved with your settings.
+
+| Preset | For                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------ |
+| Auto   | The default. Starts at High and steps down or up to keep the frame rate smooth.                        |
+| Low    | Older or battery-powered machines: no real-time shadows or post-processing, fewer animated characters. |
+| Medium | Balanced: soft shadows, ambient occlusion at half resolution, bloom and anti-aliasing.                 |
+| High   | Full-resolution ambient occlusion and sharper shadows, up to Retina pixel density.                     |
+| Ultra  | Native pixel density, the largest shadow maps and more animated characters at full detail.             |
+
+Low (left) and Ultra (right), same view:
+
+![The same desk pod at the Low and Ultra presets](docs/screenshots/quality-compare.png)
+
+## Characters
+
+Every agent is one of a family of hand-made characters (varied skin tones, hair, glasses,
+headsets and badges), modeled, rigged and animated in Blender by committed scripts. They have 22
+in-place animation clips, blended with crossfades: typing, thinking, talking, phoning, drinking
+coffee, lounging, ping-pong, waving, walking, stepping out of the elevator, working at a station,
+picking a book from the shelf and reading.
+
+![The character lineup and one frame of 16 of the animation clips](docs/screenshots/characters.png)
 
 ## Download
 
@@ -31,7 +343,7 @@ Get the latest installer from [Releases](https://github.com/arxdsilva/agent-offi
 
 ## Using it with Claude Code
 
-1. Open agent-office. Any Claude Code session active in the last 10 minutes appears in the `claude-code` zone, in a row named after the session title.
+1. Open agent-office. Any Claude Code session active in the last 10 minutes appears in the `claude-code` wing, at a desk pod named after the session title. Its subagents sit next to it, and join it in a meeting room while they work.
 2. **To message sessions:** ⚙ Settings → **Install hook**. You can also use the tray menu, or the button shown in the chat panel.
 
 When you send a message:
@@ -48,7 +360,11 @@ How the hook works:
 - Installing writes `~/.claude/settings.json.agent-office.bak` first.
 - **Uninstall the hook (Settings) before deleting the app.**
 
-**What is read from transcripts:** line types, tool names, the short Bash/Agent `description`, the model, the session title and the subagent type. Snippets are capped at 80 characters, and prompts and outputs are never shown. Nothing is logged or stored. The exception is Claude's answer to a message you sent from the app, which is shown in the chat.
+**Capabilities:** the wing's Adapters room shows the built-in connections and the names of your configured MCP servers; its Library shows your skills, rules and memory titles (see [Adapters](#adapters) and [Library](#library)). Turn this off in Settings → "Discover capabilities".
+
+**What is read from transcripts:** line types, tool names, the short Bash/Agent `description`, the model, the session title and the subagent type. For capabilities, only the tool's target in a short form: a project basename, a host name, the first word of a Bash command, or a skill, rule or memory name. Snippets are capped at 80 characters, and prompts and outputs are never shown. Nothing is logged or stored. The exception is Claude's answer to a message you sent from the app, which is shown in the chat.
+
+![Claude Code sessions in the claude-code wing](docs/screenshots/wing-terracotta.png)
 
 ## HTTP API (for any agent framework)
 
@@ -65,26 +381,36 @@ curl -X POST http://127.0.0.1:4317/api/events \
 
 You can POST a single event or an array of up to 500. Events are **partial updates**: send only what changed.
 
-| Field      | Type        | Required | Meaning                                                     |
-| ---------- | ----------- | -------- | ----------------------------------------------------------- |
-| `agentId`  | string ≤200 | yes      | Stable id. Namespace it, e.g. `lg:triage-1`.                |
-| `name`     | string ≤100 |          | Label above the agent's head                                |
-| `provider` | string ≤100 |          | Zone. Defaults to `source`, then `http`.                    |
-| `topic`    | string ≤200 |          | Row. Defaults to `untitled`.                                |
-| `model`    | string ≤100 |          | Shown in the chat panel                                     |
-| `kind`     | string ≤100 |          | Role or type, e.g. `planner`                                |
-| `parentId` | string ≤200 |          | Spawning agent; this agent sits next to it                  |
-| `status`   | enum        |          | `idle` · `thinking` · `tool` · `waiting` · `error` · `done` |
-| `tool`     | string ≤100 |          | Tool in use, shown when `status` is `tool`                  |
-| `text`     | string ≤500 |          | Short activity line                                         |
-| `source`   | string ≤50  |          | Producer name                                               |
-| `ts`       | epoch ms    |          | Event time. Older events never overwrite newer state.       |
+| Field        | Type        | Required | Meaning                                                                                                                                                                            |
+| ------------ | ----------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentId`    | string ≤200 | yes      | Stable id. Namespace it, e.g. `lg:triage-1`.                                                                                                                                       |
+| `name`       | string ≤100 |          | Label above the agent's head                                                                                                                                                       |
+| `provider`   | string ≤100 |          | Zone. Defaults to `source`, then `http`.                                                                                                                                           |
+| `topic`      | string ≤200 |          | Row. Defaults to `untitled`.                                                                                                                                                       |
+| `model`      | string ≤100 |          | Shown in the chat panel                                                                                                                                                            |
+| `kind`       | string ≤100 |          | Role or type, e.g. `planner`                                                                                                                                                       |
+| `parentId`   | string ≤200 |          | Spawning agent; this agent sits next to it                                                                                                                                         |
+| `status`     | enum        |          | `idle` · `thinking` · `tool` · `waiting` · `error` · `done`                                                                                                                        |
+| `tool`       | string ≤100 |          | Tool in use, shown when `status` is `tool`                                                                                                                                         |
+| `target`     | string ≤100 |          | What the tool touched, in a short form: `host:github.com`, `cmd:git`, `skill:<name>`, `rule:project:<file>`, … ([capabilities](docs/capabilities.md#3-the-target-grammar-privacy)) |
+| `capability` | string ≤120 |          | Explicit capability id the tool uses, e.g. `mcp:postgres` (otherwise classified from `tool` and `target`)                                                                          |
+| `text`       | string ≤500 |          | Short activity line                                                                                                                                                                |
+| `source`     | string ≤50  |          | Producer name                                                                                                                                                                      |
+| `ts`         | epoch ms    |          | Event time. Older events never overwrite newer state.                                                                                                                              |
 
 Timing rules:
 
 - `thinking` and `tool` revert to `idle` after 60 seconds without events.
 - Agents that stay silent for 10 minutes are removed.
 - `done` agents leave after 30 seconds.
+
+### Capabilities: adapters, skills and rules
+
+`POST /api/providers/:provider/capabilities` declares what a provider's agents can use: a JSON
+array of up to 64 `{id, category, kind, label, summary?, scope?, sees?, tools?}`. Declarations
+merge with what was observed. Responses: `202 {"declared": n}`, `400`, `401`, `413`. Examples are
+in [Adapters](#adapters) and [Library](#library); the full classification is in
+[`docs/capabilities.md`](docs/capabilities.md).
 
 ### Inbox: let users talk to your agent
 
@@ -135,62 +461,55 @@ The token protects you from websites. It does not protect you from other program
 
 ## Controls
 
-| Input                     | Action                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| Drag / scroll             | Orbit and zoom                                                               |
-| Click a name tag or agent | Open the chat and focus the camera                                           |
-| `⤢ Fit`                   | Frame the whole office                                                       |
-| `F` or `🚶 Walk`          | First-person mode: WASD to move, Shift to sprint, `E` to talk, `Esc` to exit |
-| `⚙`                       | Settings: hook, notifications, open at login, API port, graphics, updates    |
-| Closing the window        | Keeps running in the tray. Quit from the tray menu or with ⌘Q.               |
-
-## The office
-
-The office is one floor of a big-tech-style headquarters. Where an agent is tells you what it is doing:
-
-| Place                                             | Meaning                                                                                                                |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Wings** off Main Street                         | One themed wing per provider (`claude-code`, `langgraph`, …). A provider with more than 24 agents gets an annex wing.  |
-| **Desk pods** in a wing                           | One pod per conversation topic. Agents work, think or get stuck at their desk; subagents sit next to their parent.     |
-| **Meeting rooms** A and B                         | A parent agent and its active subagents work as a team.                                                                |
-| **Phone booths** (glowing ring)                   | The agent finished its turn and is **waiting for you**. Click it to reply.                                             |
-| **Kitchen, lounge, cafe, ping-pong**              | The agent has been idle for a while.                                                                                   |
-| **Reception** and the **elevators** in the atrium | New agents arrive through the elevator and check in at reception; finished agents walk back to the elevator and leave. |
-
-Name tags and the chat panel say what the agent is doing in words, for example "In meeting room A with 2 subagents" or "Waiting for you in booth 3".
-
-## Graphics
-
-⚙ Settings → **Graphics** picks a quality preset. It applies immediately and is saved with your settings.
-
-| Preset | For                                                                                                    |
-| ------ | ------------------------------------------------------------------------------------------------------ |
-| Auto   | The default. Starts at High and steps down or up to keep the frame rate smooth.                        |
-| Low    | Older or battery-powered machines: no real-time shadows or post-processing, fewer animated characters. |
-| Medium | Balanced: soft shadows, ambient occlusion at half resolution, bloom and anti-aliasing.                 |
-| High   | Full-resolution ambient occlusion and sharper shadows, up to Retina pixel density.                     |
-| Ultra  | Native pixel density, the largest shadow maps and more animated characters at full detail.             |
+| Input                                    | Action                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| Drag / scroll                            | Orbit and zoom                                                               |
+| Click a name tag or agent                | Open the chat and focus the camera                                           |
+| Click a station, book, board or notebook | Open its capability panel                                                    |
+| View bar (bottom)                        | Jump to the atrium, Main Street, a wing, the Adapters room or the Library    |
+| `⤢ Fit`                                  | Frame the whole office                                                       |
+| `F` or `🚶 Walk`                         | First-person mode: WASD to move, Shift to sprint, `E` to talk, `Esc` to exit |
+| `⚙`                                      | Settings: hook, notifications, open at login, API port, graphics, updates    |
+| Closing the window                       | Keeps running in the tray. Quit from the tray menu or with ⌘Q.               |
 
 ## Architecture
 
 agent-office uses a **hexagonal architecture** (ports and adapters), enforced by `make arch`:
 
-```
- driving adapters ─▶  HttpApi · IpcApi · ClaudeCodeTailer · MockAgents
-                         │ driving ports (ReportActivity, AgentInbox, UserChat, OfficeQuery, …)
- core (pure)       ─▶  domain rules + use cases          ← no Node, Electron, Fastify or three.js
-                         │ driven ports (AgentRepository, Notifier, Updater, Scheduler, HookRunner, …)
- driven adapters   ─▶  in-memory repos · JSON settings · Claude settings file · Electron tray/notifications/updater
- composition root  ─▶  packages/desktop/src/main/composition.ts
+```mermaid
+flowchart LR
+  subgraph driving["Driving adapters"]
+    HTTP["HttpApi (Fastify)"]
+    IPC["IpcApi (Electron)"]
+    Tailer["ClaudeCodeTailer"]
+    Mock["MockAgents"]
+  end
+  subgraph core["Core (pure: no Node, Electron, Fastify or three.js)"]
+    In(["Driving ports<br/>ReportActivity · AgentInbox · UserChat · OfficeQuery · Capabilities"])
+    UC["Use cases"]
+    Dom["Domain rules"]
+    Out(["Driven ports<br/>AgentRepository · CapabilityRepository · Notifier · Updater · Scheduler · HookRunner"])
+    In --> UC --> Dom
+    UC --> Out
+  end
+  subgraph driven["Driven adapters"]
+    Mem["In-memory repos + event bus"]
+    Files["JSON settings · Claude settings file · config and knowledge readers"]
+    Shell["Electron tray · notifications · updater · login item"]
+  end
+  HTTP & IPC & Tailer & Mock --> In
+  Out -.implemented by.-> Mem & Files & Shell
+  Root["Composition root<br/>packages/desktop/src/main/composition.ts"] -.wires.-> driving & driven
+  IPC <-->|typed bridge| UI["Renderer (three.js + DOM)<br/>its own small hexagon"]
 ```
 
-| Package             | Contents                                                                     |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `packages/shared`   | Contracts: HTTP and IPC schemas, status colors, grouping strategy            |
-| `packages/core`     | Domain, use cases, ports, plus a test kit of contract suites and fakes       |
-| `packages/adapters` | Node adapters: HTTP API, transcript tailer, mock agents, file system, memory |
-| `packages/desktop`  | Electron main process, preload, composition root, packaging, app E2E tests   |
-| `packages/web`      | Renderer: three.js scene and DOM views behind ports, driven by a controller  |
+| Package             | Contents                                                                    |
+| ------------------- | --------------------------------------------------------------------------- |
+| `packages/shared`   | Contracts: HTTP and IPC schemas, capability DTOs, status colors, grouping   |
+| `packages/core`     | Domain, use cases, ports, plus a test kit of contract suites and fakes      |
+| `packages/adapters` | Node adapters: HTTP API, transcript tailer, config readers, mock agents, fs |
+| `packages/desktop`  | Electron main process, preload, composition root, packaging, app E2E tests  |
+| `packages/web`      | Renderer: three.js scene and DOM views behind ports, driven by a controller |
 
 Office organization lives in one place, `byProviderAndTopic` in `packages/shared/src/grouping.ts`. Swap it to reorganize the office.
 
@@ -205,6 +524,8 @@ make check           # format, typecheck, arch, unit tests with ≥70% coverage,
 make build test-ui   # Playwright drives the built Electron app
 make package         # unpacked app for this OS → packages/desktop/dist
 make package-dist    # installers for this OS
+make screenshots     # README stills and clips → docs/screenshots (after make build)
+make screenshots-macos  # macOS only: the real tray menu and a notification
 ```
 
 - **TDD:** every behavior change starts with a failing test.

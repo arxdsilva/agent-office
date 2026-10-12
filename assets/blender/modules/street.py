@@ -30,7 +30,7 @@ def build(g, A, P, name, t, rng):
             g.box_b(P['metal'], -1.2, 1.2, H + 0.62, H + 0.7, z - 0.03, z + 0.03, bevel=0.003)
         for x in (-2.25, 2.25):  # recessed linear light lines
             g.box_b(P['light'], x - 0.05, x + 0.05, H - 0.01, H - 0.005, 0.3, 17.7, bevel=0)
-    with g.in_group('glass'):
+    with g.in_group('roofglass'):
         g.box_b(P['glass'], -1.2, 1.2, H + 0.7, H + 0.71, 0.8, 17.2, bevel=0)
     for x in (-2.25, 2.25):
         for z in (3.0, 9.0, 15.0):
@@ -41,7 +41,7 @@ def build(g, A, P, name, t, rng):
         for (z0, z1) in ((1.2, 7.0), (11.0, 16.8)):
             zc, L = (z0 + z1) / 2, z1 - z0
             with g.at(s * 2.45, zc, math.pi / 2):
-                F.planter(g, P, L, 0.9, 0.5, rng, kind='mixed', color='#2f2f2f', density=1.3)
+                F.planter(g, P, L, 0.9, 0.5, rng, kind='mixed', color='#2f2f2f', density=2.6)
             # small tree in each planter
             F.tree(g, P, (s * 2.5, 0.48, zc + rng.uniform(-1.2, 1.2)), 2.3, rng, crown=0.75, leaf_size=0.2)
             # bench on the inner face
@@ -65,6 +65,7 @@ def build(g, A, P, name, t, rng):
 
     return dict(
         bounds={'minX': -3, 'maxX': 3, 'minZ': 0, 'maxZ': 18},
+        foliage_inset=0.02,
         extra={'bayLength': 18, 'width': 6},
         sky=dict(sun_dir=(0.35, 0.85, 0.4), sun_strength=3.0, sky_strength=0.4),
         previews=[

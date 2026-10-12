@@ -61,6 +61,17 @@ describe('panelVM', () => {
     ])
   })
 
+  it('lists the capabilities the agent has used (chips), only when there are any', () => {
+    const s = stateWith([agent()])
+    const chip = { id: 'web', label: 'Web', count: 2, color: '#2CB6A0' }
+    expect(panelVM(s, 'a', 0, undefined, { adapters: [chip], library: [] }).used).toEqual({
+      adapters: [chip],
+      library: [],
+    })
+    expect(panelVM(s, 'a', 0, undefined, { adapters: [], library: [] }).used).toBeUndefined()
+    expect(panelVM(s, 'a', 0).used).toBeUndefined()
+  })
+
   it('links the parent and handles agents that left', () => {
     const s = stateWith([agent({ id: 'p', name: 'Parent' }), agent({ id: 'c', parentId: 'p' })])
     expect(panelVM(s, 'c', 0)!.parent).toEqual({ id: 'p', name: 'Parent' })
@@ -116,6 +127,31 @@ describe('activityLabel', () => {
     expect(activityLabel('booth', { room: 'booth-3' })).toBe('Waiting for you in booth 3')
     expect(activityLabel('booth')).toBe('Waiting for you in a phone booth')
   })
+
+  it('names the capability an agent calls or visits (adapters room and library)', () => {
+    const gmail = { label: 'Gmail', category: 'adapter' as const }
+    expect(
+      activityLabel('connection-call', { capability: { ...gmail, tool: 'search_threads' } }),
+    ).toBe('Calling Gmail (search_threads)')
+    expect(activityLabel('connection-call', { capability: gmail })).toBe('Calling Gmail')
+    expect(activityLabel('connection-visit', { capability: gmail })).toBe(
+      'Working at the Gmail station',
+    )
+    const skill = { label: 'run-office', category: 'skill' as const }
+    const rule = { label: 'TESTING.md', category: 'rule' as const }
+    expect(activityLabel('library-call', { capability: skill })).toBe(
+      'Consulting run-office (skill)',
+    )
+    expect(activityLabel('library-call', { capability: rule })).toBe('Reading TESTING.md')
+    expect(activityLabel('library-visit', { capability: skill })).toBe(
+      'In the library reading run-office',
+    )
+    // Without capability details the sentence stays generic.
+    expect(activityLabel('connection-call')).toBe('Calling an adapter')
+    expect(activityLabel('connection-visit')).toBe('Working in the Adapters room')
+    expect(activityLabel('library-call')).toBe('Consulting the library')
+    expect(activityLabel('library-visit')).toBe('Reading in the library')
+  })
 })
 
 describe('panelVM activity', () => {
@@ -154,6 +190,14 @@ describe('settingsVM', () => {
     version: '1.0.0',
     update: { policy: 'auto' as const, status: 'idle' as const },
   }
+
+  it('carries the capability discovery switch (default on)', () => {
+    expect(settingsVM(base).discoverCapabilities).toBe(true)
+    expect(
+      settingsVM({ ...base, settings: { ...DEFAULT_SETTINGS, discoverCapabilities: false } })
+        .discoverCapabilities,
+    ).toBe(false)
+  })
 
   it('offers the right hook action', () => {
     expect(settingsVM(base).hook).toEqual({ label: 'Not installed', action: 'install' })

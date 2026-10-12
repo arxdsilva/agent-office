@@ -33,8 +33,8 @@ spec.loader.exec_module(CM)
 FAILS = []
 REQUIRED_MATERIALS = ['skin', 'shirt', 'pants', 'hair', 'shoes', 'eyes', 'badge']
 ACCESSORIES = ['hairA', 'hairB', 'hairC', 'hairD', 'glasses', 'headset', 'badge']
-PROPS = ['laptop', 'cup', 'phone', 'paddle']
-SIT_FAMILY = ['SitIdle', 'SitType', 'SitThink', 'SitTalk', 'SitLaptop']
+PROPS = ['laptop', 'cup', 'phone', 'paddle', 'book']
+SIT_FAMILY = ['SitIdle', 'SitType', 'SitThink', 'SitTalk', 'SitLaptop', 'SitRead']
 
 
 def check(name, cond, detail=''):
@@ -181,6 +181,27 @@ def test_scene(res):
         check(f'{name}: ends turned {yaw} deg in the Idle pose', abs((ang - yaw + 180) % 360 - 180) < 0.5 and d < 1e-3,
               f'yaw {ang:.2f}, pose delta {d:.2e}')
 
+    # ShelfPick: one-shot that settles into a holdable pose (book at the chest, both hands on it)
+    d = pose_delta(pose_at(acts['ShelfPick'], 52), pose_at(acts['ShelfPick'], 60))
+    check('ShelfPick: ends in a stationary hold pose (frames 52..60)', d < 1e-3, f'{d:.2e}')
+    world_pose(arm, acts['ShelfPick'], 60)
+    pb = arm.pose.bones
+    book = (arm.matrix_world @ pb['prop.R'].head)
+    hl, hr = arm.matrix_world @ pb['hand.L'].head, arm.matrix_world @ pb['hand.R'].head
+    check('ShelfPick: book held at chest height between both hands',
+          1.0 < book.z < 1.3 and (hl - book).length < 0.25 and (hr - book).length < 0.25,
+          f'book z {book.z:.2f}, hands {((hl - book).length):.2f}/{((hr - book).length):.2f} m')
+    world_pose(arm, acts['ShelfPick'], 0)
+    on_shelf = arm.matrix_world @ pb['prop.R'].head
+    check('ShelfPick: book starts on the shelf (~1.5 m, ~0.45 m ahead)',
+          abs(on_shelf.z - C.SHELF_BOOK[2]) < 0.03 and abs(on_shelf.y - C.SHELF_BOOK[1]) < 0.03, str(tuple(on_shelf)))
+    for f in (0, 40, 75, 120):
+        world_pose(arm, acts['SitRead'], f)
+        hl, hr = arm.matrix_world @ pb['hand.L'].head, arm.matrix_world @ pb['hand.R'].head
+        bk = arm.matrix_world @ pb['prop.R'].head
+        if f in (0, 75):
+            check(f'SitRead frame {f}: both hands hold the book', (hl - bk).length < 0.25 and (hr - bk).length < 0.25)
+
     # contacts: seat height and walking foot lock
     from char_anim import deformed_coords
     parts = np.array(res['part_of'])
@@ -237,6 +258,8 @@ def test_export(gdir):
                                                     for c in C.CLIP_NAMES))
     w = meta['clips']['Walk']
     check('json: Walk speed/footPlants', w['speed'] == 1.4 and w['footPlants'] == [0, 0.5] and abs(w['duration'] - 1.0667) < 1e-3)
+    check('json: book clips', meta['clips']['SitRead'].get('prop') == 'book' and meta['clips']['ShelfPick'].get('prop') == 'book'
+          and meta['clips']['SitRead'].get('pose') == 'sit')
     check('json: seat heights', meta['seatHeight'] == 0.47 and meta['loungeSeatHeight'] == 0.42 and meta['height'] == 1.75)
 
 

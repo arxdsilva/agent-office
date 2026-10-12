@@ -4,12 +4,15 @@ import {
   STATUS_COLORS,
   type Agent,
   type AgentStatus,
+  type CapabilityCategory,
   type ChatMessage,
   type GraphicsQuality,
   type HookStatus,
   type Settings,
   type UpdateState,
 } from '@agent-office/shared'
+import type { Chip } from './capability-vm.ts'
+import { ago } from './format.ts'
 import type { Activity } from './office-types.ts'
 import type { OfficeState } from './state.ts'
 
@@ -19,12 +22,7 @@ const STATE_LABEL: Record<ChatMessage['state'], string> = {
   replied: '✓✓ replied',
 }
 
-export function ago(ts: number, now: number): string {
-  const s = Math.max(0, Math.round((now - ts) / 1000))
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.round(s / 60)}m ago`
-  return `${Math.round(s / 3600)}h ago`
-}
+export { ago } from './format.ts'
 
 export interface Hint {
   text: string
@@ -59,6 +57,8 @@ export interface ActivityInfo {
   subagents?: number
   /** For a subagent in a meeting: the parent's name. */
   with?: string
+  /** For connection-* / library-*: what the agent is using. */
+  capability?: { label: string; category: CapabilityCategory; tool?: string }
 }
 
 const ROOM_SUFFIX = (room: string | undefined, prefix: string) =>
@@ -96,6 +96,24 @@ export function activityLabel(
       const n = details.subagents ?? 0
       return n > 0 ? `${where} with ${n} subagent${n === 1 ? '' : 's'}` : where
     }
+    case 'connection-call': {
+      const c = details.capability
+      if (!c) return 'Calling an adapter'
+      return c.tool ? `Calling ${c.label} (${c.tool})` : `Calling ${c.label}`
+    }
+    case 'connection-visit':
+      return details.capability
+        ? `Working at the ${details.capability.label} station`
+        : 'Working in the Adapters room'
+    case 'library-call': {
+      const c = details.capability
+      if (!c) return 'Consulting the library'
+      return c.category === 'skill' ? `Consulting ${c.label} (skill)` : `Reading ${c.label}`
+    }
+    case 'library-visit':
+      return details.capability
+        ? `In the library reading ${details.capability.label}`
+        : 'Reading in the library'
     case 'booth': {
       const booth = ROOM_SUFFIX(details.room, 'booth-')
       return `Waiting for you in ${booth ? `booth ${booth}` : 'a phone booth'}`
@@ -118,9 +136,22 @@ export interface PanelVM {
   parent?: { id: string; name: string }
   hint: Hint | null
   thread: { id: string; from: 'user' | 'agent'; text: string; stateLabel?: string }[]
+  /** Connections, skills and rules this agent used this session (chips). */
+  used?: UsedChips
 }
 
-export function panelVM(state: OfficeState, id: string, now: number, info?: ActivityInfo): PanelVM {
+export interface UsedChips {
+  adapters: Chip[]
+  library: Chip[]
+}
+
+export function panelVM(
+  state: OfficeState,
+  id: string,
+  now: number,
+  info?: ActivityInfo,
+  used?: UsedChips,
+): PanelVM {
   const a = state.agents.get(id)
   if (!a)
     return {
@@ -150,6 +181,7 @@ export function panelVM(state: OfficeState, id: string, now: number, info?: Acti
     ],
     ...(a.parentId ? { parent: { id: a.parentId, name: parent?.name ?? a.parentId } } : {}),
     hint: hintFor(a),
+    ...(used && (used.adapters.length || used.library.length) ? { used } : {}),
     thread: (state.messages.get(id) ?? []).map((m) => ({
       id: m.id,
       from: m.from,
@@ -183,6 +215,7 @@ export interface SettingsVM {
   notifications: boolean
   launchAtLogin: boolean
   claudeAdapter: boolean
+  discoverCapabilities: boolean
   autoUpdate: boolean
   graphicsQuality: GraphicsQuality
   version: string
@@ -209,6 +242,7 @@ export function settingsVM(i: {
     notifications: i.settings.notifications,
     launchAtLogin: i.settings.launchAtLogin,
     claudeAdapter: i.settings.claudeAdapter,
+    discoverCapabilities: i.settings.discoverCapabilities,
     autoUpdate: i.settings.autoUpdate,
     graphicsQuality: i.settings.graphicsQuality,
     version: `v${i.version}`,

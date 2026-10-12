@@ -14,6 +14,7 @@ import {
   BONES,
   CHARACTER_MATERIALS,
   CLIPS,
+  checkAnchor,
   checkAnchorCounts,
   checkBudget,
   checkBuildingNav,
@@ -66,6 +67,13 @@ function anchorsFor(kind: ModuleKind): Record<string, AnchorJson> {
           ]),
           ...range(6).map((i): Spec => [`spot:kitchen:${i}`, { pose: 'stand' }]),
           ...range(8).map((i): Spec => [`seat:lounge:${i}`, { pose: 'lounge' }]),
+          // Capability rooms (contract §4): Adapters stations, Library reading seats and shelf spots.
+          ...range(8).map((i): Spec => [
+            `spot:station:${i}`,
+            { pose: 'stand', room: 'adapters' },
+          ]),
+          ...range(4).map((i): Spec => [`seat:reading:${i}`, { room: 'library' }]),
+          ...range(2).map((i): Spec => [`spot:shelf:${i}`, { pose: 'stand', room: 'library' }]),
         ]
       : kind === 'atrium'
         ? [
@@ -82,13 +90,26 @@ function anchorsFor(kind: ModuleKind): Record<string, AnchorJson> {
           : []
   // Spread anchors on a grid inside the module, facing +z, approach 0.6 m in front.
   const sign = kind === 'atrium' ? -1 : 1
-  return Object.fromEntries(
+  const placed = Object.fromEntries(
     specs.map(([id, extra], i) => {
       const x = (kind === 'atrium' ? -10 : 2) + (i % 8) * 1.2
       const z = sign * (2 + Math.floor(i / 8) * 1.5)
       return [id, { x, y: 0, z, heading: 0, pose: 'sit', approach: { x, z: z + 0.6 }, ...extra }]
     }),
   )
+  return kind === 'wing' ? { ...placed, ...portsFor() } : placed
+}
+
+/** Link attach points (contract §4 `port` kind): 3D points, y ≠ 0, no heading/pose/approach. */
+function portsFor(): Record<string, AnchorJson> {
+  const port = (x: number, y: number, z: number) => ({ x, y, z }) as unknown as AnchorJson
+  return Object.fromEntries([
+    ...range(6, 1).flatMap((p) => range(4).map((i) => [`port:desk:${p}:${i}`, port(2 + i, 1.25, p)])),
+    ...range(8).map((i) => [`port:station:${i}`, port(25 + (i % 4), 2.3, -8 + Math.floor(i / 4) * 6)]),
+    ...range(24).map((i) => [`port:book:${i}`, port(29.6, 0.5 + (i % 6) * 0.35, 1 + Math.floor(i / 6))]),
+    ...range(6).map((i) => [`port:board:${i}`, port(24.5 + i * 0.9, 1.6, 8.9)]),
+    ...range(8).map((i) => [`port:notebook:${i}`, port(25 + i * 0.3, 1.1, 8.8)]),
+  ])
 }
 
 /** A star graph: a hub at the first connector, one `ap:<id>` node per approach, other connectors. */
@@ -113,6 +134,7 @@ function navFor(kind: ModuleKind, anchors: Record<string, AnchorJson>): NavJson 
     if (i) edges.push(['c0', `c${i}`])
   })
   for (const [id, a] of Object.entries(anchors)) {
+    if (!a.approach) continue // ports are link attach points, not walk targets
     nodes[`ap:${id}`] = { ...a.approach, width: 0.6 }
     edges.push(['c0', `ap:${id}`])
   }
@@ -120,11 +142,11 @@ function navFor(kind: ModuleKind, anchors: Record<string, AnchorJson>): NavJson 
 }
 
 const BOUNDS: Record<ModuleKind, Manifest['modules']['atrium']['bounds']> = {
-  atrium: { minX: -27, maxX: 27, minZ: -24, maxZ: 0 },
+  atrium: { minX: -33, maxX: 33, minZ: -24, maxZ: 0 },
   street: { minX: -3, maxX: 3, minZ: 0, maxZ: 18 },
-  wing: { minX: 0, maxX: 24, minZ: -9, maxZ: 9 },
-  garden: { minX: 0, maxX: 24, minZ: -9, maxZ: 9 },
-  cap: { minX: -27, maxX: 27, minZ: 0, maxZ: 0.5 },
+  wing: { minX: 0, maxX: 30, minZ: -9, maxZ: 9 },
+  garden: { minX: 0, maxX: 30, minZ: -9, maxZ: 9 },
+  cap: { minX: -33, maxX: 33, minZ: 0, maxZ: 0.5 },
 }
 
 function moduleJson(kind: ModuleKind) {
@@ -397,6 +419,32 @@ describe('asset validator: manifest shape', () => {
   })
 })
 
+describe('asset validator: capability rooms (Adapters + Library)', () => {
+  it('requires stations, reading seats, shelf spots and every link port in a wing', () => {
+    const wing = anchorsFor('wing')
+    expect(checkAnchorCounts('wing', wing)).toEqual([])
+    delete wing['spot:station:3']
+    delete wing['seat:reading:0']
+    delete wing['port:book:5']
+    delete wing['port:desk:2:1']
+    const errs = checkAnchorCounts('wing', wing)
+    expect(errs).toContain('wing: expected 8 "spot:station:*" anchors, found 7')
+    expect(errs).toContain('wing: expected 4 "seat:reading:*" anchors, found 3')
+    expect(errs).toContain('wing: expected 24 "port:book:*" anchors, found 23')
+    expect(errs).toContain('wing: expected 24 "port:desk:*" anchors, found 23')
+  })
+
+  it('accepts ports in mid-air without pose or approach, but needs numeric x, y, z', () => {
+    expect(checkAnchor('p', 'port:station:0', { x: 25, y: 2.3, z: -8 })).toEqual([])
+    expect(checkAnchor('p', 'port:book:7', { x: 25, z: 1 })).toEqual(['p["port:book:7"].y: not a number'])
+  })
+
+  it('keeps ports off the nav graph check', () => {
+    const anchors = anchorsFor('wing')
+    expect(checkNav('wing', navFor('wing', anchors), anchors)).toEqual([])
+  })
+})
+
 describe('asset validator: anchors and capacity', () => {
   it('requires the contract §4 anchor counts per module', () => {
     for (const k of ['wing', 'atrium', 'garden'] as const)
@@ -639,7 +687,7 @@ describe('real assets (packages/web/public/assets)', () => {
       )
   })
 
-  it('match the graphics contract: 0 gltf-validator errors, budgets, anchors, nav, clips, ≤ 45 MB', async () => {
+  it('match the graphics contract: 0 gltf-validator errors, budgets, anchors, nav, clips, ≤ 55 MB', async () => {
     if (!existsSync(join(REAL_ASSETS, 'manifest.json'))) return // reported by the test above
     const r = await validateAssets(REAL_ASSETS)
     const sizes = r.files.map(

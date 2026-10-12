@@ -163,6 +163,8 @@ class Geo:
         """Box of `size` (sx, sy, sz) centered at `pos` (local glTF)."""
         bm, col = self._bm(mat)
         sx, sy, sz = size
+        if min(sx, sy, sz) < 0.055 and max(sx, sy, sz) < 1.0:
+            bevel = 0.0  # thin/small parts: chamfers cost triangles the lightmap would hide anyway
         bevel = min(bevel, 0.45 * min(sx, sy, sz))
         res = bmesh.ops.create_cube(bm, size=1.0, matrix=self._matrix(pos, yaw, (sx, sy, sz), pitch, roll))
         return self._finish(bm, col, res['verts'], color, bevel if bevel > 0.0005 else 0, segs)

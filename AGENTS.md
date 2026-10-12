@@ -96,9 +96,10 @@ drives the built app with Playwright.
 - New infrastructure comes with an adapter that passes the port's **contract suite**.
 - Behavior changes have an E2E test (`packages/adapters/test/`). App and UI changes pass `make test-ui`.
 - Public contracts (HTTP API, IPC API, hook output) change additively only, and the README tables are updated.
+- Multi-area work was split across parallel agents per `.claude/rules/PARALLEL_WORK.md` (contract first, disjoint ownership, lead verification).
 - `.claude/rules/PRIVACY_SECURITY.md` is respected, including the Electron checklist.
 
 ## Rules
 
 Project rules live in `.claude/rules/` and apply to every AI tool: `ARCHITECTURE.md`,
-`TESTING.md`, `PRIVACY_SECURITY.md`, `SCENE.md`, `GIT_WORKFLOW.md`.
+`TESTING.md`, `PRIVACY_SECURITY.md`, `SCENE.md`, `PARALLEL_WORK.md`, `GIT_WORKFLOW.md`.

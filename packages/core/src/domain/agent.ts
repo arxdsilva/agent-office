@@ -4,6 +4,10 @@ import type { Agent, AgentEvent } from '@agent-office/shared'
 export interface AgentState extends Agent {
   /** Last time something read this agent's inbox. */
   inboxReadAt?: number
+  /** Privacy-safe hint of the current tool call (docs/capabilities.md §3). Never sent to UIs. */
+  target?: string
+  /** Explicit capability id of the current tool call, from generic producers. Never sent to UIs. */
+  capability?: string
 }
 
 export interface SweepPolicy {
@@ -25,6 +29,8 @@ const MERGED = [
   'text',
 ] as const
 const VISIBLE: (keyof Agent)[] = [...MERGED, 'interactive', 'unread']
+/** Internal fields whose change still matters to subscribers (a new capability use). */
+const USE = ['target', 'capability'] as const
 
 /**
  * Applies a partial event. Returns the new state, or null when the event is older than what we
@@ -55,13 +61,19 @@ export function applyEvent(
   for (const k of MERGED) {
     if (e[k] !== undefined) (next as unknown as Record<string, unknown>)[k] = e[k]
   }
+  // A new tool call replaces the previous call's target/capability; otherwise they merge.
+  for (const k of USE) {
+    if (e[k] !== undefined) next[k] = e[k]
+    else if (e.tool !== undefined) delete next[k]
+  }
   if (next.status !== 'tool' && e.tool === undefined) delete next.tool
+  if (next.status !== 'tool') for (const k of USE) delete next[k]
   return next
 }
 
 /** True when something a viewer can see changed (lastSeen-only bumps are not visible). */
-export function isVisibleChange(prev: Agent | undefined, next: Agent): boolean {
-  return !prev || VISIBLE.some((k) => prev[k] !== next[k])
+export function isVisibleChange(prev: AgentState | undefined, next: AgentState): boolean {
+  return !prev || VISIBLE.some((k) => prev[k] !== next[k]) || USE.some((k) => prev[k] !== next[k])
 }
 
 export type SweepResult =
@@ -75,6 +87,7 @@ export function sweepAgent(a: AgentState, now: number, p: SweepPolicy): SweepRes
   if (silent > p.idleAfterMs && (a.status === 'thinking' || a.status === 'tool')) {
     next = { ...next, status: 'idle' }
     delete next.tool
+    for (const k of USE) delete next[k]
   }
   if (a.interactive && now - (a.inboxReadAt ?? 0) > p.interactiveTtlMs)
     next = { ...next, interactive: false }
@@ -83,6 +96,6 @@ export function sweepAgent(a: AgentState, now: number, p: SweepPolicy): SweepRes
 
 /** Public shape sent to UIs. */
 export function toDto(s: AgentState): Agent {
-  const { inboxReadAt: _internal, ...agent } = s
+  const { inboxReadAt: _internal, target: _target, capability: _capability, ...agent } = s
   return agent
 }

@@ -16,7 +16,7 @@ def _clear_props(obj):
 
 def create_objects(geo, col, name):
     """Returns dict: static/ceiling/glass lists (one object per (group, material)), dynamic, collider."""
-    out = {'static': [], 'ceiling': [], 'glass': [], 'dynamic': [], 'collider': []}
+    out = {'static': [], 'ceiling': [], 'glass': [], 'roofglass': [], 'dynamic': [], 'collider': []}
     for (group, mat), b in sorted(geo.batches.items()):
         if not b.bm.faces:
             b.bm.free()
@@ -127,8 +127,10 @@ def tag_unbaked(objs):
         o['role'] = 'baked'
     for o in objs['ceiling']:
         o['role'] = 'ceiling'
-    for o in objs['glass']:
+    for o in objs['glass'] + objs['roofglass']:
         o['role'] = 'glass'
+    for o in objs['roofglass']:
+        o['ceiling'] = True
 
 
 def export_glb(objs, path):

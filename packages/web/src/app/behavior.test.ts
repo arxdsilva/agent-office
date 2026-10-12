@@ -1,8 +1,16 @@
-import type { Agent } from '@agent-office/shared'
+import type { Agent, Capability } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
+import { builtins, cap } from './__fixtures__/capabilities.ts'
 import { fixtureManifest } from './__fixtures__/manifest.ts'
 import {
   ACTIVITY_PRIORITY,
+  CALL_FADE_MS,
+  LIBRARY_FADE_MS,
+  LIBRARY_IDLE_SKILL_MS,
+  LIBRARY_RETURN_MS,
+  SHELF_SHARE_OFFSET,
+  VISIT_RETURN_MS,
+  VISIT_SUSTAIN_MS,
   ARRIVE_MS,
   DWELL_MS,
   IDLE_BREAK_MS,
@@ -19,8 +27,10 @@ import {
 } from './behavior.ts'
 import { planBuilding } from './building.ts'
 import type { Activity, BuildingLayout } from './office-types.ts'
+import { assignLibrary } from './library.ts'
 import { reservationOf } from './reservations.ts'
 import { assignDesks, emptySeating } from './seating.ts'
+import { assignStations } from './stations.ts'
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id,
@@ -46,16 +56,30 @@ function office(layout: BuildingLayout = layoutFor()) {
   let last: DirectOutput | undefined
   return {
     layout,
-    tick(agents: Agent[], now: number) {
+    tick(agents: Agent[], now: number, caps: Capability[] = []) {
       seating = assignDesks(agents, layout, seating, now)
-      last = direct({ agents, layout, seating: seating.seats, memory, now })
+      last = direct({
+        agents,
+        layout,
+        seating: seating.seats,
+        memory,
+        now,
+        capabilities: new Map([['claude-code', caps]]),
+        stations: new Map([['claude-code', assignStations(caps)]]),
+        library: new Map([['claude-code', assignLibrary(caps)]]),
+      })
       memory = last.memory
       return last
     },
     /** Ticks at 4 Hz over [from, to] with the agents given by `at(t)`. */
-    run(at: (t: number) => Agent[], from: number, to: number) {
+    run(
+      at: (t: number) => Agent[],
+      from: number,
+      to: number,
+      caps: (t: number) => Capability[] = () => [],
+    ) {
       const seen: { t: number; out: DirectOutput }[] = []
-      for (let t = from; t <= to; t += 250) seen.push({ t, out: this.tick(at(t), t) })
+      for (let t = from; t <= to; t += 250) seen.push({ t, out: this.tick(at(t), t, caps(t)) })
       return seen
     },
     get memory() {
@@ -391,5 +415,245 @@ describe('priorities', () => {
       .run(script, 0, 60_000)
       .map((s) => [...s.out.intents])
     expect(one).toEqual(two)
+  })
+})
+
+/** Capabilities with `active` set: `uses` maps capability id → agent ids using it. */
+const using = (uses: Record<string, string[]>, extra: string[] = []): Capability[] =>
+  [
+    ...builtins(),
+    ...['mcp:github', 'skill:run-office', 'skill:scene-change', 'rule:project:TESTING.md', ...extra]
+      .filter((id) => !['fs', 'shell', 'web', 'subagents'].includes(id))
+      .map((id) => cap(id)),
+  ].map((c) => ({ ...c, active: uses[c.id] ?? [] }))
+const W = 'wing:claude-code:0'
+
+describe('direct: adapters (calls and visits)', () => {
+  it('connection-call: an agent using an adapter calls it from its desk, with a short fade', () => {
+    const o = office()
+    o.tick([agent('a')], 0)
+    // Enters the call at once (desk-work's dwell does not apply to an overlay).
+    const out = o.tick([agent('a')], 250, using({ fs: ['a'] }))
+    expect(out.intents.get('a')).toMatchObject({ activity: 'connection-call', capability: 'fs' })
+    expect(out.intents.get('a')!.target).toBe(o.seats.get('a'))
+    // A different adapter keeps the same intent start (no re-plan), only the capability changes.
+    const shell = o.tick([agent('a')], 500, using({ shell: ['a'] }))
+    expect(shell.intents.get('a')).toMatchObject({ capability: 'shell', since: 250 })
+    expect(act(o.tick([agent('a')], 500 + CALL_FADE_MS - 1, using({})), 'a')).toBe(
+      'connection-call',
+    )
+    expect(act(o.tick([agent('a')], 500 + CALL_FADE_MS + 250, using({})), 'a')).toBe('desk-work')
+  })
+
+  it('connection-visit: the same adapter used continuously for 20 s sends the agent to its station', () => {
+    const o = office()
+    const seen = o.run(
+      () => [agent('a')],
+      0,
+      VISIT_SUSTAIN_MS + 250,
+      (t) => using(t > 0 ? { 'mcp:github': ['a'] } : {}),
+    )
+    const before = seen.find((s) => s.t === VISIT_SUSTAIN_MS)!.out
+    expect(act(before, 'a')).toBe('connection-call')
+    const after = seen.at(-1)!.out
+    expect(after.intents.get('a')).toMatchObject({
+      activity: 'connection-visit',
+      capability: 'mcp:github',
+      target: `${W}/spot:station:4`,
+    })
+  })
+
+  it('connection-visit: four calls to one adapter within 60 s also visit; three do not', () => {
+    const pulse = (period: number) => (t: number) =>
+      using(t % period < 1000 && t > 0 ? { fs: ['a'] } : {})
+    const o = office()
+    const seen = o.run(() => [agent('a')], 0, 20_000, pulse(5000))
+    expect(seen.some((s) => act(s.out, 'a') === 'connection-visit')).toBe(true)
+    const first = seen.find((s) => act(s.out, 'a') === 'connection-visit')!
+    expect(first.out.intents.get('a')!.target).toBe(`${W}/spot:station:0`)
+    // One call every 25 s: at most three in any 60 s window.
+    const sparse = office()
+    expect(
+      sparse
+        .run(() => [agent('a')], 0, 90_000, pulse(25_000))
+        .some((s) => act(s.out, 'a') === 'connection-visit'),
+    ).toBe(false)
+  })
+
+  it('returns to the desk 8 s after the last use (and not before the 15 s dwell)', () => {
+    const o = office()
+    const stopAt = VISIT_SUSTAIN_MS + 1000
+    const seen = o.run(
+      () => [agent('a')],
+      0,
+      stopAt + 20_000,
+      (t) => using(t > 0 && t < stopAt ? { fs: ['a'] } : {}),
+    )
+    const visitStart = seen.find((s) => act(s.out, 'a') === 'connection-visit')!.t
+    const at = (t: number) => act(seen.find((s) => s.t === t)!.out, 'a')
+    const back = Math.max(stopAt - 250 + VISIT_RETURN_MS, visitStart + DWELL_MS['connection-visit'])
+    expect(at(back - 250)).toBe('connection-visit')
+    expect(at(back + 250)).toBe('desk-work')
+    expect(reservationOf(seen.at(-1)!.out.memory.reservations, 'a')).toBeUndefined()
+  })
+
+  it('falls back to a call from the desk when the station is taken', () => {
+    const o = office()
+    const seen = o.run(
+      () => [agent('a'), agent('b')],
+      0,
+      VISIT_SUSTAIN_MS + 500,
+      (t) => using(t > 0 ? { fs: ['a', 'b'] } : {}),
+    )
+    const out = seen.at(-1)!.out
+    expect(act(out, 'a')).toBe('connection-visit')
+    expect(act(out, 'b')).toBe('connection-call')
+  })
+
+  it('meeting members only call (no visits)', () => {
+    const o = office()
+    const team = [agent('p'), agent('s', { parentId: 'p' })]
+    const seen = o.run(
+      () => team,
+      0,
+      VISIT_SUSTAIN_MS + 2000,
+      (t) => using(t > 0 ? { fs: ['p'] } : {}),
+    )
+    expect(act(seen.at(-1)!.out, 'p')).toBe('meeting')
+  })
+})
+
+describe('direct: library (calls and visits)', () => {
+  it('library-call: a skill or rule in use is called from the desk, fading after 1.5 s', () => {
+    const o = office()
+    o.tick([agent('a')], 0)
+    const out = o.tick([agent('a')], 250, using({ 'rule:project:TESTING.md': ['a'] }))
+    expect(out.intents.get('a')).toMatchObject({
+      activity: 'library-call',
+      capability: 'rule:project:TESTING.md',
+    })
+    expect(act(o.tick([agent('a')], 250 + LIBRARY_FADE_MS - 1, using({})), 'a')).toBe(
+      'library-call',
+    )
+    expect(act(o.tick([agent('a')], 250 + LIBRARY_FADE_MS + 250, using({})), 'a')).toBe('desk-work')
+  })
+
+  it('library-visit: two distinct skill/rule uses within 60 s → shelf, then a reading seat', () => {
+    const o = office()
+    o.tick([agent('a')], 0)
+    o.tick([agent('a')], 1000, using({ 'skill:run-office': ['a'] }))
+    o.tick([agent('a')], 2000, using({}))
+    const out = o.tick([agent('a')], 4000, using({ 'rule:project:TESTING.md': ['a'] }))
+    expect(out.intents.get('a')).toMatchObject({
+      activity: 'library-visit',
+      target: `${W}/seat:reading:0`,
+      via: [`${W}/spot:shelf:0`],
+      capability: 'rule:project:TESTING.md',
+    })
+    // The same capability twice is one distinct use.
+    const same = office()
+    same.tick([agent('a')], 0)
+    same.tick([agent('a')], 1000, using({ 'skill:run-office': ['a'] }))
+    same.tick([agent('a')], 2000, using({}))
+    expect(act(same.tick([agent('a')], 4000, using({ 'skill:run-office': ['a'] })), 'a')).toBe(
+      'library-call',
+    )
+  })
+
+  it('library-visit: a skill invoked after ≥ 10 s idle or thinking', () => {
+    const calm = office()
+    calm.tick([agent('a', { status: 'thinking' })], 0)
+    calm.tick([agent('a', { status: 'idle' })], 5000)
+    const out = calm.tick(
+      [agent('a')],
+      LIBRARY_IDLE_SKILL_MS,
+      using({ 'skill:scene-change': ['a'] }),
+    )
+    expect(act(out, 'a')).toBe('library-visit')
+    // Shelf B holds the second half of the books; scene-change sorts after run-office: shelf A.
+    expect(out.intents.get('a')!.via).toEqual([`${W}/spot:shelf:0`])
+    const busy = office()
+    busy.tick([agent('a', { status: 'thinking' })], 0)
+    expect(
+      act(
+        busy.tick(
+          [agent('a')],
+          LIBRARY_IDLE_SKILL_MS - 2000,
+          using({ 'skill:scene-change': ['a'] }),
+        ),
+        'a',
+      ),
+    ).toBe('library-call')
+  })
+
+  it('returns 10 s after the last library use, not before the 20 s dwell', () => {
+    const o = office()
+    o.tick([agent('a')], 0)
+    o.tick([agent('a')], 1000, using({ 'skill:run-office': ['a'] }))
+    o.tick([agent('a')], 2000, using({ 'rule:project:TESTING.md': ['a'] }))
+    const t = 2250
+    expect(act(o.tick([agent('a')], t, using({})), 'a')).toBe('library-visit')
+    expect(act(o.tick([agent('a')], 2000 + DWELL_MS['library-visit'] - 1, using({})), 'a')).toBe(
+      'library-visit',
+    )
+    const back = o.tick([agent('a')], 2000 + DWELL_MS['library-visit'], using({}))
+    expect(LIBRARY_RETURN_MS).toBeLessThan(DWELL_MS['library-visit'])
+    expect(act(back, 'a')).toBe('desk-work')
+    expect(reservationOf(back.memory.reservations, 'a')).toBeUndefined()
+  })
+
+  it('reads standing at the shelf when the reading seats are full, then falls back to a call', () => {
+    const o = office()
+    const ids = ['r0', 'r1', 'r2', 'r3', 's0', 's1', 'x']
+    const team = ids.map((id) => agent(id))
+    const twice = (who: string[], t0: number) => {
+      o.tick(team, t0, using(Object.fromEntries([['skill:run-office', who]])))
+      o.tick(team, t0 + 500, using({}))
+      return o.tick(team, t0 + 1000, using(Object.fromEntries([['skill:scene-change', who]])))
+    }
+    o.tick(team, 0)
+    const first = twice(['r0', 'r1', 'r2', 'r3'], 1000)
+    expect(ids.slice(0, 4).map((id) => first.intents.get(id)!.target)).toEqual(
+      [0, 1, 2, 3].map((i) => `${W}/seat:reading:${i}`),
+    )
+    // Two pick at the shelf on the way; the others go straight to their seats.
+    expect(first.intents.get('r1')!.lateral).toBe(SHELF_SHARE_OFFSET)
+    expect(first.intents.get('r2')!.via).toBeUndefined()
+    // Later (the readers keep reading), three more want the library: two stand at shelf A, one calls.
+    const later = 30_000
+    o.tick(team, later - 500, using({ 'skill:run-office': ids.slice(0, 4) }))
+    const out = twice(['s0', 's1', 'x'], later)
+    expect(out.intents.get('s0')).toMatchObject({
+      activity: 'library-visit',
+      target: `${W}/spot:shelf:0`,
+    })
+    expect(out.intents.get('s0')!.lateral ?? 0).toBe(0)
+    expect(out.intents.get('s1')).toMatchObject({
+      target: `${W}/spot:shelf:0`,
+      lateral: SHELF_SHARE_OFFSET,
+    })
+    expect(act(out, 'x')).toBe('library-call')
+  })
+
+  it('connection-visit and library-visit have equal priority: whichever came first stays', () => {
+    const o = office()
+    const seen = o.run(
+      () => [agent('a')],
+      0,
+      VISIT_SUSTAIN_MS + 500,
+      (t) => using(t > 0 ? { fs: ['a'] } : {}),
+    )
+    expect(act(seen.at(-1)!.out, 'a')).toBe('connection-visit')
+    let t = VISIT_SUSTAIN_MS + 750
+    o.tick([agent('a')], t, using({ fs: ['a'], 'skill:run-office': ['a'] }))
+    const out = o.tick(
+      [agent('a')],
+      (t += 1000),
+      using({ fs: ['a'], 'rule:project:TESTING.md': ['a'] }),
+    )
+    expect(act(out, 'a')).toBe('connection-visit')
+    expect(ACTIVITY_PRIORITY['connection-visit']).toBe(ACTIVITY_PRIORITY['library-visit'])
+    expect(ACTIVITY_PRIORITY.meeting).toBeGreaterThan(ACTIVITY_PRIORITY['library-visit'])
+    expect(ACTIVITY_PRIORITY['library-visit']).toBeGreaterThan(ACTIVITY_PRIORITY['desk-work'])
   })
 })

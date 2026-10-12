@@ -22,6 +22,7 @@ function setup(opts: { rateLimitPerSec?: number; mock?: MockControl } = {}) {
       inbox: office.inbox,
       chat: office.chat,
       query: office.query,
+      capabilities: office.capabilities,
       ...(opts.mock ? { mock: opts.mock } : {}),
     },
     createAuth({ token: TOKEN, port: 4317 }),
@@ -193,5 +194,91 @@ describe('POST /api/mock', () => {
     const r = await app.inject({ method: 'POST', url: '/api/mock?n=5000', headers: bearerOnly })
     expect(r.statusCode).toBe(202)
     expect(spawned).toEqual([1000])
+  })
+})
+
+describe('POST /api/providers/:provider/capabilities', () => {
+  const url = '/api/providers/langgraph/capabilities'
+  const decl = (id: string) => ({ id, category: 'adapter', kind: 'database', label: id })
+
+  it('202 declares capabilities, which then appear in the snapshot', async () => {
+    const { app, office } = setup()
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: authed,
+      payload: [decl('mcp:pg')],
+    })
+    expect(res.statusCode).toBe(202)
+    expect(res.json()).toEqual({ declared: 1 })
+    expect(office.query.snapshot().capabilities).toEqual([
+      expect.objectContaining({ id: 'mcp:pg', provider: 'langgraph', declared: true }),
+    ])
+  })
+
+  it('401 without the token', async () => {
+    const { app } = setup()
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { ...json, host: HOST },
+      payload: [decl('a')],
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('400 for invalid bodies or provider names', async () => {
+    const { app } = setup()
+    for (const payload of [{ id: 'x' }, [{ id: 'x', category: 'nope', kind: 'api', label: 'x' }]])
+      expect((await app.inject({ method: 'POST', url, headers: authed, payload })).statusCode).toBe(
+        400,
+      )
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/providers/bad%20name/capabilities',
+      headers: authed,
+      payload: [decl('a')],
+    })
+    expect(bad.statusCode).toBe(400)
+  })
+
+  it('413 for more than 64 declarations', async () => {
+    const { app } = setup()
+    const payload = Array.from({ length: 65 }, (_, i) => decl(`d${i}`))
+    expect((await app.inject({ method: 'POST', url, headers: authed, payload })).statusCode).toBe(
+      413,
+    )
+  })
+
+  it('host and origin guards apply', async () => {
+    const { app } = setup()
+    const evil = await app.inject({
+      method: 'POST',
+      url,
+      headers: { ...authed, host: 'evil.com' },
+      payload: [decl('a')],
+    })
+    expect(evil.statusCode).toBe(421)
+    const site = await app.inject({
+      method: 'POST',
+      url,
+      headers: { ...authed, origin: 'https://evil.com' },
+      payload: [decl('a')],
+    })
+    expect(site.statusCode).toBe(403)
+  })
+
+  it('404 when no capabilities port is wired', async () => {
+    const { office, scheduler } = makeOffice()
+    const app = buildHttpApi(
+      { activity: office.activity, inbox: office.inbox, chat: office.chat, query: office.query },
+      createAuth({ token: TOKEN, port: 4317 }),
+    )
+    cleanups.push(
+      () => app.close(),
+      () => scheduler.dispose(),
+    )
+    const res = await app.inject({ method: 'POST', url, headers: authed, payload: [] })
+    expect(res.statusCode).toBe(404)
   })
 })

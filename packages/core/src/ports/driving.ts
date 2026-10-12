@@ -3,6 +3,7 @@
 import type {
   Agent,
   AgentEvent,
+  CapabilityDecl,
   ChatMessage,
   HookStatus,
   ServerMessage,
@@ -24,6 +25,14 @@ export interface CancelSignal {
 export interface ReportActivity {
   /** Returns how many events were accepted (out-of-order ones are dropped). */
   report(events: AgentEvent[]): number
+}
+
+/**
+ * Producers that know what their agents can use: HTTP `POST /api/providers/:provider/capabilities`,
+ * Claude Code discovery, mock agents. Declarations merge; usage counters are kept.
+ */
+export interface ReportCapabilities {
+  declare(provider: string, decls: CapabilityDecl[]): void
 }
 
 /** Periodic cleanup (idle/expire). */

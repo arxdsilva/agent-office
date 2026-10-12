@@ -66,7 +66,7 @@ THEMES = {
 
 HOUSE = dict(
     sign='#F4EDE4', accent='#E07A5F',
-    floor=('smooth_concrete_floor', '#E6E1D9', 0.35, 3.0),
+    floor=('concrete_wall_008', '#F3F1EC', 0.42, 3.5),
     wall='#F2EFEA', accent_wall='#E07A5F', trim='#1E1E1E', ceiling='#F2F0EC',
     felt=['#E07A5F', '#3D5A80', '#F2CC8F'], fabric=['#E07A5F', '#3D5A80', '#81B29A', '#F2CC8F', '#E8E1D6'],
     rug='#3D5A80', leather='#8B5A2B', wood='oak_veneer_01', wood_tint='#ffffff', pot='#E9E4DA',
@@ -104,11 +104,12 @@ def palette(t):
     add('stone', 'quartz', base='#efeeea', rough=0.22, spec=0.6)
     add('ceiling', 'ceiling', base=t['ceiling'], rough=0.92)
     add('black', 'black-glass', base='#0c0d0f', rough=0.12, spec=0.7)
-    add('light', 'light-panel', base='#ffffff', emission='#ffffff', strength=4.0)
-    add('light_warm', 'light-warm', base='#fff4e6', emission='#ffd9a8', strength=4.0)
+    add('light', 'light-panel', base='#ffffff', emission='#f4f6f8', strength=1.4)
+    add('light_warm', 'light-warm', base='#fff4e6', emission='#ffd9a8', strength=1.4)
     if t.get('glow'):
         for i, c in enumerate(t['glow']):
-            P[f'glow{i}'] = M.pbr(f'glow-{i}', base=c, emission=c, strength=6.0, bake_emit=True).name
+            P[f'glow{i}'] = M.pbr(f'glow-{i}', base=c, emission=c, strength=2.2, bake_emit=True).name
+    P['glow_accent'] = M.pbr('glow-accent', base=t['accent'], emission=t['accent'], strength=1.5, bake_emit=True).name
     P['glass'] = M.glass().name
     P['screen'] = M.pbr('screen', base='#0b0d12', rough=0.2, emission='#1a2a3a', strength=1.0).name
     P['led'] = M.pbr('led', base='#202020', rough=0.4, emission='#5a6470', strength=2.0).name

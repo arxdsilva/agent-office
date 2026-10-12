@@ -28,7 +28,8 @@ export function contentSecurityPolicy(devServerUrl?: string): string {
     `script-src 'self' 'wasm-unsafe-eval'${dev ? ` ${dev}` : ''}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    `connect-src 'self'${dev ? ` ${dev} ${ws}` : ''}`,
+    // blob: lets GLTFLoader fetch embedded textures (decoded off the main thread); still no remote origins.
+    `connect-src 'self' blob:${dev ? ` ${dev} ${ws}` : ''}`,
     "worker-src 'self' blob:",
     "font-src 'self'",
     "object-src 'none'",

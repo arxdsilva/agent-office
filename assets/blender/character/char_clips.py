@@ -941,6 +941,197 @@ def clip_head_scratch(n=90):
     return out
 
 
+# ── library / adapters ────────────────────────────────────────────────────────────────────────
+def _n(v):
+    v = np.asarray(v, dtype=float)
+    return v / np.linalg.norm(v)
+
+
+def book_frame(center, z_toward, x_hint=(-1.0, 0.0, 0.0)):
+    """Prop params for the book: spine at `center`, pages facing `z_toward`, spread along x_hint."""
+    z = _n(z_toward)
+    x = np.asarray(x_hint, dtype=float)
+    x = _n(x - z * x.dot(z))
+    y = np.cross(z, x)
+    return {'on': 1.0, 'pos': tuple(center), 'x': tuple(x), 'y': tuple(y)}, x, y, z
+
+
+def book_hands(center, x, y, z, edge=0.148, low=0.035):
+    """Two-hand hold: palms behind the outer page edges, thumbs on the pages."""
+    c = np.asarray(center, dtype=float)
+    out = {}
+    for side, sx in (('armL', -1.0), ('armR', 1.0)):
+        P = c + x * (sx * edge) - y * low
+        f = _n(-x * sx * 0.55 + y * 0.6 - z * 0.1)
+        wrist = P - z * 0.026 - f * 0.07
+        m = np.array((1.0, 1.0, 1.0)) if side == 'armL' else np.array((-1.0, 1.0, 1.0))
+        out[side] = arm(char=tuple(wrist * m), sw=(0, 1, 0), pole=(0.7, 0.4, -0.8), f=tuple(f * m),
+                        pa=tuple(z * m), hw=1.0, twist=0.6)
+    return out
+
+
+def _with_book(p, center, toward):
+    pr, x, y, z = book_frame(center, toward)
+    p['prop'] = pr
+    p.update(book_hands(center, x, y, z))
+    return p
+
+
+def clip_sit_read(n=150):
+    """Seated (SitIdle base), reading an open book; the right hand turns a page every 75 frames."""
+    center = (0.0, -0.075, 0.915)
+    toward = (0.0, 0.5, 0.86)
+    pr, x, y, z = book_frame(center, toward)
+    hold = book_hands(center, x, y, z)
+    c = np.asarray(center)
+    # page turn: the right hand leaves its edge, lifts the right page's top corner, sweeps it left
+    lift = c + x * 0.12 + y * 0.075 + z * 0.03
+    over = c - x * 0.02 + y * 0.09 + z * 0.09
+    land = c - x * 0.1 + y * 0.06 + z * 0.03
+    m = np.array((-1.0, 1.0, 1.0))
+    def turn_arm(P, fdir):
+        f = _n(fdir)
+        pa = _n(-z + y * 0.2)
+        wrist = P - f * 0.12 + z * 0.02
+        return arm(char=tuple(wrist * m), sw=(0, 1, 0), pole=(0.7, 0.4, -0.8), f=tuple(f * m), pa=tuple(pa * m),
+                   hw=1.0, twist=0.6)
+    a_hold = hold['armR']
+    a_lift = turn_arm(lift, -x * 0.3 + y * 0.7)
+    a_over = turn_arm(over, x * -0.2 + y * 0.8 + z * 0.3)
+    a_land = turn_arm(land, -x * 0.6 + y * 0.6)
+    turn = [(0, a_hold), (8, a_lift), (14, a_over), (20, a_land), (30, a_hold)]
+    out = []
+    for f in range(n + 1):
+        p = sit0()
+        p['prop'] = copy.deepcopy(pr)
+        p.update(copy.deepcopy(hold))
+        ph = f % 75
+        if 20 <= ph <= 50:
+            p['armR'] = spline(turn, ph - 20)
+        p['spine'] = (17.0, 0.0, 0.0)
+        p['chest'] = (6.0, 0.0, 0.0)
+        p['neck'] = (10.0, 0.0, 0.0)
+        p['head'] = (14.0, 0.0, 0.0)
+        breathe(p, f, n / 2, 0.9)
+        # eyes follow the lines: tiny head yaw drift that resets with each page
+        sweep = math.sin(math.pi * (ph / 75.0)) ** 2
+        add(p, 'head', (2.0 * sweep, 0.0, 3.0 * math.sin(TAU * f / 75.0)))
+        add(p, 'neck', (0.0, 0.0, 1.0 * math.sin(TAU * (f - 4) / 75.0)))
+        out.append(p)
+    return out
+
+
+def clip_stand_interact(n=120):
+    """At a tall touch screen (centre 1.4 m, 0.6 m ahead): swipes, taps, a pinch, a nod."""
+    def touch(x, z, rest=False):
+        if rest:
+            return arm(chest=HANG, pole=(0.4, 1.0, -0.15))
+        return arm(char=(x, -0.415, z), sw=(0, 1, 0), pole=(0.8, 0.5, -0.7), f=(-0.12, -1.0, 0.2),
+                   pa=(-0.5, -0.25, -1.0), hw=1.0, twist=0.6)
+    base = idle0()
+    base['spine'] = (4.0, 0.0, 0.0)
+    base['chest'] = (2.0, 0.0, 0.0)
+    base['head'] = (-2.0, 0.0, 0.0)
+    k = []
+    def key(f, rx, rz, lx=None, lz=None, head=(0.0, 0.0, 0.0), hip=0.0):
+        p = copy.deepcopy(base)
+        p['armR'] = touch(rx, rz)
+        p['armL'] = touch(lx, lz) if lx is not None else touch(0, 0, rest=True)
+        add(p, 'head', head)
+        p['hip'] = (hip, p['hip'][1], p['hip'][2])
+        k.append((f, p))
+    # (mirrored convention: +x = outward, so the right hand at x>0 is to the character's right)
+    key(0, 0.12, 1.30, head=(4.0, 0, -4.0), hip=-0.012)
+    key(14, 0.20, 1.32, head=(3.0, 0, -6.0), hip=-0.012)       # swipe start
+    key(24, -0.02, 1.33, head=(3.0, 0, 3.0), hip=-0.004)       # swipe end
+    key(34, 0.08, 1.24, head=(6.0, 0, -2.0), hip=0.0)          # tap low
+    key(46, 0.10, 1.40, 0.10, 1.38, head=(0.0, 0, 0.0), hip=0.006)   # both hands: pinch-in
+    key(58, 0.18, 1.42, 0.18, 1.40, head=(-2.0, 0, 0.0), hip=0.006)  # zoom out
+    key(72, 0.06, 1.28, head=(8.0, 0, 4.0), hip=0.014)         # nod while reading
+    key(88, 0.16, 1.36, head=(2.0, 0, -5.0), hip=0.006)        # scroll up
+    key(100, 0.12, 1.22, head=(5.0, 0, -3.0), hip=-0.006)
+    out = []
+    for f in range(n + 1):
+        p = spline(k, f, period=n)
+        stand_overlay(p, f, n, 0.0)
+        # tiny forward pokes on the taps
+        tap = sum(bump((f - t) / 6.0) for t in (31, 36, 76, 103) if t <= f <= t + 6)
+        a = p['armR']
+        a['char'] = (a['char'][0], a['char'][1] - 0.022 * tap, a['char'][2])
+        out.append(p)
+    return out
+
+
+def clip_shelf_pick(n=60):
+    """Reach the shelf (1.5 m, 0.45 m ahead), pull a book, bring it open to the chest; the last
+    frames hold that pose."""
+    shelf = np.array(C.SHELF_BOOK, dtype=float)
+    hold_c = np.array((0.0, -0.25, 1.12))
+    hold_to = (0.0, 0.55, 0.84)
+    # book keys: on the shelf (pages facing sideways like a shelved book), pulled out, at the chest
+    b0, x0, y0, z0 = book_frame(shelf, (-1.0, 0.0, 0.0), x_hint=(0.0, 1.0, 0.0))
+    b1, _, _, _ = book_frame(shelf + (0.0, 0.12, -0.02), (-1.0, 0.25, 0.1), x_hint=(0.0, 1.0, 0.0))
+    b2, _, _, _ = book_frame((0.0, -0.32, 1.25), (-0.45, 0.4, 0.8), x_hint=(-0.3, 1.0, 0.0))
+    b3, x3, y3, z3 = book_frame(hold_c, hold_to)
+    book_keys = [(0, b0), (24, b0), (31, b1), (41, b2), (52, b3), (60, b3)]
+    N = idle0()
+    reach = copy.deepcopy(N)
+    reach['spine'] = (3.0, 0.0, -3.0)
+    reach['chest'] = (-4.0, 2.0, -6.0)
+    reach['neck'] = (-6.0, 0.0, -4.0)
+    reach['head'] = (-12.0, 0.0, 0.0)
+    reach['hip'] = (0.01, 0.0, 0.004)
+    reach['clavR'] = (0.0, -7.0, 0.0)
+    m = np.array((-1.0, 1.0, 1.0))
+    # right hand grip on the shelved book's spine (spine edge faces the character)
+    grip_P = shelf + np.array((0.0, 0.05, 0.0))
+    f_g = _n((0.0, -1.0, 0.25))
+    wrist_g = grip_P - f_g * 0.085 + np.array((0.02, 0.0, -0.01))
+    reach['armR'] = arm(char=tuple(wrist_g * m), sw=(0, 1, 0), pole=(0.6, 0.2, -1.0), f=tuple(f_g * m),
+                        pa=tuple(np.array((1.0, 0.0, 0.0)) * m), hw=1.0, twist=0.6)
+    approach = copy.deepcopy(reach)
+    approach['armR']['char'] = tuple((wrist_g + np.array((-0.03, 0.12, -0.1))) * m)
+    hold = copy.deepcopy(N)
+    hold['spine'] = (4.0, 0.0, 0.0)
+    hold['neck'] = (6.0, 0.0, 0.0)
+    hold['head'] = (10.0, 0.0, 0.0)
+    hold.update(book_hands(hold_c, x3, y3, z3))
+    pull = copy.deepcopy(reach)
+    pull['head'] = (-6.0, 0.0, 0.0)
+    body_keys = [(0, N), (6, N), (16, approach), (24, reach), (31, pull), (52, hold), (60, hold)]
+    # the grip expressed in the shelved book's frame
+    B0 = np.stack([_n(b0['x']), np.asarray(b0['y']), np.cross(_n(b0['x']), np.asarray(b0['y']))], axis=1)
+    grip_local = {'char': B0.T @ (wrist_g - shelf), 'f': B0.T @ f_g, 'pa': B0.T @ np.array((1.0, 0.0, 0.0))}
+    out = []
+    for f in range(n + 1):
+        p = spline(body_keys, f)
+        bk = spline(book_keys, f)
+        p['prop'] = bk
+        c = np.asarray(bk['pos'])
+        x = _n(bk['x'])
+        y = np.asarray(bk['y'])
+        y = _n(y - x * x.dot(y))
+        z = np.cross(x, y)
+        hands = book_hands(c, x, y, z)
+        if f >= 24:
+            # the right hand rides with the book from the grip, then slides to the edge hold
+            B = np.stack([x, y, z], axis=1)
+            ride = copy.deepcopy(reach['armR'])
+            for key in ('char', 'f', 'pa'):
+                v = np.asarray(grip_local[key])
+                w_ = B @ v + (c if key == 'char' else 0.0)
+                ride[key] = tuple(w_ * m)
+            w = smr((f - 30) / 16.0)
+            p['armR'] = lerp_p(ride, hands['armR'], w)
+        if f >= 34:
+            wl = smr((f - 34) / 14.0)
+            p['armL'] = lerp_p(N['armL'], hands['armL'], wl)
+        if f < 6:
+            p['prop'] = b0
+        out.append(p)
+    return out
+
+
 # ── registry ──────────────────────────────────────────────────────────────────────────────────
 def all_clips(rig):
     _CACHE.clear()
@@ -954,5 +1145,6 @@ def all_clips(rig):
         'SitLaptop': clip_sit_type(laptop=True), 'StandTalk': clip_stand_talk(), 'PhoneCall': clip_phone(),
         'DrinkCoffee': clip_coffee(), 'LoungeSit': clip_lounge(), 'PingPong': clip_pingpong(),
         'Wave': clip_wave(), 'HeadScratch': clip_head_scratch(), 'ElevatorIn': clip_elevator(),
+        'StandInteract': clip_stand_interact(), 'SitRead': clip_sit_read(), 'ShelfPick': clip_shelf_pick(),
     }
     return clips, meta

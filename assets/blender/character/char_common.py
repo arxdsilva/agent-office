@@ -98,6 +98,7 @@ CLIPS = [
     ('SitThink', 120, True), ('SitTalk', 120, True), ('SitLaptop', 60, True), ('StandTalk', 120, True),
     ('PhoneCall', 150, True), ('DrinkCoffee', 180, True), ('LoungeSit', 150, True),
     ('PingPong', 48, True), ('Wave', 40, False), ('HeadScratch', 90, True), ('ElevatorIn', 40, False),
+    ('StandInteract', 120, True), ('SitRead', 150, True), ('ShelfPick', 60, False),
 ]
 CLIP_NAMES = [c[0] for c in CLIPS]
 WALK_SPEED = 1.4
@@ -119,4 +120,9 @@ MATERIALS = {
     'white': ('#F4F2EE', 0.45, 0.0),
     'rubber': ('#C9393B', 0.7, 0.0),
     'wood': ('#B98552', 0.55, 0.0),
+    'cover': ('#2D4F8A', 0.6, 0.0),
 }
+
+# Library / Adapters furniture the new clips are authored for (Blender coordinates, -Y = forward)
+SCREEN_CENTER = (0.0, -0.6, 1.4)     # tall interactive screen in front of the root
+SHELF_BOOK = (-0.06, -0.45, 1.5)     # book on the shelf the right hand reaches for

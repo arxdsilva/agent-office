@@ -1,7 +1,7 @@
 // Runtime validation of `manifest.json` (docs/graphics-contract.md §3, §4, §7).
 // zod is not a dependency of packages/web, so this is a small hand-written validator that names the
 // offending path in every error.
-import type { AABB, Pose, ThemeId } from './office-types.ts'
+import type { AABB, Pose, ThemeId, Vec3 } from './office-types.ts'
 
 export const THEME_IDS: readonly ThemeId[] = [
   'terracotta',
@@ -40,6 +40,8 @@ export interface ModuleDef {
   lightmap?: Lightmap
   bounds: AABB
   anchors: Record<string, ManifestAnchor>
+  /** `port:*` anchors: 3D link attach points (y ≠ 0, no heading/pose/approach). */
+  ports: Record<string, Vec3>
   nav: ManifestNav
 }
 
@@ -57,6 +59,12 @@ export interface WingCapacity {
   booth: number
   kitchen: number
   lounge: number
+  /** Capability rooms (docs/capabilities.md); absent in older manifests. */
+  stations?: number
+  books?: number
+  boards?: number
+  notebooks?: number
+  readingSeats?: number
 }
 
 export interface WingDef {
@@ -64,6 +72,7 @@ export interface WingDef {
   bounds: AABB
   capacity: WingCapacity
   anchors: Record<string, ManifestAnchor>
+  ports: Record<string, Vec3>
   nav: ManifestNav
 }
 
@@ -94,7 +103,7 @@ export class ManifestError extends Error {
 }
 
 type Obj = Record<string, unknown>
-const ANCHOR_ID = /^(seat|spot):[a-z]+(:[A-Za-z0-9]+)*$/
+const ANCHOR_ID = /^(seat|spot|port):[a-z]+(:[A-Za-z0-9]+)*$/
 const JOIN_EPS = 0.05
 
 const key = (path: string, k: string) =>
@@ -161,15 +170,23 @@ function anchor(v: unknown, path: string): ManifestAnchor {
   return a
 }
 
-function anchors(v: unknown, path: string): Record<string, ManifestAnchor> {
+function anchors(
+  v: unknown,
+  path: string,
+): { anchors: Record<string, ManifestAnchor>; ports: Record<string, Vec3> } {
   const o = obj(v, path)
   const out: Record<string, ManifestAnchor> = {}
+  const ports: Record<string, Vec3> = {}
   for (const [id, a] of Object.entries(o)) {
+    const p = key(path, id)
     if (!ANCHOR_ID.test(id))
-      throw new ManifestError(key(path, id), 'anchor id must match <seat|spot>:<group>:<index>')
-    out[id] = anchor(a, key(path, id))
+      throw new ManifestError(p, 'anchor id must match <seat|spot|port>:<group>:<index>')
+    if (id.startsWith('port:')) {
+      const po = obj(a, p)
+      ports[id] = { x: num(po, 'x', p), y: num(po, 'y', p), z: num(po, 'z', p) }
+    } else out[id] = anchor(a, p)
   }
-  return out
+  return { anchors: out, ports }
 }
 
 function nav(v: unknown, path: string, connectors: [number, number][]): ManifestNav {
@@ -245,13 +262,30 @@ const REQUIRED: Record<'wing' | 'atrium' | 'garden', Requirement[]> = {
   garden: [[/^spot:garden:\d+$/, 6, 'spot:garden:*']],
 }
 
-function requireCounts(a: Record<string, ManifestAnchor>, reqs: Requirement[], path: string) {
-  const ids = Object.keys(a)
+function requireCounts(ids: string[], reqs: Requirement[], path: string) {
   for (const [re, min, label] of reqs) {
     const n = ids.filter((id) => re.test(id)).length
     if (n < min)
       throw new ManifestError(path, `expected at least ${min} ${label} anchors, found ${n}`)
   }
+}
+
+/** Anchors and ports the capability rooms need, for the capacities a manifest declares. */
+function capabilityRooms(c: WingCapacity): Requirement[] {
+  const out: Requirement[] = []
+  if (c.stations !== undefined)
+    out.push(
+      [/^spot:station:\d+$/, c.stations, 'spot:station:*'],
+      [/^port:station:\d+$/, c.stations, 'port:station:*'],
+      [/^port:desk:[1-6]:[0-3]$/, c.desk, 'port:desk:<pod>:<i>'],
+    )
+  if (c.books !== undefined)
+    out.push([/^port:book:\d+$/, c.books, 'port:book:*'], [/^spot:shelf:\d+$/, 2, 'spot:shelf:*'])
+  if (c.boards !== undefined) out.push([/^port:board:\d+$/, c.boards, 'port:board:*'])
+  if (c.notebooks !== undefined) out.push([/^port:notebook:\d+$/, c.notebooks, 'port:notebook:*'])
+  if (c.readingSeats !== undefined)
+    out.push([/^seat:reading:\d+$/, c.readingSeats, 'seat:reading:*'])
+  return out
 }
 
 const CONNECTORS: Record<'atrium' | 'street' | 'garden' | 'cap' | 'wing', [number, number][]> = {
@@ -273,13 +307,13 @@ function moduleDef(v: unknown, name: 'atrium' | 'street' | 'garden' | 'cap'): Mo
   const m: ModuleDef = {
     file: str(o, 'file', path),
     bounds: bounds(o.bounds, `${path}.bounds`),
-    anchors: anchors(o.anchors, `${path}.anchors`),
+    ...anchors(o.anchors, `${path}.anchors`),
     nav: nav(o.nav, `${path}.nav`, CONNECTORS[name]),
   }
   const lm = lightmap(o.lightmap, `${path}.lightmap`)
   if (lm) m.lightmap = lm
   if (name === 'atrium' || name === 'garden')
-    requireCounts(m.anchors, REQUIRED[name], `${path}.anchors`)
+    requireCounts(Object.keys(m.anchors), REQUIRED[name], `${path}.anchors`)
   return m
 }
 
@@ -314,13 +348,16 @@ function wingDef(v: unknown): WingDef {
     kitchen: num(c, 'kitchen', cp),
     lounge: num(c, 'lounge', cp),
   }
+  for (const k of ['stations', 'books', 'boards', 'notebooks', 'readingSeats'] as const)
+    if (c[k] !== undefined) capacity[k] = num(c, k, cp)
   const a = anchors(o.anchors, `${path}.anchors`)
-  requireCounts(a, REQUIRED.wing, `${path}.anchors`)
+  const ids = [...Object.keys(a.anchors), ...Object.keys(a.ports)]
+  requireCounts(ids, [...REQUIRED.wing, ...capabilityRooms(capacity)], `${path}.anchors`)
   return {
     themes,
     bounds: bounds(o.bounds, `${path}.bounds`),
     capacity,
-    anchors: a,
+    ...a,
     nav: nav(o.nav, `${path}.nav`, CONNECTORS.wing),
   }
 }

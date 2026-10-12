@@ -1,6 +1,6 @@
 // Driven (secondary) ports: what the core needs from the outside world.
 // Implemented by adapters (packages/adapters, packages/desktop). Additive changes only.
-import type { ChatMessage, HookStatus, Settings } from '@agent-office/shared'
+import type { Capability, ChatMessage, HookStatus, Settings } from '@agent-office/shared'
 import type { AgentState } from '../domain/agent.ts'
 import type { Note } from '../domain/attention.ts'
 import type { TrayModel } from '../domain/tray.ts'
@@ -45,11 +45,23 @@ export interface MessageRepository {
   dropAgent(agentId: string): void
 }
 
+/** Capabilities (adapters, skills, rules) per provider. In memory; docs/capabilities.md. */
+export interface CapabilityRepository {
+  get(provider: string, id: string): Capability | undefined
+  /** Inserts or replaces by (provider, id). */
+  put(c: Capability): void
+  /** In insertion order. */
+  listByProvider(provider: string): Capability[]
+  providers(): string[]
+}
+
 export type OfficeEvent =
   | { type: 'agent.upserted'; agent: AgentState }
   | { type: 'agent.removed'; id: string }
   | { type: 'message.changed'; message: ChatMessage }
   | { type: 'inbox.queued'; agentId: string }
+  /** A provider's capabilities changed (debounced); carries the provider's full list. */
+  | { type: 'capabilities.changed'; provider: string; capabilities: Capability[] }
 
 export interface EventPublisher {
   publish(e: OfficeEvent): void

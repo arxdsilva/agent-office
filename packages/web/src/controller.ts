@@ -7,12 +7,15 @@ import {
   type SettingsPatch,
   type UpdateState,
 } from '@agent-office/shared'
+import { capabilityBubbles, capabilityPanelVM, surfacesVM, usedChips } from './app/capability-vm.ts'
 import { createDirector, type Director } from './app/director.ts'
 import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
 import { applyMessage, emptyState, type OfficeState } from './app/state.ts'
 import { hudVM, panelVM, settingsVM, type ActivityInfo } from './app/view-models.ts'
 import type {
   BannerView,
+  CapabilityPanelView,
+  CapabilityRef,
   HudView,
   OfficeGateway,
   PanelView,
@@ -27,6 +30,7 @@ export interface ControllerDeps {
   hud: HudView
   settings: SettingsView
   banner: BannerView
+  capabilityPanel: CapabilityPanelView
   grouping: Grouping
   clock: { now(): number }
   every: (ms: number, fn: () => void) => () => void
@@ -44,6 +48,12 @@ export function createController(d: ControllerDeps) {
   let plans = new Map<string, AgentPlan>()
   let shownActivity: string | undefined
   let selected: string | null = null
+  /** Capability shown in the Capability panel (one side panel at a time). */
+  let openCapability: CapabilityRef | null = null
+  let showLinks = false
+  /** agent id → capability id → uses this session (counted when the agent becomes active on it). */
+  const used = new Map<string, Map<string, number>>()
+  let activeUses = new Set<string>()
   let update: UpdateState = { policy: 'off', status: 'idle' }
   let hook: HookStatus = 'not-installed'
   let restartNote = false
@@ -64,6 +74,13 @@ export function createController(d: ControllerDeps) {
     const info: ActivityInfo = { activity: plan.intent.activity }
     const room = layout?.anchors.get(plan.intent.target)?.room
     if (room) info.room = room
+    const capId = plan.intent.capability
+    const c = capId ? capabilityOf(plan.agent.provider, capId) : undefined
+    if (c) {
+      info.capability = { label: c.label, category: c.category }
+      if (info.activity === 'connection-call' && plan.agent.tool)
+        info.capability.tool = plan.agent.tool
+    }
     if (info.activity === 'meeting') {
       const parent = plan.agent.parentId
       if (parent) info.with = (state.agents.get(parent) ?? plans.get(parent)?.agent)?.name ?? parent
@@ -74,7 +91,64 @@ export function createController(d: ControllerDeps) {
     }
     return info
   }
-  const vmFor = (id: string) => panelVM(state, id, d.clock.now(), activityOf(id))
+  const capabilityOf = (provider: string, id: string) =>
+    state.capabilities.get(provider)?.find((c) => c.id === id)
+  const nameOf = (id: string) => state.agents.get(id)?.name ?? plans.get(id)?.agent.name ?? id
+  const vmFor = (id: string) => {
+    const provider = (state.agents.get(id) ?? plans.get(id)?.agent)?.provider
+    const caps = provider ? (state.capabilities.get(provider) ?? []) : []
+    return panelVM(
+      state,
+      id,
+      d.clock.now(),
+      activityOf(id),
+      usedChips(caps, used.get(id) ?? new Map()),
+    )
+  }
+
+  /** Counts a use each time an agent starts using a capability (it shows up in `active`). */
+  const trackUses = () => {
+    const now = new Set<string>()
+    for (const caps of state.capabilities.values())
+      for (const c of caps)
+        for (const agentId of c.active) {
+          const key = `${agentId} ${c.id}`
+          now.add(key)
+          if (activeUses.has(key)) continue
+          const m = used.get(agentId) ?? new Map<string, number>()
+          m.set(c.id, (m.get(c.id) ?? 0) + 1)
+          used.set(agentId, m)
+        }
+    activeUses = now
+  }
+
+  const renderCapability = (open = false) => {
+    if (!openCapability) return
+    const c = capabilityOf(openCapability.provider, openCapability.id)
+    if (!c) return
+    const vm = capabilityPanelVM(c, d.clock.now(), nameOf, showLinks)
+    if (open) d.capabilityPanel.open(vm)
+    else d.capabilityPanel.render(vm)
+  }
+
+  /** Panel closed: links back to normal, the camera stops tracking the capability. */
+  function closeCapability() {
+    if (!openCapability) return
+    openCapability = null
+    showLinks = false
+    d.scene.highlightLinks(null)
+    d.scene.focusCapability(null)
+  }
+
+  const pickCapability = (ref: CapabilityRef) => {
+    if (!capabilityOf(ref.provider, ref.id)) return
+    if (selected) select(null)
+    openCapability = ref
+    showLinks = false
+    d.scene.highlightLinks(null)
+    d.scene.focusCapability(ref)
+    renderCapability(true)
+  }
 
   const renderPanel = () => {
     if (!selected) return
@@ -84,6 +158,8 @@ export function createController(d: ControllerDeps) {
   }
 
   /** One director step: building only when it changed, then every agent's plan. */
+  /** A message already triggered a director run since the last tick. */
+  let messageDirected = false
   const direct = () => {
     if (!director) return
     const u = director.update(state, d.clock.now())
@@ -91,11 +167,23 @@ export function createController(d: ControllerDeps) {
     plans = u.plans
     if (u.layoutChanged) d.scene.setBuilding(u.layout)
     d.scene.direct(u.plans, u.departed)
+    d.scene.setLinks(u.links)
+    d.scene.setSurfaces({
+      byProvider: surfacesVM(state.capabilities, u.stations, u.library, d.clock.now(), nameOf),
+      bubbles: capabilityBubbles(u.plans, state.capabilities),
+    })
+    trackUses()
+    renderCapability()
     if (selected && vmFor(selected).activity !== shownActivity) renderPanel()
   }
 
   const render = () => {
-    direct()
+    // Messages arrive in bursts with many busy agents: the first one after a tick is directed at
+    // once, the rest wait for the next 4 Hz tick (at most one extra director run per tick).
+    if (!messageDirected) {
+      messageDirected = true
+      direct()
+    }
     d.hud.render(hudVM(state))
     renderPanel()
   }
@@ -105,6 +193,10 @@ export function createController(d: ControllerDeps) {
     selected = id && (state.agents.has(id) || plans.has(id)) ? id : null
     d.scene.select(selected)
     if (!selected) return d.panel.close()
+    if (openCapability) {
+      d.capabilityPanel.close()
+      closeCapability()
+    }
     const vm = vmFor(selected)
     shownActivity = vm.activity
     d.panel.open(vm)
@@ -146,6 +238,15 @@ export function createController(d: ControllerDeps) {
 
   // View intents
   d.scene.onPick(select)
+  d.scene.onPickCapability(pickCapability)
+  d.capabilityPanel.onClose(closeCapability)
+  d.capabilityPanel.onToggleLinks((on) => {
+    if (!openCapability) return
+    showLinks = on
+    d.scene.highlightLinks(on ? openCapability.id : null)
+    renderCapability()
+  })
+  d.capabilityPanel.onSelectAgent(select)
   d.panel.onClose(() => select(null))
   d.panel.onSelectParent(select)
   d.panel.onSend(async (text) => {
@@ -196,7 +297,10 @@ export function createController(d: ControllerDeps) {
           void renderSettings(false)
         }),
         d.every(1000, renderPanel),
-        d.every(DIRECT_MS, direct),
+        d.every(DIRECT_MS, () => {
+          messageDirected = false
+          direct()
+        }),
       )
       const [snapshot, settings] = await Promise.all([
         d.gateway.ready(),
@@ -205,7 +309,9 @@ export function createController(d: ControllerDeps) {
       applyQuality(settings.graphicsQuality)
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       await loadScene()
-      render()
+      direct()
+      d.hud.render(hudVM(state))
+      renderPanel()
     },
 
     stop(): void {

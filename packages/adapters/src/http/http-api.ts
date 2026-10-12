@@ -1,5 +1,16 @@
-import type { AgentInbox, OfficeQuery, ReportActivity, UserChat } from '@agent-office/core'
-import { AgentEventBatchSchema, AgentReplySchema, ChatMessageSchema } from '@agent-office/shared'
+import type {
+  AgentInbox,
+  OfficeQuery,
+  ReportActivity,
+  ReportCapabilities,
+  UserChat,
+} from '@agent-office/core'
+import {
+  AgentEventBatchSchema,
+  AgentReplySchema,
+  CapabilityDeclBatchSchema,
+  ChatMessageSchema,
+} from '@agent-office/shared'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import type { Auth } from './auth.ts'
 import { httpStatusFor } from './errors.ts'
@@ -15,10 +26,14 @@ export interface HttpApiPorts {
   inbox: AgentInbox
   chat: UserChat
   query: OfficeQuery
+  /** Generic providers declare what their agents can use (docs/capabilities.md §4). */
+  capabilities?: ReportCapabilities
   mock?: MockControl
 }
 
 const MAX_WAIT_SEC = 25
+const MAX_DECLS = 64
+const PROVIDER = /^[A-Za-z0-9._:-]{1,100}$/
 
 /**
  * Public local HTTP API (Claude Code hook, external agents, CLI). Routes only translate:
@@ -107,6 +122,27 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
       return message ? reply.code(202).send({ message }) : reply.code(204).send()
     },
   )
+
+  if (ports.capabilities) {
+    const capabilities = ports.capabilities
+    app.post<{ Params: { provider: string } }>(
+      '/api/providers/:provider/capabilities',
+      { preHandler: requireToken },
+      async (req, reply) => {
+        const { provider } = req.params
+        if (!PROVIDER.test(provider)) return reply.code(400).send({ error: 'invalid provider' })
+        if (Array.isArray(req.body) && req.body.length > MAX_DECLS)
+          return reply.code(413).send({ error: `at most ${MAX_DECLS} capabilities per request` })
+        const parsed = CapabilityDeclBatchSchema.safeParse(req.body)
+        if (!parsed.success)
+          return reply
+            .code(400)
+            .send({ error: 'invalid capabilities', issues: parsed.error.issues })
+        capabilities.declare(provider, parsed.data)
+        return reply.code(202).send({ declared: parsed.data.length })
+      },
+    )
+  }
 
   if (ports.mock) {
     const mock = ports.mock

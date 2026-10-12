@@ -8,7 +8,7 @@
 //   node assets/build.mjs --pin                   download Poly Haven sources and pin their sha256
 //
 // Options: --modules atrium,street,garden,cap,wing:terracotta,…  (default: all)   --jobs N (parallel Blender
-// processes, default 2)   --skip-character
+// processes; default 3 for draft, 1 for final and previews)   --skip-character
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -27,17 +27,17 @@ const ALL_MODULES = ['atrium', 'street', 'garden', 'cap', ...THEMES.map((t) => `
 
 const BUDGETS = {
   atrium: { bytes: 12e6, tris: 250e3, draws: 120 },
-  wing: { bytes: 5e6, tris: 150e3, draws: 80 },
+  wing: { bytes: 6e6, tris: 190e3, draws: 140 },
   street: { bytes: 3e6, tris: 60e3, draws: 40 },
   garden: { bytes: 3e6, tris: 60e3, draws: 40 },
   cap: { bytes: 3e6, tris: 60e3, draws: 40 },
   character: { bytes: 1.5e6 },
-  total: 45e6,
+  total: 55e6,
 };
 
 // ---------------------------------------------------------------------------------------------- args
 function parseArgs(argv) {
-  const a = { quality: 'final', modules: ALL_MODULES, jobs: 2, mode: 'build', skipCharacter: false };
+  const a = { quality: 'final', modules: ALL_MODULES, jobs: 0, mode: 'build', skipCharacter: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--quality') a.quality = argv[++i];
@@ -51,6 +51,8 @@ function parseArgs(argv) {
     else throw new Error(`unknown argument ${k}`);
   }
   if (!['final', 'draft'].includes(a.quality)) throw new Error(`--quality must be final|draft`);
+  // GPU memory (unified, shared with any open Blender): final bakes and Cycles previews run one at a time.
+  if (!a.jobs) a.jobs = a.quality === 'final' || a.mode === 'previews' ? 1 : 3;
   for (const m of a.modules) if (!ALL_MODULES.includes(m)) throw new Error(`unknown module ${m}`);
   return a;
 }
@@ -285,7 +287,11 @@ async function verify(tools, dir) {
   console.log(`[asset] total ${(total / 1e6).toFixed(2)} MB`);
   // Anchors / nav (a light duplicate of the Blender-side test, on the published manifest).
   const need = {
-    wing: { 'seat:desk': 24, 'seat:meeting:A': 6, 'seat:meeting:B': 6, 'spot:booth': 4, 'spot:kitchen': 6, 'seat:lounge': 8 },
+    wing: {
+      'seat:desk': 24, 'seat:meeting:A': 6, 'seat:meeting:B': 6, 'spot:booth': 4, 'spot:kitchen': 6, 'seat:lounge': 8,
+      'spot:station': 8, 'seat:reading': 4, 'spot:shelf': 2, 'port:desk': 24, 'port:station': 8, 'port:book': 24,
+      'port:board': 6, 'port:notebook': 8,
+    },
     atrium: { 'spot:reception': 4, 'spot:elevator': 6, 'seat:cafe': 24, 'spot:pingpong': 4 },
     garden: { 'spot:garden': 6 },
   };
@@ -432,7 +438,7 @@ async function previews(args) {
   const logs = path.join(CACHE, 'work-previews');
   fs.mkdirSync(out, { recursive: true });
   fs.mkdirSync(logs, { recursive: true });
-  await pool(args.modules, Math.min(args.jobs, 2), async (m) => {
+  await pool(args.modules, args.jobs, async (m) => {
     await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--previews', out, '--quality', args.quality, '--modules', m]), {
       logFile: path.join(logs, `${moduleSlug(m)}.log`),
     });

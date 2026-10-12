@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -110,6 +110,58 @@ describe('compose', () => {
       .filter(([c]) => c === IPC.push)
       .flatMap(([, p]) => p as ServerMessage[])
     expect(pushes.some((m) => m.type === 'upsert' && m.agent.id === 'x')).toBe(true)
+  })
+
+  it('discovers Claude Code capabilities when claudeAdapter and discoverCapabilities are on', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-caps-'))
+    // An isolated Claude home: one user skill and a config with one MCP server (secret env must not leak).
+    mkdirSync(join(dir, 'claude', 'skills', 'run-office'), { recursive: true })
+    writeFileSync(
+      join(dir, 'claude', 'skills', 'run-office', 'SKILL.md'),
+      '---\nname: run-office\ndescription: Launch it.\n---\n',
+    )
+    writeFileSync(
+      join(dir, 'claude.json'),
+      JSON.stringify({ mcpServers: { github: { env: { TOKEN: 'ghp_secret' } } } }),
+    )
+    const vars = {
+      AGENT_OFFICE_CLAUDE: '1',
+      CLAUDE_PROJECTS_DIR: join(dir, 'claude', 'projects'),
+      CLAUDE_CONFIG_FILE: join(dir, 'claude.json'),
+    }
+    const { app, call } = setup(vars)
+    await app.start()
+    await wait(50)
+    const snap = (await call(IPC.ready)) as { capabilities?: { id: string; provider: string }[] }
+    const ids = (snap.capabilities ?? [])
+      .filter((c) => c.provider === 'claude-code')
+      .map((c) => c.id)
+    expect(ids).toEqual(
+      expect.arrayContaining(['fs', 'shell', 'web', 'subagents', 'mcp:github', 'skill:run-office']),
+    )
+    expect(JSON.stringify(snap)).not.toContain('ghp_secret')
+    // The capabilities endpoint is part of the HTTP API.
+    const res = await fetch(`http://127.0.0.1:${app.apiPort()}/api/providers/x/capabilities`, {
+      method: 'POST',
+      headers: { host: `localhost:${app.apiPort()}`, 'content-type': 'application/json' },
+      body: '[]',
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('does not discover capabilities when discoverCapabilities is off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-caps-'))
+    mkdirSync(join(dir, 'claude', 'skills', 'run-office'), { recursive: true })
+    writeFileSync(join(dir, 'claude', 'skills', 'run-office', 'SKILL.md'), '# x\n')
+    const { app, call } = setup({
+      AGENT_OFFICE_CLAUDE: '1',
+      CLAUDE_PROJECTS_DIR: join(dir, 'claude', 'projects'),
+    })
+    await app.office.settings.update({ discoverCapabilities: false })
+    await app.start()
+    await wait(50)
+    const snap = (await call(IPC.ready)) as { capabilities?: unknown[] }
+    expect(snap.capabilities).toEqual([])
   })
 
   it('keeps running with a banner when the port is busy', async () => {

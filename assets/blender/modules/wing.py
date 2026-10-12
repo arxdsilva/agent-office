@@ -1,10 +1,10 @@
-"""Office wing, 24 × 18 m (contract §2): door at local (0, 0) on the Main Street wall (x = 0), the wing
-extends along +x to the window wall (x = 24), z ∈ [−9, 9].
+"""Office wing, 30 × 18 m (contract §2): door at local (0, 0) on the Main Street wall (x = 0), the wing
+extends along +x to the window wall (x = 30), z ∈ [−9, 9].
 
-    x: 0 ────────── 7 ───────────────────────── 18.6 ──────── 24 (windows)
-       KITCHEN (z<0)  │ BOOTHS ×4 + corridor          │ MEETING A
-       ── door ═════ spine (z = 0) ═════════════════════ window nook
-       LOUNGE (z>0)   │ PODS 1–3 (z<0) / 4–6 (z>0)     │ MEETING B
+    x: 0 ────────── 7 ───────────────────────── 18.6 ──────── 24 ─────────── 30 (windows)
+       KITCHEN (z<0)  │ BOOTHS ×4 + corridor          │ MEETING A │ ADAPTERS (8 stations, core)
+       ── door ═════ spine (z = 0) ═════════════════════ vestibule ║ (glass doors)
+       LOUNGE (z>0)   │ PODS 1–3 (z<0) / 4–6 (z>0)     │ MEETING B │ LIBRARY (books, boards, notebooks)
                       │ living wall (z = +9)           │
 
 All six themes run this same builder; only materials, accent lights and decor differ, so the anchors
@@ -31,45 +31,46 @@ def build(g, A, P, name, t, rng):
     wood_top = 'white' if name == 'ocean' else 'wood'
 
     # ------------------------------------------------------------------ shell
-    g.plane_y(P['floor'], 0, 24, -9, 9, 0.0)
+    g.plane_y(P['floor'], 0, 30, -9, 9, 0.0)
     # street wall: solid kitchen side with the sign, door, glass storefront on the lounge side
-    wall(g, P['wall'], (0, -9), (0, 9), H, thick=0.15, side=-1,
+    # (the street wall is inset 8 cm so the slats and sign stay inside the module bounds)
+    wall(g, P['wall'], (0.08, -9), (0.08, 9), H, thick=0.15, side=-1,
          openings=[(7.8, 10.2, 0, 2.7), (10.2, 18.0, 0, 2.9)])
-    glass_partition(g, P, (0.08, 1.35), (0.08, 8.85), h=2.9, spacing=1.25)
+    glass_partition(g, P, (0.16, 1.35), (0.16, 8.85), h=2.9, spacing=1.25)
     for z in (-1.2, 1.2):  # black steel door portal
-        g.box_b(P['metal'], -0.04, 0.19, 0, 2.78, z - 0.06 if z < 0 else z, z if z < 0 else z + 0.06, bevel=0.004)
-    g.box_b(P['metal'], -0.04, 0.19, 2.7, 2.78, -1.26, 1.26, bevel=0.004)
+        g.box_b(P['metal'], 0.04, 0.27, 0, 2.78, z - 0.06 if z < 0 else z, z if z < 0 else z + 0.06, bevel=0.004)
+    g.box_b(P['metal'], 0.04, 0.27, 2.7, 2.78, -1.26, 1.26, bevel=0.004)
     # street face: vertical wood slats + accent sign backing (the sign itself is drawn by the runtime)
     for k in range(int(7.6 / 0.1)):
         z = -8.95 + k * 0.1
         if -5.75 < z < -2.25:
             continue
-        g.box(P['wood'], (0.03, H - 0.1, 0.045), (-0.015, (H - 0.1) / 2 + 0.05, z + 0.02), bevel=0.004)
-    g.box_b(P['accent'], -0.05, 0.0, 0.0, H, -5.7, -2.3, bevel=0.004)
-    sign = g.dynamic('sign-wing', 'sign', 'wing', P['sign'], pivot=(-0.062, 2.35, -4.0),
+        g.box(P['wood'], (0.03, H - 0.1, 0.045), (0.065, (H - 0.1) / 2 + 0.05, z + 0.02), bevel=0.004)
+    g.box_b(P['accent'], 0.03, 0.08, 0.0, H, -5.7, -2.3, bevel=0.004)
+    sign = g.dynamic('sign-wing', 'sign', 'wing', P['sign'], pivot=(0.018, 2.35, -4.0),
                      extras={'width': 3.0, 'height': 0.75})
     with g.into(sign):
-        g.quad(P['sign'], 3.0, 0.75, (-0.062, 2.35, -4.0), yaw=-math.pi / 2)
-    g.box_b(P['metal'], -0.06, -0.05, 1.92, 2.78, -5.55, -2.45, bevel=0.002)
+        g.quad(P['sign'], 3.0, 0.75, (0.018, 2.35, -4.0), yaw=-math.pi / 2)
+    g.box_b(P['metal'], 0.02, 0.03, 1.92, 2.78, -5.55, -2.45, bevel=0.002)
     g.light('wallwash', (-1.2, 3.4, -4.0), size=(3.2, 0.1), power=45, kelvin=3000, dir=(1, -0.8, 0))
 
-    wall(g, P['wall'], (0, -9), (24, -9), H, thick=0.15, side=1)
-    wall(g, P['wall'], (0, 9), (24, 9), H, thick=0.15, side=-1)
-    curtain_wall(g, P, (24, -9), (24, 9), H, spacing=1.5, transoms=(2.95,), thick=0.14, side=1)
+    wall(g, P['wall'], (0, -9), (30, -9), H, thick=0.15, side=1)
+    wall(g, P['wall'], (0, 9), (30, 9), H, thick=0.15, side=-1)
+    curtain_wall(g, P, (30, -9), (30, 9), H, spacing=1.5, transoms=(2.95,), thick=0.14, side=1)
     for z in (-8.25, 8.25):  # window-side columns
-        g.box_b(P['concrete'], 23.4, 23.85, 0, H, z - 0.3, z + 0.3, bevel=0.01, segs=2)
-    g.collider(-0.05, 0.15, -9, -1.25, 0, H)
-    g.collider(-0.05, 0.15, 1.25, 9, 0, H)
-    g.collider(23.8, 24.2, -9, 9, 0, H)
-    g.collider(0, 24, -9.1, -8.85, 0, H)
-    g.collider(0, 24, 8.85, 9.1, 0, H)
+        g.box_b(P['concrete'], 29.4, 29.86, 0, H, z - 0.3, z + 0.3, bevel=0.01, segs=2)
+    g.collider(0.03, 0.23, -9, -1.25, 0, H)
+    g.collider(0.03, 0.23, 1.25, 9, 0, H)
+    g.collider(29.8, 30.2, -9, 9, 0, H)
+    g.collider(0, 30, -9.1, -8.85, 0, H)
+    g.collider(0, 30, 8.85, 9.1, 0, H)
 
     # accent wall behind the kitchen counter run (z = −8.85 face) and theme wall treatment
     g.box_b(P['accent'], 0.15, 7.0, 0.0, H, -8.85, -8.83, bevel=0)
 
     # ------------------------------------------------------------------ ceiling
     with g.in_group('ceiling'):
-        g.plane_y(P['ceiling'], 0, 24, -9, 9, H, up=False)
+        g.plane_y(P['ceiling'], 0, 30, -9, 9, H, up=False)
         # perimeter bulkhead + recessed spine light trough
         g.box_b(P['ceiling'], 0.15, 23.85, H - 0.25, H, -1.0, -0.8, bevel=0.003)
         g.box_b(P['ceiling'], 0.15, 23.85, H - 0.25, H, 0.8, 1.0, bevel=0.003)
@@ -102,11 +103,15 @@ def build(g, A, P, name, t, rng):
     _booths(g, A, P, t, rng)
     _meeting(g, A, P, t, rng, 'A', -1)
     _meeting(g, A, P, t, rng, 'B', 1)
+    _front(g, A, P, t, rng)
+    _adapters(g, A, P, t, rng)
+    _library(g, A, P, t, rng)
     _decor(g, A, P, name, t, rng)
 
     return dict(
-        bounds={'minX': 0, 'maxX': 24, 'minZ': -9, 'maxZ': 9},
-        extra={'capacity': {'desk': 24, 'meeting': 2, 'meetingSeats': 6, 'booth': 4, 'kitchen': 6, 'lounge': 8}},
+        bounds={'minX': 0, 'maxX': 30, 'minZ': -9, 'maxZ': 9},
+        extra={'capacity': {'desk': 24, 'meeting': 2, 'meetingSeats': 6, 'booth': 4, 'kitchen': 6, 'lounge': 8,
+                            'stations': 8, 'books': 24, 'boards': 6, 'notebooks': 8, 'readingSeats': 4}},
         sky=dict(sun_dir=(0.78, 0.5, -0.38), sun_strength=3.2, sky_strength=0.4),
         previews=_previews(name),
     )
@@ -151,7 +156,7 @@ def _kitchen(g, A, P, t, rng):
                        kelvin=t['accent_kelvin'], power=30, mat='brass' if t['decor']['brass'] else 'paint')
     g.light('panel', (3.0, H - 0.05, -7.6), size=(4.0, 0.4), power=110, kelvin=t['kelvin'])
     # snack wall: open shelving on the street wall
-    with g.at(0.15, -7.6, -math.pi / 2):
+    with g.at(0.23, -7.6, -math.pi / 2):
         F.bookshelf(g, P, w=3.2, h=2.1, d=0.38, rng=None, frame='wood')
         jars = ('#f2cc8f', '#e07a5f', '#81b29a', '#f4f1de', '#3d405b', '#e9c46a')
         for row in range(5):
@@ -161,7 +166,7 @@ def _kitchen(g, A, P, t, rng):
                 if rng.random() < 0.75:
                     c = rng.choice(jars)
                     g.cyl(P['gloss'], 0.07, rng.uniform(0.16, 0.3), (xx, y, -0.19), segs=10, color=c)
-    g.collider(0.15, 0.55, -7.6, -4.4, 0, 2.1)
+    g.collider(0.23, 0.61, -7.6, -4.4, 0, 2.1)
     # nav: back aisle (counter side) and front row (island side), linked around the island ends
     A.node('w:k:aw', 1.25, -7.45, 0.5)
     A.node('w:k:ae', 4.95, -7.45, 0.5)
@@ -265,12 +270,13 @@ def _pods(g, A, P, t, rng, wood_top):
             pod = row * 3 + col + 1
             with g.at(px, pz):
                 seats = F.pod(g, P, pod, rng, chair, mugs, divider_color=t['felt'][2], top=wood_top)
-                for (i, sx, sz, h) in seats:
+                for (i, sx, sz, h, port) in seats:
                     # +z-side seats face −z; in world, the side towards the spine depends on the row
                     toward_spine = (sz > 0) == (pz < 0)
                     hub = f'w:s{3 + col}' if toward_spine else f'w:c{row}:{px:g}'
                     A.seat(f'seat:desk:{pod}:{i}', sx, sz, h, pose='sit', room=f'pod-{pod}',
                            screen=f'desk:{pod}:{i}', approach=-0.6, hubs=[hub])
+                    A.port(f'port:desk:{pod}:{i}', *port)
             g.collider(px - 1.6, px + 1.6, pz - 0.8, pz + 0.8, 0, 1.2)
 
 
@@ -326,7 +332,10 @@ def _meeting(g, A, P, t, rng, room, s):
         F.tv(g, P, f'meeting:{room}')
     with g.at(19.05, 7.6 * s, math.pi / 2):
         F.whiteboard(g, P, w=1.2, h=0.9)
-    F.pot_plant(g, P, (23.35, 0, z_in + 0.5 * s), 0.18, 0.4, 'snake', rng, pot_color=t['pot'])
+    F.pot_plant(g, P, (23.4, 0, z_in + 0.45 * s), 0.18, 0.4, 'snake', rng, pot_color=t['pot'])
+    for k in range(4):  # acoustic felt panels on the back wall
+        zz = zc + (k - 1.5) * 1.25 * s
+        g.box_b(P['felt'], 23.79, 23.85, 0.9, 2.5, zz - 0.55, zz + 0.55, bevel=0.01, segs=2, color=t['felt'][k % 2])
     F.linear_pendant(g, P, (xc, H, zc), length=2.2, yaw=math.pi / 2, drop=1.45, kelvin=t['accent_kelvin'],
                      power=110, y_ceiling=H)
     g.light('panel', (22.9, H - 0.05, zc), size=(0.3, 4.5), power=50, kelvin=t['kelvin'])
@@ -335,13 +344,13 @@ def _meeting(g, A, P, t, rng, room, s):
     door_x = 19.5
     A.node(f'w:m{room}:out', door_x, 1.9 * s, 0.6)
     A.node(f'w:m{room}:in', door_x, 3.35 * s, 0.6)
-    A.node(f'w:m{room}:far', 22.75, 3.35 * s, 0.5)
+    A.node(f'w:m{room}:far', 22.77, 3.35 * s, 0.5)
     A.edge(f'w:m{room}:out', 'w:s6')
     A.edge(f'w:m{room}:out', f'w:m{room}:in')
     A.edge(f'w:m{room}:in', f'w:m{room}:far')
     near, far = [], []
     idx = 0
-    for side, sx, h in ((-1, xc - 0.95, math.pi / 2), (1, xc + 0.95, -math.pi / 2)):
+    for side, sx, h in ((-1, xc - 0.97, math.pi / 2), (1, xc + 0.97, -math.pi / 2)):
         for dz in (-0.75, 0.0, 0.75):
             z = zc + dz * s
             with g.at(sx, z, h):
@@ -355,29 +364,205 @@ def _meeting(g, A, P, t, rng, room, s):
     A.chain(f'w:m{room}:in', *[n for _, n in near])
     A.chain(f'w:m{room}:far', *[n for _, n in far])
 
+# ====================================================================== capability rooms (x ∈ [24, 30])
+ROOM_X0, ROOM_X1 = 24.0, 29.86
+STATION_Z = (-7.65, -5.8, -3.95, -2.1)
+
+
+def _room_sign(g, P, ref, z):
+    g.box_b(P['metal'], 23.845, 23.855, 3.02, 3.48, z - 0.82, z + 0.82, bevel=0.002)
+    d = g.dynamic(f'sign-{ref}', 'sign', ref, P['sign'], pivot=(23.838, 3.25, z), extras={'width': 1.5, 'height': 0.36})
+    with g.into(d):
+        g.quad(P['sign'], 1.5, 0.36, (23.838, 3.25, z), yaw=-math.pi / 2)
+
+
+def _front(g, A, P, t, rng):
+    """x = 24: solid behind the meeting rooms, glass front with two doors between them; z = 0 partition."""
+    g.box_b(P['wall'], 23.85, 24.0, 0, H, -8.85, -2.6, bevel=0.003)
+    g.box_b(P['wall'], 23.85, 24.0, 0, H, 2.6, 8.85, bevel=0.003)
+    glass_partition(g, P, (23.92, -2.6), (23.92, 0.0), h=2.9, spacing=1.3, door=(1.1, 2.2), top=H)
+    glass_partition(g, P, (23.92, 0.0), (23.92, 2.6), h=2.9, spacing=1.3, door=(0.4, 1.5), top=H)
+    g.box_b(P['wall'], 24.0, ROOM_X1, 0, H, -0.08, 0.08, bevel=0.003)
+    _room_sign(g, P, 'adapters', -0.95)
+    _room_sign(g, P, 'library', 0.95)
+    g.collider(23.85, 24.0, -8.85, -2.6, 0, H)
+    g.collider(23.85, 24.0, 2.6, 8.85, 0, H)
+    g.collider(23.86, 23.98, -2.6, -1.5, 0, H)
+    g.collider(23.86, 23.98, -0.4, 0.4, 0, H)
+    g.collider(23.86, 23.98, 1.5, 2.6, 0, H)
+    g.collider(24.0, ROOM_X1, -0.08, 0.08, 0, H)
+    A.node('w:ad:out', 23.2, -0.95, 0.5)
+    A.node('w:lib:out', 23.2, 0.95, 0.5)
+    A.edge('w:ad:out', 'w:s7')
+    A.edge('w:lib:out', 'w:s7')
+    F.pot_plant(g, P, (23.35, 0, -2.2), 0.2, 0.42, 'tree', rng, pot_color=t['pot'])
+    F.pot_plant(g, P, (23.35, 0, 2.2), 0.2, 0.42, 'tree', rng, pot_color=t['pot'])
+
+
+def _adapters(g, A, P, t, rng):
+    """Adapters room, z ∈ [−9, 0]: stations 0–3 on the window wall (facing the door), 4–7 on the door wall,
+    a server-rack core in the middle with glowing cable channels to every kiosk."""
+    glow = P['glow_accent']
+    g.box_b(P['paint'], ROOM_X0, ROOM_X1, 0, 0.006, -8.85, -0.08, bevel=0, color='#2a2d33')
+    core = (26.85, -4.45)
+    kiosks = []
+    for row, (kx, yaw, sx_spot, ax) in enumerate(((29.25, -math.pi / 2, 28.65, 28.05), (24.45, math.pi / 2, 25.05, 25.65))):
+        for k, z in enumerate(STATION_Z):
+            i = row * 4 + k
+            with g.at(kx, z, yaw):
+                port = F.station_kiosk(g, P, i, glow)
+                A.port(f'port:station:{i}', *port)
+            h = math.pi / 2 if row == 0 else -math.pi / 2
+            A.spot(f'spot:station:{i}', sx_spot, z, h, room='adapters', approach=-0.6, hubs=[], led=f'station:{i}')
+            F.led_ring(g, P, f'station:{i}', (sx_spot, 0, z))
+            kiosks.append((kx, z))
+            g.collider(min(kx, kx + 0.2 * (1 if row == 0 else -1)) - 0.1, max(kx, kx + 0.2 * (1 if row == 0 else -1)) + 0.1,
+                       z - 0.84, z + 0.84, 0, 2.6)
+    # floor cable channels: kiosk base → core (grating + accent line)
+    for (kx, z) in kiosks:
+        dx, dz = core[0] - kx, core[1] - z
+        L = math.hypot(dx, dz) - 0.5
+        yaw = math.atan2(dx, dz)
+        mx, mz = kx + dx / 2 * (L / (L + 0.5)), z + dz / 2 * (L / (L + 0.5))
+        g.box(P['metal'], (0.14, 0.01, L), (mx, 0.011, mz), yaw=yaw, bevel=0)
+        g.box(glow, (0.02, 0.004, L), (mx, 0.018, mz), yaw=yaw, bevel=0)
+    with g.at(*core):
+        F.core_column(g, P, glow, H=H, w=0.9)
+    g.collider(core[0] - 0.5, core[0] + 0.5, core[1] - 0.5, core[1] + 0.5, 0, H)
+    # acoustic wall panels (end wall + partition)
+    for k in range(6):
+        x = 24.55 + k * 0.88
+        c = t['felt'][2] if k % 3 else t['felt'][0]
+        g.box_b(P['felt'], x - 0.4, x + 0.4, 0.6, 3.0, -8.85, -8.8, bevel=0.01, segs=2, color='#30333a' if k % 2 else c)
+        g.box_b(P['felt'], x - 0.4, x + 0.4, 2.65, 3.25, -0.13, -0.08, bevel=0.01, segs=2, color='#30333a')
+    # light: cool ceiling slots + a halo ring over the core
+    with g.in_group('ceiling'):
+        g.torus(P['light'], 1.25, 0.03, (core[0], H - 0.35, core[1]), segs=48, rsegs=6)
+        for a in range(3):
+            ang = math.tau * a / 3
+            g.cyl(P['metal'], 0.003, 0.33, (core[0] + math.cos(ang) * 1.25, H - 0.33, core[1] + math.sin(ang) * 1.25),
+                  segs=3, caps=False)
+        for x in (25.3, 28.4):
+            g.box_b(P['light'], x - 0.05, x + 0.05, H - 0.012, H - 0.006, -8.2, -0.7, bevel=0)
+    for x in (25.3, 28.4):
+        g.light('panel', (x, H - 0.03, -4.45), size=(0.12, 7.2), power=55, kelvin=5000)
+    for a in range(6):
+        ang = math.tau * a / 6
+        g.light('point', (core[0] + math.cos(ang) * 1.25, H - 0.4, core[1] + math.sin(ang) * 1.25), radius=0.05,
+                 power=9, kelvin=5500)
+    # nav through the door, along both station rows
+    A.node('w:ad:in', 24.6, -0.95, 0.45)
+    A.edge('w:ad:out', 'w:ad:in')
+    for row, ax in ((0, 28.05), (1, 25.65)):
+        A.node(f'w:ad:r{row}a', ax, -0.95, 0.45)
+        A.node(f'w:ad:r{row}b', ax, -8.4, 0.4)
+        ids = [f'ap:spot:station:{row * 4 + k}' for k in reversed(range(4))]
+        A.chain(f'w:ad:r{row}a', *ids, f'w:ad:r{row}b')
+    A.chain('w:ad:in', 'w:ad:r1a', 'w:ad:r0a')
+    A.edge('w:ad:r1b', 'w:ad:r0b')
+
+
+def _library(g, A, P, t, rng):
+    """Library, z ∈ [0, 9]: shelf A (books 0–11) on the partition, shelf B (12–23) on the end wall, six
+    rule boards on the door wall, an 8-notebook display under the window, a reading table for four."""
+    g.box_b(P['wood_dark'], ROOM_X0, ROOM_X1, 0, 0.006, 0.08, 8.85, bevel=0)
+    d, w, sh = 0.42, 5.0, 3.5
+    feat_x = (1.3, 1.45, 1.6, 3.4, 3.55, 3.7)
+    with g.at(24.55, 0.08 + d):
+        spines = F.library_shelf(g, P, w, sh, d, rng, [(i, feat_x[i % 6]) for i in range(12)])
+        for ref, pos in spines.items():
+            A.port(f'port:book:{ref}', *pos)
+        F.ladder(g, P, 3.9, 4.95, sh, 0.55, at=4.45)
+    with g.at(29.55, 8.85 - d, math.pi):
+        spines = F.library_shelf(g, P, w, sh, d, rng, [(12 + i, feat_x[i % 6]) for i in range(12)])
+        for ref, pos in spines.items():
+            A.port(f'port:book:{ref}', *pos)
+    g.collider(24.55, 29.55, 0.08, 0.08 + d, 0, sh)
+    g.collider(28.7, 29.25, 0.08 + d, 0.08 + d + 0.62, 0, sh)
+    g.collider(24.55, 29.55, 8.85 - d, 8.85, 0, sh)
+    for k in range(6):  # rule boards on the door wall
+        z = 3.2 + k * 0.98
+        with g.at(24.0, z, math.pi / 2, y=1.55):
+            port = F.rule_board(g, P, k)
+            A.port(f'port:board:{k}', *port)
+    g.light('wallwash', (25.4, H - 0.15, 5.65), size=(0.15, 5.8), power=70, kelvin=2700, dir=(-0.7, -0.7, 0))
+    # notebook display under the window
+    g.box_b(P['wood_dark'], 29.15, 29.75, 0, 0.74, 3.05, 5.95, bevel=0.006, segs=2)
+    g.box_b(P['brass'], 29.12, 29.78, 0.74, 0.76, 3.02, 5.98, bevel=0.003)
+    cols = ('#7a1f2b', '#1f3a4d', '#2f4a36', '#6b4f2a', '#3a2f4a', '#c9b48a', '#2b2b2b', '#8a5a3b')
+    for k in range(8):
+        z = 3.32 + k * 0.335
+        with g.at(29.5, z, -math.pi / 2, y=0.76):
+            port = F.memory_notebook(g, P, k, cols[k])
+            A.port(f'port:notebook:{k}', *port)
+    g.collider(29.12, 29.86, 3.0, 6.0, 0, 1.0)
+    # reading table + 4 chairs (sit root rule: table edge 0.13 m in front of the root)
+    tx, tz = 27.0, 4.6
+    with g.at(tx, tz):
+        F.rug(g, P, 3.6, 3.4, t['rug'], r=0.2)
+    g.box_b(P['wood_dark'], tx - 1.0, tx + 1.0, 0.72, 0.76, tz - 0.5, tz + 0.5, bevel=0.006, segs=2)
+    for sx in (-0.75, 0.75):
+        g.box_b(P['brass'], tx + sx - 0.03, tx + sx + 0.03, 0, 0.72, tz - 0.38, tz + 0.38, bevel=0.004)
+        g.box_b(P['brass'], tx + sx - 0.05, tx + sx + 0.05, 0, 0.02, tz - 0.42, tz + 0.42, bevel=0.003)
+    for sx in (-0.5, 0.5):
+        F.bankers_lamp(g, P, (tx + sx, 0.76, tz), kelvin=2700)
+    g.collider(tx - 1.0, tx + 1.0, tz - 0.5, tz + 0.5, 0, 0.76)
+    F.dome_pendant(g, P, (tx, H, tz), drop=1.5, color='#C8A45D', kelvin=2700, power=40, r=0.3, mat='brass')
+    idx = 0
+    near, far = [], []
+    for side, cz, h in ((-1, tz - 0.92, 0.0), (1, tz + 0.92, math.pi)):
+        for sx in (-0.5, 0.5):
+            with g.at(tx + sx, cz, h):
+                F.meeting_chair(g, P, t['leather'])
+            aid = A.seat(f'seat:reading:{idx}', tx + sx, cz, h, pose='sit', room='library', approach=-0.6, hubs=[])
+            (near if side < 0 else far).append(f'ap:{aid}')
+            idx += 1
+    # armchair corner + floor lamp by the window
+    with g.at(28.95, 1.75, -2.4):
+        F.armchair(g, P, None, leather=True)
+    with g.at(29.45, 1.0):
+        F.floor_lamp(g, P, kelvin=2700)
+    g.collider(28.45, 29.45, 1.25, 2.25, 0, 0.8)
+    F.pot_plant(g, P, (29.4, 0, 7.55), 0.22, 0.45, 'tree', rng, pot_color=t['pot'])
+    g.light('panel', (27.0, H - 0.05, 4.6), size=(2.4, 1.2), power=60, kelvin=3000)
+    with g.in_group('ceiling'):  # warm timber slat ceiling
+        for k in range(29):
+            x = 24.25 + k * 0.19
+            g.box_b(P['wood'], x - 0.03, x + 0.03, H - 0.2, H - 0.12, 0.2, 8.75, bevel=0.003)
+    g.light('wallwash', (27.0, H - 0.2, 1.4), size=(4.6, 0.12), power=55, kelvin=2700, dir=(0, -0.7, -0.7))
+    g.light('wallwash', (27.0, H - 0.2, 7.55), size=(4.6, 0.12), power=55, kelvin=2700, dir=(0, -0.7, 0.7))
+    # shelf spots (people may share a spot with a 0.6 m lateral offset)
+    A.spot('spot:shelf:0', 27.0, 1.1, math.pi, room='library', approach=-0.6, hubs=[])
+    A.spot('spot:shelf:1', 27.0, 7.85, 0.0, room='library', approach=-0.6, hubs=[])
+    # nav through the door
+    A.node('w:lib:in', 24.6, 0.95, 0.45)
+    A.node('w:lib:h', 25.4, 1.9, 0.5)
+    A.node('w:lib:sw', 25.55, 3.08, 0.45)
+    A.node('w:lib:se', 28.45, 3.08, 0.45)
+    A.node('w:lib:nw', 25.55, 6.12, 0.45)
+    A.node('w:lib:ne', 28.45, 6.12, 0.45)
+    A.chain('w:lib:out', 'w:lib:in', 'w:lib:h', 'w:lib:sw')
+    A.chain('w:lib:sw', *near, 'w:lib:se')
+    A.chain('w:lib:nw', *far, 'w:lib:ne')
+    A.edge('w:lib:sw', 'w:lib:nw')
+    A.edge('w:lib:se', 'w:lib:ne')
+    A.edge('ap:spot:shelf:0', 'w:lib:h')
+    A.edge('ap:spot:shelf:0', 'w:lib:se')
+    A.edge('ap:spot:shelf:1', 'w:lib:nw')
+    A.edge('ap:spot:shelf:1', 'w:lib:ne')
+
 
 def _decor(g, A, P, name, t, rng):
     d = t['decor']
     # living wall along the z = +9 wall above a planter
     with g.at(17.8, 8.85, math.pi):
-        F.living_wall(g, P, 10.0, 2.45, rng, y0=0.55, density=0.9)
+        F.living_wall(g, P, 10.0, 2.45, rng, y0=0.55, density=0.55)
     with g.at(12.8, 8.62):
-        F.planter(g, P, 10.2, 0.42, 0.45, rng, kind='fern', color=t['trim'], density=0.8)
+        F.planter(g, P, 10.2, 0.42, 0.45, rng, kind='fern', color=t['trim'], density=0.5)
     g.collider(7.7, 17.9, 8.4, 8.85, 0, 3.0)
     if d['living_walls'] > 1:  # second living wall above the storage run
         with g.at(15.6, -8.85):
-            F.living_wall(g, P, 2.85, 2.0, rng, y0=1.25, density=1.0)
-    # window nook: long standing counter + plants between the meeting rooms
-    with g.at(23.15, 0, -math.pi / 2):
-        g.box_b(P['wood'], -2.0, 2.0, 1.02, 1.06, -0.3, 0.3, bevel=0.005, segs=2)
-        for sx in (-1.7, 1.7):
-            g.box(P['metal'], (0.06, 1.02, 0.4), (sx, 0.51, 0), bevel=0.004)
-        for k, sx in enumerate((-1.2, -0.4, 0.4, 1.2)):
-            with g.at(sx, 0.55, math.pi):
-                F.stool(g, P, h=0.75, color=t['trim'])
-    g.collider(22.85, 23.45, -2.0, 2.0, 0, 1.06)
-    F.pot_plant(g, P, (23.3, 0, -2.25), 0.22, 0.45, 'tree', rng, pot_color=t['pot'])
-    F.pot_plant(g, P, (23.3, 0, 2.25), 0.22, 0.45, 'tree', rng, pot_color=t['pot'])
+            F.living_wall(g, P, 2.85, 2.0, rng, y0=1.25, density=0.6)
     F.pot_plant(g, P, (6.9, 0, -2.3), 0.22, 0.5, 'tree', rng, pot_color=t['pot'])
     for x in (10.8, 14.4):
         for z in (-1.95, 1.95):
@@ -437,13 +622,16 @@ def context(g, P):
     g.box_b(P['wall'], -6.15, -6, 0, H, -9, 9, bevel=0)
     for z in (-6.0, 0.0, 6.0):
         g.light('panel', (-3, H - 0.05, z), size=(1.2, 3.0), power=80, kelvin=4000)
-    g.box_b(P['paint'], 24.2, 80, -0.6, -0.5, -40, 40, bevel=0, color='#7d8466')
+    g.box_b(P['paint'], 30.2, 90, -0.6, -0.5, -40, 40, bevel=0, color='#7d8466')
 
 
 def _previews(name):
     """(slug, camera glTF pos, look-at glTF pos, lens mm, hide ceiling)."""
     return [
-        ('overview', (-6.5, 17.0, -15.0), (11.5, 0.0, 0.5), 22, True),
+        ('overview', (-7.5, 20.0, -18.0), (14.5, 0.0, 0.5), 22, True),
+        ('rooms', (21.0, 9.5, -6.5), (27.0, 0.0, 0.5), 20, True),
+        ('adapters', (24.6, 1.75, -0.9), (27.6, 1.5, -6.5), 16, False),
+        ('library', (24.7, 1.7, 1.0), (28.2, 1.3, 6.8), 16, False),
         ('interior', (1.2, 1.65, -0.6), (14.0, 1.2, 1.8), 18, False),
         ('meeting', (19.6, 2.1, -3.0), (22.0, 0.7, -6.6), 16, False),
         ('booth', (13.2, 1.6, -4.3), (11.0, 1.1, -8.2), 20, False),

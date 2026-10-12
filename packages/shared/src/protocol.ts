@@ -32,6 +32,14 @@ export const AgentEventSchema = z.object({
   source: z.string().max(50).optional(),
   /** Epoch millis; defaults to receive time. */
   ts: z.number().int().positive().optional(),
+  /**
+   * Privacy-safe hint about what the current tool call touches (docs/capabilities.md §3):
+   * 'project:<basename>' | 'host:<hostname>' | 'cmd:<word>' | 'skill:<name>' | 'rule:<scope>:<file>' | 'memory:<slug>'.
+   * Never a full path, URL, argument or file content.
+   */
+  target: z.string().max(100).optional(),
+  /** Explicit capability id for generic producers (otherwise classified from `tool` + `target`). */
+  capability: z.string().max(120).optional(),
 })
 export type AgentEvent = z.infer<typeof AgentEventSchema>
 
@@ -81,8 +89,67 @@ export interface ChatMessage {
 }
 
 /** Messages pushed from server to browser over the WebSocket. */
+// ── Capabilities: adapters (connections), skills and rules (docs/capabilities.md) ──────────────
+export const CAPABILITY_CATEGORIES = ['adapter', 'skill', 'rule'] as const
+export type CapabilityCategory = (typeof CAPABILITY_CATEGORIES)[number]
+export const CAPABILITY_KINDS = [
+  'filesystem',
+  'shell',
+  'web',
+  'subagents',
+  'mcp',
+  'api',
+  'database',
+  'skill',
+  'project-rules',
+  'rule',
+  'user-rules',
+  'memory',
+  'other',
+] as const
+export type CapabilityKind = (typeof CAPABILITY_KINDS)[number]
+export const CAPABILITY_SCOPES = ['user', 'project', 'plugin'] as const
+export type CapabilityScope = (typeof CAPABILITY_SCOPES)[number]
+
+/** Declared by a provider (HTTP `POST /api/providers/:provider/capabilities` or a built-in source). */
+export const CapabilityDeclSchema = z.object({
+  id: z.string().min(1).max(120),
+  category: z.enum(CAPABILITY_CATEGORIES),
+  kind: z.enum(CAPABILITY_KINDS),
+  label: z.string().min(1).max(80),
+  summary: z.string().max(160).optional(),
+  scope: z.enum(CAPABILITY_SCOPES).optional(),
+  sees: z.array(z.string().max(80)).max(8).optional(),
+  tools: z.array(z.string().max(80)).max(24).optional(),
+})
+export type CapabilityDecl = z.infer<typeof CapabilityDeclSchema>
+export const CapabilityDeclBatchSchema = z.array(CapabilityDeclSchema).max(64)
+
+/** What a provider's agents can use: an adapter (Adapters room), a skill or a rule (Library). */
+export interface Capability {
+  id: string
+  provider: string
+  category: CapabilityCategory
+  kind: CapabilityKind
+  label: string
+  summary?: string
+  scope?: CapabilityScope
+  /** Adapters: what it can see/touch (≤ 8 short lines). */
+  sees: string[]
+  /** Adapters: tool names seen or declared (≤ 24). */
+  tools: string[]
+  /** Configured/declared (true) vs only observed in use (false). */
+  declared: boolean
+  /** Uses in this app session (calls · invocations · reads). */
+  calls: number
+  lastUsedAt?: number
+  /** Agent ids using it right now. */
+  active: string[]
+}
+
 export type ServerMessage =
-  | { type: 'snapshot'; agents: Agent[]; messages: ChatMessage[] }
+  | { type: 'snapshot'; agents: Agent[]; messages: ChatMessage[]; capabilities?: Capability[] }
   | { type: 'upsert'; agent: Agent }
   | { type: 'remove'; id: string }
   | { type: 'chat'; message: ChatMessage }
+  | { type: 'capabilities'; provider: string; capabilities: Capability[] }

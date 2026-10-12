@@ -155,6 +155,18 @@ def plate(center, ex, ey, w, h, circle=0):
     return V, [(0, 1, 2, 3)]
 
 
+def box(center, size, rot=None):
+    """Axis-aligned box (optionally rotated about its local axis ('x'|'y'|'z', degrees) around
+    the origin) as (V, quads) with outward winding."""
+    h = np.asarray(size, dtype=np.float32) / 2
+    V = np.array([(x * h[0], y * h[1], z * h[2]) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=np.float32)
+    V = V + np.asarray(center, dtype=np.float32)
+    if rot:
+        V = V @ S.rot(rot[0], rot[1]).T
+    F = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    return V, F
+
+
 def mirror_mesh(V, faces):
     V = V.copy()
     V[:, 0] *= -1

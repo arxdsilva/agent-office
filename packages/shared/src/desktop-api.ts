@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { MAX_MESSAGE_CHARS, type Agent, type ChatMessage, type ServerMessage } from './protocol.ts'
+import {
+  type Capability,
+  MAX_MESSAGE_CHARS,
+  type Agent,
+  type ChatMessage,
+  type ServerMessage,
+} from './protocol.ts'
 
 /**
  * IPC contract between the Electron main process and the renderer (exposed by the preload as
@@ -27,6 +33,11 @@ export const SettingsSchema = z.object({
   /** Read Claude Code transcripts from ~/.claude/projects. */
   claudeAdapter: z.boolean().default(true),
   autoUpdate: z.boolean().default(true),
+  /**
+   * Discover capabilities from Claude Code config (MCP server names, skill descriptions, rule
+   * titles; docs/capabilities.md §4). Only used with `claudeAdapter`. Needs a backend restart.
+   */
+  discoverCapabilities: z.boolean().default(true),
   /** Simulated agents (development and demos). */
   mock: z.boolean().default(false),
   /** 3D render quality preset. Applied live by the renderer (no backend restart). */
@@ -68,6 +79,8 @@ export interface Banner {
 export interface Snapshot {
   agents: Agent[]
   messages: ChatMessage[]
+  /** Adapters, skills and rules per provider (docs/capabilities.md). Optional for older producers. */
+  capabilities?: Capability[]
 }
 
 /** What the renderer can call. Implemented by the preload over ipcRenderer. */

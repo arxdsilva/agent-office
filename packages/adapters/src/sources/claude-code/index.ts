@@ -1,4 +1,4 @@
-export { lineToEvent, newParseContext, type ParseContext } from './line-mapper.ts'
+export { lineToEvent, newParseContext, type ClaudePaths, type ParseContext } from './line-mapper.ts'
 export { ClaudeCodeTailer, type ClaudeCodeTailerOptions } from './tailer.ts'
 export {
   MemoryTranscriptFiles,
@@ -6,3 +6,10 @@ export {
   type FileStat,
   type TranscriptFiles,
 } from './transcript-files.ts'
+export {
+  ClaudeCapabilityDiscovery,
+  DISCOVERY_INTERVAL_MS,
+  type CapabilityDiscoveryOptions,
+  type KnowledgeSource,
+  type McpServerSource,
+} from './capability-discovery.ts'

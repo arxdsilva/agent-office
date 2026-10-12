@@ -1,4 +1,4 @@
-import type { Agent, ServerMessage, Snapshot } from '@agent-office/shared'
+import type { Agent, Capability, ServerMessage, Snapshot } from '@agent-office/shared'
 import { toDto } from '../domain/agent.ts'
 import type { AgentRepository, EventSubscriber, MessageRepository } from '../ports/driven.ts'
 import type { OfficeQuery } from '../ports/driving.ts'
@@ -7,6 +7,8 @@ export interface QueryDeps {
   agents: AgentRepository
   messages: MessageRepository
   bus: EventSubscriber
+  /** Capability catalog (CapabilityService); omitted → snapshots carry no capabilities. */
+  capabilities?: { list(): Capability[] }
   snapshotMessagesPerAgent?: number
 }
 
@@ -35,6 +37,7 @@ export class OfficeQueryService implements OfficeQuery {
     return {
       agents: this.agents(),
       messages: this.d.messages.recent(this.d.snapshotMessagesPerAgent ?? 50),
+      ...(this.d.capabilities ? { capabilities: this.d.capabilities.list() } : {}),
     }
   }
 
@@ -43,6 +46,8 @@ export class OfficeQueryService implements OfficeQuery {
       if (e.type === 'agent.upserted') fn({ type: 'upsert', agent: toDto(e.agent) })
       else if (e.type === 'agent.removed') fn({ type: 'remove', id: e.id })
       else if (e.type === 'message.changed') fn({ type: 'chat', message: e.message })
+      else if (e.type === 'capabilities.changed')
+        fn({ type: 'capabilities', provider: e.provider, capabilities: e.capabilities })
     })
   }
 }

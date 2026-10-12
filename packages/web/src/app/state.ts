@@ -1,4 +1,4 @@
-import type { Agent, ChatMessage, ServerMessage } from '@agent-office/shared'
+import type { Agent, Capability, ChatMessage, ServerMessage } from '@agent-office/shared'
 
 const MAX_MESSAGES_PER_AGENT = 200
 
@@ -6,9 +6,21 @@ export interface OfficeState {
   agents: Map<string, Agent>
   /** Chat thread per agent id, oldest first. */
   messages: Map<string, ChatMessage[]>
+  /** What each provider's agents can use (adapters, skills, rules), keyed by provider. */
+  capabilities: Map<string, Capability[]>
 }
 
-export const emptyState = (): OfficeState => ({ agents: new Map(), messages: new Map() })
+export const emptyState = (): OfficeState => ({
+  agents: new Map(),
+  messages: new Map(),
+  capabilities: new Map(),
+})
+
+function byProvider(caps: Capability[]): Map<string, Capability[]> {
+  const out = new Map<string, Capability[]>()
+  for (const c of caps) out.set(c.provider, [...(out.get(c.provider) ?? []), c])
+  return out
+}
 
 /** Pure reducer for server messages. Returns a new state; the input is not mutated. */
 export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeState {
@@ -16,7 +28,12 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
     case 'snapshot': {
       const messages = new Map<string, ChatMessage[]>()
       for (const m of msg.messages) messages.set(m.agentId, [...(messages.get(m.agentId) ?? []), m])
-      return { agents: new Map(msg.agents.map((a) => [a.id, a])), messages }
+      return {
+        agents: new Map(msg.agents.map((a) => [a.id, a])),
+        messages,
+        // Older backends send no capabilities: keep what we have.
+        capabilities: msg.capabilities ? byProvider(msg.capabilities) : state.capabilities,
+      }
     }
     case 'upsert': {
       const agents = new Map(state.agents)
@@ -28,7 +45,13 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
       const messages = new Map(state.messages)
       agents.delete(msg.id)
       messages.delete(msg.id)
-      return { agents, messages }
+      return { ...state, agents, messages }
+    }
+    case 'capabilities': {
+      const capabilities = new Map(state.capabilities)
+      if (msg.capabilities.length) capabilities.set(msg.provider, msg.capabilities)
+      else capabilities.delete(msg.provider)
+      return { ...state, capabilities }
     }
     case 'chat': {
       const m = msg.message
@@ -40,5 +63,8 @@ export function applyMessage(state: OfficeState, msg: ServerMessage): OfficeStat
       messages.set(m.agentId, thread.slice(-MAX_MESSAGES_PER_AGENT))
       return { ...state, messages }
     }
+    default:
+      // Newer backends may send message types this renderer doesn't know yet.
+      return state
   }
 }

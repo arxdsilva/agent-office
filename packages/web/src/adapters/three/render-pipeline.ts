@@ -9,7 +9,8 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { PRESETS, pixelRatioFor, type Preset } from '../../app/quality.ts'
 
-export const BLOOM = { threshold: 0.85, strength: 0.35, radius: 0.5 }
+// Threshold above the plan's 0.85: baked white walls reach ~1.0 in linear HDR and would glow.
+export const BLOOM = { threshold: 1.15, strength: 0.35, radius: 0.5 }
 const GTAO_SAMPLES = { off: 0, half: 8, full: 12, high: 24 } as const
 
 export interface FrameStats {
@@ -74,8 +75,13 @@ export class RenderPipeline {
     this.smaa.enabled = spec.smaa
     const r = this.renderer
     r.shadowMap.enabled = spec.shadowMap > 0
-    r.shadowMap.type = THREE.PCFSoftShadowMap
+    r.shadowMap.type = THREE.PCFShadowMap
     this.resize(this.size.x, this.size.y)
+  }
+
+  /** Diagnostics (debug hook): toggle one pass on top of the preset. */
+  setPass(name: 'gtao' | 'bloom' | 'smaa', on: boolean): void {
+    this[name].enabled = on
   }
 
   /** Shadow map size of the current preset (0 = blob shadows only). */

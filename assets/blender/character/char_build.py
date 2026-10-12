@@ -177,6 +177,20 @@ def build_props(quality, mats):
                          (decal(o, X, Y, Z, (0, -0.015, 0.0172), (1, 0, 0), (0, 1, 0), 0.26, 0.1), 'plastic', 0)],
               o - 0.32, o + 0.32, 0.0025)
     res['laptop'] = lt
+    # book: an open hardcover in the socket frame (x across the spread, y up the page, z toward
+    # the reader, origin at the spine). Two-hand holds animate the socket (SitRead, ShelfPick).
+    pieces = []
+    for sgn in (-1.0, 1.0):
+        for c, size, mat in (((sgn * 0.077, 0.0, -0.009), (0.154, 0.228, 0.004), 'cover'),
+                             ((sgn * 0.073, 0.0, -0.0005), (0.142, 0.212, 0.013), 'white')):
+            V, F = M.box(c, size, ('y', -sgn * 9.0))
+            Mx = np.stack([X, Y, Z], axis=1)
+            pieces.append((o + V @ Mx.T, F, mat))
+    V, F = M.box((0, 0, -0.009), (0.012, 0.228, 0.006), None)
+    pieces.append((o + V @ np.stack([X, Y, Z], axis=1).T, F, 'cover'))
+    book = _multi_object('book', pieces, mats)
+    book.data.shade_flat()
+    res['book'] = book
     return res
 
 

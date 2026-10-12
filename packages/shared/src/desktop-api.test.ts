@@ -34,6 +34,12 @@ describe('SettingsSchema', () => {
     expect(SettingsPatchSchema.safeParse({ graphicsQuality: 3 }).success).toBe(false)
   })
 
+  it('discoverCapabilities defaults to true and is a boolean', () => {
+    expect(DEFAULT_SETTINGS.discoverCapabilities).toBe(true)
+    expect(SettingsSchema.parse({ discoverCapabilities: false }).discoverCapabilities).toBe(false)
+    expect(SettingsPatchSchema.safeParse({ discoverCapabilities: 'yes' }).success).toBe(false)
+  })
+
   it('patches are partial and strict about types', () => {
     expect(SettingsPatchSchema.safeParse({ notifications: false }).success).toBe(true)
     expect(SettingsPatchSchema.safeParse({ notifications: 'no' }).success).toBe(false)

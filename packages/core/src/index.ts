@@ -3,6 +3,13 @@ export * from './ports/driven.ts'
 export * from './ports/driving.ts'
 export * from './domain/errors.ts'
 export { applyEvent, toDto, type AgentState, type SweepPolicy } from './domain/agent.ts'
+export {
+  builtinDecls,
+  classifyUse,
+  mcpDecl,
+  prettifyServer,
+  type CapabilityRef,
+} from './domain/capabilities.ts'
 export { HOOK_MARKER, addHooks, hookStatus, removeHooks } from './domain/hook-config.ts'
 export type { Note } from './domain/attention.ts'
 export type { TrayAction, TrayItem, TrayModel } from './domain/tray.ts'
@@ -14,3 +21,8 @@ export {
 } from './application/office.ts'
 // Individual use cases, for driving adapters that need just one (e.g. the hook CLI).
 export { HookService } from './application/hook-service.ts'
+export {
+  CAPABILITY_DEBOUNCE_MS,
+  CapabilityService,
+  MAX_CAPABILITIES_PER_PROVIDER,
+} from './application/capability-service.ts'

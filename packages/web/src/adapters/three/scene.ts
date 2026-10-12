@@ -5,14 +5,17 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
-import type { AgentPlan, BuildingLayout } from '../../app/office-types.ts'
+import type { AgentPlan, BuildingLayout, Link } from '../../app/office-types.ts'
+import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
 import { createGovernor, PRESETS, resolvePreset, type Preset } from '../../app/quality.ts'
-import type { SceneAssets, SceneView } from '../../ports.ts'
+import type { ProviderSurfaces } from '../../app/capability-vm.ts'
+import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../../ports.ts'
 import { AssetStore, LoadingScreen, type LoadingElements } from './assets.ts'
 import { BuildingView, type ScreenState } from './building-view.ts'
 import { anchorBookmark, bookmarksFor, CameraDirector, type Bookmark } from './camera-director.ts'
 import { CharacterSystem, loadCharacterAssets } from './characters.ts'
 import { Labels } from './labels.ts'
+import { LinkSystem } from './links.ts'
 import { RenderPipeline } from './render-pipeline.ts'
 
 export interface SceneElements {
@@ -27,22 +30,22 @@ export interface SceneElements {
   /** Accessible list of wing sign texts (the signs themselves are canvas textures). */
   wingSigns: HTMLElement
   stats: HTMLElement
+  /** Accessible list of every capability surface (stations, spines, boards, notebooks): buttons. */
+  capabilities: HTMLElement
+  /** Accessible list of the links drawn now (`data-link`). */
+  links: HTMLElement
 }
 
 const ASSET_BASE = 'assets/'
 const SHADOW_EXTENT = 22
 const SUN_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize()
 const ELEVATOR_OPEN_DIST = 3.2
-const TV_ON: ScreenState = { color: '#7fb2ff', intensity: 1.3 }
+const TV_ON: ScreenState = { color: '#7fb2ff', intensity: 2 }
 
-/** `?debug`/`?stats` in dev, or the `ao-debug` flag in local storage (screenshot/perf scripts). */
-const debugEnabled = () => {
-  try {
-    return /[?&](debug|stats)\b/.test(location.search) || localStorage.getItem('ao-debug') === '1'
-  } catch {
-    return false
-  }
-}
+/** `?debug=1` is added by the main process only when AGENT_OFFICE_DEBUG=1 (capture scripts). */
+const debugEnabled = () => new URLSearchParams(location.search).get('debug') === '1'
+
+type Vec3T = [number, number, number]
 
 export class ThreeScene implements SceneView {
   private renderer = new THREE.WebGLRenderer({
@@ -74,15 +77,26 @@ export class ThreeScene implements SceneView {
   private fill = new THREE.HemisphereLight(0xdfe8ff, 0x6b5a48, 0.35)
   private selected: string | null = null
   private pickFn: (id: string | null) => void = () => {}
+  private pickCapFn: (ref: CapabilityRef) => void = () => {}
+  private bubbles = new Map<string, string>()
+  private focusRef: CapabilityRef | null = null
+  private highlighted: string | null = null
+  private links = new LinkSystem()
+  private statsFn: (fps: number, preset: Preset) => void = () => {}
   private raycaster = new THREE.Raycaster()
   private pointer = new THREE.Vector2()
   private framed = false
+  private lastWing: string | null = null
   private focus = new THREE.Vector3()
   private openBanks = new Set<string>()
   private debug = debugEnabled()
 
-  constructor(private el: SceneElements) {
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  constructor(
+    private el: SceneElements,
+    /** Simulation time shared with the controller's director (debug `timeScale` speeds both up). */
+    private clock: SimClock = createSimClock(),
+  ) {
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
     el.stage.append(this.renderer.domElement)
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera)
     this.labels = new Labels(el.stage, (id) => this.pickFn(id))
@@ -106,7 +120,8 @@ export class ThreeScene implements SceneView {
     this.catcher.position.y = 0.004
     this.catcher.receiveShadow = true
     this.catcher.renderOrder = 1
-    this.scene.add(this.sun, this.sun.target, this.fill, this.catcher)
+    this.scene.add(this.sun, this.sun.target, this.fill, this.catcher, this.links.group)
+    this.links.onChange = (links) => this.renderLinkList(links)
 
     this.applyPreset(this.preset)
     addEventListener('resize', () => this.resize())
@@ -114,8 +129,11 @@ export class ThreeScene implements SceneView {
     this.bindInput()
     if (this.debug) this.installDebug()
 
-    const clock = new THREE.Clock()
-    this.renderer.setAnimationLoop(() => this.frame(clock.getDelta()))
+    const timer = new THREE.Timer()
+    this.renderer.setAnimationLoop((t) => {
+      timer.update(t)
+      this.frame(timer.getDelta())
+    })
   }
 
   async load(manifestUrl: string): Promise<SceneAssets> {
@@ -173,26 +191,147 @@ export class ThreeScene implements SceneView {
     this.bookmarks = bookmarksFor(layout, this.manifest)
     this.renderViews()
     this.renderSigns(layout)
-    if (!this.framed) {
-      this.framed = true
-      const start = this.bookmarks.find((x) => x.id === 'atrium') ?? this.bookmarks[0]
-      if (start) this.cam.jumpTo(start)
-    }
     this.updateSurfaces()
   }
 
   direct(plans: Map<string, AgentPlan>, departed: string[]): void {
-    const now = Date.now()
+    const now = this.clock.now()
     for (const id of departed) this.drop(id)
     for (const id of this.plans.keys()) if (!plans.has(id)) this.drop(id)
     this.plans = plans
+    if (!this.framed) this.frameStart(plans)
     for (const [id, plan] of plans) {
       this.characters?.upsert(plan, now)
-      this.labels.upsert(plan.agent, plan.intent.activity)
+      this.labels.upsert(plan.agent, plan.intent.activity, this.bubbles.get(id))
       const local = plan.intent.target.slice(plan.intent.target.lastIndexOf('/') + 1)
       if (local.startsWith('seat:desk:')) this.desks.set(id, plan.intent.target)
     }
     this.updateSurfaces()
+  }
+
+  setLinks(links: Link[]): void {
+    this.links.set(links, this.camera, this.selected)
+  }
+
+  setSurfaces(s: SceneSurfaces): void {
+    this.bubbles = s.bubbles
+    for (const [id, plan] of this.plans)
+      this.labels.upsert(plan.agent, plan.intent.activity, s.bubbles.get(id))
+    this.building?.setSurfaces(s.byProvider)
+    this.renderCapabilityList(s.byProvider)
+  }
+
+  onPickCapability(fn: (ref: CapabilityRef) => void): void {
+    this.pickCapFn = fn
+  }
+
+  /**
+   * Ease to the capability's surface (the one nearest the current view) and keep it framed with
+   * the agents linked to it: the camera follows the centre of surface + link ends.
+   */
+  focusCapability(ref: CapabilityRef | null): void {
+    this.el.stage.dataset.focus = ref ? `${ref.provider} ${ref.id}` : ''
+    if (!ref) {
+      if (this.focusRef) this.cam.focusOn(null)
+      this.focusRef = null
+      return
+    }
+    const spots = this.building?.surfacesOf(ref) ?? []
+    const here = this.cam.orbit.target
+    const surface = spots.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0]
+    if (!surface) return
+    this.focusRef = ref
+    if (this.selected) this.pickFn(null)
+    const box = new THREE.Box3()
+    const center = new THREE.Vector3()
+    const frame = () => {
+      box.makeEmpty().expandByPoint(surface)
+      for (const p of this.links.sources(ref.id))
+        if (p.distanceTo(surface) < 40) box.expandByPoint(p)
+      return box.getCenter(center)
+    }
+    frame()
+    const radius = box.getSize(new THREE.Vector3()).length() / 2
+    this.cam.focusOn(frame, THREE.MathUtils.clamp(radius * 2.4, 5, 30))
+  }
+
+  highlightLinks(capabilityId: string | null): void {
+    this.highlighted = capabilityId
+    this.links.highlight(capabilityId)
+    this.el.links.dataset.key = '' // re-render the list's highlight flags
+  }
+
+  /** Buttons for every filled surface: keyboard/screen-reader access and stable E2E hooks. */
+  private renderCapabilityList(byProvider: Map<string, ProviderSurfaces>): void {
+    const items: { provider: string; id: string; kind: string; label: string }[] = []
+    for (const [provider, p] of byProvider) {
+      const add = (kind: string, slots: ({ id: string; vm: { title: string } } | undefined)[]) => {
+        for (const slot of slots)
+          if (slot && slot.id !== '+more')
+            items.push({ provider, id: slot.id, kind, label: slot.vm.title })
+      }
+      add('station', p.stations)
+      add('book', p.books)
+      add('board', p.boards)
+      add('notebook', p.notebooks)
+    }
+    const key = items.map((i) => `${i.provider}|${i.kind}|${i.id}|${i.label}`).join('\n')
+    if (this.el.capabilities.dataset.key === key) return
+    this.el.capabilities.dataset.key = key
+    this.el.capabilities.replaceChildren(
+      ...items.map((i) => {
+        const li = document.createElement('li')
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.textContent = i.label
+        b.dataset.provider = i.provider
+        b.dataset.capabilityId = i.id
+        b.dataset.surface = i.kind
+        b.addEventListener('click', () => this.pickCapFn({ provider: i.provider, id: i.id }))
+        li.append(b)
+        return li
+      }),
+    )
+  }
+
+  private renderLinkList(links: Link[]): void {
+    const key = `${this.highlighted}|${links.map((l) => l.id).join('|')}`
+    if (this.el.links.dataset.key === key) return
+    this.el.links.dataset.key = key
+    const spans = new Map(this.links.debug().map((d) => [d.id, d.visible ? d.radius : 0]))
+    this.el.links.replaceChildren(
+      ...links.map((l) => {
+        const li = document.createElement('li')
+        li.dataset.link = l.id
+        li.dataset.agentId = l.agentId
+        li.dataset.capabilityId = l.capabilityId
+        li.dataset.style = l.style
+        // Drawn extent (m) of the link's geometry: E2E guards against collapsed/invisible links.
+        li.dataset.span = (2 * (spans.get(l.id) ?? 0)).toFixed(1)
+        if (this.highlighted) li.dataset.highlighted = String(l.capabilityId === this.highlighted)
+        li.textContent = `${l.label} (${l.state})`
+        return li
+      }),
+    )
+  }
+
+  /** First view: the wing where most agents work (their tags readable), else the atrium. */
+  private frameStart(plans: Map<string, AgentPlan>): void {
+    if (!this.layout) return
+    this.framed = true
+    const count = new Map<string, number>()
+    for (const p of plans.values()) {
+      const placement = this.layout.anchors.get(p.intent.target)?.placement
+      if (placement?.startsWith('wing:')) count.set(placement, (count.get(placement) ?? 0) + 1)
+    }
+    const busiest = [...count].sort((a, b) => b[1] - a[1])[0]?.[0]
+    const start =
+      this.bookmarks.find((b) => b.id === busiest) ??
+      this.bookmarks.find((b) => b.id === 'atrium') ??
+      this.bookmarks[0]
+    if (!start) return
+    if (start.id.startsWith('wing:')) this.lastWing = start.id
+    this.cam.jumpTo(start)
   }
 
   private drop(id: string): void {
@@ -213,7 +352,7 @@ export class ThreeScene implements SceneView {
       const status = plan.agent.status
       screens.set(`${a.placement}|${a.screen}`, {
         color: STATUS_COLORS[status],
-        intensity: status === 'idle' || status === 'done' ? 0.35 : 1.5,
+        intensity: status === 'idle' || status === 'done' ? 0.5 : 2.4,
       })
     }
     const leds = new Set<string>()
@@ -257,12 +396,22 @@ export class ThreeScene implements SceneView {
     this.characters?.setQuality(p)
   }
 
+  /** Frame-rate samples (~2 Hz) for the Settings readout. Adapter-level, wired in main.ts. */
+  onFrameStats(fn: (fps: number, preset: Preset) => void): void {
+    this.statsFn = fn
+  }
+
   onPick(fn: (id: string | null) => void): void {
     this.pickFn = fn
   }
 
   select(id: string | null): void {
     this.selected = id
+    if (id) {
+      // Following an agent replaces following a capability.
+      this.focusRef = null
+      this.el.stage.dataset.focus = ''
+    }
     this.labels.select(id)
     const chars = this.characters
     if (!id || !chars) return this.cam.focusOn(null)
@@ -271,15 +420,18 @@ export class ThreeScene implements SceneView {
 
   private frame(rawDt: number): void {
     const dt = Math.min(rawDt, 0.1)
-    const now = Date.now()
+    // Characters and doors run on simulation time; the camera stays on real time.
+    const simDt = Math.min(dt * this.clock.scale, 0.5)
+    const now = this.clock.now()
     const colliders = this.building?.colliders() ?? []
     this.cam.update(dt, colliders)
     this.camera.updateMatrixWorld()
-    if (this.characters) this.characters.update(dt, this.camera, now)
+    if (this.characters) this.characters.update(simDt, this.camera, now)
     if (this.building) {
       this.updateDoors()
-      this.building.update(dt, this.camera, this.openBanks)
+      this.building.update(simDt, this.camera, this.openBanks)
     }
+    this.links.update(simDt)
     this.followShadow()
     const sample = this.pipeline.render(rawDt)
     this.labels.update(this.camera, (id) => this.characters?.headOf(id), colliders, now)
@@ -287,6 +439,7 @@ export class ThreeScene implements SceneView {
   }
 
   private onSample(s: { fps: number; dt: number }): void {
+    this.statsFn(s.fps, this.preset)
     if (this.quality === 'auto') {
       const next = this.governor.sample(s.fps, s.dt)
       if (next) this.applyPreset(next)
@@ -326,12 +479,17 @@ export class ThreeScene implements SceneView {
   }
 
   private renderViews(): void {
-    const order = ['atrium', 'street']
-    const views = [
-      ...order.map((id) => this.bookmarks.find((b) => b.id === id)).filter((b) => !!b),
+    const pick = (id: string) => this.bookmarks.find((b) => b.id === id)
+    const views: { id: string; label: string }[] = [
+      ...['atrium', 'street'].map(pick).filter((b) => !!b),
       ...this.bookmarks.filter((b) => b.id.startsWith('wing:')),
-      ...this.bookmarks.filter((b) => b.id === 'overview'),
     ]
+    // The capability rooms of the wing you looked at last (the first wing until then).
+    if (this.bookmarks.some((b) => b.id.startsWith('adapters:')))
+      views.push({ id: 'adapters', label: 'Adapters' })
+    if (this.bookmarks.some((b) => b.id.startsWith('library:')))
+      views.push({ id: 'library', label: 'Library' })
+    views.push(...this.bookmarks.filter((b) => b.id === 'overview'))
     const key = views.map((v) => `${v.id}=${v.label}`).join('|')
     if (this.el.views.dataset.key === key) return
     this.el.views.dataset.key = key
@@ -367,6 +525,11 @@ export class ThreeScene implements SceneView {
   }
 
   private flyTo(id: string): boolean {
+    if (id === 'adapters' || id === 'library') {
+      const wing = this.lastWing ?? this.bookmarks.find((x) => x.id.startsWith('wing:'))?.id
+      id = `${id}:${wing?.slice('wing:'.length) ?? ''}`
+    }
+    if (id.startsWith('wing:')) this.lastWing = id
     const b = this.bookmarks.find((x) => x.id === id)
     if (!b) return false
     if (this.selected) this.pickFn(null)
@@ -392,6 +555,25 @@ export class ThreeScene implements SceneView {
     return null
   }
 
+  /** Click: an agent first, then a capability surface, else empty space (deselect). */
+  private pickAt(x: number, y: number): void {
+    const id = this.pick(x, y)
+    if (id) return this.pickFn(id)
+    const ref = this.pickSurface()
+    if (ref) this.pickCapFn(ref)
+    else this.pickFn(null)
+  }
+
+  /** Raycast (after `pick` set the ray) against filled capability surfaces. */
+  private pickSurface(): CapabilityRef | null {
+    if (!this.building) return null
+    const hits = this.raycaster.intersectObjects(this.building.pickables(), true)
+    for (const h of hits)
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent)
+        if (o.userData.capability) return o.userData.capability as CapabilityRef
+    return null
+  }
+
   /** Walk mode starts on the walkable graph nearest to where the orbit camera looks. */
   private walkStart(): THREE.Vector3 | undefined {
     if (!this.layout) return undefined
@@ -410,7 +592,7 @@ export class ThreeScene implements SceneView {
       const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1])
       downAt = null
       if (moved > 5) return // it was a drag
-      this.pickFn(this.pick((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1))
+      this.pickAt((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
     })
     this.el.walkButton.addEventListener('click', () => this.cam.enterWalk(this.walkStart()))
     this.el.fitButton.addEventListener('click', () => this.flyTo('overview'))
@@ -430,8 +612,13 @@ export class ThreeScene implements SceneView {
         return
       if (e.code === 'KeyF' && this.cam.mode === 'orbit') this.cam.enterWalk(this.walkStart())
       if (e.code === 'KeyE' && this.cam.mode === 'walk') {
-        const id = this.pick(0, 0) // crosshair at screen center
+        // Crosshair at screen center: an agent, else a station/spine/board/notebook.
+        const id = this.pick(0, 0)
         if (id) this.pickFn(id)
+        else {
+          const ref = this.pickSurface()
+          if (ref) this.pickCapFn(ref)
+        }
       }
       if (e.code === 'Escape' && this.cam.mode === 'orbit') this.pickFn(null)
     })
@@ -453,11 +640,48 @@ export class ThreeScene implements SceneView {
         if (b) this.cam.jumpTo(b)
         return !!b
       },
-      look: (pos: [number, number, number], target: [number, number, number]) =>
+      look: (pos: Vec3T, target: Vec3T) =>
         this.cam.jumpTo({
           position: new THREE.Vector3(...pos),
           target: new THREE.Vector3(...target),
         }),
+      /** Bookmark ids: overview, atrium, street, wing:<provider>:<annex>, adapters:…, library:… */
+      bookmark: (id: string) => api.view(id),
+      orbitTo: (pos: Vec3T, target: Vec3T, ms = 800) =>
+        this.cam.flyTo(
+          { position: new THREE.Vector3(...pos), target: new THREE.Vector3(...target) },
+          ms / 1000,
+        ),
+      focus: (agentId: string) => this.pickFn(agentId),
+      walkTo: (pos: Vec3T, heading: number) => this.cam.walkAt(new THREE.Vector3(...pos), heading),
+      setQuality: (q: GraphicsQuality) => this.setQuality(q),
+      timeScale: (n: number) => this.clock.setScale(n),
+      pass: (name: 'gtao' | 'bloom' | 'smaa', on: boolean) => this.pipeline.setPass(name, on),
+      hideHud: (hide: boolean) => document.body.classList.toggle('capture', hide),
+      bounds: () => this.building?.contentBounds(),
+      modules: () => this.building?.moduleVisibility(),
+      links: () => this.links.debug(),
+      /** Visible meshes grouped by role/kind (draw-call budget work). */
+      breakdown: () => {
+        const out: Record<string, { meshes: number; tris: number }> = {}
+        this.scene.traverseVisible((o) => {
+          const m = o as THREE.Mesh
+          if (!m.isMesh) return
+          let role = ''
+          for (let p: THREE.Object3D | null = m; p && !role; p = p.parent)
+            role = (p.userData.role as string) ?? ''
+          const key = `${role || m.type}:${(Array.isArray(m.material) ? m.material[0] : m.material)?.type ?? ''}`
+          const idx = m.geometry.index
+          const n = (idx ? idx.count : m.geometry.attributes.position!.count) / 3
+          const inst = (m as THREE.InstancedMesh).isInstancedMesh
+            ? (m as THREE.InstancedMesh).count
+            : 1
+          const e = (out[key] ??= { meshes: 0, tris: 0 })
+          e.meshes++
+          e.tris += Math.round(n * inst)
+        })
+        return out
+      },
       stats: () => ({
         ...this.pipeline.stats,
         preset: this.preset,

@@ -1,7 +1,9 @@
 // Shared renderer types (see docs/graphics-contract.md). Pure data — no three.js here.
-import type { Agent } from '@agent-office/shared'
+import type { Agent, CapabilityCategory } from '@agent-office/shared'
 
 export type Vec2 = { x: number; z: number }
+/** A world point with height (link attach points, `port:*` anchors). */
+export type Vec3 = { x: number; y: number; z: number }
 
 export type ThemeId = 'terracotta' | 'nordic' | 'forest' | 'ocean' | 'neon' | 'brass'
 export type ModuleKind = 'atrium' | 'street' | 'wing' | 'garden' | 'cap'
@@ -89,6 +91,8 @@ export interface BuildingLayout {
   key: string
   /** Wing slot memory for the next `planBuilding` call (stable order, dimming grace). */
   slots?: WingSlot[]
+  /** World `port:*` link attach points (with height), keyed "<placementId>/<localPortId>". */
+  ports?: Map<AnchorId, Vec3>
 }
 
 /** agentId → desk seat anchor id. */
@@ -107,6 +111,14 @@ export type Activity =
   | 'cafe'
   | 'pingpong'
   | 'leaving'
+  /** Overlay at the desk: a link to an adapter station while a tool uses it (docs/capabilities.md §5). */
+  | 'connection-call'
+  /** Standing at the adapter's station (StandInteract). */
+  | 'connection-visit'
+  /** Overlay at the desk: a link to a book, board or notebook while a skill or rule is used. */
+  | 'library-call'
+  /** In the Library: shelf (ShelfPick) → reading seat (SitRead), or reading standing at the shelf. */
+  | 'library-visit'
 
 export interface Intent {
   activity: Activity
@@ -118,6 +130,10 @@ export interface Intent {
   via?: AnchorId[]
   /** Appear directly at the target (agents already present when the office opens) instead of arriving. */
   spawn?: boolean
+  /** Capability id a call or visit is about (connection-* / library-*). */
+  capability?: string
+  /** Metres to the right of shared spots (`spot:shelf:*`) in `via`/`target`: the second person stands 0.6 m aside. */
+  lateral?: number
 }
 
 export type ClipName =
@@ -140,8 +156,11 @@ export type ClipName =
   | 'Wave'
   | 'HeadScratch'
   | 'ElevatorIn'
+  | 'StandInteract'
+  | 'SitRead'
+  | 'ShelfPick'
 
-export type PropName = 'laptop' | 'cup' | 'phone' | 'paddle'
+export type PropName = 'laptop' | 'cup' | 'phone' | 'paddle' | 'book'
 
 /** A timed path: walking along a smoothed polyline with a trapezoidal speed profile. */
 export interface TimedPath {
@@ -177,6 +196,8 @@ export type Step =
       offset?: number
       /** Anchor occupied while this clip plays (seat or spot). */
       anchor?: AnchorId
+      /** One-shots: hold the last frame after it ends (e.g. ShelfPick) until new steps arrive. */
+      hold?: boolean
     }
   | { kind: 'move'; path: TimedPath }
   | { kind: 'face'; heading: number; duration: number }
@@ -221,4 +242,28 @@ export interface AgentPose {
   /** False before the spawn teleport and after the leave fade. */
   visible: boolean
   props: PropName[]
+}
+
+/** A visible link from an agent to a capability (station, book, board or notebook), docs/capabilities.md §5. */
+export interface Link {
+  /** `<agentId>><capabilityId>` (stable while the link lives). */
+  id: string
+  agentId: string
+  capabilityId: string
+  category: CapabilityCategory
+  /** Agent end: desk monitor port, head height, or the hand while visiting. */
+  from: Vec3
+  /** Capability end: the station, book, board or notebook port. */
+  to: Vec3
+  /** Quadratic Bezier control point (arc above partitions, ≤ 3.4 m). */
+  control: Vec3
+  color: string
+  label: string
+  /** Adapters: dashes; skills and rules: drifting page particles. */
+  style: 'dash' | 'particles'
+  state: 'calling' | 'visiting'
+  /** When the current use started (ms). */
+  since: number
+  /** 1 while in use, fading to 0 after it ends. */
+  opacity: number
 }

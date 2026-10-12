@@ -1,6 +1,8 @@
 // One AnimationMixer per character: clips by name, crossfades, Walk timeScale. Implements the
-// mover's target. A clip the glb lacks falls back to Idle (loops) or is skipped (one-shots).
+// mover's target. A clip the glb lacks falls back to SitIdle/Idle by posture (loops) or is skipped
+// (one-shots; the previous pose holds). One-shots clamp on their last frame (`hold`).
 import * as THREE from 'three'
+import { fallbackLoop } from '../../../app/motion.ts'
 import type { ClipName, PropName } from '../../../app/office-types.ts'
 import type { MoverTarget } from '../mover.ts'
 
@@ -29,7 +31,7 @@ export class Animator implements MoverTarget {
   }
 
   play(clip: ClipName, loop: boolean, fadeIn: number, offset: number) {
-    const a = this.action(clip) ?? (loop ? this.action('Idle') : undefined)
+    const a = this.action(clip) ?? (loop ? this.action(fallbackLoop(clip)) : undefined)
     if (!a) return
     const cur = this.current
     if (a === cur && loop && a.isRunning() && a.loop === THREE.LoopRepeat) return

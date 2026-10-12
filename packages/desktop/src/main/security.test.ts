@@ -31,7 +31,7 @@ describe('contentSecurityPolicy', () => {
         "script-src 'self' 'wasm-unsafe-eval'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
-        "connect-src 'self'",
+        "connect-src 'self' blob:", // blob: lets GLTFLoader decode embedded textures off the main thread
         "worker-src 'self' blob:",
         "font-src 'self'",
         "object-src 'none'",
@@ -46,7 +46,7 @@ describe('contentSecurityPolicy', () => {
 
   it('adds only the Vite dev server origin (and its websocket) in development', () => {
     const csp = contentSecurityPolicy('http://localhost:5173/')
-    expect(csp).toContain("connect-src 'self' http://localhost:5173 ws://localhost:5173")
+    expect(csp).toContain("connect-src 'self' blob: http://localhost:5173 ws://localhost:5173")
     expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' http://localhost:5173")
     expect(csp).toContain("img-src 'self' data: blob:")
     expect(csp).not.toMatch(/(?<!wasm-)unsafe-eval/)

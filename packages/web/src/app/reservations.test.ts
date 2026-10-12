@@ -211,4 +211,41 @@ describe('reserve', () => {
       'atrium/spot:pingpong:0:B',
     ])
   })
+
+  it('reserves a specific station exclusively', () => {
+    const want = { kind: 'station' as const, wings: A, anchor: 'wing:a:0/spot:station:4' }
+    const first = reserve(emptyReservations(), L, { ...want, holder: 'x' }, 0)
+    expect(first.grant).toEqual(['wing:a:0/spot:station:4'])
+    expect(reserve(first.state, L, { ...want, holder: 'y' }, 0).grant).toBeUndefined()
+    // Without a specific anchor: the first free station of the wing.
+    expect(reserve(first.state, L, { kind: 'station', holder: 'z', wings: A }, 0).grant).toEqual([
+      'wing:a:0/spot:station:0',
+    ])
+  })
+
+  it('reserves reading seats exclusively', () => {
+    const { grants } = run(
+      Array.from({ length: 5 }, (_, i) => ({
+        kind: 'reading-seat' as const,
+        holder: `r${i}`,
+        wings: A,
+      })),
+    )
+    expect(grants.slice(0, 4)).toEqual([0, 1, 2, 3].map((i) => [`wing:a:0/seat:reading:${i}`]))
+    expect(grants[4]).toBeUndefined()
+  })
+
+  it('shares a shelf spot between two people (second one offset)', () => {
+    const shelf = { kind: 'shelf-spot' as const, wings: A, anchor: 'wing:a:0/spot:shelf:1' }
+    const a = reserve(emptyReservations(), L, { ...shelf, holder: 'a' }, 0)
+    const b = reserve(a.state, L, { ...shelf, holder: 'b' }, 0)
+    const c = reserve(b.state, L, { ...shelf, holder: 'c' }, 0)
+    expect([a.grant, b.grant]).toEqual([['wing:a:0/spot:shelf:1'], ['wing:a:0/spot:shelf:1']])
+    expect([a.share, b.share]).toEqual([0, 1])
+    expect(c.grant).toBeUndefined()
+    // Releasing the first frees its share for the next person.
+    const d = reserve(release(b.state, 'a'), L, { ...shelf, holder: 'd' }, 0)
+    expect(d.share).toBe(0)
+    expect(reservationOf(d.state, 'b')!.share).toBe(1)
+  })
 })

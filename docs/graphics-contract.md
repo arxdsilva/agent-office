@@ -15,13 +15,13 @@ The single source of truth shared by the Blender pipeline (`assets/blender/**`) 
 
 | Module | Local footprint | World placement |
 |---|---|---|
-| `atrium` | x ∈ [−27, 27], z ∈ [−24, 0]. The street opening is at local (0, 0) | origin (0, 0, 0), θ = 0 |
+| `atrium` | x ∈ [−33, 33], z ∈ [−24, 0]. The street opening is at local (0, 0) | origin (0, 0, 0), θ = 0 |
 | `street` (one per bay) | x ∈ [−3, 3], z ∈ [0, 18] | origin (0, 0, 18·k), θ = 0 |
-| `wing` / `garden` (right) | x ∈ [0, 24], z ∈ [−9, 9]. The door is at local (0, 0) and the wing extends along +x | origin (3, 0, 18·k + 9), θ = 0 |
+| `wing` / `garden` (right) | x ∈ [0, 30], z ∈ [−9, 9]. The door is at local (0, 0) and the wing extends along +x. In the wing, x ∈ [24, 30] holds the **Adapters room** (z ∈ [−9, 0]) and the **Library** (z ∈ [0, 9]), each with its own glass door from the pod area | origin (3, 0, 18·k + 9), θ = 0 |
 | `wing` / `garden` (left) | same module | origin (−3, 0, 18·k + 9), θ = π |
-| `cap` (end of building) | x ∈ [−27, 27], z ∈ [0, 0.5]. End wall + window | origin (0, 0, 18·nBays), θ = 0 |
+| `cap` (end of building) | x ∈ [−33, 33], z ∈ [0, 0.5]. End wall + window | origin (0, 0, 18·nBays), θ = 0 |
 
-- `garden` (an indoor garden with benches) fills an empty side of a bay, so the building outline stays a clean rectangle 54 m wide.
+- `garden` (an indoor garden with benches) fills an empty side of a bay, so the building outline stays a clean rectangle 66 m wide.
 - Bays fill in order bay0-R, bay0-L, bay1-R, bay1-L, …
 
 ## 3. Navigation graphs
@@ -49,8 +49,18 @@ The single source of truth shared by the Blender pipeline (`assets/blender/**`) 
 
   These offsets are also written to `character.json` (`sit` / `lounge`). The renderer places the root exactly at the anchor, with no extra offset.
 - Optional keys: `room` (`pod-N` / `meeting-A` / `meeting-B` / `booth-N` / `kitchen` / `lounge` / `cafe` / `reception` / `elevator` / `pingpong-N` / `garden`), `screen` (the id of the monitor surface), `led` (id of the booth LED ring).
+- **Room groups added for capabilities** (docs/capabilities.md):
+  - `spot:station:<0-7>` (stand, facing the station screen about 0.6 m away, room `adapters`)
+  - `seat:reading:<0-3>` (sit, root rule as above, room `library`)
+  - `spot:shelf:<0-1>` (stand in front of shelf A/B, room `library`; two people may share a spot using a 0.6 m lateral offset)
+- **New anchor kind `port`.** It's a 3D link attach point and the **only kind with y ≠ 0**. It has `{x, y, z}` and no heading, pose or approach:
+  - `port:desk:<pod>:<i>`: top of each desk monitor, y ≈ 1.25
+  - `port:station:<i>`: top of each station screen, y ≈ 2.3
+  - `port:book:<0-23>`: the spine center
+  - `port:board:<0-5>`: the board center
+  - `port:notebook:<0-7>`
 - **Required counts per module:**
-  - **wing:** 24 desk seats (6 pods × 4); `meeting:A` and `meeting:B` with 6 seats each; 4 booth spots; 6 kitchen spots; 8 lounge seats
+  - **wing:** 24 desk seats (6 pods × 4); `meeting:A` and `meeting:B` with 6 seats each; 4 booth spots; 6 kitchen spots; 8 lounge seats; **8 station spots; 4 reading seats; 2 shelf spots; ports for all 24 desks, 8 stations, 24 books, 6 boards and 8 notebooks**
   - **atrium:** 4 reception spots, 6 elevator spots, 24 cafe seats, 2 ping-pong tables × A/B
   - **garden:** 6 garden spots
 
@@ -68,6 +78,15 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 | `baked` | none | Static mesh with a UV1 lightmap (§6) |
 
 - Monitor screens and LEDs are separate meshes with their own material, so the runtime can change their emissive color per instance. Clone the material per node.
+
+| `station` | `<0-7>` | The adapter station screen. CanvasTexture drawn from `stationVM`; carries `extras.width`/`height` |
+| `led` | `station:<0-7>` | The station floor ring; glows in the capability color while it's used |
+| `screen` | `adapters-core` | Emissive strips on the core column of the Adapters room |
+| `book` | `<0-23>` | A spine surface. The runtime draws the skill name on a per-shelf CanvasTexture atlas; carries `extras.width`/`height` |
+| `board` | `<0-5>` | A rule board surface (title, scope badge, summary) |
+| `notebook` | `<0-7>` | A memory notebook label |
+| `sign` | `adapters`, `library` | Room signs; the runtime draws "Adapters" and "Library" |
+| `glass` | none | Glass panes (not baked; cheap transparent material at runtime) |
 
 ## 6. Lightmaps
 - **Per module there is one lightmap atlas:** an 8-bit sRGB PNG holding **irradiance / intensity** (irradiance = Cycles diffuse direct + indirect, without albedo).
@@ -94,7 +113,7 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
                                             "signColor": "#F4EDE4", "accent": "#D97757" },
                             "nordic": {}, "forest": {}, "ocean": {}, "neon": {}, "brass": {} },
                 "bounds": { "minX": 0, "maxX": 24, "minZ": -9, "maxZ": 9 },
-                "capacity": { "desk": 24, "meeting": 2, "meetingSeats": 6, "booth": 4, "kitchen": 6, "lounge": 8 },
+                "capacity": { "desk": 24, "meeting": 2, "meetingSeats": 6, "booth": 4, "kitchen": 6, "lounge": 8, "stations": 8, "books": 24, "boards": 6, "notebooks": 8, "readingSeats": 4 },
                 "anchors": {}, "nav": {} }
   },
   "character": { "file": "character.glb", "meta": "character.json" }
@@ -108,7 +127,7 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 - **Optional meshes** are identified by `extras.accessory`: `hairA`, `hairB`, `hairC`, `hairD`, `glasses`, `headset`, `badge`. All are hidden by default except `hairA`.
 - **Props** are identified by `extras.prop` (`laptop`, `cup`, `phone`, `paddle`) and parented to bone `prop.R`, hidden by default.
 - Bones (22 deform + `prop.R`): `root, hips, spine, chest, neck, head, shoulder.L/R, upperarm.L/R, forearm.L/R, hand.L/R, thigh.L/R, shin.L/R, foot.L/R, toe.L/R`.
-- **Clips are in place:** the root bone has no translation, and the character faces +z (heading 0). Names: `Idle, Walk, TurnL90, TurnR90, SitDown, StandUp, SitIdle, SitType, SitThink, SitTalk, SitLaptop, StandTalk, PhoneCall, DrinkCoffee, LoungeSit, PingPong, Wave, HeadScratch, ElevatorIn`.
+- **Clips are in place:** the root bone has no translation, and the character faces +z (heading 0). Names: `Idle, Walk, TurnL90, TurnR90, SitDown, StandUp, SitIdle, SitType, SitThink, SitTalk, SitLaptop, StandTalk, PhoneCall, DrinkCoffee, LoungeSit, PingPong, Wave, HeadScratch, ElevatorIn`, **plus `StandInteract`** (a loop: standing at a tall screen, swiping), **`SitRead`** (a loop: seated, reading the book prop) and **`ShelfPick`** (one-shot: reaching for a shelf at about 1.5 m and bringing a book to the chest). Props add **`book`**.
 - `character.json`:
   ```json
   { "height": 1.75, "seatHeight": 0.47, "loungeSeatHeight": 0.42,
@@ -123,10 +142,19 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 | File | Max size | Max triangles |
 |---|---|---|
 | `atrium.glb` | 12 MB | 250k |
-| `wing-*.glb` | 5 MB each | 150k |
+| `wing-*.glb` | 6 MB each | 190k (includes the Adapters room and Library) |
 | `street.glb`, `garden.glb`, `cap.glb` | 3 MB each | 60k |
 | `character.glb` | 1.5 MB | — |
-| `packages/web/public/assets/` total | 45 MB | — |
+| `packages/web/public/assets/` total | 55 MB | — |
+
+## 9b. Accepted deviations (reported by the asset builder, all additive)
+- Ceiling meshes also carry `TEXCOORD_1` and `extras.lightmap=true`.
+- Glass panes use `extras.role="glass"` and aren't baked.
+- Sign and LED-wall nodes (and station, book and board surfaces) carry `extras.width` and `extras.height`.
+- The lightmap `intensity` already includes the π factor three.js Lambert shading needs.
+- Anchors live only in the manifest; there are no glTF empties.
+- Static meshes are joined per material and lightmapped, so there's no GPU instancing.
+- Reception monitors are static, not runtime screens.
 
 ## 10. Branding
 No logos, trademarks or real company names in any asset. Signs are blank planes; the runtime draws the provider id as text.

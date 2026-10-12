@@ -18,6 +18,7 @@ function setup() {
     activity: office.activity,
     inbox: office.inbox,
     query: office.query,
+    capabilities: office.capabilities,
     events: bus,
     scheduler,
     random,
@@ -80,6 +81,55 @@ describe('MockAgents', () => {
     mock.recycleSubagent()
     expect(office.query.agent(before)?.status).toBe('done')
     expect(office.query.agents().filter((a) => a.parentId && a.status !== 'done')).toHaveLength(1)
+  })
+
+  it('declares adapters, skills, rules and memory per provider (docs/capabilities.md)', () => {
+    const { office, mock } = setup()
+    mock.seed()
+    const caps = office.query.snapshot().capabilities ?? []
+    const ids = (p: string) => caps.filter((c) => c.provider === p).map((c) => c.id)
+    expect(ids('claude-code')).toEqual(
+      expect.arrayContaining([
+        'fs',
+        'shell',
+        'web',
+        'subagents',
+        'mcp:claude_ai_Gmail',
+        'mcp:claude_ai_Google_Drive',
+        'skill:run-office',
+        'skill:scene-change',
+        'skill:asset-change',
+        'skill:add-event-source',
+        'rule:project:CLAUDE.md',
+        'rule:project:AGENTS.md',
+        'rule:project:TESTING.md',
+        'rule:project:ARCHITECTURE.md',
+        'rule:project:PRIVACY_SECURITY.md',
+        'memory:agent-office-project',
+      ]),
+    )
+    expect(ids('openai-agents')).toEqual(
+      expect.arrayContaining(['web', 'api:code_interpreter', 'api:vector_store']),
+    )
+    expect(ids('langgraph')).toEqual(expect.arrayContaining(['mcp:postgres', 'web', 'api:chat']))
+    expect(caps.every((c) => c.declared)).toBe(true)
+    expect(caps.find((c) => c.kind === 'memory')).not.toHaveProperty('summary')
+  })
+
+  it('ticks use the declared capabilities: skills, rules, MCP, web hosts and shell commands', () => {
+    const { office, mock } = setup()
+    mock.seed()
+    for (let i = 0; i < 200; i++) mock.tick()
+    const used = (office.query.snapshot().capabilities ?? []).filter((c) => c.calls > 0)
+    const cc = used.filter((c) => c.provider === 'claude-code').map((c) => c.category)
+    expect(new Set(cc)).toEqual(new Set(['adapter', 'skill', 'rule']))
+    const byId = (p: string, id: string) => used.find((c) => c.provider === p && c.id === id)
+    expect(byId('claude-code', 'web')?.sees.some((s) => s.startsWith('host: '))).toBe(true)
+    expect(byId('claude-code', 'shell')?.sees.some((s) => s.startsWith('cmd: '))).toBe(true)
+    expect(used.some((c) => c.id.startsWith('mcp:') && c.provider === 'claude-code')).toBe(true)
+    expect(byId('langgraph', 'mcp:postgres')?.calls).toBeGreaterThan(0)
+    // Nothing observed outside what was declared.
+    expect(used.every((c) => c.declared)).toBe(true)
   })
 
   it('start schedules ticks', () => {

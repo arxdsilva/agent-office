@@ -32,7 +32,7 @@ export const PRESETS: Readonly<Record<Preset, PresetSpec>> = {
   medium: {
     maxPixelRatio: 1.5,
     shadowMap: 1024,
-    gtao: 'half',
+    gtao: 'off',
     bloom: true,
     smaa: true,
     lod: [15, 35],
@@ -41,7 +41,7 @@ export const PRESETS: Readonly<Record<Preset, PresetSpec>> = {
   high: {
     maxPixelRatio: 2,
     shadowMap: 2048,
-    gtao: 'full',
+    gtao: 'half',
     bloom: true,
     smaa: true,
     lod: [20, 45],
@@ -50,7 +50,7 @@ export const PRESETS: Readonly<Record<Preset, PresetSpec>> = {
   ultra: {
     maxPixelRatio: Infinity,
     shadowMap: 4096,
-    gtao: 'high',
+    gtao: 'full',
     bloom: true,
     smaa: true,
     lod: [30, 60],

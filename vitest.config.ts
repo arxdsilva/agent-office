@@ -50,6 +50,9 @@ export default defineConfig({
         'packages/web/src/adapters/dom/**',
         'scripts/arch.mjs',
         'scripts/render-icons.mjs',
+        'scripts/screenshots.mjs',
+        'scripts/perf.mjs',
+        'scripts/capture/**',
       ],
       // ≥70% per package (aggregated per glob), see .claude/rules/TESTING.md.
       thresholds: {

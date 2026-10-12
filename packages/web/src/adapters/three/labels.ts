@@ -1,5 +1,5 @@
 // Name tags and status bubbles (CSS2D). They follow each character's head, fade with distance
-// (opaque < 12 m, hidden > 40 m) and hide when a wall is in the way (checked every 250 ms).
+// (opaque < 12 m, hidden > 40 m) and recede when a wall is in the way (checked every 250 ms).
 // All text goes through textContent (PRIVACY_SECURITY rule).
 import { STATUS_COLORS, type Agent } from '@agent-office/shared'
 import * as THREE from 'three'
@@ -11,6 +11,8 @@ export const FADE_NEAR = 12
 export const FADE_FAR = 40
 const OCCLUSION_MS = 250
 const HEAD_CLEARANCE = 0.32
+const OCCLUDED_OPACITY = 0.3
+const LEASH = 0.06
 
 function bubbleText(a: Agent): string {
   switch (a.status) {
@@ -36,6 +38,7 @@ class Label {
   private badge = document.createElement('span')
   private bubble = document.createElement('div')
   occluded = false
+  placed = false
   private shown = ''
 
   constructor(id: string, onPick: (id: string) => void) {
@@ -55,8 +58,9 @@ class Label {
     this.obj.center.set(0.5, 1)
   }
 
-  set(a: Agent, activity: Activity): void {
-    const key = `${a.name}|${a.interactive}|${a.unread}|${a.status}|${a.tool}|${a.text}|${activity}|${a.parentId}`
+  /** `call`: the capability bubble while calling or visiting (🔌 Gmail · search, 📖 run-office). */
+  set(a: Agent, activity: Activity, call?: string): void {
+    const key = `${a.name}|${a.interactive}|${a.unread}|${a.status}|${a.tool}|${a.text}|${activity}|${a.parentId}|${call}`
     if (key === this.shown) return
     this.shown = key
     this.name.textContent = a.name
@@ -67,7 +71,7 @@ class Label {
     this.tag.dataset.activity = activity
     this.tag.dataset.status = a.status
     this.tag.classList.toggle('sub', !!a.parentId)
-    const text = bubbleText(a)
+    const text = call ?? bubbleText(a)
     this.bubble.textContent = text
     this.bubble.style.setProperty('--status', STATUS_COLORS[a.status])
     this.bubble.hidden = text === ''
@@ -87,6 +91,7 @@ export class Labels {
   private hit = new THREE.Vector3()
   private box = new THREE.Box3()
   private dir = new THREE.Vector3()
+  private want = new THREE.Vector3()
 
   constructor(
     stage: HTMLElement,
@@ -103,7 +108,7 @@ export class Labels {
     this.scene.add(this.group)
   }
 
-  upsert(a: Agent, activity: Activity): void {
+  upsert(a: Agent, activity: Activity, call?: string): void {
     let l = this.labels.get(a.id)
     if (!l) {
       l = new Label(a.id, this.onPick)
@@ -116,7 +121,7 @@ export class Labels {
       this.renderer.domElement.append(l.stack)
       if (a.id === this.selected) l.tag.classList.add('selected')
     }
-    l.set(a, activity)
+    l.set(a, activity, call)
   }
 
   remove(id: string): void {
@@ -151,20 +156,25 @@ export class Labels {
       const head = headOf(id)
       if (!head) {
         l.obj.visible = false
+        l.placed = false
         continue
       }
-      l.obj.position.set(head.x, head.y + HEAD_CLEARANCE, head.z)
+      // Leash: the tag follows the head but ignores motion under LEASH (idle sway), so it stays
+      // pixel-still for reading and clicking; while walking it trails by at most LEASH.
+      this.want.set(head.x, head.y + HEAD_CLEARANCE, head.z)
+      const p = l.obj.position
+      const gap = p.distanceTo(this.want)
+      if (!l.placed || gap > 3) (p.copy(this.want), (l.placed = true))
+      else if (gap > LEASH) p.lerp(this.want, 1 - LEASH / gap)
       const d = this.camPos.distanceTo(l.obj.position)
       if (checkOcclusion) l.occluded = this.blocked(l.obj.position, d, occluders)
       const selected = id === this.selected
-      const visible = selected || (d < FADE_FAR && !l.occluded)
+      const visible = selected || d < FADE_FAR
       l.obj.visible = visible
       if (!visible) continue
-      const opacity = selected
-        ? 1
-        : d <= FADE_NEAR
-          ? 1
-          : 1 - (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)
+      // Behind a wall the tag stays (clickable, so you can still find someone) but recedes.
+      const fade = d <= FADE_NEAR ? 1 : 1 - (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)
+      const opacity = selected ? 1 : fade * (l.occluded ? OCCLUDED_OPACITY : 1)
       const o = opacity.toFixed(2)
       if (l.stack.style.opacity !== o) l.stack.style.opacity = o
     }

@@ -1,6 +1,8 @@
 // The fakes are held to the same contracts as the real adapters.
+import { capabilityRepositoryContract } from './contracts/capabilities.ts'
 import {
   FakeAgentRepository,
+  FakeCapabilityRepository,
   FakeClaudeSettingsStore,
   FakeEventBus,
   FakeHookRunner,
@@ -30,3 +32,4 @@ hookRunnerContract('FakeHookRunner', async () => {
   const runner = new FakeHookRunner()
   return { runner, exists: async () => runner.installed }
 })
+capabilityRepositoryContract('FakeCapabilityRepository', () => new FakeCapabilityRepository())

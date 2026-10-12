@@ -32,14 +32,19 @@ test('loads the HQ: loading screen hides, the canvas renders, one signed wing pe
     'openai-agents',
   ])
 
-  // Camera bookmarks: atrium, Main Street, each wing (in building order), overview.
+  // Camera bookmarks: atrium, Main Street, each wing (in building order), the capability rooms of
+  // the current wing, overview.
   const views = win.locator('#views .view-btn')
-  await expect(views).toHaveCount(6)
+  await expect(views).toHaveCount(8)
   const labels = await views.allTextContents()
-  expect(labels[0]).toBe('Atrium')
-  expect(labels[1]).toBe('Main Street')
-  expect(labels.at(-1)).toBe('Overview')
+  expect(labels.slice(0, 2)).toEqual(['Atrium', 'Main Street'])
   expect(labels.slice(2, 5).sort()).toEqual(['claude-code', 'langgraph', 'openai-agents'])
+  expect(labels.slice(5)).toEqual(['Adapters', 'Library', 'Overview'])
+
+  // The capture/debug hook exists only when the app runs with AGENT_OFFICE_DEBUG=1.
+  expect(await win.evaluate(() => typeof (window as { __aoDebug?: unknown }).__aoDebug)).toBe(
+    'undefined',
+  )
 
   // Flying to a wing works without errors.
   await win.locator('#views .view-btn', { hasText: 'claude-code' }).click()

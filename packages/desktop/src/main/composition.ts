@@ -3,11 +3,15 @@
 import { join } from 'node:path'
 import {
   buildHttpApi,
+  ClaudeCapabilityDiscovery,
   ClaudeCodeTailer,
+  ClaudeConfigReader,
+  ClaudeKnowledgeReader,
   ClaudeSettingsFile,
   createAuth,
   FsHookRunner,
   InMemoryAgentRepository,
+  InMemoryCapabilityRepository,
   InMemoryEventBus,
   InMemoryMessageRepository,
   JsonFileSettingsRepository,
@@ -75,6 +79,7 @@ export function compose(o: ComposeOptions) {
   const sweepPolicy = { ...DEFAULT_SWEEP_POLICY, ...env.sweep }
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
+    capabilities: new InMemoryCapabilityRepository(),
     messages: new InMemoryMessageRepository(),
     bus,
     clock: new SystemClock(),
@@ -129,6 +134,7 @@ export function compose(o: ComposeOptions) {
         activity: office.activity,
         inbox: office.inbox,
         query: office.query,
+        capabilities: office.capabilities,
         events: bus,
         scheduler,
       })
@@ -137,15 +143,34 @@ export function compose(o: ComposeOptions) {
       b.stops.push(() => mock!.stop())
     }
     if (s.claudeAdapter) {
+      // Discovery (MCP server names, skills, rules, memory titles) is opt-out via discoverCapabilities.
+      let discovery: ClaudeCapabilityDiscovery | undefined
       const tailer = new ClaudeCodeTailer({
         dir: env.claudeProjectsDir,
+        claudeHome: env.claudeHome,
         files: new NodeTranscriptFiles(),
         activity: office.activity,
         clock: new SystemClock(),
         scheduler,
         expireAfterMs: sweepPolicy.expireAfterMs,
         log: logger,
+        onNewCwd: () => discovery?.refresh(),
       })
+      if (s.discoverCapabilities) {
+        discovery = new ClaudeCapabilityDiscovery({
+          capabilities: office.capabilities,
+          config: new ClaudeConfigReader(env.claudeConfigFile),
+          knowledge: new ClaudeKnowledgeReader({
+            claudeHome: env.claudeHome,
+            projectsDir: env.claudeProjectsDir,
+          }),
+          cwds: () => tailer.activeCwds(),
+          scheduler,
+          log: logger,
+        })
+        discovery.start()
+        b.stops.push(() => discovery!.stop())
+      }
       tailer.start()
       b.stops.push(() => tailer.stop())
     }
@@ -159,6 +184,7 @@ export function compose(o: ComposeOptions) {
         inbox: office.inbox,
         chat: office.chat,
         query: office.query,
+        capabilities: office.capabilities,
         ...(mock ? { mock } : {}),
       },
       // Port getter: with port 0 (tests) the Host allowlist must follow the real port.
@@ -246,6 +272,7 @@ export function compose(o: ComposeOptions) {
       for (const s of stops.splice(0)) s()
       office.attention.stop()
       office.updates.stop()
+      office.capabilities.stop()
       await stopBackend()
       shell.ipc.removeAll()
       scheduler.dispose()

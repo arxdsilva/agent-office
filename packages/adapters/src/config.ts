@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { SweepPolicy } from '@agent-office/core'
 import type { Settings } from '@agent-office/shared'
 
@@ -13,6 +13,10 @@ export interface EnvConfig {
   home: string
   claudeProjectsDir: string
   claudeSettingsFile: string
+  /** ~/.claude: user rules, skills, plugins (capability discovery). */
+  claudeHome: string
+  /** ~/.claude.json: only `mcpServers` keys are read (capability discovery). */
+  claudeConfigFile: string
   overrides: Partial<Pick<Settings, 'port' | 'claudeAdapter' | 'mock'>>
   sweep: Partial<SweepPolicy>
 }
@@ -32,6 +36,9 @@ export function loadEnv(env: Record<string, string | undefined>, home: string): 
   const port = num('PORT')
   const claudeAdapter = flag('AGENT_OFFICE_CLAUDE')
   const mock = flag('AGENT_OFFICE_MOCK')
+  const claudeProjectsDir = expand(env.CLAUDE_PROJECTS_DIR || '~/.claude/projects')
+  // Derived from the projects dir so a test that points it at a temp dir never reads the real ~/.claude.
+  const claudeHome = env.CLAUDE_HOME ? expand(env.CLAUDE_HOME) : dirname(claudeProjectsDir)
   const idleAfterMs = num('IDLE_AFTER_MS')
   const expireAfterMs = num('EXPIRE_AFTER_MS')
   return {
@@ -41,8 +48,12 @@ export function loadEnv(env: Record<string, string | undefined>, home: string): 
       .map((h) => h.trim())
       .filter(Boolean),
     home: expand(env.AGENT_OFFICE_HOME || '~/.agent-office'),
-    claudeProjectsDir: expand(env.CLAUDE_PROJECTS_DIR || '~/.claude/projects'),
+    claudeProjectsDir,
     claudeSettingsFile: expand(env.CLAUDE_SETTINGS_FILE || '~/.claude/settings.json'),
+    claudeHome,
+    claudeConfigFile: env.CLAUDE_CONFIG_FILE
+      ? expand(env.CLAUDE_CONFIG_FILE)
+      : join(dirname(claudeHome), '.claude.json'),
     overrides: {
       ...(port !== undefined ? { port } : {}),
       ...(claudeAdapter !== undefined ? { claudeAdapter } : {}),

@@ -171,4 +171,64 @@ describe('parseManifest', () => {
     b.modules.atrium.bounds.minX = Number.NaN
     expect(failure(b).path).toBe('modules.atrium.bounds.minX')
   })
+
+  it('parses ports (3D attach points) and the capability-room capacity', () => {
+    const m = parseManifest(json())
+    expect(m.modules.wing.bounds.maxX).toBe(30)
+    expect(m.modules.atrium.bounds).toMatchObject({ minX: -33, maxX: 33 })
+    expect(m.modules.wing.capacity).toMatchObject({
+      stations: 8,
+      books: 24,
+      boards: 6,
+      notebooks: 8,
+      readingSeats: 4,
+    })
+    const ports = m.modules.wing.ports
+    expect(Object.keys(ports).filter((k) => k.startsWith('port:book:'))).toHaveLength(24)
+    expect(ports['port:station:0']!.y).toBeCloseTo(2.3)
+    expect(ports['port:desk:1:0']!.y).toBeCloseTo(1.25)
+    // Ports are not walk-to anchors.
+    expect(Object.keys(m.modules.wing.anchors).some((k) => k.startsWith('port:'))).toBe(false)
+    expect(
+      Object.keys(m.modules.wing.anchors).filter((k) => k.startsWith('spot:station:')),
+    ).toHaveLength(8)
+    expect(m.modules.atrium.ports).toEqual({})
+  })
+
+  it('still parses an older manifest without capability rooms', () => {
+    const j = json()
+    for (const k of ['stations', 'books', 'boards', 'notebooks', 'readingSeats'])
+      delete j.modules.wing.capacity[k]
+    for (const k of Object.keys(j.modules.wing.anchors))
+      if (/^(port|spot:station|spot:shelf|seat:reading)/.test(k)) delete j.modules.wing.anchors[k]
+    const m = parseManifest(j)
+    expect(m.modules.wing.ports).toEqual({})
+    expect(m.modules.wing.capacity.stations).toBeUndefined()
+  })
+
+  it('requires the capability-room anchors and ports the capacity declares', () => {
+    const cases: [string, string][] = [
+      ['spot:station:7', 'spot:station'],
+      ['port:station:3', 'port:station'],
+      ['port:desk:6:3', 'port:desk'],
+      ['port:book:23', 'port:book'],
+      ['port:board:5', 'port:board'],
+      ['port:notebook:7', 'port:notebook'],
+      ['seat:reading:3', 'seat:reading'],
+      ['spot:shelf:1', 'spot:shelf'],
+    ]
+    for (const [id, label] of cases) {
+      const j = json()
+      delete j.modules.wing.anchors[id]
+      const e = failure(j)
+      expect(e.path).toBe('modules.wing.anchors')
+      expect(e.message).toContain(label)
+    }
+    const bad = json()
+    bad.modules.wing.anchors['port:book:0'].y = 'high'
+    expect(failure(bad).path).toBe('modules.wing.anchors["port:book:0"].y')
+    const cap = json()
+    cap.modules.wing.capacity.books = 'many'
+    expect(failure(cap).path).toBe('modules.wing.capacity.books')
+  })
 })

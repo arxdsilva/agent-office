@@ -37,6 +37,10 @@ const TARGETS: Record<Activity, string> = {
   cafe: 'atrium/seat:cafe:5',
   pingpong: 'atrium/spot:pingpong:0:B',
   leaving: 'atrium/spot:elevator:2',
+  'connection-call': DESK,
+  'library-call': DESK,
+  'connection-visit': `${W}/spot:station:3`,
+  'library-visit': `${W}/seat:reading:1`,
 }
 const ALL = Object.keys(TARGETS) as Activity[]
 const intent = (activity: Activity, over: Partial<Intent> = {}): Intent => ({
@@ -255,5 +259,94 @@ describe('poseAt', () => {
     expect(stepsDuration([{ kind: 'clip', clip: 'Wave', loop: false, fadeIn: 0 }])).toBeCloseTo(
       DEFAULT_CLIP_DURATIONS.Wave!,
     )
+  })
+})
+
+describe('choreograph: capability visits', () => {
+  const SHELF = `${W}/spot:shelf:0`
+  const right = (h: number) => ({ x: -Math.cos(h), z: Math.sin(h) })
+
+  it('keeps a call overlay seated at the desk (just the typing loop)', () => {
+    expect(kinds(choreograph(settled('desk-work'), intent('connection-call'), ctx))).toEqual([
+      'SitType',
+    ])
+    expect(kinds(choreograph(settled('desk-think'), intent('library-call'), ctx))).toEqual([
+      'SitType',
+    ])
+  })
+
+  it('works standing at the station for a connection visit', () => {
+    const end = poseAt(
+      settled('desk-work'),
+      choreograph(settled('desk-work'), intent('connection-visit'), ctx),
+      END,
+    )
+    expect(end).toMatchObject({
+      clip: 'StandInteract',
+      posture: 'stand',
+      anchor: TARGETS['connection-visit'],
+    })
+    expect(crossfade('Walk', 'StandInteract')).toBe(CROSSFADE.walkToIdle)
+  })
+
+  it('library visit: shelf (book on, ShelfPick) → walk → reading seat (SitDown, SitRead)', () => {
+    const start = settled('desk-work')
+    const steps = choreograph(start, intent('library-visit', { via: [SHELF], lateral: 0.6 }), ctx)
+    const k = kinds(steps).filter((x) => x !== 'face')
+    expect(k).toEqual(['StandUp', 'move', 'prop', 'ShelfPick', 'move', 'SitDown', 'SitRead'])
+    const pick = steps.find((s) => s.kind === 'clip' && s.clip === 'ShelfPick') as Extract<
+      Step,
+      { kind: 'clip' }
+    >
+    expect(pick.hold).toBeUndefined()
+    expect(pick.duration).toBeCloseTo(DEFAULT_CLIP_DURATIONS.ShelfPick!)
+    expect(steps.find((s) => s.kind === 'prop')).toEqual({ kind: 'prop', prop: 'book', on: true })
+    // At the shelf, the second person stands 0.6 m to the right of the spot.
+    const shelf = layout.anchors.get(SHELF)!
+    const atShelf = poseAt(
+      start,
+      steps,
+      stepsDuration(steps.slice(0, k.indexOf('ShelfPick') + 2)) - 0.01,
+    )
+    expect(atShelf.clip).toBe('ShelfPick')
+    expect(atShelf.pos.x).toBeCloseTo(shelf.pos.x + 0.6 * right(shelf.heading).x, 6)
+    expect(atShelf.pos.z).toBeCloseTo(shelf.pos.z + 0.6 * right(shelf.heading).z, 6)
+    const end = poseAt(start, steps, END)
+    expect(end).toMatchObject({
+      clip: 'SitRead',
+      posture: 'sit',
+      props: ['book'],
+      anchor: TARGETS['library-visit'],
+    })
+    expect(crossfade('SitDown', 'SitRead')).toBe(CROSSFADE.sitStand)
+  })
+
+  it('standing reader: ShelfPick held on its last frame at the shelf', () => {
+    const start = settled('desk-work')
+    const steps = choreograph(start, intent('library-visit', { target: SHELF }), ctx)
+    const last = steps.at(-1)!
+    expect(last).toMatchObject({ kind: 'clip', clip: 'ShelfPick', loop: false, hold: true })
+    expect(stepsDuration(steps)).toBe(Infinity)
+    const end = poseAt(start, steps, END)
+    expect(end).toMatchObject({
+      clip: 'ShelfPick',
+      posture: 'stand',
+      props: ['book'],
+      anchor: SHELF,
+      clipRemaining: 0,
+    })
+    // A new plan from the held pose does not replay the pick.
+    const back = choreograph(end, intent('desk-work'), ctx)
+    expect(kinds(back)[0]).toBe('prop')
+    expect(kinds(back)).not.toContain('ShelfPick')
+  })
+
+  it('finishes an interrupted ShelfPick first', () => {
+    const start = settled('desk-work')
+    const steps = choreograph(start, intent('library-visit', { target: SHELF }), ctx)
+    const mid = poseAt(start, steps, stepsDuration(steps.slice(0, -1)) + 0.5)
+    expect(mid).toMatchObject({ clip: 'ShelfPick' })
+    const re = choreograph(mid, intent('desk-work'), ctx)
+    expect(re[0]).toMatchObject({ kind: 'clip', clip: 'ShelfPick', offset: 0.5 })
   })
 })

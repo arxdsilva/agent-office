@@ -49,7 +49,10 @@ export function walkStartOffset(walk?: { duration: number; footPlants?: number[]
 /** Loop time for a synced pair (ping-pong): both follow a shared clock; player B is `pairOffset` cycles later. */
 export function pairedOffset(clockS: number, duration: number, pairOffset: number, isB: boolean) {
   if (!(duration > 0)) return 0
-  return (clockS + (isB ? pairOffset * duration : 0)) % duration
+  // Wrap in cycles (not seconds) so float error can't land on `duration` or below 0.
+  const cycles = clockS / duration + (isB ? pairOffset : 0)
+  const t = (cycles - Math.floor(cycles)) * duration
+  return t >= duration ? 0 : t
 }
 
 // ── Separation steering ─────────────────────────────────────────────────────────────────────────
@@ -120,12 +123,17 @@ export interface CharacterQuality {
   maxAnimated: number
   /** Real shadow casting (High and up; the contact blob is always on). */
   shadows: boolean
+  /** Beyond this (m) on-screen agents become impostors, whatever the budget (`far` + 10 m). */
+  impostorDist: number
 }
+/** Impostor distance beyond the LOD1 distance (m). */
+const IMPOSTOR_MARGIN = 10
 const fromPreset = (p: Preset): CharacterQuality => ({
   near: PRESETS[p].lod[0],
   far: PRESETS[p].lod[1],
   maxAnimated: PRESETS[p].maxAnimated,
   shadows: PRESETS[p].shadowMap >= 2048,
+  impostorDist: PRESETS[p].lod[1] + IMPOSTOR_MARGIN,
 })
 /** The character half of the quality presets (plan §4.2), derived from `PRESETS`. */
 export const CHARACTER_QUALITY: Readonly<Record<CharacterPreset, CharacterQuality>> = {
@@ -144,6 +152,28 @@ export const FAR_HZ = 10
 export function animTier(dist: number, onScreen: boolean, q: CharacterQuality): AnimTier {
   if (!onScreen) return 'frozen'
   return dist < q.near ? 'full' : dist < q.far ? 'half' : 'far'
+}
+
+export type LodLevel = AnimTier | 'impostor'
+/** Impostors return to a full model only this much inside the impostor distance. */
+const IMPOSTOR_RETURN = 0.95
+
+/**
+ * Final LOD for one agent: impostor when over the animated budget or beyond `impostorDist`
+ * (with hysteresis), if impostors exist; otherwise LOD1 at the far rate. Off-screen → frozen.
+ */
+export function lodLevel(
+  dist: number,
+  onScreen: boolean,
+  q: CharacterQuality,
+  overBudget: boolean,
+  canImpostor: boolean,
+  wasImpostor: boolean,
+): LodLevel {
+  if (!onScreen) return 'frozen'
+  const limit = wasImpostor ? q.impostorDist * IMPOSTOR_RETURN : q.impostorDist
+  if (overBudget || dist >= limit) return canImpostor ? 'impostor' : 'far'
+  return animTier(dist, onScreen, q)
 }
 
 /** Whether to advance the mixer this frame (`slot` staggers half-rate agents; `pending` = un-ticked seconds). */
@@ -190,12 +220,22 @@ export function impostorCell(cam: Vec2, pos: Vec2, heading: number, cells: numbe
   return ((k % cells) + cells) % cells
 }
 
-const SIT_CLIPS = new Set<ClipName>(['SitIdle', 'SitType', 'SitThink', 'SitTalk', 'SitLaptop'])
+const SIT_CLIPS = new Set<ClipName>([
+  'SitIdle',
+  'SitType',
+  'SitThink',
+  'SitTalk',
+  'SitLaptop',
+  'SitRead',
+])
 /** Impostor pose row: 0 standing, 1 seated, 2 lounging. */
 export function poseRowOf(clip: ClipName | undefined): 0 | 1 | 2 {
   if (clip === 'LoungeSit') return 2
   return clip && SIT_CLIPS.has(clip) ? 1 : 0
 }
+
+/** Loop to play when the glb lacks `clip`: keep the posture (seated stays seated). */
+export const fallbackLoop = (clip: ClipName): ClipName => (poseRowOf(clip) ? 'SitIdle' : 'Idle')
 
 // ── Appearance ──────────────────────────────────────────────────────────────────────────────────
 export type HairStyle = 'hairA' | 'hairB' | 'hairC' | 'hairD'
@@ -290,6 +330,8 @@ export interface Motion {
   started: boolean
   stepT: number
   stepLen: number
+  /** How long the current step actually plays (a held one-shot's clip length; else `stepLen`). */
+  playLen: number
   base: Vec2
   blend: Vec2
   sep: Vec2
@@ -313,6 +355,7 @@ export const createMotion = (): Motion => ({
   started: false,
   stepT: 0,
   stepLen: 0,
+  playLen: 0,
   base: { x: 0, z: 0 },
   blend: { x: 0, z: 0 },
   sep: { x: 0, z: 0 },
@@ -326,12 +369,15 @@ export const createMotion = (): Motion => ({
 /** True while walking along a path (not turning in place): separation applies. */
 export const isWalking = (m: Motion) => m.sepWeight > 0 || (m.speed > 0 && m.clip === 'Walk')
 
+/** A one-shot's own length (step, then clip table, then defaults). */
+const oneShotLength = (s: Extract<Step, { kind: 'clip' }>, clips: ClipTable) =>
+  s.duration ?? clips[s.clip]?.duration ?? DEFAULT_CLIP_DURATIONS[s.clip] ?? 1
+
 function lengthOf(s: Step, clips: ClipTable): number {
   switch (s.kind) {
     case 'clip':
-      return s.loop
-        ? Infinity
-        : (s.duration ?? clips[s.clip]?.duration ?? DEFAULT_CLIP_DURATIONS[s.clip] ?? 1)
+      // Loops and held one-shots last until the next sequence.
+      return s.loop || s.hold ? Infinity : oneShotLength(s, clips)
     case 'move':
       return s.path.duration
     case 'face':
@@ -353,11 +399,14 @@ export function setSteps(m: Motion, steps: Step[]) {
   const unfinished =
     cur &&
     ((cur.kind === 'clip' && !cur.loop) || cur.kind === 'move' || cur.kind === 'face') &&
-    m.stepLen - m.stepT > 1e-6
+    m.playLen - m.stepT > 1e-6
   if (cur && !cutsIn && unfinished) {
     const resumes =
       cur.kind === 'clip' && first.kind === 'clip' && !first.loop && first.clip === cur.clip
-    m.queue = [cur, ...(resumes ? steps.slice(1) : steps)]
+    // A held one-shot still playing just finishes now; the new steps follow it.
+    const keep = cur.kind === 'clip' && cur.hold ? { ...cur, hold: false } : cur
+    m.stepLen = m.playLen
+    m.queue = [keep, ...(resumes ? steps.slice(1) : steps)]
     return
   }
   m.queue = [...steps]
@@ -447,7 +496,7 @@ function start(m: Motion, s: Step, clips: ClipTable, out: MotionEvent[]) {
 
 function apply(m: Motion, s: Step, clips: ClipTable, out: MotionEvent[]) {
   if (s.kind === 'clip') {
-    m.clipTime = (s.offset ?? 0) + m.stepT
+    m.clipTime = (s.offset ?? 0) + Math.min(m.stepT, m.playLen)
     return
   }
   if (s.kind === 'face') {
@@ -532,6 +581,7 @@ export function advanceMotion(
       m.started = true
       m.stepT = 0
       m.stepLen = lengthOf(s, clips)
+      m.playLen = s.kind === 'clip' && !s.loop ? oneShotLength(s, clips) : m.stepLen
       start(m, s, clips, out)
     }
     const rem = m.stepLen - m.stepT

@@ -1,6 +1,7 @@
 import type { SweepPolicy } from '../domain/agent.ts'
 import type {
   AgentRepository,
+  CapabilityRepository,
   ClaudeSettingsStore,
   Clock,
   EventPublisher,
@@ -19,6 +20,7 @@ import type {
 } from '../ports/driven.ts'
 import { ActivityService } from './activity-service.ts'
 import { AttentionService } from './attention-service.ts'
+import { CapabilityService } from './capability-service.ts'
 import { HookService } from './hook-service.ts'
 import { InboxService } from './inbox-service.ts'
 import { OfficeQueryService } from './office-query.ts'
@@ -36,6 +38,8 @@ export const DEFAULT_SWEEP_POLICY: SweepPolicy = {
 export interface OfficeDeps {
   agents: AgentRepository
   messages: MessageRepository
+  /** Adapters, skills and rules per provider (docs/capabilities.md). */
+  capabilities: CapabilityRepository
   bus: EventPublisher & EventSubscriber
   clock: Clock
   ids: IdGenerator
@@ -61,9 +65,12 @@ export type OfficeCore = ReturnType<typeof createOffice>
 export function createOffice(d: OfficeDeps) {
   const activity = new ActivityService({ ...d, policy: d.policy ?? DEFAULT_SWEEP_POLICY })
   const inbox = new InboxService(d)
-  const query = new OfficeQueryService(d)
+  const capabilities = new CapabilityService({ ...d, repo: d.capabilities })
+  const query = new OfficeQueryService({ ...d, capabilities })
   return {
     activity,
+    /** Implements ReportCapabilities; also the catalog behind snapshots. */
+    capabilities,
     inbox,
     /** Same service, narrowed to the human-facing port. */
     chat: inbox,

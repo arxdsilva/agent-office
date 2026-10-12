@@ -23,6 +23,7 @@ export const DEFAULT_CLIP_DURATIONS: Readonly<Partial<Record<ClipName, number>>>
   StandUp: 30 / 30,
   Wave: 40 / 30,
   ElevatorIn: 40 / 30,
+  ShelfPick: 60 / 30,
 }
 /** Elevator fade in/out. */
 export const FADE_S = 0.5
@@ -38,6 +39,7 @@ const SIT_LOOPS = new Set<ClipName>([
   'SitTalk',
   'SitLaptop',
   'LoungeSit',
+  'SitRead',
 ])
 const STAND_LOOPS = new Set<ClipName>([
   'Idle',
@@ -46,6 +48,7 @@ const STAND_LOOPS = new Set<ClipName>([
   'DrinkCoffee',
   'PingPong',
   'HeadScratch',
+  'StandInteract',
 ])
 const ONE_SHOTS = new Set<ClipName>([
   'TurnL90',
@@ -54,6 +57,7 @@ const ONE_SHOTS = new Set<ClipName>([
   'StandUp',
   'Wave',
   'ElevatorIn',
+  'ShelfPick',
 ])
 
 export function crossfade(from: ClipName | undefined, to: ClipName): number {
@@ -65,7 +69,14 @@ export function crossfade(from: ClipName | undefined, to: ClipName): number {
 }
 
 /** Loop clip and prop for each activity once the agent is at its target. */
-export const ACTIVITY_LOOKS: Readonly<Record<Activity, { clip: ClipName; prop?: PropName }>> = {
+export interface Look {
+  clip: ClipName
+  prop?: PropName
+  /** A one-shot that holds its last frame (the standing reader's ShelfPick). */
+  hold?: boolean
+}
+
+export const ACTIVITY_LOOKS: Readonly<Record<Activity, Look>> = {
   arriving: { clip: 'SitIdle' },
   'desk-work': { clip: 'SitType' },
   'desk-think': { clip: 'SitThink' },
@@ -78,7 +89,12 @@ export const ACTIVITY_LOOKS: Readonly<Record<Activity, { clip: ClipName; prop?: 
   cafe: { clip: 'SitIdle', prop: 'cup' },
   pingpong: { clip: 'PingPong', prop: 'paddle' },
   leaving: { clip: 'ElevatorIn' },
+  'connection-call': { clip: 'SitType' },
+  'library-call': { clip: 'SitType' },
+  'connection-visit': { clip: 'StandInteract' },
+  'library-visit': { clip: 'SitRead', prop: 'book' },
 }
+const SHELF = /\/spot:shelf:\d+$/
 
 const DESK_FOR_STATUS: Partial<Record<AgentStatus, Activity>> = {
   tool: 'desk-work',
@@ -87,13 +103,16 @@ const DESK_FOR_STATUS: Partial<Record<AgentStatus, Activity>> = {
 }
 
 /** The loop for an intent: arrivals end in the status' desk loop; hot desks at the cafe use a laptop. */
-export function lookFor(intent: Intent, status?: AgentStatus): { clip: ClipName; prop?: PropName } {
+export function lookFor(intent: Intent, status?: AgentStatus): Look {
   const activity =
     intent.activity === 'arriving'
       ? ((status && DESK_FOR_STATUS[status]) ?? 'desk-idle')
       : intent.activity
   if (activity === 'desk-work' && /\/seat:cafe:/.test(intent.target))
     return { clip: 'SitLaptop', prop: 'laptop' }
+  // No reading seat: read standing at the shelf, holding ShelfPick's last frame (book at the chest).
+  if (activity === 'library-visit' && SHELF.test(intent.target))
+    return { clip: 'ShelfPick', prop: 'book', hold: true }
   return ACTIVITY_LOOKS[activity]
 }
 
@@ -133,12 +152,24 @@ export function choreograph(from: AgentPose, intent: Intent, ctx: ChoreoContext)
   let pos = from.pos
   let heading = from.heading
   let speed = from.speed
-  const target = layout.anchors.get(intent.target)
+  // Shared shelf spots: the second person stands `lateral` m to the right (contract §4).
+  const anchorOf = (id: string): WorldAnchor | undefined => {
+    const a = layout.anchors.get(id)
+    if (!a || !intent.lateral || !SHELF.test(id)) return a
+    const r = { x: -Math.cos(a.heading) * intent.lateral, z: Math.sin(a.heading) * intent.lateral }
+    return {
+      ...a,
+      pos: { x: a.pos.x + r.x, z: a.pos.z + r.z },
+      approach: { x: a.approach.x + r.x, z: a.approach.z + r.z },
+    }
+  }
+  const target = anchorOf(intent.target)
   const look = lookFor(intent, ctx.status)
 
-  const clip = (c: ClipName, loop: boolean) => {
+  const clip = (c: ClipName, loop: boolean, hold = false) => {
     const s: Step = { kind: 'clip', clip: c, loop, fadeIn: crossfade(last, c) }
     if (!loop) s.duration = dur(c)
+    if (hold) s.hold = true
     if (at) s.anchor = at
     steps.push(s)
     last = c
@@ -192,7 +223,7 @@ export function choreograph(from: AgentPose, intent: Intent, ctx: ChoreoContext)
     if (want === 'stand' && posture !== 'stand') clip('StandUp', false)
     if (want !== 'stand' && posture === 'stand') clip('SitDown', false)
     propsTo(look.prop ? [look.prop] : [])
-    clip(look.clip, true)
+    clip(look.clip, !look.hold, look.hold)
     return steps
   }
 
@@ -251,6 +282,13 @@ export function choreograph(from: AgentPose, intent: Intent, ctx: ChoreoContext)
   if (at === target.id && speed === 0) return settle()
   propsTo([])
   if (posture !== 'stand') clip('StandUp', false)
+  // A library visit fetches the book at the shelf first, then walks to the reading seat with it.
+  if (intent.activity === 'library-visit')
+    for (const w of (intent.via ?? []).map(anchorOf).filter((a) => !!a)) {
+      walkTo(w)
+      propsTo(['book'])
+      clip('ShelfPick', false)
+    }
   walkTo(target)
   return settle()
 }
@@ -328,6 +366,13 @@ export function poseAt(from: AgentPose, steps: Step[], t: number): AgentPose {
           return done()
         }
         const d = s.duration ?? DEFAULT_CLIP_DURATIONS[s.clip] ?? 1
+        if (s.hold && t >= clock + d) {
+          // Held on the last frame until new steps arrive.
+          p.clipTime = (s.offset ?? 0) + d
+          p.clipRemaining = 0
+          p.posture = 'stand'
+          return done()
+        }
         if (t < clock + d) {
           p.clipTime = (s.offset ?? 0) + Math.max(0, t - clock)
           p.clipRemaining = clock + d - t
@@ -354,7 +399,7 @@ export function stepsDuration(steps: Step[]): number {
     else if (s.kind === 'move') clock += s.path.duration
     else if (s.kind === 'fade') end = Math.max(end, clock + s.duration)
     else if (s.kind === 'clip') {
-      if (s.loop) return Infinity
+      if (s.loop || s.hold) return Infinity
       clock += s.duration ?? DEFAULT_CLIP_DURATIONS[s.clip] ?? 1
     }
   }

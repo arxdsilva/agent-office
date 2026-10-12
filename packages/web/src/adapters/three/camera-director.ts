@@ -33,6 +33,7 @@ interface Flight {
   toTarget: THREE.Vector3
   toPos: THREE.Vector3
   t: number
+  duration: number
 }
 
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
@@ -59,8 +60,9 @@ export function bookmarksFor(layout: BuildingLayout, manifest: Manifest): Bookma
     out.push({
       id: 'atrium',
       label: 'Atrium',
-      target: v3(c, 0.5),
-      position: v3({ x: c.x + 10, z: c.z + 24 }, 16),
+      // From high above the entrance side, looking down into the atrium toward Main Street.
+      target: v3({ x: c.x, z: c.z + 3 }, 0),
+      position: v3({ x: c.x + 10, z: c.z - 26 }, 30),
     })
   }
   const streets = layout.placements.filter((p) => p.kind === 'street')
@@ -86,6 +88,19 @@ export function bookmarksFor(layout: BuildingLayout, manifest: Manifest): Bookma
         .addScaledVector(dir, 13)
         .add(new THREE.Vector3(0, 0, -9)),
     })
+  }
+  // Capability rooms per wing (when the manifest has them).
+  for (const p of layout.placements.filter((x) => x.kind === 'wing')) {
+    const key = `${p.provider}:${p.annex ?? 0}`
+    const name = p.label ?? p.provider ?? p.id
+    const rooms: [string, string, RegExp][] = [
+      ['adapters', 'Adapters', /^spot:station:/],
+      ['library', 'Library', /^(seat:reading|spot:shelf):/],
+    ]
+    for (const [id, label, re] of rooms) {
+      const b = anchorBookmark(layout, re, 9, p.id)
+      if (b) out.push({ ...b, id: `${id}:${key}`, label: `${label} · ${name}` })
+    }
   }
   return out
 }
@@ -119,8 +134,9 @@ export function anchorBookmark(
   return {
     id: `anchors:${pattern.source}`,
     label: pattern.source,
-    target: v3(c, 0.8),
-    position: v3(c, distance * 0.9).addScaledVector(dir, distance * 0.75),
+    // Steep enough to see into a walled room over its partitions (walls are 3.6 m).
+    target: v3(c, 0.6),
+    position: v3(c, distance * 1.15).addScaledVector(dir, distance * 0.5),
   }
 }
 
@@ -138,6 +154,7 @@ export class CameraDirector {
   private move = new THREE.Vector3()
   private forward = new THREE.Vector3()
   private right = new THREE.Vector3()
+  private side = new THREE.Vector3()
   private delta = new THREE.Vector3()
   private live = new THREE.Vector3()
 
@@ -163,7 +180,7 @@ export class CameraDirector {
   }
 
   /** Eases to a bookmark (0.8 s, ease-in-out cubic) and stops following. */
-  flyTo(b: Pick<Bookmark, 'target' | 'position'>): void {
+  flyTo(b: Pick<Bookmark, 'target' | 'position'>, seconds = FOCUS_S): void {
     if (this.mode === 'walk') this.exitWalk()
     this.follow = null
     this.flight = {
@@ -172,11 +189,13 @@ export class CameraDirector {
       toTarget: b.target.clone(),
       toPos: b.position.clone(),
       t: 0,
+      duration: Math.max(0.05, seconds),
     }
   }
 
   /** Jumps without animation (first frame, screenshots). */
   jumpTo(b: Pick<Bookmark, 'target' | 'position'>): void {
+    if (this.mode === 'walk') this.exitWalk()
     this.follow = null
     this.flight = null
     this.orbit.target.copy(b.target)
@@ -185,15 +204,15 @@ export class CameraDirector {
   }
 
   /** Focus on a moving point (6 m away), then keep following it smoothly until cleared. */
-  focusOn(get: (() => THREE.Vector3 | undefined) | null): void {
+  focusOn(get: (() => THREE.Vector3 | undefined) | null, distance = FOLLOW_DISTANCE): void {
     this.follow = get
     const p = get?.()
     if (!get || !p) return
     if (this.mode === 'walk') this.exitWalk()
-    const to = p.clone().setY(1)
+    const to = p.clone().setY(Math.max(1, p.y))
     const offset = this.camera.position.clone().sub(this.orbit.target)
     offset.y = Math.max(offset.y, offset.length() * 0.45)
-    offset.setLength(FOLLOW_DISTANCE)
+    offset.setLength(distance)
     this.followPos.copy(to)
     this.flight = {
       fromTarget: this.orbit.target.clone(),
@@ -201,6 +220,7 @@ export class CameraDirector {
       toTarget: to,
       toPos: to.clone().add(offset),
       t: 0,
+      duration: FOCUS_S,
     }
   }
 
@@ -222,6 +242,20 @@ export class CameraDirector {
     this.camera.lookAt(from.x + look.x, EYE_HEIGHT, from.z + look.z)
     this.setMode('walk')
     this.walk.lock()
+  }
+
+  /** Walk mode at a given spot and heading without pointer lock (capture scripts). */
+  walkAt(pos: THREE.Vector3, heading: number): void {
+    if (this.mode !== 'walk') {
+      this.saved.position.copy(this.camera.position)
+      this.saved.target.copy(this.orbit.target)
+    }
+    this.follow = null
+    this.flight = null
+    this.orbit.enabled = false
+    this.camera.position.set(pos.x, EYE_HEIGHT, pos.z)
+    this.camera.lookAt(pos.x + Math.sin(heading), EYE_HEIGHT, pos.z + Math.cos(heading))
+    this.setMode('walk')
   }
 
   exitWalk(): void {
@@ -246,8 +280,11 @@ export class CameraDirector {
     if (this.move.lengthSq() > 0) {
       this.move.setLength(speed * dt)
       // Resolve per axis so you slide along walls and furniture instead of sticking.
+      const x0 = p.x
+      const z0 = p.z
       if (!blocked(p.x + this.move.x, p.z, colliders)) p.x += this.move.x
       if (!blocked(p.x, p.z + this.move.z, colliders)) p.z += this.move.z
+      if (p.x === x0 && p.z === z0) this.doorwayAssist(p, colliders, speed * dt)
       this.bobPhase += ((speed * dt) / STEP_LENGTH) * Math.PI
     } else {
       // Settle back to eye height at the nearest step boundary.
@@ -257,12 +294,31 @@ export class CameraDirector {
     p.y = EYE_HEIGHT + Math.abs(Math.sin(this.bobPhase)) * BOB_AMPLITUDE * 2 - BOB_AMPLITUDE
   }
 
+  /**
+   * Doorway auto-step: walking into a door jamb, look sideways (up to 0.5 m) for a gap the move
+   * fits through and slide toward it, so you don't have to aim at the opening exactly.
+   */
+  private doorwayAssist(p: THREE.Vector3, colliders: WorldBox[], step: number): void {
+    this.side.set(-this.move.z, 0, this.move.x).normalize()
+    for (const off of [0.1, 0.2, 0.3, 0.4, 0.5])
+      for (const sign of [1, -1]) {
+        const x = p.x + this.side.x * off * sign
+        const z = p.z + this.side.z * off * sign
+        if (blocked(x, z, colliders) || blocked(x + this.move.x, z + this.move.z, colliders))
+          continue
+        const k = Math.min(off, step) * sign
+        p.x += this.side.x * k
+        p.z += this.side.z * k
+        return
+      }
+  }
+
   private updateOrbit(dt: number): void {
     const live = this.follow?.()
-    if (live) this.live.copy(live).setY(1)
+    if (live) this.live.copy(live).setY(Math.max(1, live.y))
     if (this.flight) {
       const f = this.flight
-      f.t = Math.min(1, f.t + dt / FOCUS_S)
+      f.t = Math.min(1, f.t + dt / f.duration)
       const k = easeInOutCubic(f.t)
       if (live) {
         // The target keeps walking during the focus: aim at where it is now.

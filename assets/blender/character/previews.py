@@ -26,8 +26,9 @@ from mathutils import Vector  # noqa: E402
 import char_common as C  # noqa: E402
 from char_model import hex_rgba  # noqa: E402
 
-PROP_OF = {'SitLaptop': 'laptop', 'PhoneCall': 'phone', 'DrinkCoffee': 'cup', 'PingPong': 'paddle'}
-SIT = {'SitDown', 'StandUp', 'SitIdle', 'SitType', 'SitThink', 'SitTalk', 'SitLaptop'}
+PROP_OF = {'SitLaptop': 'laptop', 'PhoneCall': 'phone', 'DrinkCoffee': 'cup', 'PingPong': 'paddle',
+           'SitRead': 'book', 'ShelfPick': 'book'}
+SIT = {'SitDown', 'StandUp', 'SitIdle', 'SitType', 'SitThink', 'SitTalk', 'SitLaptop', 'SitRead'}
 
 
 def args():
@@ -152,7 +153,24 @@ def furniture():
     box('pv-sofa-back', (0, ly + 0.36, 0.48), (1.8, 0.2, 0.96), fabric, sofa)
     box('pv-sofa-arm', (-0.98, ly + 0.05, 0.3), (0.18, 0.76, 0.6), fabric, sofa)
     box('pv-sofa-arm', (0.98, ly + 0.05, 0.3), (0.18, 0.76, 0.6), fabric, sofa)
-    return chair, desk, sofa
+    # tall touch screen (StandInteract) and a bookshelf (ShelfPick)
+    screen = bpy.data.collections.new('pv-screen')
+    bpy.context.scene.collection.children.link(screen)
+    sx, sy, sz = C.SCREEN_CENTER
+    box('pv-screen', (sx, sy - 0.03, sz), (1.0, 0.04, 0.62), mat('pv-glass', '#1B2433', 0.2), screen)
+    box('pv-stand', (sx, sy - 0.05, (sz - 0.31) / 2), (0.12, 0.06, sz - 0.31), grey, screen)
+    shelf = bpy.data.collections.new('pv-shelf')
+    bpy.context.scene.collection.children.link(shelf)
+    bx, by, bz = C.SHELF_BOOK
+    back = by - 0.17
+    for z in (0.4, 0.9, bz - 0.12, 1.95):
+        box('pv-board', (0, back + 0.15, z - 0.012), (1.0, 0.3, 0.024), wood, shelf)
+    box('pv-shelf-back', (0, back, 1.0), (1.0, 0.02, 2.0), wood, shelf)
+    for i, x in enumerate((-0.4, -0.33, -0.26, 0.1, 0.17, 0.24, 0.31, 0.38)):
+        h = 0.2 + 0.03 * (i % 3)
+        box('pv-shelfbook', (x, back + 0.13, bz - 0.108 + h / 2), (0.05, 0.2, h),
+            mat(f'pv-b{i}', ('#C0504D', '#4F81BD', '#9BBB59', '#8064A2')[i % 4], 0.6), shelf)
+    return chair, desk, sofa, screen, shelf
 
 
 def look_at(cam, eye, target):
@@ -241,7 +259,7 @@ def main():
         spec.loader.exec_module(mod)
         mod.build_scene('draft')
     cam, stage = setup_stage()
-    chair, desk, sofa = furniture()
+    chair, desk, sofa, screen, shelf = furniture()
     arm, acc, props, lod = char_objects()
     for o in lod:
         o.hide_render = True
@@ -250,7 +268,9 @@ def main():
 
     def furniture_for(clip):
         chair.hide_render = clip not in SIT
-        desk.hide_render = clip not in SIT or clip == 'SitLaptop'
+        desk.hide_render = clip not in SIT or clip in ('SitLaptop', 'SitRead')
+        screen.hide_render = clip != 'StandInteract'
+        shelf.hide_render = clip != 'ShelfPick'
         sofa.hide_render = clip != 'LoungeSit'
 
     if not a.no_turntable:
@@ -304,6 +324,8 @@ def main():
                     look_at(cam, (3.4, -0.5, 1.0), (0, 0, 0.88))
                 elif name in SIT or name == 'LoungeSit':
                     look_at(cam, (3.1, -1.3, 1.45), (0, 0.08, 0.72))
+                elif name in ('StandInteract', 'ShelfPick'):
+                    look_at(cam, (2.4, -0.2, 1.45), (0, -0.25, 1.05))
                 elif name in ('TurnL90', 'TurnR90', 'ElevatorIn'):
                     look_at(cam, (2.2, -3.3, 2.3), (0, 0, 0.75))
                 else:

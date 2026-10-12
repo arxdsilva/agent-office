@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js'
 import type { ClipName } from '../../../app/office-types.ts'
+import { SlotBasicMaterial, SlotMaterial, paintSlots, type BodyLayout } from './slots.ts'
 
 export const IMPOSTOR_CELLS = 8
 /** Pose rows (see `poseRowOf`). */
@@ -55,6 +56,8 @@ export interface ImpostorBakeInput {
   clips: ReadonlyMap<string, THREE.AnimationClip>
   /** Character height (m). */
   height: number
+  /** Slot layout of merged bodies (see slots.ts). */
+  layout: BodyLayout
   /** Prepares a bake clone: hide variants, show the default hair. */
   dress(model: THREE.Object3D): void
 }
@@ -128,13 +131,18 @@ export class Impostors {
     const neutral = (m: THREE.Material) => {
       const c = m.clone() as THREE.Material & { color?: THREE.Color }
       if (m.name === 'shirt') c.color?.setHex(0xffffff)
+      if (c instanceof SlotMaterial)
+        paintSlots(c, input.layout, (slot) => (slot === 'shirt' ? 0xffffff : undefined))
       owned.push(c)
       return c
     }
     const white = new THREE.MeshBasicMaterial({ color: 0xffffff })
     const black = new THREE.MeshBasicMaterial({ color: 0x000000 })
-    owned.push(white, black)
-    const mask = (m: THREE.Material) => (m.name === 'shirt' ? white : black)
+    const bodyMask = new SlotBasicMaterial()
+    paintSlots(bodyMask, input.layout, (slot) => (slot === 'shirt' ? 0xffffff : 0x000000))
+    owned.push(white, black, bodyMask)
+    const mask = (m: THREE.Material) =>
+      m instanceof SlotMaterial ? bodyMask : m.name === 'shirt' ? white : black
     const colorMats = saved.map((s) => (Array.isArray(s) ? s.map(neutral) : neutral(s)))
     const maskMats = saved.map((s) => (Array.isArray(s) ? s.map(mask) : mask(s)))
 

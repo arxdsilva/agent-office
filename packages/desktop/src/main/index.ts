@@ -143,7 +143,8 @@ async function main(): Promise<void> {
 
   const saved = (await instance.office.settings.get()).windowBounds
   if (saved) win.setBounds(saved)
-  await win.loadURL(rendererUrl)
+  // Capture scripts only (scripts/screenshots.mjs, perf.mjs): exposes the renderer's camera/stats hook.
+  await win.loadURL(process.env.AGENT_OFFICE_DEBUG === '1' ? `${rendererUrl}?debug=1` : rendererUrl)
 }
 
 app.on('second-instance', () => {

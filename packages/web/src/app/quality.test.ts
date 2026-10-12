@@ -12,11 +12,13 @@ function run(g: ReturnType<typeof createGovernor>, fps: number, seconds: number)
 }
 
 describe('quality presets', () => {
-  it('match the plan table (§4.2)', () => {
+  it('follow the plan table (§4.2), with GTAO moved up a tier', () => {
     expect(PRESETS.low).toMatchObject({ shadowMap: 0, gtao: 'off', bloom: false, smaa: false })
-    expect(PRESETS.medium).toMatchObject({ shadowMap: 1024, gtao: 'half', bloom: true, smaa: true })
-    expect(PRESETS.high).toMatchObject({ shadowMap: 2048, gtao: 'full', bloom: true, smaa: true })
-    expect(PRESETS.ultra).toMatchObject({ shadowMap: 4096, gtao: 'high', bloom: true, smaa: true })
+    // GTAO re-renders the whole scene for normals; the lightmaps already carry baked AO, so it is
+    // reserved for the top presets (measured: it doubled draw calls and triangles at Medium).
+    expect(PRESETS.medium).toMatchObject({ shadowMap: 1024, gtao: 'off', bloom: true, smaa: true })
+    expect(PRESETS.high).toMatchObject({ shadowMap: 2048, gtao: 'half', bloom: true, smaa: true })
+    expect(PRESETS.ultra).toMatchObject({ shadowMap: 4096, gtao: 'full', bloom: true, smaa: true })
     expect(PRESETS.low.lod).toEqual([8, 20])
     expect(PRESETS.medium.lod).toEqual([15, 35])
     expect(PRESETS.high.lod).toEqual([20, 45])

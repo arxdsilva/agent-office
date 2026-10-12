@@ -85,6 +85,7 @@ export class DomPanel implements PanelView {
       rows.push(el('dt', 'Parent'), dd)
     }
     byId('p-meta').replaceChildren(...rows)
+    renderChips(byId('p-used'), vm.used)
 
     const hint = byId('p-hint')
     hint.hidden = !vm.hint
@@ -121,4 +122,25 @@ export class DomPanel implements PanelView {
     const text = this.input.value.trim()
     if (text) void this.sendFn(text)
   }
+}
+
+/** "Connections used" / "Skills & rules used" rows of colored chips with use counts. */
+function renderChips(root: HTMLElement, used: PanelVM['used']): void {
+  root.hidden = !used
+  if (!used) return root.replaceChildren()
+  const group = (title: string, chips: NonNullable<PanelVM['used']>['adapters']) => {
+    if (!chips.length) return []
+    const list = el('ul', undefined, 'chips')
+    for (const c of chips) {
+      const li = el('li', `${c.label} · ${c.count}`, 'chip')
+      li.style.setProperty('--chip', c.color)
+      li.dataset.capabilityId = c.id
+      list.append(li)
+    }
+    return [el('h3', title), list]
+  }
+  root.replaceChildren(
+    ...group('Connections used', used.adapters),
+    ...group('Skills & rules used', used.library),
+  )
 }

@@ -12,10 +12,21 @@ import { byProviderAndTopic, type Agent } from '@agent-office/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureManifest } from './app/__fixtures__/manifest.ts'
 import { LEAVE_MS } from './app/behavior.ts'
-import type { AgentPlan, BuildingLayout } from './app/office-types.ts'
+import type { AgentPlan, BuildingLayout, Link } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 import { createController } from './controller.ts'
-import type { BannerView, HudView, PanelView, SceneView, SettingsView } from './ports.ts'
+import { cap } from './app/__fixtures__/capabilities.ts'
+import type { CapabilityPanelVM } from './app/capability-vm.ts'
+import type {
+  BannerView,
+  CapabilityPanelView,
+  HudView,
+  PanelView,
+  CapabilityRef,
+  SceneSurfaces,
+  SceneView,
+  SettingsView,
+} from './ports.ts'
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id,
@@ -112,6 +123,10 @@ function fakeViews() {
     fail: Error | null
     buildings: BuildingLayout[]
     directs: { plans: Map<string, AgentPlan>; departed: string[] }[]
+    links: Link[][]
+    surfaces: SceneSurfaces | null
+    focused: CapabilityRef | null
+    highlighted: string | null
     selected: string | null
     qualities: GraphicsQuality[]
     last(): Map<string, AgentPlan>
@@ -120,6 +135,10 @@ function fakeViews() {
     fail: null,
     buildings: [],
     directs: [],
+    links: [],
+    surfaces: null,
+    focused: null,
+    highlighted: null,
     selected: null,
     qualities: [],
     async load(url) {
@@ -135,6 +154,19 @@ function fakeViews() {
     },
     last() {
       return this.directs.at(-1)?.plans ?? new Map()
+    },
+    setLinks(links) {
+      this.links.push(links)
+    },
+    setSurfaces(s) {
+      this.surfaces = s
+    },
+    onPickCapability: on('pickCapability'),
+    focusCapability(ref) {
+      this.focused = ref
+    },
+    highlightLinks(id) {
+      this.highlighted = id
     },
     setQuality(q) {
       this.qualities.push(q)
@@ -198,13 +230,28 @@ function fakeViews() {
     onCheckUpdates: on('check'),
     onInstallUpdate: on('installUpdate'),
   }
+  const capabilityPanel: CapabilityPanelView & { vm: CapabilityPanelVM | null } = {
+    vm: null,
+    open(vm) {
+      this.vm = vm
+    },
+    render(vm) {
+      this.vm = vm
+    },
+    close() {
+      this.vm = null
+    },
+    onClose: on('capClose'),
+    onSelectAgent: on('capSelectAgent'),
+    onToggleLinks: on('capToggleLinks'),
+  }
   const banner: BannerView & { shown: Banner | null } = {
     shown: null,
     show(b) {
       this.shown = b
     },
   }
-  return { scene, panel, hud, settings, banner, handlers }
+  return { scene, panel, hud, settings, banner, capabilityPanel, handlers }
 }
 
 async function setup(initial?: Settings, prepare?: (v: ReturnType<typeof fakeViews>) => void) {
@@ -261,11 +308,123 @@ describe('controller', () => {
   })
 
   it('applies pushed messages and directs newcomers right away (they arrive by elevator)', async () => {
-    const { listeners, hud, scene } = await setup()
+    const { listeners, hud, scene, advance } = await setup()
+    advance(1000)
     listeners.message[0]!({ type: 'upsert', agent: agent('b') })
     expect(hud.vm?.count).toBe('2 agents')
     expect(scene.last().get('b')).toMatchObject({ intent: { activity: 'arriving' } })
     expect(scene.last().get('b')!.steps![0]!.kind).toBe('teleport')
+  })
+
+  it('a burst of messages runs the director at most once per tick (150 busy agents)', async () => {
+    const { listeners, scene, hud, advance } = await setup()
+    advance(1000)
+    const before = scene.directs.length
+    for (let i = 0; i < 50; i++) listeners.message[0]!({ type: 'upsert', agent: agent(`n${i}`) })
+    // The first message is directed at once; the rest wait for the next 4 Hz tick.
+    expect(scene.directs.length).toBe(before + 1)
+    expect(hud.vm?.count).toBe('51 agents')
+    advance(250)
+    expect(scene.directs.length).toBe(before + 2)
+    expect(scene.last().size).toBe(51)
+  })
+
+  it('forwards links and capability surfaces with every director update', async () => {
+    const { listeners, scene, advance } = await setup()
+    listeners.message[0]!({
+      type: 'capabilities',
+      provider: 'p',
+      capabilities: [cap('fs', { provider: 'p', label: 'Filesystem', active: ['a'] })],
+    })
+    advance(250)
+    expect(scene.links.length).toBeGreaterThan(0)
+    const s = scene.surfaces!.byProvider.get('p')!
+    expect(s.stations[0]).toMatchObject({ id: 'fs', glow: 1, vm: { title: 'Filesystem' } })
+  })
+
+  it('a clicked station opens the Capability panel; "used by" selects the agent', async () => {
+    const { listeners, handlers, capabilityPanel, panel, scene, advance } = await setup()
+    listeners.message[0]!({
+      type: 'capabilities',
+      provider: 'p',
+      capabilities: [cap('fs', { provider: 'p', label: 'Filesystem', active: ['a'] })],
+    })
+    advance(250)
+    handlers.pick!('a')
+    handlers.pickCapability!({ provider: 'p', id: 'fs' })
+    // One side panel at a time: the agent's chat closes.
+    expect(panel.vm).toBeNull()
+    expect(capabilityPanel.vm).toMatchObject({
+      title: 'Filesystem',
+      usedBy: [{ id: 'a', name: 'Ada' }],
+    })
+    // It stays live while open.
+    listeners.message[0]!({
+      type: 'capabilities',
+      provider: 'p',
+      capabilities: [cap('fs', { provider: 'p', label: 'Filesystem', calls: 9 })],
+    })
+    advance(250)
+    expect(capabilityPanel.vm?.meta[0]).toEqual(['Calls', '9'])
+    handlers.capSelectAgent!('a')
+    expect(capabilityPanel.vm).toBeNull()
+    expect(panel.vm?.name).toBe('Ada')
+    expect(scene.selected).toBe('a')
+    // Overflow aggregates and unknown ids open nothing.
+    handlers.pickCapability!({ provider: 'p', id: '+more' })
+    handlers.pickCapability!({ provider: 'p', id: 'nope' })
+    expect(capabilityPanel.vm).toBeNull()
+  })
+
+  it('a clicked capability brings the camera to it; "Show links" highlights only its links', async () => {
+    const { listeners, handlers, scene, capabilityPanel, advance } = await setup()
+    listeners.message[0]!({
+      type: 'capabilities',
+      provider: 'p',
+      capabilities: [cap('fs', { provider: 'p', label: 'Filesystem', active: ['a'] })],
+    })
+    advance(250)
+    handlers.pickCapability!({ provider: 'p', id: 'fs' })
+    expect(scene.focused).toEqual({ provider: 'p', id: 'fs' })
+    expect(capabilityPanel.vm?.showLinks).toBe(false)
+    expect(scene.highlighted).toBeNull()
+
+    handlers.capToggleLinks!(true)
+    expect(scene.highlighted).toBe('fs')
+    expect(capabilityPanel.vm?.showLinks).toBe(true)
+    handlers.capToggleLinks!(false)
+    expect(scene.highlighted).toBeNull()
+
+    // Closing the panel (or selecting an agent) clears the highlight and the camera focus.
+    handlers.capToggleLinks!(true)
+    handlers.capClose!()
+    expect(scene.highlighted).toBeNull()
+    expect(scene.focused).toBeNull()
+  })
+
+  it("the agent panel lists the capabilities it used and says what it's calling", async () => {
+    const { listeners, handlers, panel, advance } = await setup()
+    listeners.message[0]!({
+      type: 'upsert',
+      agent: agent('a', { name: 'Ada', status: 'tool', tool: 'search' }),
+    })
+    const use = (active: string[]) =>
+      listeners.message[0]!({
+        type: 'capabilities',
+        provider: 'p',
+        capabilities: [cap('mcp:mail', { provider: 'p', label: 'Mail', active })],
+      })
+    use(['a'])
+    advance(250)
+    use([])
+    advance(250)
+    use(['a'])
+    advance(250)
+    handlers.pick!('a')
+    expect(panel.vm?.used?.adapters).toEqual([
+      { id: 'mcp:mail', label: 'Mail', count: 2, color: '#EC4899' },
+    ])
+    expect(panel.vm?.activity).toMatch(/^Calling Mail/)
   })
 
   it('walks removed agents out, then reports them departed', async () => {
