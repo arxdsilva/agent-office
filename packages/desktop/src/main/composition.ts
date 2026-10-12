@@ -3,7 +3,8 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, sep } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { abbreviateForSnippet, displayPathOf } from './display-path'
 import {
   buildHttpApi,
   ClaudeCapabilityDiscovery,
@@ -156,12 +157,6 @@ const TEST_EVENT = {
 } as const
 const NO_STATS: TailerStats = { projectsDirFound: false, activeSessions: 0 }
 
-/** Shows fixed locations as '~/…'; anything outside home only by its basename. */
-/** `~`-abbreviates paths under home; others (a user-configured AGENT_OFFICE_HOME) stay whole so snippets work. */
-function abbreviate(path: string, home: string): string {
-  return path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path
-}
-
 const MAX_PICK = 10
 
 /**
@@ -181,7 +176,12 @@ function createContextRegistry(o: { dialog?: Shell['dialog']; home: string }): C
     if (!ref) {
       ref = newRef()
       byPath.set(`${kind}:${path}`, ref)
-      byRef.set(ref, { path, kind, label: basename(path) || path, hint: abbreviate(path, o.home) })
+      byRef.set(ref, {
+        path,
+        kind,
+        label: basename(path) || path,
+        hint: displayPathOf(path, o.home),
+      })
     }
     const { label, hint } = byRef.get(ref)!
     return { ref, kind, label, hint }
@@ -406,7 +406,7 @@ export function compose(o: ComposeOptions) {
       ['copilot', acp.copilot.runner],
     ]),
     providerHookTargets: buildHookTargets(o, processEnv, home, hookUrl),
-    displayPath: (p) => abbreviate(p, home),
+    displayPath: (p) => displayPathOf(p, home),
   })
   const sessions = office.sessions!
 
@@ -451,14 +451,14 @@ export function compose(o: ComposeOptions) {
         port: backend?.server?.port ?? s.port,
         listening: !!backend?.server,
         portBusy,
-        tokenFile: abbreviate(join(env.home, 'token'), home),
+        tokenFile: abbreviateForSnippet(join(env.home, 'token'), home),
       },
       claude: {
         enabled: s.claudeAdapter,
         ...(over.claudeAdapter !== undefined && {
           override: over.claudeAdapter ? ('on' as const) : ('off' as const),
         }),
-        projectsDir: abbreviate(env.claudeProjectsDir, home),
+        projectsDir: abbreviateForSnippet(env.claudeProjectsDir, home),
         ...stats,
       },
       hook,

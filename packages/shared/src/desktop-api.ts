@@ -8,6 +8,8 @@ import {
   type ChatMessage,
   type ServerMessage,
 } from './protocol.ts'
+import { MemoryIdSchema, ProjectIdSchema, RepoRefSchema } from './projects.ts'
+import type * as P from './projects.ts'
 import {
   ModeIdSchema,
   ProviderIdSchema,
@@ -83,6 +85,12 @@ export const SettingsSchema = z.object({
   hardwareAcceleration: z.boolean().default(true),
   /** Optional extra view: '3d' (the office, default) or 'pixel' (the 2D RPG mode). Applied live. */
   viewMode: z.enum(VIEW_MODES).default('3d'),
+  /** What the window opens on: 'auto' = the Overview once a project exists, else the Office. */
+  startView: z.enum(['auto', 'overview', 'office']).default('auto'),
+  /** Shell layout preferences (applied live). */
+  layout: z
+    .object({ sidebarCollapsed: z.boolean().default(false) })
+    .default({ sidebarCollapsed: false }),
   windowBounds: WindowBoundsSchema.optional(),
   /**
    * Per-provider integration switches (docs/provider-integrations.md). Missing = the provider's
@@ -145,22 +153,33 @@ export interface ContextRef {
   hint: string
 }
 
-export const NewSessionArgsSchema = z.object({
-  /** Which runtime starts the session (needs the provider's `launch` capability). */
-  provider: ProviderIdSchema.default('claude-code'),
-  /** Must resolve to a picked folder. */
-  folder: ContextRefIdSchema,
-  name: z.string().trim().min(1).max(40).optional(),
-  model: z.string().min(1).max(80).optional(),
-  mode: PermissionModeSchema.default('default'),
-  /** Provider-specific mode (Codex presets, ACP modes); Claude Code uses `mode`. */
-  modeId: ModeIdSchema.optional(),
-  extraFolders: z.array(ContextRefIdSchema).max(5).default([]),
-  chrome: z.boolean().default(false),
-  text: z.string().min(1).max(MAX_MESSAGE_CHARS),
-  context: z.array(ContextRefIdSchema).max(10).optional(),
-  use: z.array(UseIdSchema).max(5).optional(),
-})
+export const NewSessionArgsSchema = z
+  .object({
+    /** Which runtime starts the session (needs the provider's `launch` capability). */
+    provider: ProviderIdSchema.default('claude-code'),
+    /** Must resolve to a picked folder (optional when `repo` names a project repository). */
+    folder: ContextRefIdSchema.optional(),
+    /** The project the session belongs to (preselected inside a project). */
+    projectId: ProjectIdSchema.optional(),
+    /** One of the project's repositories, used as the working directory. */
+    repo: RepoRefSchema.optional(),
+    /** Context bundle items (memory ids) the user kept in the preview; sent as a data block. */
+    context_memories: z.array(MemoryIdSchema).max(40).optional(),
+    name: z.string().trim().min(1).max(40).optional(),
+    model: z.string().min(1).max(80).optional(),
+    mode: PermissionModeSchema.default('default'),
+    /** Provider-specific mode (Codex presets, ACP modes); Claude Code uses `mode`. */
+    modeId: ModeIdSchema.optional(),
+    extraFolders: z.array(ContextRefIdSchema).max(5).default([]),
+    chrome: z.boolean().default(false),
+    text: z.string().min(1).max(MAX_MESSAGE_CHARS),
+    context: z.array(ContextRefIdSchema).max(10).optional(),
+    use: z.array(UseIdSchema).max(5).optional(),
+  })
+  .refine((a) => a.folder !== undefined || a.repo !== undefined, {
+    path: ['folder'],
+    message: 'a folder or a project repository is required',
+  })
 export type NewSessionArgs = z.input<typeof NewSessionArgsSchema>
 export const SessionCallSchema = z.object({ agentId: z.string().min(1).max(200) })
 export const SetModeArgsSchema = SessionCallSchema.extend({ mode: PermissionModeSchema })
@@ -299,6 +318,36 @@ export interface AgentOfficeApi {
     power(): Promise<PowerState>
     /** Main reports the window hidden/minimized (false) or shown/restored (true): the power saver. */
     onWindowVisibility(cb: (visible: boolean) => void): () => void
+  }
+  /** Projects-first workspace (docs/projects.md): projects, sessions, memory, context, handoffs. */
+  projects: {
+    overview(): Promise<P.GlobalOverview>
+    list(): Promise<P.ProjectSummary[]>
+    dashboard(projectId: string): Promise<P.ProjectDashboard>
+    create(args: P.NewProjectArgs): Promise<P.ProjectSummary>
+    update(args: z.input<typeof P.UpdateProjectArgsSchema>): Promise<P.ProjectSummary>
+    /** Adds picked folders (`ctx_` refs) as repositories. */
+    addRepos(projectId: string, folders: string[]): Promise<P.ProjectSummary>
+    removeRepo(projectId: string, repo: string): Promise<P.ProjectSummary>
+    sessions(args: z.input<typeof P.SessionListArgsSchema>): Promise<P.SessionSummary[]>
+    messages(
+      args: z.input<typeof P.SessionMessagesArgsSchema>,
+    ): Promise<{ messages: P.SessionMessageView[]; more: boolean }>
+    assign(sessionId: string, projectId: string | null): Promise<P.SessionSummary>
+    memories(args: z.input<typeof P.MemoryListArgsSchema>): Promise<P.MemoryView[]>
+    createMemory(draft: P.MemoryDraft): Promise<P.MemoryView>
+    reviewMemory(memoryId: string, action: 'approve' | 'reject'): Promise<P.MemoryView>
+    editMemory(args: z.input<typeof P.MemoryEditArgsSchema>): Promise<P.MemoryView>
+    supersedeMemory(memoryId: string, replacement: P.MemoryDraft): Promise<P.MemoryView>
+    mergeMemories(memoryIds: string[], into: P.MemoryDraft): Promise<P.MemoryView>
+    contextPreview(args: z.input<typeof P.ContextPreviewArgsSchema>): Promise<P.ContextBundleView>
+    inspect(agentId: string): Promise<P.ContextInspection>
+    prepareHandoff(args: z.input<typeof P.HandoffPrepareArgsSchema>): Promise<P.HandoffView>
+    updateHandoff(args: z.input<typeof P.HandoffUpdateArgsSchema>): Promise<P.HandoffView>
+    /** Starts the target provider's managed session with the reviewed bundle. */
+    launchHandoff(handoffId: string): Promise<StartResult>
+    search(args: z.input<typeof P.SearchArgsSchema>): Promise<P.SearchHit[]>
+    onPush(cb: (m: P.ProjectMessage) => void): () => void
   }
   /** Provider integrations: status, enable/disable, models, observation hooks. */
   providers: {

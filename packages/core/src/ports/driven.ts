@@ -180,6 +180,11 @@ export interface RunnerStart {
   allowBypass: boolean
   /** Provider-specific mode (runners with `decl.modes`); dangerous modes only when `allowBypass`. */
   modeId?: string
+  /**
+   * agent-office's project MCP server (docs/projects.md §5), injected only when the session's
+   * project policy allows this provider. A stdio command (the bridge wrapper) with its env.
+   */
+  mcp?: { name: string; command: string; args: string[]; env: Record<string, string> }
 }
 
 export type RunnerExit = { error?: 'auth' | 'runtime' | 'folder' | 'crash'; message?: string }
@@ -244,4 +249,102 @@ export interface JsonConfigStore {
   write(json: Record<string, unknown>): Promise<void>
   /** Deletes the file (formats that own a whole file, e.g. Copilot's). */
   remove(): Promise<void>
+}
+
+// ── Projects-first workspace (docs/projects.md) ─────────────────────────────────────────────
+
+/** One stored record: a typed JSON payload appended to a partition. */
+export interface VaultRecord {
+  /** Record type, e.g. 'project', 'session', 'assign', 'memory', 'activity', 'message'. */
+  t: string
+  /** Monotonic within the partition (assigned by the log). */
+  seq?: number
+  ts: number
+  data: Record<string, unknown>
+}
+
+/**
+ * The project vault: append-only record logs, one per partition ('catalog', 'p/<prj>', 's/<ses>').
+ * The production adapter encrypts every line at rest; `memory-only` when no OS keychain exists.
+ */
+export interface RecordLog {
+  status(): 'encrypted' | 'memory-only'
+  /** Partition names starting with `prefix` (e.g. 'p/'). */
+  partitions(prefix: string): Promise<string[]>
+  /** All readable records in append order (corrupt lines are skipped and counted). */
+  read(partition: string): Promise<VaultRecord[]>
+  append(partition: string, records: VaultRecord[]): Promise<void>
+  /** Atomically replaces the partition with `records` (compaction; same resulting state). */
+  compact(partition: string, records: VaultRecord[]): Promise<void>
+  /** Deletes a partition (e.g. a deleted session's chat). */
+  drop(partition: string): Promise<void>
+}
+
+/** A repository's identity, without paths: keys are HMACs of real paths with a local salt. */
+export interface RepoIdentityInfo {
+  /** HMAC of the git common dir (same for all worktrees of one clone). */
+  commonDirKey: string
+  /** HMAC of the working-tree root. */
+  rootKey: string
+  /** The repository's first commit (stable across moves and renames). */
+  rootCommit?: string
+  /** Normalized remotes (host/path, no userinfo or query). */
+  remotes: string[]
+  /** Basename of the working-tree root (display only). */
+  name: string
+  isWorktree: boolean
+  /** The locator's path relative to the root ('' at the root), for monorepo subprojects. */
+  relPath: string
+}
+
+/** Resolves where a session works to a repository identity. Main-process only; never throws. */
+export interface RepoIdentity {
+  /** `locator` is an absolute directory known only to main. null when it can't be resolved. */
+  resolve(locator: string): Promise<RepoIdentityInfo | null>
+  /** The `wk_` key observe hooks send for the same directory (HMAC of the git common dir). */
+  workspaceKey(locator: string): Promise<string | null>
+}
+
+/** One message of a provider transcript, as agent-office may show it: text and tool names only. */
+export interface TranscriptMessage {
+  uuid: string
+  role: 'user' | 'assistant'
+  /** ≤ 4000 chars; text blocks only (no tool input/output, no thinking). */
+  text: string
+  ts: number
+  tools: string[]
+}
+
+/** Reads a provider's own transcript on demand (nothing is copied into the vault). */
+export interface TranscriptReader {
+  /** `ref` is an opaque `tr_` key the source registered; newest last; `before` is a message uuid. */
+  page(
+    ref: string,
+    o: { before?: string; limit: number },
+  ): Promise<{ messages: TranscriptMessage[]; more: boolean }>
+  search(ref: string, query: string, limit: number): Promise<{ uuid: string; snippet: string }[]>
+}
+
+export interface SearchDoc {
+  id: string
+  projectId: string | null
+  kind: 'project' | 'session' | 'message' | 'memory' | 'handoff'
+  title: string
+  text: string
+  ts: number
+}
+
+/** Full-text search over vault content (rebuilt from the vault; never persisted in plaintext). */
+export interface SearchIndex {
+  upsert(doc: SearchDoc): void
+  remove(id: string): void
+  query(
+    q: string,
+    o: { projectIds?: (string | null)[]; kinds?: SearchDoc['kind'][]; limit: number },
+  ): { id: string; score: number; snippet: string }[]
+}
+
+/** Cryptographically secure random tokens (MCP session tokens, ids). */
+export interface SecureRandom {
+  token(bytes: number): string
 }

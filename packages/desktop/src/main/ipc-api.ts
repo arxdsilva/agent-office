@@ -214,6 +214,8 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
       const a = parsed.data
       if (a.chrome && a.provider !== 'claude-code')
         return { ok: false, code: 'other', error: 'Chrome is only available for Claude Code' }
+      // A project repository (`repo`) can replace the picked folder; resolved by the projects wiring.
+      if (!a.folder) return { ok: false, code: 'folder', error: 'choose a folder' }
       let start
       try {
         const folder = entry(a.folder, 'folder')

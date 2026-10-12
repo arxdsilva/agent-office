@@ -57,6 +57,14 @@ export const AgentEventSchema = z.object({
   permissionMode: PermissionModeSchema.optional(),
   /** Provider-specific mode id the session reports (Codex presets, ACP modes); display only. */
   modeId: z.string().min(1).max(60).optional(),
+  /**
+   * Opaque workspace key from an observe hook: an HMAC of the repo's git common dir with a local
+   * salt (docs/projects.md §4). Main matches it to a project; it never reaches the renderer.
+   */
+  workspace: z
+    .string()
+    .regex(/^wk_[a-f0-9]{32}$/)
+    .optional(),
 })
 export type AgentEvent = z.infer<typeof AgentEventSchema>
 
@@ -102,6 +110,8 @@ export interface Agent {
   caps?: SessionCap[]
   /** Current provider-specific mode id (Codex presets, ACP modes); Claude uses `permissionMode`. */
   modeId?: string
+  /** The project this agent's session belongs to (set by core; absent = unassigned). */
+  projectId?: string
 }
 
 export type MessageState = 'queued' | 'delivered' | 'replied'

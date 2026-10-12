@@ -50,7 +50,11 @@ function setup(over: Partial<Settings> = {}) {
     scheduler,
     ids,
     permId: () => `perm_${String(++n).padStart(10, '0')}`,
-    displayPath: (p) => p.replace('/Users/me', '~'),
+    // Mirrors the composition root's never-absolute displayPathOf.
+    displayPath: (p) =>
+      p.startsWith('/Users/me/')
+        ? p.replace('/Users/me', '~')
+        : `…/${p.split('/').slice(-2).join('/')}`,
   })
   const compose = new ComposeService({ chat: inbox, messages, bus, sessions: svc })
   return {
@@ -306,6 +310,14 @@ describe('mode and model', () => {
 })
 
 describe('permissions', () => {
+  it('MS-perm-where: the card location is never absolute for a cwd outside home', async () => {
+    const t = setup()
+    const agentId = await t.svc.start({ ...START, cwd: '/srv/work/acme-api' })
+    void t.runner.last().ask('Bash', { command: 'pnpm test' })
+    const where = t.svc.pending(agentId)[0]!.where
+    expect(where).toBe('…/work/acme-api')
+    expect(where).not.toMatch(/^(\/|[A-Za-z]:)/)
+  })
   it('MS-perm-allow: pending → waiting + published; allow resolves and returns to thinking', async () => {
     const { svc, agentId, session, agents, bus } = await started()
     bus.events = []

@@ -171,3 +171,45 @@ export interface ProviderHooks {
   /** Refreshes hooks that are already installed (e.g. after a port change). Never installs new ones. */
   heal(): Promise<void>
 }
+
+// ── Projects-first workspace (docs/projects.md) ─────────────────────────────────────────────
+
+/** Sources report where a session works (an absolute directory, main-process only). */
+export interface SessionObservation {
+  located(
+    agentId: string,
+    provider: string,
+    where: { cwd?: string; workspaceKey?: string; transcriptRef?: string },
+  ): Promise<void>
+}
+
+/** The MCP adapter's single entry point: every call is authorized against the token's principal. */
+export interface McpMemoryAccess {
+  /** Resolves a bearer token to its principal, or null (unknown, revoked or expired). */
+  principal(token: string): McpPrincipal | null
+  call(principal: McpPrincipal, tool: string, args: unknown): Promise<McpToolResult>
+  tools(principal: McpPrincipal): McpToolDecl[]
+}
+
+export interface McpPrincipal {
+  kind: 'mcp'
+  projectId: string
+  sessionId: string
+  provider: string
+  tokenId: string
+  access: 'read' | 'read-propose'
+}
+
+export interface McpToolDecl {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export interface McpToolResult {
+  /** Structured result (items with ids, versions and provenance). */
+  structured: Record<string, unknown>
+  /** One text block, starting with the data preface (docs/projects.md §5). */
+  text: string
+  isError?: boolean
+}

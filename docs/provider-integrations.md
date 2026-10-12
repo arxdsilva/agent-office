@@ -164,7 +164,7 @@ Transport: JSON-RPC 2.0, newline-delimited, over stdio. One shared `AcpRunner`, 
 provider by an `AcpProfile` (binary, args, preferred auth methods, modes, tool-kind map).
 
 1. `initialize {protocolVersion:1, clientCapabilities:{fs:{readTextFile:false, writeTextFile:false}, terminal:false}, clientInfo}` — disconnect if the agent answers another protocol version.
-2. `session/new {cwd, mcpServers:[]}` → `{sessionId, modes?, models?, configOptions?}`. On an auth error, `authenticate` once with
+2. `session/new {cwd, mcpServers}` (empty, or only agent-office's project MCP bridge when the project policy allows this provider — docs/projects.md §5) → `{sessionId, modes?, models?, configOptions?}`. On an auth error, `authenticate` once with
    a method listed in the profile's `authMethodPrefer` **and** advertised by the agent (only Cursor
    lists one: `cursor_login`, which reuses `agent login`); if none applies or it fails, exit `auth`.
    Gemini and Copilot list none: their methods start a browser login, take a key or rewrite the
@@ -292,7 +292,7 @@ automatically (grouping by provider).
 - **Messaging, interrupting or approving in hook-observed Cursor/Gemini/Copilot sessions**: their hooks
   don't offer it; the UI says where to reply.
 - **Resume across app restarts** (`session/load`, `thread/resume`), ACP client fs/terminal methods,
-  injecting MCP servers, automated login or approvals, Copilot inside VS Code.
+  injecting MCP servers other than agent-office's own project bridge (docs/projects.md §5), automated login or approvals, Copilot inside VS Code.
 
 ## 10. Capability matrix (verified)
 
