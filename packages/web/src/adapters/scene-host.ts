@@ -2,10 +2,10 @@
 // (ThreeScene or PixelScene), caches the replayable state, and swaps scenes on a viewMode change:
 // create + load the new one → dispose the old one → re-attach listeners → replay → resync plans.
 // In 3D mode it only forwards, so the 3D office behaves exactly as before.
-import type { GraphicsQuality, ViewMode } from '@agent-office/shared'
+import type { GraphicsQuality, ViewMode, WallMode } from '@agent-office/shared'
 import type { Effective, GraphicsStats, HardwareInfo } from '../app/graphics-types.ts'
 import type { ViewEntry } from '../app/library-types.ts'
-import type { AgentPlan, BuildingLayout, Link } from '../app/office-types.ts'
+import type { AgentPlan, BuildingLayout, InteractionHit, Link } from '../app/office-types.ts'
 import type { InteractTarget, TileRect } from '../app/pixel/types.ts'
 import type { ProjectLibraryVM } from '../app/project-library.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../ports.ts'
@@ -27,6 +27,11 @@ export interface SceneHostDeps {
   resync: () => Map<string, AgentPlan>
   /** The mode of the first scene (created at once). */
   mode: ViewMode
+  /**
+   * Optional (plan §5.4): creates a scene asynchronously (a lazy-loaded mode such as Night City).
+   * When given, `switchTo` and `initAsync` use it instead of `factory`.
+   */
+  factoryAsync?: (mode: ViewMode) => Promise<SceneView>
 }
 
 type Fn = (...args: never[]) => void
@@ -47,6 +52,7 @@ const LISTENERS = [
   'onZoom',
   'onRun',
   'onPickFixture',
+  'onPickInteraction',
   'onFrameStats',
 ] as const
 type ListenerName = (typeof LISTENERS)[number]
@@ -68,6 +74,8 @@ export class SceneHost implements SceneView {
   private suspended = false
   private focus: { ids: string[] | null; o: { dim: boolean; frame: boolean } } | null = null
   private projectLibrary: ProjectLibraryVM | null = null
+  /** Sims-style wall mode (3D only; graphics contract §13). */
+  private wallMode: WallMode | null = null
   private plans = new Map<string, AgentPlan>()
   /** Switches run one after another; the last request wins. */
   private queue: Promise<unknown> = Promise.resolve()
@@ -75,6 +83,28 @@ export class SceneHost implements SceneView {
   constructor(private deps: SceneHostDeps) {
     this.current = deps.mode
     this.scene = deps.factory(deps.mode)
+  }
+
+  /**
+   * Creates the host with its first scene made asynchronously (`factoryAsync`, else `factory`),
+   * so a lazy-loaded mode can be the startup mode. Rejects when that scene can't be created.
+   */
+  static async initAsync(deps: SceneHostDeps): Promise<SceneHost> {
+    const first = await (deps.factoryAsync
+      ? deps.factoryAsync(deps.mode)
+      : Promise.resolve().then(() => deps.factory(deps.mode)))
+    let pending: SceneView | null = first
+    return new SceneHost({
+      ...deps,
+      factory: (mode) => {
+        if (pending && mode === deps.mode) {
+          const s = pending
+          pending = null
+          return s
+        }
+        return deps.factory(mode)
+      },
+    })
   }
 
   /** The mode of the active scene. */
@@ -101,7 +131,9 @@ export class SceneHost implements SceneView {
   private async swap(mode: ViewMode): Promise<SceneAssets | null> {
     if (mode === this.current) return null
     // Create and load the new scene first: if that fails (no WebGL…), the old one keeps running.
-    const next = this.deps.factory(mode) as AnyScene
+    const next = (
+      this.deps.factoryAsync ? await this.deps.factoryAsync(mode) : this.deps.factory(mode)
+    ) as AnyScene
     let assets: SceneAssets | null = null
     try {
       if (this.manifestUrl !== null) assets = await next.load(this.manifestUrl)
@@ -135,6 +167,7 @@ export class SceneHost implements SceneView {
     if (this.highlighted !== null) s.highlightLinks(this.highlighted)
     if (this.suspended) s.setInputSuspended?.(true)
     if (this.projectLibrary) s.setProjectLibrary?.(this.projectLibrary)
+    if (this.wallMode) s.setWallMode?.(this.wallMode)
     const resynced = this.deps.resync()
     const plans = resynced.size ? resynced : this.cachedPlans()
     if (plans.size) s.direct(plans, [])
@@ -317,9 +350,18 @@ export class SceneHost implements SceneView {
     this.listen('onPickFixture', fn)
   }
 
+  onPickInteraction(fn: (hit: InteractionHit) => void): void {
+    this.listen('onPickInteraction', fn)
+  }
+
   setProjectLibrary(vm: ProjectLibraryVM | null): void {
     this.projectLibrary = vm
     this.scene.setProjectLibrary?.(vm)
+  }
+
+  setWallMode(m: WallMode): void {
+    this.wallMode = m
+    this.scene.setWallMode?.(m)
   }
 
   // ── Adapter-level extras (main.ts) ──

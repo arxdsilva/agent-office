@@ -107,11 +107,23 @@ function partsOf(root: THREE.Object3D): Parts {
   return p
 }
 
-/** Accessories shown per look; everything else stays hidden (contract §8). */
-function dress(parts: Parts, look: Appearance | undefined, far: boolean) {
+/** Outer layers of a character set's outfits (shown at every distance). */
+const OUTER = new Set(['techJacket', 'utilityVest', 'longCoat'])
+
+/**
+ * Accessories shown per look; everything else stays hidden (contract §8). `extra` (optional, a
+ * character set's outfit, contract §14) decides the accessories it names.
+ */
+function dress(
+  parts: Parts,
+  look: Appearance | undefined,
+  far: boolean,
+  extra?: Readonly<Record<string, boolean>>,
+) {
   for (const [name, o] of parts.accessories) {
     let on = false
-    if (!look) on = name === 'hairA'
+    if (extra && name in extra) on = extra[name]! && (OUTER.has(name) || !far)
+    else if (!look) on = name === 'hairA'
     else if (name.startsWith('hair')) on = name === look.hairStyle
     else if (name === 'glasses') on = look.glasses && !far
     else if (name === 'headset') on = look.headset && !far
@@ -169,6 +181,8 @@ export const DIM_OPACITY = 0.3
 
 interface Agent {
   id: string
+  /** The set's outfit for this agent (character-cyber), if any. */
+  outfit: CharacterLook | undefined
   holder: THREE.Group
   model: THREE.Object3D
   parts: Parts
@@ -194,8 +208,16 @@ interface Agent {
   shirt: THREE.Color
 }
 
+/** A character set's per-agent outfit (Night City): accessories it names and an `accent` tint. */
+export interface CharacterLook {
+  accent?: number
+  accessories?: Record<string, boolean>
+}
+
 export interface CharacterSystemOptions {
   quality?: GraphicsQuality
+  /** Optional, additive: per-agent outfit for sets with extra accessories (character-cyber). */
+  look?: (id: string) => CharacterLook | undefined
   /** Needed only to bake impostors at load; without it, over-budget agents fall back to LOD1 at 10 Hz. */
   renderer?: THREE.WebGLRenderer
 }
@@ -237,11 +259,14 @@ export class CharacterSystem {
   private mask = new Uint8Array(64)
   private readonly scratch: number[] = []
 
+  private readonly lookOf: ((id: string) => CharacterLook | undefined) | undefined
+
   constructor(
     private readonly scene: THREE.Scene,
     assets: CharacterAssets,
     opts: CharacterSystemOptions = {},
   ) {
+    this.lookOf = opts.look
     this.root.name = 'characters'
     scene.add(this.root)
     this.meta = assets.meta
@@ -477,6 +502,7 @@ export class CharacterSystem {
     const look = appearanceOf(id, teamOf)
     const a: Agent = {
       id,
+      outfit: this.lookOf?.(id),
       holder,
       model,
       parts,
@@ -500,7 +526,7 @@ export class CharacterSystem {
       shirt: new THREE.Color(look.shirt),
     }
     this.tint(a)
-    dress(parts, look, false)
+    dress(parts, look, false, a.outfit?.accessories)
     this.applyShadows(a)
     this.agents.set(id, a)
     this.targets = undefined
@@ -513,12 +539,26 @@ export class CharacterSystem {
       const one = (m: THREE.Material) => {
         if (m instanceof SlotMaterial) {
           // Merged body: one shared material per palette.
-          const t = this.tints.acquireKeyed(`body:${a.lookKey}`, () => {
+          const accent = a.outfit?.accent
+          const key = accent === undefined ? `body:${a.lookKey}` : `body:${a.lookKey}:${accent}`
+          const t = this.tints.acquireKeyed(key, () => {
             const mat = m.clone()
             paintSlots(mat, this.bodyLayout, (slot) =>
-              isTintSlot(slot) ? slotColor(look, slot) : undefined,
+              isTintSlot(slot) ? slotColor(look, slot) : slot === 'accent' ? accent : undefined,
             )
             return mat
+          })
+          a.tinted.push(t)
+          return t
+        }
+        const accent = a.outfit?.accent
+        if (m.name === 'accent' && accent !== undefined) {
+          // The outfit's accent (emissive trims): base and emissive colour per agent.
+          const t = this.tints.acquireKeyed(`accent:${m.uuid}:${accent}`, () => {
+            const c = m.clone() as THREE.MeshStandardMaterial
+            c.color?.setHex(accent)
+            if (c.emissive && c.emissive.getHex() !== 0) c.emissive.setHex(accent)
+            return c
           })
           a.tinted.push(t)
           return t
@@ -542,7 +582,7 @@ export class CharacterSystem {
     a.lookKey = paletteKey(a.look)
     a.shirt.setHex(a.look.shirt)
     this.tint(a)
-    dress(a.parts, a.look, a.far)
+    dress(a.parts, a.look, a.far, a.outfit?.accessories)
   }
 
   private applyShadows(a: Agent) {
@@ -557,7 +597,7 @@ export class CharacterSystem {
     a.far = far
     for (const o of a.parts.base) o.visible = !far
     for (const o of a.parts.lod1) o.visible = far
-    dress(a.parts, a.look, far)
+    dress(a.parts, a.look, far, a.outfit?.accessories)
   }
 
   private setImpostor(a: Agent, on: boolean) {

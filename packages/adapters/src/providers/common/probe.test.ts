@@ -19,6 +19,7 @@ describe('probeCli', () => {
     const bin = fake('ok', 'console.log("hello", process.argv[2])')
     expect(await probeCli(bin, ['x'], 3000)).toEqual({
       stdout: 'hello x\n',
+      stderr: '',
       code: 0,
       timedOut: false,
     })

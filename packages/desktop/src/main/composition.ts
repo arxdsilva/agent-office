@@ -16,6 +16,8 @@ import {
   ClaudeTranscriptReader,
   ClaudeProbe,
   ClaudeSettingsFile,
+  ClineAcpRunner,
+  ClineProbe,
   CodexProbe,
   CodexRunner,
   COPILOT_HOOK_FORMAT,
@@ -30,6 +32,13 @@ import {
   GeminiAcpRunner,
   GeminiProbe,
   geminiSettingsPath,
+  type GooseCli,
+  GooseAcpRunner,
+  GooseHistorySource,
+  GooseProbe,
+  GooseTranscriptReader,
+  KiloAcpRunner,
+  KiloProbe,
   JsonConfigFile,
   createAuth,
   FileRecordLog,
@@ -45,12 +54,23 @@ import {
   McpLauncher,
   observeWorkspace,
   MockAgents,
+  OpenCodeAcpProbe,
+  OpenCodeAcpRunner,
+  OpenCodeHistorySource,
+  OpenCodeObserver,
+  OpenCodeServers,
+  OpenCodeTranscriptReader,
+  OpenHandsAcpRunner,
+  OpenHandsProbe,
+  QwenAcpRunner,
+  QwenProbe,
   NodeTranscriptFiles,
   RandomIds,
   resolveClaudeExecutable,
   ScriptedAgentRunner,
   startHttpServer,
   TextIndex,
+  TranscriptReaders,
   TranscriptRefs,
   SystemClock,
   TimerScheduler,
@@ -72,6 +92,7 @@ import {
   type ProviderProbe,
   type PlatformInfo,
   type RecordLog,
+  type ReportActivity,
   type SearchIndex,
   type SecureRandom,
   type Scheduler,
@@ -156,14 +177,14 @@ export interface ComposeOptions {
   codexProbe?: ProviderProbe
   codexRunner?: AgentRunner
   /** Tests inject probes/runtimes for the ACP providers so their real CLIs never run. */
-  providerOverrides?: Partial<
-    Record<'cursor' | 'gemini' | 'copilot', { probe?: ProviderProbe; runner?: AgentRunner }>
-  >
+  providerOverrides?: Partial<Record<AcpId, { probe?: ProviderProbe; runner?: AgentRunner }>>
   /**
    * Dev-only directory holding fake provider CLIs (packages/adapters/test/fakes). Given only for
    * unpackaged builds; AGENT_OFFICE_FAKE_PROVIDERS=1 without it falls back to the real CLI.
    */
   fakesDir?: string
+  /** Tests inject goose's CLI so history never runs the real `goose`. */
+  gooseCli?: GooseCli
 }
 
 const SWEEP_MS = 2000
@@ -274,11 +295,20 @@ function buildCodex(
   return { probe: probe ?? new CodexProbe({}), runner: runner ?? new CodexRunner({}) }
 }
 
-type AcpId = 'cursor' | 'gemini' | 'copilot'
+/** Providers with observation hooks as well as an ACP runtime. */
+type ObservedAcpId = 'cursor' | 'gemini' | 'copilot'
+/** Every provider run through the shared AcpRunner (one profile each). */
+type AcpId = ObservedAcpId | 'opencode' | 'goose' | 'kilo' | 'qwen' | 'cline' | 'openhands'
 const ACP = {
   cursor: { Runner: CursorAcpRunner, Probe: CursorProbe },
   gemini: { Runner: GeminiAcpRunner, Probe: GeminiProbe },
   copilot: { Runner: CopilotAcpRunner, Probe: CopilotProbe },
+  opencode: { Runner: OpenCodeAcpRunner, Probe: OpenCodeAcpProbe },
+  goose: { Runner: GooseAcpRunner, Probe: GooseProbe },
+  kilo: { Runner: KiloAcpRunner, Probe: KiloProbe },
+  qwen: { Runner: QwenAcpRunner, Probe: QwenProbe },
+  cline: { Runner: ClineAcpRunner, Probe: ClineProbe },
+  openhands: { Runner: OpenHandsAcpRunner, Probe: OpenHandsProbe },
 } as const
 
 /** An ACP provider's probe + runtime: injected (tests), the fake ACP agent (dev, flag), or the real CLI. */
@@ -307,6 +337,58 @@ function buildAcp(
   return { probe: given.probe ?? new Probe({}), runner: given.runner ?? new Runner({}) }
 }
 
+// ── OpenCode history and observation (docs/providers/opencode.md, "History and observation") ──
+/**
+ * OpenCode's history source, transcript reader and opt-in observer, all through its server API.
+ * A short-lived `opencode serve` (127.0.0.1, per-run password) is started only to list or read,
+ * and only once the user turned OpenCode on; the observer connects only to the port the user set.
+ */
+function buildOpenCodeExtras(
+  o: ComposeOptions,
+  processEnv: Record<string, string | undefined>,
+  settings: () => Promise<Settings>,
+  log: Logger,
+) {
+  const fake = processEnv.AGENT_OFFICE_FAKE_PROVIDERS === '1' ? o.fakesDir : undefined
+  const servers = new OpenCodeServers({
+    cwd: join(o.userDataDir, 'opencode-history'),
+    // The user's own server (observe setting) is read first; no credentials are sent to it.
+    userPort: async () => {
+      const s = (await settings()).openCodeObserve
+      return s.enabled ? s.port : undefined
+    },
+    ...(fake
+      ? {
+          bin: () => process.execPath,
+          // Dev and tests only: the fake's invented fixture.
+          env: { ELECTRON_RUN_AS_NODE: '1', FAKE_OC_FIXTURE: processEnv.FAKE_OC_FIXTURE },
+          argsPrefix: [join(fake, 'fake-opencode-server.mjs')],
+        }
+      : {}),
+  })
+  const enabled = async () => !!(await settings()).providers.opencode?.enabled
+  let observer: OpenCodeObserver | undefined
+  return {
+    history: new OpenCodeHistorySource({ servers, enabled }),
+    transcripts: new OpenCodeTranscriptReader({ servers }),
+    /** Applies `settings.openCodeObserve`; creates the observer on first use. */
+    observe(s: Settings, activity: ReportActivity, skip: (sessionId: string) => boolean): void {
+      observer ??= new OpenCodeObserver({
+        activity,
+        skip,
+        // The state only, never the port or anything the server sent.
+        onState: (st) => log.info(`opencode observer: ${st}`),
+      })
+      observer.configure(s.openCodeObserve)
+    },
+    observeState: () => observer?.state() ?? 'off',
+    stop(): void {
+      observer?.stop()
+      void servers.close()
+    },
+  }
+}
+
 /** Observation hooks: each provider's own config file + a wrapper running agent-office-observe.mjs. */
 function buildHookTargets(
   o: ComposeOptions,
@@ -315,7 +397,7 @@ function buildHookTargets(
   url: () => string,
 ): ProviderHookTargets {
   const script = join(dirname(o.hookScript), 'agent-office-observe.mjs')
-  const runner = (provider: AcpId) =>
+  const runner = (provider: ObservedAcpId) =>
     new FsHookRunner({
       dir: join(o.userDataDir, 'hook'),
       execPath: o.execPath,
@@ -388,6 +470,12 @@ export function compose(o: ComposeOptions) {
     cursor: buildAcp('cursor', o, processEnv),
     gemini: buildAcp('gemini', o, processEnv),
     copilot: buildAcp('copilot', o, processEnv),
+    opencode: buildAcp('opencode', o, processEnv),
+    goose: buildAcp('goose', o, processEnv),
+    kilo: buildAcp('kilo', o, processEnv),
+    qwen: buildAcp('qwen', o, processEnv),
+    cline: buildAcp('cline', o, processEnv),
+    openhands: buildAcp('openhands', o, processEnv),
   }
   const hookUrl = () => `http://${hookHost(env.host)}:${backend?.server?.port ?? lastPort}`
   // One binding per provider (ChatGPT has none: its card is informational only).
@@ -397,6 +485,12 @@ export function compose(o: ComposeOptions) {
     { provider: 'cursor', ...acp.cursor },
     { provider: 'gemini', ...acp.gemini },
     { provider: 'copilot', ...acp.copilot },
+    { provider: 'opencode', ...acp.opencode },
+    { provider: 'goose', ...acp.goose },
+    { provider: 'kilo', ...acp.kilo },
+    { provider: 'qwen', ...acp.qwen },
+    { provider: 'cline', ...acp.cline },
+    { provider: 'openhands', ...acp.openhands },
   ]
   const context = createContextRegistry({ dialog: shell.dialog, home })
 
@@ -406,6 +500,7 @@ export function compose(o: ComposeOptions) {
     (o.keyProvider
       ? new FileRecordLog({ dir: join(o.userDataDir, 'vault'), keys: o.keyProvider, log: logger })
       : undefined)
+  const gooseCli = o.gooseCli ? { cli: o.gooseCli } : {}
   const transcriptFiles = new NodeTranscriptFiles()
   const transcriptRefs = new TranscriptRefs()
   const mcpLauncher = vault
@@ -418,6 +513,7 @@ export function compose(o: ComposeOptions) {
         url: hookUrl,
       })
     : undefined
+  const openCode = buildOpenCodeExtras(o, processEnv, () => office.settings.get(), logger)
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
     capabilities: new InMemoryCapabilityRepository(),
@@ -452,6 +548,12 @@ export function compose(o: ComposeOptions) {
       ['cursor', acp.cursor.runner],
       ['gemini', acp.gemini.runner],
       ['copilot', acp.copilot.runner],
+      ['opencode', acp.opencode.runner],
+      ['goose', acp.goose.runner],
+      ['kilo', acp.kilo.runner],
+      ['qwen', acp.qwen.runner],
+      ['cline', acp.cline.runner],
+      ['openhands', acp.openhands.runner],
     ]),
     providerHookTargets: buildHookTargets(o, processEnv, home, hookUrl),
     displayPath: (p) => displayPathOf(p, home),
@@ -460,14 +562,28 @@ export function compose(o: ComposeOptions) {
       ? {
           vault,
           repoIdentity: new GitRepoIdentity({ salt: loadOrCreateWorkspaceSalt(env.home) }),
-          transcripts: new ClaudeTranscriptReader({ refs: transcriptRefs, files: transcriptFiles }),
-          // Experimental history import: lists nothing while the Claude adapter setting is off.
-          history: new ClaudeHistorySource({
-            dir: env.claudeProjectsDir,
-            files: transcriptFiles,
-            refs: transcriptRefs,
-            enabled: async () => effective(await office.settings.get()).claudeAdapter,
+          // Refs without a provider prefix are Claude's; `tr_go_…` is goose's (sources/transcript-readers.ts).
+          transcripts: new TranscriptReaders({
+            default: new ClaudeTranscriptReader({ refs: transcriptRefs, files: transcriptFiles }),
+            byPrefix: { go: new GooseTranscriptReader(gooseCli), oc: openCode.transcripts },
           }),
+          // Experimental history import, one source per provider with a documented listing.
+          history: {
+            // Lists nothing while the Claude adapter setting is off.
+            'claude-code': new ClaudeHistorySource({
+              dir: env.claudeProjectsDir,
+              files: transcriptFiles,
+              refs: transcriptRefs,
+              enabled: async () => effective(await office.settings.get()).claudeAdapter,
+            }),
+            // Lists nothing until the user turns goose on in Connect.
+            goose: new GooseHistorySource({
+              ...gooseCli,
+              enabled: async () => !!(await office.settings.get()).providers.goose?.enabled,
+            }),
+            // Lists nothing until the user turns OpenCode on in Connect.
+            opencode: openCode.history,
+          },
           searchIndex: o.searchIndex ?? new TextIndex(),
           random: hexRandom,
           ...(mcpLauncher ? { mcpLaunch: (token: string) => mcpLauncher.launch(token) } : {}),
@@ -752,6 +868,11 @@ export function compose(o: ComposeOptions) {
         ? createPowerBridge(shell.power, (channel, payload) => shell.window.send(channel, payload))
         : undefined
       if (power) stops.push(power.stop)
+      // OpenCode observation: only with the user's opt-in and port (settings.openCodeObserve).
+      const observeOpenCode = (s: Settings) =>
+        openCode.observe(s, office.activity, (sid) => sessions.isManagedSession(sid))
+      observeOpenCode(settings)
+      stops.push(() => openCode.stop())
 
       if (projects) {
         // Before IPC or MCP are served: rebuilds projects, sessions and memory from the vault.
@@ -814,6 +935,7 @@ export function compose(o: ComposeOptions) {
             logger.warn(`automatic import unavailable: ${err.message}`),
           )
           if (restartRequired) void restartBackend()
+          observeOpenCode(effective(s))
           pushConnections()
         }),
       )

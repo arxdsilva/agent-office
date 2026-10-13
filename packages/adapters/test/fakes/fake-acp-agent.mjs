@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // A protocol-accurate fake ACP agent (Agent Client Protocol v1, @agentclientprotocol/sdk 1.8.0
-// shapes) for tests: JSON-RPC 2.0, newline-delimited, over stdio. `--profile cursor|gemini|copilot`
-// picks the auth methods, modes and model surface the real CLI advertised (Cursor agent
-// 2026.10.01, Gemini CLI 0.63.0, Copilot CLI 1.0.96). Scenarios are keyed on the prompt text:
+// shapes) for tests: JSON-RPC 2.0, newline-delimited, over stdio. `--profile cursor|gemini|copilot|
+// opencode|goose|kilo|qwen|cline|openhands` picks the auth methods, modes and model surface the real
+// CLI advertised (Cursor agent 2026.10.01, Gemini CLI 0.63.0, Copilot CLI 1.0.96, OpenCode 1.19.0,
+// goose 1.54.0, Kilo 7.8.8, Qwen Code 0.25.1, Cline 3.0.70, OpenHands CLI 1.16.0). Scenarios are keyed on the prompt text:
 //   (default) agent_thought_chunk → tool_call(execute) → session/request_permission →
 //             tool_call_update completed|failed → agent_message_chunk ×2 → end_turn
 //   /quick    one agent_message_chunk ("ok: <prompt>") → end_turn
@@ -30,6 +31,12 @@ const VERSIONS = {
   cursor: '2026.10.01-e373342\n',
   gemini: '0.63.0\n',
   copilot: "GitHub Copilot CLI 1.0.96.\nRun 'copilot update' to check for updates.\n",
+  opencode: '1.19.0\n',
+  goose: ' 1.54.0\n',
+  kilo: '7.8.8\n',
+  qwen: '0.25.1\n',
+  cline: '3.0.70\n',
+  openhands: 'OpenHands CLI 1.16.0\n',
 }
 if (argv.includes('--version')) {
   if (env.FAKE_ACP_HANG) setInterval(() => {}, 1000)
@@ -50,15 +57,23 @@ if (argv.includes('--help')) {
       'Usage: copilot [OPTIONS] [COMMAND]\n' +
       '      --some-option\n          A long description of an option.\n'.repeat(120) +
       (flag ? '      --acp\n          Start as Agent Client Protocol server\n' : ''),
+    // `<bin> acp --help` for the subcommand CLIs, `--help` for the flag CLIs (as the real ones).
+    opencode: `opencode acp\n\n${flag ? 'start ACP (Agent Client Protocol) server\n' : ''}`,
+    goose: `${flag ? 'Run goose as an ACP agent server on stdio\n' : ''}\nUsage: goose acp [OPTIONS]\n`,
+    kilo: `kilo acp\n\n${flag ? 'start ACP (Agent Client Protocol) server\n' : ''}`,
+    qwen: `Usage: qwen [options] [command]\n${flag ? '      --acp     Starts the agent in ACP mode  [boolean]\n' : ''}`,
+    cline: `Usage: cline [options] [command] [prompt]\n${flag ? '  --acp   Run in Agent Client Protocol (ACP) mode for\n          editor integration\n' : ''}`,
+    openhands: `usage: openhands ${flag ? 'acp ' : ''}[-h]\n`,
   }[profile]
-  process.stdout.write(help)
+  // yargs CLIs (OpenCode, Kilo) print help on stderr; FAKE_ACP_HELP_STDERR=1 does the same.
+  ;(process.env.FAKE_ACP_HELP_STDERR === '1' ? process.stderr : process.stdout).write(help)
   process.exit(0)
 }
 
 const log = (m) => {
   if (env.FAKE_LOG) appendFileSync(env.FAKE_LOG, JSON.stringify(m) + '\n')
 }
-log({ pid: process.pid })
+log({ pid: process.pid, perm: env.OPENCODE_CONFIG_CONTENT ?? env.KILO_CONFIG_CONTENT })
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n')
 const notify = (method, params) => send({ method, params })
 const reply = (id, result) => send({ id, result })
@@ -127,6 +142,106 @@ const PROFILES = {
     ],
     models: 'config',
     authMessage: 'Authentication required',
+  },
+  // The oss runtimes' auth methods are hints or browser/API-key logins: a profile never calls them.
+  opencode: {
+    authMethods: [
+      {
+        id: 'opencode-login',
+        name: 'Login with opencode',
+        description: 'Run `opencode auth login` in the terminal',
+      },
+    ],
+    modes: [
+      { id: 'build', name: 'build' },
+      { id: 'plan', name: 'plan' },
+    ],
+    models: 'config',
+    authMessage: 'Run `opencode auth login` in the terminal',
+  },
+  goose: {
+    authMethods: [
+      {
+        id: 'goose-provider',
+        name: 'Configure Provider',
+        description: 'Run `goose configure` to set up your AI provider and API key',
+      },
+    ],
+    modes: [
+      { id: 'approve', name: 'Approve' },
+      { id: 'smart_approve', name: 'Smart approve' },
+      { id: 'auto', name: 'Auto' },
+      { id: 'chat', name: 'Chat' },
+    ],
+    models: 'models',
+    authMessage: 'Provider not configured',
+  },
+  kilo: {
+    authMethods: [
+      {
+        id: 'kilo-login',
+        name: 'Login with Kilo',
+        description: 'Run `kilo auth login` in the terminal',
+      },
+    ],
+    modes: [
+      { id: 'code', name: 'code' },
+      { id: 'ask', name: 'ask' },
+      { id: 'plan', name: 'plan' },
+      { id: 'debug', name: 'debug' },
+      { id: 'orchestrator', name: 'orchestrator' },
+    ],
+    models: 'config',
+    authMessage: 'Run `kilo auth login` in the terminal',
+  },
+  qwen: {
+    authMethods: [
+      {
+        id: 'openai',
+        name: 'Use OpenAI API key',
+        description: 'Requires setting the `OPENAI_API_KEY` environment variable',
+        _meta: { type: 'terminal', args: ['--auth-type=openai'] },
+      },
+    ],
+    modes: [
+      { id: 'default', name: 'Default' },
+      { id: 'plan', name: 'Plan' },
+      { id: 'auto-edit', name: 'Auto Edit' },
+      { id: 'auto', name: 'Auto' },
+      { id: 'yolo', name: 'YOLO' },
+    ],
+    models: 'models',
+    authMessage: 'No model configured',
+  },
+  cline: {
+    authMethods: [
+      { id: 'cline', name: 'Sign in with Cline' },
+      { id: 'cline-pass', name: 'Sign in with ClinePass' },
+      { id: 'openai-codex', name: 'Sign in with ChatGPT Subscription' },
+    ],
+    modes: [
+      { id: 'act', name: 'Act' },
+      { id: 'plan', name: 'Plan' },
+    ],
+    models: 'config',
+    authMessage: 'Sign in required',
+  },
+  openhands: {
+    authMethods: [
+      {
+        id: 'oauth',
+        name: 'OAuth with OpenHands Cloud',
+        description: 'Authenticate through agent',
+        _meta: { type: 'agent' },
+      },
+    ],
+    modes: [
+      { id: 'always-ask', name: 'Always Ask Mode' },
+      { id: 'always-approve', name: 'Always Approve Mode' },
+      { id: 'llm-approve', name: 'LLM Approve Mode' },
+    ],
+    models: 'none',
+    authMessage: 'No LLM configured',
   },
 }
 const P = PROFILES[profile]
@@ -340,7 +455,7 @@ function handle(m) {
           env: Object.fromEntries((s.env ?? []).map((e) => [e.name, e.value])),
         }
       }
-      const noModels = !!env.FAKE_ACP_NOMODELS
+      const noModels = !!env.FAKE_ACP_NOMODELS || P.models === 'none'
       return reply(m.id, {
         sessionId,
         modes: { currentModeId: currentMode, availableModes: P.modes },
@@ -357,11 +472,13 @@ function handle(m) {
       return update({ sessionUpdate: 'current_mode_update', currentModeId: currentMode })
     }
     case 'session/set_config_option':
-      if (P.models === 'models') return fail(m.id, -32601, 'Method not found')
+      if (P.models === 'models' || P.models === 'none')
+        return fail(m.id, -32601, 'Method not found')
       if (m.params?.configId === 'model') currentModel = m.params.value
       return reply(m.id, { configOptions: configOptions() })
     case 'session/set_model':
-      if (P.models === 'config') return fail(m.id, -32601, 'Method not found')
+      if (P.models === 'config' || P.models === 'none')
+        return fail(m.id, -32601, 'Method not found')
       currentModel = m.params?.modelId
       return reply(m.id, {})
     case 'session/prompt':

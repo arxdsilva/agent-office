@@ -97,6 +97,10 @@ export interface PlanWall {
   side?: -1 | 1
   /** Wall body thickness in metres. */
   thick?: number
+  /** Wall id (contract §13): the 1-based index in plan.walls, as stored in the meshes' `_WALLID`. */
+  id?: number
+  /** Wall top above the module floor in metres (contract §13). */
+  h?: number
 }
 export interface PlanFurniture {
   kind: FurnitureKind

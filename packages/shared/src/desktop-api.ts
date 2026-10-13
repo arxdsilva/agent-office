@@ -48,8 +48,32 @@ export const GraphicsAdvancedSchema = z.object({
   building: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 })
 export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
-export const VIEW_MODES = ['3d', 'pixel'] as const
+/** '3d' Classic, 'pixel' 2D RPG, 'special' Night City (optional, lazy-loaded; docs/special-3d). */
+export const VIEW_MODES = ['3d', 'pixel', 'special'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
+/** Sims-style wall visibility in the 3D modes (graphics contract §13). */
+export const WALL_MODES = ['up', 'cutaway', 'down'] as const
+export type WallMode = (typeof WALL_MODES)[number]
+const Volume = (d: number) => z.number().min(0).max(1).default(d)
+/** Night City (Special 3D) preferences; ignored by the other modes. */
+export const SpecialSettingsSchema = z.object({
+  camera: z.enum(['third', 'first', 'overview']).default('third'),
+  audio: z
+    .object({
+      master: Volume(0.6),
+      effects: Volume(0.7),
+      ambient: Volume(0.5),
+      /** Audio is opt-in: muted until the user turns it on. */
+      muted: z.boolean().default(true),
+    })
+    .default({ master: 0.6, effects: 0.7, ambient: 0.5, muted: true }),
+  atmosphere: z.enum(['low', 'medium', 'high']).default('medium'),
+  rain: z.boolean().default(true),
+  reducedMotion: z.boolean().default(false),
+  /** The first-time explanation of Night City's graphics needs was shown. */
+  introSeen: z.boolean().default(false),
+})
+export type SpecialSettings = z.infer<typeof SpecialSettingsSchema>
 export const BATTERY_PRESETS = ['off', 'minimal', 'low', 'medium'] as const
 
 export const SettingsSchema = z.object({
@@ -72,6 +96,21 @@ export const SettingsSchema = z.object({
   autoImportHistory: z.boolean().default(false),
   /** When the user confirmed automatic import (set by main only; never accepted from the renderer). */
   autoImportApprovedAt: z.number().int().nonnegative().optional(),
+  /** Wall visibility in Classic 3D and Night City: Up, Cutaway (walls in the way fade), Down. */
+  wallMode: z.enum(WALL_MODES).default('cutaway'),
+  special: SpecialSettingsSchema.default(SpecialSettingsSchema.parse({})),
+  /**
+   * Observe sessions of an OpenCode server the user runs (`opencode serve`), read-only, on
+   * 127.0.0.1:<port>. Off by default; the port is the only thing stored.
+   */
+  openCodeObserve: z
+    .object({
+      enabled: z.boolean().default(false),
+      port: z.number().int().min(1024).max(65535).optional(),
+    })
+    .default({ enabled: false }),
+  /** OpenHands may run in a remote or containerized workspace only after this explicit consent. */
+  openHandsRemoteConsent: z.boolean().default(false),
   /** Simulated agents (development and demos). */
   mock: z.boolean().default(false),
   /** 3D render quality preset. Applied live by the renderer (no backend restart). */

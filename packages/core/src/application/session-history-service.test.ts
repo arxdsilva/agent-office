@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PastSession } from '../ports/driven.ts'
 import { harness, withProject } from '../../test/projects-harness.ts'
+import { FakeHistorySource } from '../../test/fakes/projects.ts'
 import { ForbiddenError, NotFoundError, ValidationError } from '../domain/errors.ts'
 
 const past = (id: string, over: Partial<PastSession> = {}): PastSession => ({
@@ -83,6 +84,101 @@ describe('SessionHistoryService.importHistory (experimental)', () => {
     h.history.fail = true
     await expect(h.projects.history.importHistory({ limit: 5 })).rejects.toThrow()
     expect(h.projects.sessions.list({})).toHaveLength(0)
+  })
+})
+
+describe('SessionHistoryService.importHistory with several providers', () => {
+  const oc = (id: string, over: Partial<PastSession> = {}) =>
+    past(id, { provider: 'opencode', transcriptRef: `tr_oc_${id}`, ...over })
+
+  it('SH-multi: every provider with a source imports under its own agent id prefix; idempotent', async () => {
+    const claude = new FakeHistorySource([past('aaa')])
+    const opencode = new FakeHistorySource([oc('ses_one'), oc('ses_two', { cwd: '/work/blog' })])
+    const goose = new FakeHistorySource([
+      past('20260101_1', { provider: 'goose', transcriptRef: 'tr_go_1' }),
+    ])
+    const h = harness({
+      history: { 'claude-code': claude, opencode, goose },
+    })
+    await h.projects.load()
+    expect(await h.projects.history.importHistory({ limit: 10 })).toEqual({
+      imported: 4,
+      skipped: 0,
+    })
+    const all = h.projects.sessions.list({})
+    expect(all.map((s) => s.provider).sort()).toEqual([
+      'claude-code',
+      'goose',
+      'opencode',
+      'opencode',
+    ])
+    for (const s of all) expect(s).toMatchObject({ origin: 'imported', state: 'inactive' })
+    expect(await h.projects.history.importHistory({ limit: 10 })).toEqual({
+      imported: 0,
+      skipped: 4,
+    })
+    expect(h.projects.sessions.list({})).toHaveLength(4)
+  })
+
+  it('SH-multi: an entry whose provider differs from its source, or whose id breaks the source pattern, is skipped', async () => {
+    const opencode = new FakeHistorySource([
+      oc('ses_ok'),
+      oc('with space'),
+      past('stray'), // claims claude-code but comes from the OpenCode source
+    ])
+    const h = harness({ history: { opencode } })
+    await h.projects.load()
+    expect(await h.projects.history.importHistory({ limit: 10 })).toEqual({
+      imported: 1,
+      skipped: 2,
+    })
+  })
+
+  it('SH-multi: a provider id pattern of the source is enforced', async () => {
+    const strict = Object.assign(new FakeHistorySource([oc('ses_a'), oc('other')]), {
+      idPattern: /^ses_[a-z]+$/,
+    })
+    const h = harness({ history: { opencode: strict } })
+    await h.projects.load()
+    expect(await h.projects.history.importHistory({ limit: 10 })).toEqual({
+      imported: 1,
+      skipped: 1,
+    })
+  })
+
+  it('SH-multi: one failing source is skipped while another works; all failing throws', async () => {
+    const broken = new FakeHistorySource([oc('ses_x')])
+    broken.fail = true
+    const claude = new FakeHistorySource([past('aaa')])
+    const h = harness({ history: { opencode: broken, 'claude-code': claude } })
+    await h.projects.load()
+    expect(await h.projects.history.importHistory({ limit: 10 })).toEqual({
+      imported: 1,
+      skipped: 0,
+    })
+    const bad = harness({ history: { opencode: broken } })
+    await bad.projects.load()
+    await expect(bad.projects.history.importHistory({ limit: 10 })).rejects.toThrow()
+    expect(bad.projects.sessions.list({})).toHaveLength(0)
+  })
+
+  it('SH-multi: an empty source map means history is not available', async () => {
+    const none = harness({ history: {} })
+    await none.projects.load()
+    await expect(none.projects.history.importHistory({ limit: 5 })).rejects.toBeInstanceOf(
+      ValidationError,
+    )
+  })
+
+  it('SH-multi: the limit applies to each source', async () => {
+    const opencode = new FakeHistorySource([oc('a1'), oc('a2'), oc('a3')])
+    const claude = new FakeHistorySource([past('b1'), past('b2'), past('b3')])
+    const h = harness({ history: { opencode, 'claude-code': claude } })
+    await h.projects.load()
+    expect(await h.projects.history.importHistory({ limit: 2 })).toEqual({
+      imported: 4,
+      skipped: 0,
+    })
   })
 })
 

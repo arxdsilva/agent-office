@@ -27,6 +27,7 @@ import {
   type StartResult,
   type TestEventResult,
   type UpdateState,
+  type WallMode,
 } from '@agent-office/shared'
 import type { Chip } from './capability-vm.ts'
 import { COPY, PROVIDER_DOCS } from './connect-copy.ts'
@@ -672,6 +673,8 @@ export function hudVM(state: OfficeState, phase?: EmptyPhase): HudVM {
 }
 
 export interface SettingsVM {
+  /** Sims-style wall visibility (3D modes). */
+  wallMode: WallMode
   port: number
   notifications: boolean
   launchAtLogin: boolean
@@ -711,6 +714,7 @@ export function settingsVM(i: {
 }): SettingsVM {
   const hook = hookVM(i.hook)
   return {
+    wallMode: i.settings.wallMode ?? 'cutaway',
     port: i.settings.port,
     notifications: i.settings.notifications,
     launchAtLogin: i.settings.launchAtLogin,

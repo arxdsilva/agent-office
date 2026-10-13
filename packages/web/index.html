@@ -190,6 +190,7 @@
         <button id="fit" class="btn" type="button" title="Fit the whole office in view">
           ⤢ Fit
         </button>
+        <button id="wall-mode-btn" class="btn" type="button"></button>
         <button id="walk" class="btn" type="button" title="Walk around (F)">🚶 Walk</button>
       </div>
 
@@ -368,6 +369,13 @@
         </p>
         <p id="s-gfx-auto-note" class="muted small" hidden></p>
         <p id="s-gfx-help" class="muted small"></p>
+        <h4 id="s-walls-h" class="s-sub"></h4>
+        <div id="s-wallMode" class="segmented" role="radiogroup" aria-labelledby="s-walls-h">
+          <button type="button" role="radio" data-wall="up" aria-checked="false"></button>
+          <button type="button" role="radio" data-wall="cutaway" aria-checked="true"></button>
+          <button type="button" role="radio" data-wall="down" aria-checked="false"></button>
+        </div>
+        <p id="s-walls-help" class="muted small"></p>
         <p class="row muted small" aria-live="off">
           <span id="s-gfx-now-l"></span><output id="s-gfx-now">—</output>
         </p>

@@ -267,3 +267,29 @@ export interface Link {
   /** 1 while in use, fading to 0 after it ends. */
   opacity: number
 }
+
+/**
+ * Semantic interactions (docs/special-3d/interaction-contract.md): world objects in every mode map
+ * to the same application commands. Renderers only report what was picked; the controller decides.
+ */
+export const INTERACTION_KINDS = [
+  'project-directory',
+  'agent-workstation',
+  'command-display',
+  'memory-terminal',
+  'context-console',
+  'archive-terminal',
+  'handoff-platform',
+  'capability-station',
+  'provider-terminal',
+] as const
+export type InteractionKind = (typeof INTERACTION_KINDS)[number]
+export interface InteractionHit {
+  kind: InteractionKind
+  /** The anchor that was used (e.g. `interact:memory-terminal:0`); never shown to the user. */
+  anchor: string
+  /** Context the object carries: the agent at a workstation, a station's capability, a provider. */
+  agentId?: string
+  capability?: string
+  provider?: string
+}

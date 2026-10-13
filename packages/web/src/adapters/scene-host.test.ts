@@ -59,9 +59,14 @@ function fakeScene(mode: ViewMode) {
     focusAgents: rec('focusAgents'),
     setProjectLibrary: rec('setProjectLibrary'),
     onPickFixture: on('onPickFixture'),
+    onPickInteraction: on('onPickInteraction'),
     ...(mode === 'pixel'
       ? { onInteract: on('onInteract'), onRoom: on('onRoom') }
-      : { hardwareInfo: () => null, onFrameStats: on('onFrameStats') }),
+      : {
+          hardwareInfo: () => null,
+          onFrameStats: on('onFrameStats'),
+          setWallMode: rec('setWallMode'),
+        }),
   }
   const fire = (name: string, ...args: unknown[]) =>
     (fns[name] as ((...a: unknown[]) => void) | undefined)?.(...args)
@@ -411,6 +416,27 @@ describe('SceneHost: 2D zoom and run (HS-7)', () => {
     expect(made[1]!.calls.find((c) => c.name === 'zoomBy')?.args).toEqual([-1])
   })
 
+  // HS-11: semantic interactions (Night City terminals, kiosks) reach the controller after a switch.
+  it('HS-11 re-attaches onPickInteraction to every new scene', async () => {
+    const { host, made } = setup()
+    const hits: unknown[] = []
+    host.onPickInteraction((h) => hits.push(h))
+    await host.load('m.json')
+    made[0]!.fire('onPickInteraction', {
+      kind: 'memory-terminal',
+      anchor: 'interact:memory-terminal:0',
+    })
+    await host.switchTo('pixel')
+    made[1]!.fire('onPickInteraction', {
+      kind: 'command-display',
+      anchor: 'interact:command-display:0',
+    })
+    expect(hits).toEqual([
+      { kind: 'memory-terminal', anchor: 'interact:memory-terminal:0' },
+      { kind: 'command-display', anchor: 'interact:command-display:0' },
+    ])
+  })
+
   // HS-9: project focus, library and fixture picks forward, replay after a switch and re-attach.
   it('HS-9 forwards project focus and library, replays them, and re-attaches onPickFixture', async () => {
     const { host, made } = setup()
@@ -440,5 +466,20 @@ describe('SceneHost: 2D zoom and run (HS-7)', () => {
     await host.switchTo('3d')
     const again = made[2]!.calls.filter((c) => c.name === 'focusAgents')
     expect(again).toEqual([])
+  })
+
+  // HS-10: the wall mode (graphics contract §13) forwards to 3D, is ignored by 2D, and is replayed.
+  it('HS-10 caches the wall mode and replays it into a new 3D scene', async () => {
+    const { host, made } = setup()
+    await host.load('m.json')
+    host.setWallMode('down')
+    expect(made[0]!.calls.find((c) => c.name === 'setWallMode')?.args).toEqual(['down'])
+    await host.switchTo('pixel')
+    // The 2D scene has no setWallMode: nothing to call, nothing thrown.
+    expect(() => host.setWallMode('up')).not.toThrow()
+    await host.switchTo('3d')
+    expect(made[2]!.calls.filter((c) => c.name === 'setWallMode').map((c) => c.args)).toEqual([
+      ['up'],
+    ])
   })
 })

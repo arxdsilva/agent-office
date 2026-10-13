@@ -5,7 +5,7 @@ import type {
   Clock,
   EventPublisher,
   EventSubscriber,
-  HistorySource,
+  HistorySources,
   Logger,
   RecordLog,
   RepoIdentity,
@@ -39,7 +39,7 @@ export interface ProjectsDeps {
   repoIdentity?: RepoIdentity
   transcripts?: TranscriptReader
   /** Experimental: past provider sessions on disk (history import). */
-  history?: HistorySource
+  history?: HistorySources
   searchIndex?: SearchIndex
   random?: SecureRandom
   /** Providers enabled in Settings (a new project's default policy). */

@@ -1,5 +1,5 @@
-// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG` segmented switch
-// (plan §9). A radiogroup with roving focus; arrow keys move and pick.
+// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG | Night City`
+// segmented switch (plan §9; Night City is the optional, lazy-loaded Special 3D mode). A radiogroup with roving focus; arrow keys move and pick.
 import { PIXEL_COPY } from '../../app/pixel-copy.ts'
 import type { ViewMode } from '../../app/pixel/types.ts'
 import type { ModeToggleView } from '../../ports.ts'
@@ -8,6 +8,7 @@ import { byId, el } from './el.ts'
 const MODES: { mode: ViewMode; label: string }[] = [
   { mode: '3d', label: PIXEL_COPY.mode.office3d },
   { mode: 'pixel', label: PIXEL_COPY.mode.rpg2d },
+  { mode: 'special', label: PIXEL_COPY.mode.special },
 ]
 
 export class DomModeToggle implements ModeToggleView {

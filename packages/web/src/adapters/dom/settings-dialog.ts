@@ -4,6 +4,8 @@ import {
   GraphicsAdvancedSchema,
   GraphicsQualitySchema,
   SettingsSchema,
+  WALL_MODES,
+  type WallMode,
   type GraphicsAdvanced,
   type SettingsPatch,
 } from '@agent-office/shared'
@@ -55,6 +57,7 @@ type GfxVM = AppearanceVM &
     powerSaverHidden: boolean
     batteryPreset: BatteryPreset
     hardwareAcceleration: boolean
+    wallMode: WallMode
     graphics: GraphicsBlockVM
   }>
 
@@ -169,6 +172,7 @@ export class DomSettings implements SettingsView {
       )
     }
     this.bindGraphics()
+    this.bindWalls()
     byId<HTMLFormElement>('s-port-form').addEventListener('submit', (e) => {
       e.preventDefault()
       void this.changeFn({ port: Number(byId<HTMLInputElement>('s-port').value) })
@@ -219,6 +223,44 @@ export class DomSettings implements SettingsView {
       r.setAttribute('aria-checked', String(on))
       r.tabIndex = on ? 0 : -1
     }
+  }
+
+  /** Settings → Graphics → Walls (contract §13): Up / Cutaway / Down, a segmented radiogroup. */
+  private bindWalls(): void {
+    byId('s-walls-h').textContent = GFX_COPY.walls.title
+    const group = byId('s-wallMode')
+    const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    const pick = (m: WallMode, focus = false) => {
+      this.selectWall(m)
+      if (focus) radios.find((r) => r.dataset.wall === m)?.focus()
+      void this.changeFn({ wallMode: m })
+    }
+    for (const r of radios) {
+      const m = WALL_MODES.find((x) => x === r.dataset.wall)
+      if (!m) continue
+      r.textContent = GFX_COPY.walls.modes[m]
+      r.addEventListener('click', () => pick(m))
+    }
+    group.addEventListener('keydown', (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+      if (!step) return
+      e.preventDefault()
+      const on = group.querySelector<HTMLElement>('[aria-checked="true"]')
+      const cur = Math.max(
+        0,
+        WALL_MODES.findIndex((m) => m === on?.dataset.wall),
+      )
+      pick(WALL_MODES[(cur + step + WALL_MODES.length) % WALL_MODES.length]!, true)
+    })
+  }
+
+  private selectWall(m: WallMode): void {
+    for (const r of byId('s-wallMode').querySelectorAll<HTMLButtonElement>('[role="radio"]')) {
+      const on = r.dataset.wall === m
+      r.setAttribute('aria-checked', String(on))
+      r.tabIndex = on ? 0 : -1
+    }
+    byId('s-walls-help').textContent = GFX_COPY.walls.help[m]
   }
 
   /** Settings → Graphics (§2.1): preset, power saver, Advanced overrides, hardware acceleration. */
@@ -449,6 +491,7 @@ export class DomSettings implements SettingsView {
 
   render(vm: GfxVM): void {
     this.selectTheme(vm.theme ?? 'system')
+    this.selectWall(vm.wallMode ?? 'cutaway')
     if (!this.confirm.open)
       byId<HTMLInputElement>('s-allowBypassPermissions').checked =
         vm.allowBypassPermissions ?? false

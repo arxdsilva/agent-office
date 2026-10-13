@@ -66,6 +66,7 @@ import { CHROME_ID, type Draft, type NewSessionForm } from './app/session-types.
 import type { Manifest } from './app/manifest.ts'
 import { libraryKind } from './app/library.ts'
 import { dialogueVM, projectDialogue } from './app/pixel/dialogue-vm.ts'
+import { interactionAction } from './app/interactions.ts'
 import { directoryVM } from './app/pixel/directory-vm.ts'
 import { pixelHudVM } from './app/pixel/hud-vm.ts'
 import { minimapLabels, minimapVM } from './app/pixel/minimap.ts'
@@ -342,6 +343,9 @@ export function createController(d: ControllerDeps) {
     settingsNow = s
     allowBypass = s.allowBypassPermissions
     applyGraphics()
+    const walls = s.wallMode ?? 'cutaway'
+    d.scene.setWallMode?.(walls)
+    d.hud.renderWallMode?.(walls)
     if (pixelDeps) applyViewMode(s.viewMode ?? '3d')
   }
 
@@ -353,7 +357,8 @@ export function createController(d: ControllerDeps) {
     d.modeToggle?.render(mode)
     d.pixelHud?.show(mode === 'pixel')
     if (mode !== 'pixel') {
-      closeDialogue()
+      // Night City shows the same dialogue box (E on a terminal); only Classic 3D has none.
+      if (mode === '3d') closeDialogue()
       d.pixelHud?.renderMinimap(null)
       d.pixelHud?.renderDirectory(null)
     }
@@ -995,6 +1000,7 @@ export function createController(d: ControllerDeps) {
 
   // Library browser (low-spec plan §B2)
   d.hud.onLibrary(() => openLibrary())
+  d.hud.onWallMode?.((m) => changeSettings({ wallMode: m }))
   d.library.onProvider((p) => {
     libProvider = p
     libFocus = undefined
@@ -1438,6 +1444,17 @@ export function createController(d: ControllerDeps) {
     d.dialogue?.onAction(onDialogueAction)
     // The 3D reception's Project Directory (2D uses the reception-desk interact → dialogue).
     d.scene.onPickFixture?.(() => d.workspace?.openProjectPicker())
+    // Semantic world objects (Night City terminals and kiosks): the same commands as the desktop UI.
+    d.scene.onPickInteraction?.((hit) => {
+      const projectId = d.workspace?.projectDirectory().entries.find((e) => e.selected)?.projectId
+      const cmd = interactionAction(hit, { projectId: projectId ?? null })
+      if (!cmd) return
+      if (cmd.kind === 'workspace') void d.workspace?.perform(cmd.action)
+      else if (cmd.kind === 'dialogue') openDialogue(cmd.target)
+      else if (cmd.panel === 'agent') select(cmd.id ?? null)
+      else if (cmd.panel === 'connect') void openConnect('providers')
+      else if (cmd.id && cmd.provider) pickCapability({ provider: cmd.provider, id: cmd.id })
+    })
     d.dialogue?.onClose(() => {
       dialogueAt = null
       updateSuspension()

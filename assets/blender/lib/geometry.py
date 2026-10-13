@@ -13,6 +13,11 @@ created through `Geo.dynamic()`. Colliders are AABBs exported as invisible boxes
 Floor plan (contract §11, the optional 2D mode): `g.plan` collects rooms, walls (recorded by `wall`,
 `glass_partition`, `curtain_wall` and `Geo.plan_wall`) and furniture footprints (`Geo.furn`, called by the
 furniture kit), all in module-local glTF metres. Recording never touches geometry or the RNG.
+
+Wall ids (contract §13, the wall cutaway): every batch mesh carries a float point attribute `_WALLID`. It is 0
+except on geometry built inside `Geo.wall_tag(id)`, where it is the 1-based index of the wall in
+`plan.walls`. `wall`, `glass_partition` and `curtain_wall` tag their own geometry; module code that records
+a wall with `plan_wall` wraps the matching geometry in `with g.wall_tag(wid):`.
 """
 import math
 from contextlib import contextmanager
@@ -38,6 +43,7 @@ def _norm_yaw(h):
     return h
 
 
+WALLID = '_WALLID'  # contract §13: float point attribute, glTF custom attribute (three.js: `_wallid`)
 C = GLTF_TO_BLENDER
 C_INV = GLTF_TO_BLENDER.inverted()
 SMOOTH_ANGLE = math.radians(46.0)
@@ -53,6 +59,7 @@ class Batch:
         self.group = group
         self.mat = mat
         self.bm = bmesh.new()
+        self.bm.verts.layers.float.new(WALLID)
         self.vcol = materials.VCOL.get(mat, False)
         self.col = self.bm.loops.layers.float_color.new('Col') if self.vcol else None
 
@@ -84,6 +91,7 @@ class Geo:
         self.tris_estimate = 0
         self.plan = {'rooms': [], 'walls': [], 'furniture': []}  # contract §11
         self._plan_mute = 0
+        self._wall = 0  # contract §13: the wall id written into `_WALLID` (0 = not a wall)
 
     # ------------------------------------------------------------------ frames
     @contextmanager
@@ -159,6 +167,16 @@ class Geo:
         finally:
             self._plan_mute -= 1
 
+    @contextmanager
+    def wall_tag(self, wid):
+        """Tag every batch vertex built inside with wall id `wid` (contract §13)."""
+        prev = self._wall
+        self._wall = wid
+        try:
+            yield
+        finally:
+            self._wall = prev
+
     def furn(self, kind, w, d, x=0.0, z=0.0, yaw=0.0, ref=None):
         """Record a furniture footprint: w along local x, d along local z, centered at local (x, z)."""
         if self._plan_mute:
@@ -170,16 +188,17 @@ class Geo:
             item['ref'] = ref
         self.plan['furniture'].append(item)
 
-    def plan_wall(self, a, b, kind='solid', openings=(), *, side, thick):
+    def plan_wall(self, a, b, kind='solid', openings=(), *, side, thick, h):
         """Record a wall segment a→b (local XZ); openings are door/gap intervals [t0, t1] along a→b.
 
         `side` (±1) is the side of a→b the body extends to: +1 is the (−dz, dx) normal, which is local +z of
         the kit's wall frame (right of a→b seen from above, x right and z down). `thick` is the body depth in
         metres. A body centred on the line records side +1 and its full depth. Frames only translate and
-        yaw (never mirror), so the side survives the transform to module space."""
+        yaw (never mirror), so the side survives the transform to module space. `h` is the top of the wall
+        above the module floor (contract §13). Returns the wall id (its 1-based index in plan.walls)."""
         pa, pb = self.world(a[0], 0, a[1]), self.world(b[0], 0, b[1])
-        if side not in (-1, 1) or not thick > 0:
-            raise ValueError(f'plan_wall: side must be ±1 and thick > 0 (got {side!r}, {thick!r})')
+        if side not in (-1, 1) or not thick > 0 or not h > 0:
+            raise ValueError(f'plan_wall: side must be ±1, thick > 0 and h > 0 (got {side!r}, {thick!r}, {h!r})')
         wall_ = {'a': [_r3(pa[0]), _r3(pa[2])], 'b': [_r3(pb[0]), _r3(pb[2])], 'kind': kind}
         ops = []
         for (t0, t1) in sorted(openings):  # merge touching cuts (a door next to a storefront gap)
@@ -193,7 +212,10 @@ class Geo:
         if ops:
             wall_['openings'] = ops
         wall_['side'], wall_['thick'] = side, _r3(thick)
+        wall_['id'] = len(self.plan['walls']) + 1
+        wall_['h'] = _r3(h)
         self.plan['walls'].append(wall_)
+        return wall_['id']
 
     def room(self, rid, name, x0, z0, x1, z1, floor=None):
         """Record a room rect (local, axis-aligned after the current frame)."""
@@ -225,6 +247,12 @@ class Geo:
             res = bmesh.ops.bevel(bm, geom=edges, offset=bevel, segments=segs, profile=0.5, affect='EDGES',
                                   clamp_overlap=True)
             verts = [v for v in verts if v.is_valid] + list(res['verts'])
+        if self._wall:
+            lay = bm.verts.layers.float.get(WALLID)
+            if lay is not None:
+                for v in verts:
+                    if v.is_valid:
+                        v[lay] = float(self._wall)
         if col is not None:
             c = materials.rgba(color) if color is not None else (1, 1, 1, 1)
             faces = {f for v in verts if v.is_valid for f in v.link_faces}
@@ -445,8 +473,9 @@ def wall(g, mat, a, b, h, thick=0.15, y0=0.0, openings=(), side=1, bevel=0.003, 
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2  # local +x along a→b
     cuts = sorted(openings)
     # floor-level cuts are doors/gaps; raised ones are windows (contract §11)
-    g.plan_wall(a, b, 'solid', [(t0, t1) for (t0, t1, yb, yt) in cuts if yb <= y0 + 0.01], side=side, thick=thick)
-    with g.at(ax, az, yaw):
+    wid = g.plan_wall(a, b, 'solid', [(t0, t1) for (t0, t1, yb, yt) in cuts if yb <= y0 + 0.01], side=side,
+                      thick=thick, h=y0 + h)
+    with g.at(ax, az, yaw), g.wall_tag(wid):
         zc = side * thick / 2
         spans = []
         t = 0.0
@@ -484,8 +513,8 @@ def glass_partition(g, P, a, b, h=2.7, spacing=1.2, door=None, frame='metal', to
     mw = 0.05
     # the body is centred on the line: mullions ±0.03, door frames ±0.05, the solid head ±0.06
     depth = 0.12 if top and top > h else 0.10 if door else 0.06
-    g.plan_wall(a, b, 'glass', [door] if door else (), side=1, thick=depth)
-    with g.at(ax, az, yaw):
+    wid = g.plan_wall(a, b, 'glass', [door] if door else (), side=1, thick=depth, h=max(h, top or 0))
+    with g.at(ax, az, yaw), g.wall_tag(wid):
         g.box_b(fm, 0, L, h - 0.06, h, -0.03, 0.03, bevel=0.003)
         segs = []
         t = 0.0
@@ -526,8 +555,8 @@ def curtain_wall(g, P, a, b, h, spacing=1.5, transoms=(), thick=0.12, sill=0.0, 
     yaw = math.atan2(bx - ax, bz - az) - math.pi / 2
     fm = P[frame]
     zc = side * thick / 2
-    g.plan_wall(a, b, 'curtain', side=side, thick=thick)
-    with g.at(ax, az, yaw):
+    wid = g.plan_wall(a, b, 'curtain', side=side, thick=thick, h=h)
+    with g.at(ax, az, yaw), g.wall_tag(wid):
         n = max(1, round(L / spacing))
         for i in range(n + 1):
             x = min(max(L * i / n, 0.04), L - 0.04)

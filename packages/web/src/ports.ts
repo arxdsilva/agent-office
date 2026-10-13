@@ -18,7 +18,7 @@ import type {
   PixelHudVM,
   TileRect,
 } from './app/pixel/types.ts'
-import type { ViewMode } from '@agent-office/shared'
+import type { ViewMode, WallMode } from '@agent-office/shared'
 import type { LibraryTab, LibrarySort, LibraryVM, ViewEntry } from './app/library-types.ts'
 import type {
   NewSessionVM,
@@ -29,7 +29,13 @@ import type {
 import type { Manifest } from './app/manifest.ts'
 import type { ProjectLibraryVM } from './app/project-library.ts'
 import type { CapabilityPanelVM, ProviderSurfaces } from './app/capability-vm.ts'
-import type { AgentPlan, BuildingLayout, ClipName, Link } from './app/office-types.ts'
+import type {
+  AgentPlan,
+  BuildingLayout,
+  ClipName,
+  InteractionHit,
+  Link,
+} from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 import type {
   ConnectTab,
@@ -127,6 +133,10 @@ export interface SceneView {
   focusAgents?(ids: string[] | null, o: { dim: boolean; frame: boolean }): void
   /** The user picked a fixture: the reception desk's Project Directory (3D click; 2D uses onInteract). */
   onPickFixture?(fn: (f: { kind: 'project-directory' }) => void): void
+  /** Sims-style wall visibility (3D modes; graphics contract §13). Cached and replayed by the host. */
+  setWallMode?(m: WallMode): void
+  /** E or a click on a semantic world object (docs/special-3d/interaction-contract.md). */
+  onPickInteraction?(fn: (hit: InteractionHit) => void): void
   /**
    * The selected project's Library: notebooks, shelves and boards show collection names and
    * counts (never titles). Null returns to the provider's capabilities. Replayed by the host.
@@ -233,6 +243,9 @@ export interface HudView {
   onNewSession(fn: () => void): void
   /** The 📚 Library button. */
   onLibrary(fn: () => void): void
+  /** The wall-mode button (Up / Cutaway / Down); 3D modes only. */
+  onWallMode?(fn: (m: WallMode) => void | Promise<void>): void
+  renderWallMode?(m: WallMode): void
 }
 
 /** The Library browser drawer (`<aside id="library">`), low-spec plan §B2. */

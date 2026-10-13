@@ -1,0 +1,8623 @@
+{
+  "version": 1,
+  "set": "special",
+  "blender": "5.2.2",
+  "units": "m",
+  "hash": "c4b97269f9599338a42235b792c0dd3d7b7343cc99bd16860cabb33855b4edc2",
+  "hdri": "hdri/night.hdr",
+  "modules": {
+    "hq-atrium": {
+      "file": "hq-atrium.glb",
+      "lightmap": {
+        "file": "hq-atrium.lightmap.full.webp",
+        "intensity": 6.2578,
+        "variants": {
+          "full": "hq-atrium.lightmap.full.webp",
+          "half": "hq-atrium.lightmap.half.webp",
+          "quarter": "hq-atrium.lightmap.quarter.webp"
+        }
+      },
+      "bounds": {
+        "minX": -20,
+        "maxX": 20,
+        "minZ": -30,
+        "maxZ": 0
+      },
+      "placement": {
+        "x": 0,
+        "z": 0,
+        "yaw": 0
+      },
+      "height": 14,
+      "connectors": {
+        "command": {
+          "x": 20,
+          "z": -9
+        }
+      },
+      "anchors": {
+        "interact:project-directory:0": {
+          "x": 3,
+          "y": 0,
+          "z": -11.5,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "hall",
+          "approach": {
+            "x": 3,
+            "z": -10.9
+          }
+        },
+        "player:spawn": {
+          "x": 0,
+          "y": 0,
+          "z": -5.2,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": 0,
+            "z": -5.2
+          }
+        },
+        "seat:lounge:0": {
+          "x": -0.35,
+          "y": 0,
+          "z": -19.48,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": -0.35,
+            "z": -19.94
+          }
+        },
+        "seat:lounge:1": {
+          "x": -1.65,
+          "y": 0,
+          "z": -19.48,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": -1.65,
+            "z": -19.94
+          }
+        },
+        "seat:lounge:10": {
+          "x": 15.62,
+          "y": 0,
+          "z": -21.05,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 15.16,
+            "z": -21.05
+          }
+        },
+        "seat:lounge:11": {
+          "x": 15.62,
+          "y": 0,
+          "z": -19.75,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 15.16,
+            "z": -19.75
+          }
+        },
+        "seat:lounge:2": {
+          "x": 1.02,
+          "y": 0,
+          "z": -22.15,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 0.56,
+            "z": -22.15
+          }
+        },
+        "seat:lounge:3": {
+          "x": 1.02,
+          "y": 0,
+          "z": -20.85,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 0.56,
+            "z": -20.85
+          }
+        },
+        "seat:lounge:4": {
+          "x": 7.65,
+          "y": 0,
+          "z": -21.18,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 7.65,
+            "z": -21.64
+          }
+        },
+        "seat:lounge:5": {
+          "x": 6.35,
+          "y": 0,
+          "z": -21.18,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 6.35,
+            "z": -21.64
+          }
+        },
+        "seat:lounge:6": {
+          "x": 9.02,
+          "y": 0,
+          "z": -23.85,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 8.56,
+            "z": -23.85
+          }
+        },
+        "seat:lounge:7": {
+          "x": 9.02,
+          "y": 0,
+          "z": -22.55,
+          "heading": -1.5708,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 8.56,
+            "z": -22.55
+          }
+        },
+        "seat:lounge:8": {
+          "x": 14.25,
+          "y": 0,
+          "z": -18.38,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 14.25,
+            "z": -18.84
+          }
+        },
+        "seat:lounge:9": {
+          "x": 12.95,
+          "y": 0,
+          "z": -18.38,
+          "heading": 3.1416,
+          "pose": "lounge",
+          "room": "lounge",
+          "approach": {
+            "x": 12.95,
+            "z": -18.84
+          }
+        },
+        "spot:elevator:0": {
+          "x": 5.8,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": 5.8,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:1": {
+          "x": 5,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": 5,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:2": {
+          "x": 2.2,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": 2.2,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:3": {
+          "x": 1.4,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": 1.4,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:4": {
+          "x": -1.4,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -1.4,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:5": {
+          "x": -2.2,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -2.2,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:6": {
+          "x": -5,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -5,
+            "z": -4.55
+          }
+        },
+        "spot:elevator:7": {
+          "x": -5.8,
+          "y": 0,
+          "z": -3.95,
+          "heading": 0,
+          "pose": "stand",
+          "room": "elevator",
+          "approach": {
+            "x": -5.8,
+            "z": -4.55
+          }
+        },
+        "spot:reception:0": {
+          "x": 11.2,
+          "y": 0,
+          "z": -5.15,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": 11.2,
+            "z": -4.55
+          }
+        },
+        "spot:reception:1": {
+          "x": 12.4,
+          "y": 0,
+          "z": -5.15,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": 12.4,
+            "z": -4.55
+          }
+        },
+        "spot:reception:2": {
+          "x": 13.6,
+          "y": 0,
+          "z": -5.15,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": 13.6,
+            "z": -4.55
+          }
+        },
+        "spot:reception:3": {
+          "x": 14.8,
+          "y": 0,
+          "z": -5.15,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "reception",
+          "approach": {
+            "x": 14.8,
+            "z": -4.55
+          }
+        }
+      },
+      "nav": {
+        "nodes": {
+          "ap:interact:project-directory:0": {
+            "x": 3,
+            "z": -10.9,
+            "width": 0.35
+          },
+          "ap:player:spawn": {
+            "x": 0,
+            "z": -5.2,
+            "width": 0.35
+          },
+          "ap:seat:lounge:0": {
+            "x": -0.35,
+            "z": -19.94,
+            "width": 0.35
+          },
+          "ap:seat:lounge:1": {
+            "x": -1.65,
+            "z": -19.94,
+            "width": 0.35
+          },
+          "ap:seat:lounge:10": {
+            "x": 15.16,
+            "z": -21.05,
+            "width": 0.35
+          },
+          "ap:seat:lounge:11": {
+            "x": 15.16,
+            "z": -19.75,
+            "width": 0.35
+          },
+          "ap:seat:lounge:2": {
+            "x": 0.56,
+            "z": -22.15,
+            "width": 0.35
+          },
+          "ap:seat:lounge:3": {
+            "x": 0.56,
+            "z": -20.85,
+            "width": 0.35
+          },
+          "ap:seat:lounge:4": {
+            "x": 7.65,
+            "z": -21.64,
+            "width": 0.35
+          },
+          "ap:seat:lounge:5": {
+            "x": 6.35,
+            "z": -21.64,
+            "width": 0.35
+          },
+          "ap:seat:lounge:6": {
+            "x": 8.56,
+            "z": -23.85,
+            "width": 0.35
+          },
+          "ap:seat:lounge:7": {
+            "x": 8.56,
+            "z": -22.55,
+            "width": 0.35
+          },
+          "ap:seat:lounge:8": {
+            "x": 14.25,
+            "z": -18.84,
+            "width": 0.35
+          },
+          "ap:seat:lounge:9": {
+            "x": 12.95,
+            "z": -18.84,
+            "width": 0.35
+          },
+          "ap:spot:elevator:0": {
+            "x": 5.8,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:1": {
+            "x": 5,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:2": {
+            "x": 2.2,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:3": {
+            "x": 1.4,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:4": {
+            "x": -1.4,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:5": {
+            "x": -2.2,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:6": {
+            "x": -5,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:elevator:7": {
+            "x": -5.8,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:reception:0": {
+            "x": 11.2,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:reception:1": {
+            "x": 12.4,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:reception:2": {
+            "x": 13.6,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "ap:spot:reception:3": {
+            "x": 14.8,
+            "z": -4.55,
+            "width": 0.35
+          },
+          "h:disp_n": {
+            "x": -12,
+            "z": -12,
+            "width": 1.4
+          },
+          "h:disp_s": {
+            "x": -12,
+            "z": -23,
+            "width": 1.4
+          },
+          "h:door": {
+            "x": 20,
+            "z": -9,
+            "width": 1.4
+          },
+          "h:door_in": {
+            "x": 18.8,
+            "z": -9,
+            "width": 1
+          },
+          "h:gate0": {
+            "x": -3.5,
+            "z": -7.6,
+            "width": 0.5
+          },
+          "h:gate1": {
+            "x": -1.17,
+            "z": -7.6,
+            "width": 0.5
+          },
+          "h:gate2": {
+            "x": 1.17,
+            "z": -7.6,
+            "width": 0.5
+          },
+          "h:gate3": {
+            "x": 3.5,
+            "z": -7.6,
+            "width": 0.5
+          },
+          "h:hall_c": {
+            "x": 3,
+            "z": -10.4,
+            "width": 1.2
+          },
+          "h:hall_e": {
+            "x": 12,
+            "z": -10,
+            "width": 1.2
+          },
+          "h:hall_w": {
+            "x": -3.5,
+            "z": -10.5,
+            "width": 1.2
+          },
+          "h:lc0": {
+            "x": 0.55,
+            "z": -19.95,
+            "width": 0.25
+          },
+          "h:lc1": {
+            "x": 8.55,
+            "z": -21.65,
+            "width": 0.25
+          },
+          "h:lc2": {
+            "x": 15.15,
+            "z": -18.85,
+            "width": 0.25
+          },
+          "h:lo0": {
+            "x": 2,
+            "z": -18.5,
+            "width": 0.5
+          },
+          "h:lo1": {
+            "x": 10,
+            "z": -20.2,
+            "width": 0.5
+          },
+          "h:lo2": {
+            "x": 16.6,
+            "z": -17.4,
+            "width": 0.5
+          },
+          "h:lobby_e": {
+            "x": 9,
+            "z": -4.4,
+            "width": 1
+          },
+          "h:lobby_w": {
+            "x": -10.5,
+            "z": -5.6,
+            "width": 1.2
+          },
+          "h:lounge_c": {
+            "x": 3.8,
+            "z": -19.6,
+            "width": 0.8
+          },
+          "h:lounge_e": {
+            "x": 10.4,
+            "z": -18.2,
+            "width": 0.8
+          },
+          "h:lounge_n": {
+            "x": 5,
+            "z": -16.6,
+            "width": 1.2
+          },
+          "h:lounge_s": {
+            "x": 2.5,
+            "z": -27.6,
+            "width": 1
+          },
+          "h:lounge_se": {
+            "x": 11,
+            "z": -26,
+            "width": 0.8
+          },
+          "h:lounge_w": {
+            "x": -4.2,
+            "z": -19.5,
+            "width": 1
+          },
+          "h:rec": {
+            "x": 13,
+            "z": -4.2,
+            "width": 1
+          },
+          "h:spawn": {
+            "x": 0,
+            "z": -5.2,
+            "width": 1.4
+          },
+          "h:stair_ft": {
+            "x": 18.8,
+            "z": -28.6,
+            "width": 0.9
+          },
+          "h:stair_w": {
+            "x": 16.4,
+            "z": -26.4,
+            "width": 0.9
+          },
+          "m:bridge": {
+            "x": -11.5,
+            "z": -15,
+            "width": 0.9,
+            "y": 6
+          },
+          "m:deck": {
+            "x": -11.5,
+            "z": -28.3,
+            "width": 1,
+            "y": 6
+          },
+          "m:deck_e": {
+            "x": -5,
+            "z": -28.3,
+            "width": 1,
+            "y": 6
+          },
+          "m:deck_w": {
+            "x": -17.5,
+            "z": -28.3,
+            "width": 1,
+            "y": 6
+          },
+          "m:gal_c": {
+            "x": 0,
+            "z": -4,
+            "width": 0.6,
+            "y": 6
+          },
+          "m:gal_e": {
+            "x": 12,
+            "z": -4,
+            "width": 0.6,
+            "y": 6
+          },
+          "m:gal_w": {
+            "x": -11.5,
+            "z": -4,
+            "width": 0.6,
+            "y": 6
+          },
+          "m:stair_top": {
+            "x": 18.8,
+            "z": -15.9,
+            "width": 0.9,
+            "y": 6
+          },
+          "m:walk": {
+            "x": 18.8,
+            "z": -6,
+            "width": 0.9,
+            "y": 6
+          }
+        },
+        "edges": [
+          [
+            "ap:interact:project-directory:0",
+            "h:hall_c"
+          ],
+          [
+            "ap:player:spawn",
+            "h:spawn"
+          ],
+          [
+            "ap:seat:lounge:0",
+            "h:lc0"
+          ],
+          [
+            "ap:seat:lounge:1",
+            "h:lc0"
+          ],
+          [
+            "ap:seat:lounge:10",
+            "h:lc2"
+          ],
+          [
+            "ap:seat:lounge:11",
+            "h:lc2"
+          ],
+          [
+            "ap:seat:lounge:2",
+            "h:lc0"
+          ],
+          [
+            "ap:seat:lounge:3",
+            "h:lc0"
+          ],
+          [
+            "ap:seat:lounge:4",
+            "h:lc1"
+          ],
+          [
+            "ap:seat:lounge:5",
+            "h:lc1"
+          ],
+          [
+            "ap:seat:lounge:6",
+            "h:lc1"
+          ],
+          [
+            "ap:seat:lounge:7",
+            "h:lc1"
+          ],
+          [
+            "ap:seat:lounge:8",
+            "h:lc2"
+          ],
+          [
+            "ap:seat:lounge:9",
+            "h:lc2"
+          ],
+          [
+            "ap:spot:elevator:0",
+            "h:lobby_e"
+          ],
+          [
+            "ap:spot:elevator:1",
+            "h:gate3"
+          ],
+          [
+            "ap:spot:elevator:2",
+            "h:spawn"
+          ],
+          [
+            "ap:spot:elevator:3",
+            "h:spawn"
+          ],
+          [
+            "ap:spot:elevator:4",
+            "h:spawn"
+          ],
+          [
+            "ap:spot:elevator:5",
+            "h:spawn"
+          ],
+          [
+            "ap:spot:elevator:6",
+            "h:gate0"
+          ],
+          [
+            "ap:spot:elevator:7",
+            "h:gate0"
+          ],
+          [
+            "ap:spot:reception:0",
+            "h:rec"
+          ],
+          [
+            "ap:spot:reception:1",
+            "h:rec"
+          ],
+          [
+            "ap:spot:reception:2",
+            "h:rec"
+          ],
+          [
+            "ap:spot:reception:3",
+            "h:rec"
+          ],
+          [
+            "h:disp_n",
+            "h:disp_s"
+          ],
+          [
+            "h:disp_n",
+            "h:hall_w"
+          ],
+          [
+            "h:disp_s",
+            "h:lounge_w"
+          ],
+          [
+            "h:door",
+            "h:door_in"
+          ],
+          [
+            "h:door_in",
+            "h:hall_e"
+          ],
+          [
+            "h:gate0",
+            "h:hall_w"
+          ],
+          [
+            "h:gate0",
+            "h:spawn"
+          ],
+          [
+            "h:gate1",
+            "h:hall_w"
+          ],
+          [
+            "h:gate1",
+            "h:spawn"
+          ],
+          [
+            "h:gate2",
+            "h:hall_c"
+          ],
+          [
+            "h:gate2",
+            "h:spawn"
+          ],
+          [
+            "h:gate3",
+            "h:hall_c"
+          ],
+          [
+            "h:gate3",
+            "h:spawn"
+          ],
+          [
+            "h:hall_c",
+            "h:hall_e"
+          ],
+          [
+            "h:hall_c",
+            "h:hall_w"
+          ],
+          [
+            "h:hall_c",
+            "h:lounge_n"
+          ],
+          [
+            "h:hall_w",
+            "h:lounge_w"
+          ],
+          [
+            "h:lc0",
+            "h:lo0"
+          ],
+          [
+            "h:lc1",
+            "h:lo1"
+          ],
+          [
+            "h:lc2",
+            "h:lo2"
+          ],
+          [
+            "h:lo0",
+            "h:lounge_c"
+          ],
+          [
+            "h:lo0",
+            "h:lounge_w"
+          ],
+          [
+            "h:lo1",
+            "h:lounge_e"
+          ],
+          [
+            "h:lo2",
+            "h:lounge_e"
+          ],
+          [
+            "h:lo2",
+            "h:stair_w"
+          ],
+          [
+            "h:lobby_e",
+            "h:rec"
+          ],
+          [
+            "h:lobby_e",
+            "h:spawn"
+          ],
+          [
+            "h:lobby_w",
+            "h:spawn"
+          ],
+          [
+            "h:lounge_c",
+            "h:lounge_n"
+          ],
+          [
+            "h:lounge_e",
+            "h:lounge_n"
+          ],
+          [
+            "h:lounge_e",
+            "h:lounge_se"
+          ],
+          [
+            "h:lounge_s",
+            "h:lounge_se"
+          ],
+          [
+            "h:lounge_s",
+            "h:lounge_w"
+          ],
+          [
+            "h:lounge_se",
+            "h:stair_w"
+          ],
+          [
+            "h:stair_ft",
+            "h:stair_w"
+          ],
+          [
+            "h:stair_ft",
+            "m:stair_top"
+          ],
+          [
+            "m:bridge",
+            "m:deck"
+          ],
+          [
+            "m:bridge",
+            "m:gal_w"
+          ],
+          [
+            "m:deck",
+            "m:deck_e"
+          ],
+          [
+            "m:deck",
+            "m:deck_w"
+          ],
+          [
+            "m:gal_c",
+            "m:gal_e"
+          ],
+          [
+            "m:gal_c",
+            "m:gal_w"
+          ],
+          [
+            "m:gal_e",
+            "m:walk"
+          ],
+          [
+            "m:stair_top",
+            "m:walk"
+          ]
+        ]
+      },
+      "plan": {
+        "rooms": [
+          {
+            "id": "elevator",
+            "name": "Elevator lobby",
+            "rect": [
+              -20,
+              -7.6,
+              9,
+              0
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "reception",
+            "name": "Reception",
+            "rect": [
+              9,
+              -7.6,
+              20,
+              0
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "display",
+            "name": "Display plaza",
+            "rect": [
+              -20,
+              -30,
+              -5,
+              -7.6
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "hall",
+            "name": "Hall",
+            "rect": [
+              -5,
+              -16,
+              20,
+              -7.6
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "lounge",
+            "name": "Bonsai lounge",
+            "rect": [
+              -5,
+              -30,
+              17.6,
+              -16
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "stair",
+            "name": "Stair",
+            "rect": [
+              17.6,
+              -30,
+              20,
+              -16
+            ],
+            "floor": "concrete"
+          }
+        ],
+        "walls": [
+          {
+            "a": [
+              -20,
+              0
+            ],
+            "b": [
+              20,
+              0
+            ],
+            "kind": "solid",
+            "side": -1,
+            "thick": 0.3,
+            "id": 1,
+            "h": 14
+          },
+          {
+            "a": [
+              -20,
+              -30
+            ],
+            "b": [
+              -20,
+              0
+            ],
+            "kind": "solid",
+            "side": -1,
+            "thick": 0.3,
+            "id": 2,
+            "h": 14
+          },
+          {
+            "a": [
+              20,
+              -30
+            ],
+            "b": [
+              20,
+              0
+            ],
+            "kind": "solid",
+            "openings": [
+              [
+                19.5,
+                22.5
+              ]
+            ],
+            "side": 1,
+            "thick": 0.3,
+            "id": 3,
+            "h": 14
+          },
+          {
+            "a": [
+              -20,
+              -30
+            ],
+            "b": [
+              20,
+              -30
+            ],
+            "kind": "curtain",
+            "side": 1,
+            "thick": 0.22,
+            "id": 4,
+            "h": 14
+          },
+          {
+            "a": [
+              -19.7,
+              -7.6
+            ],
+            "b": [
+              -7.12,
+              -7.6
+            ],
+            "kind": "glass",
+            "side": 1,
+            "thick": 0.06,
+            "id": 5,
+            "h": 2.4
+          },
+          {
+            "a": [
+              7.12,
+              -7.6
+            ],
+            "b": [
+              19.7,
+              -7.6
+            ],
+            "kind": "glass",
+            "side": 1,
+            "thick": 0.06,
+            "id": 6,
+            "h": 2.4
+          }
+        ],
+        "furniture": [
+          {
+            "kind": "elevator",
+            "x": 0,
+            "z": -1.75,
+            "w": 15.4,
+            "d": 3.2,
+            "yaw": 3.142
+          },
+          {
+            "kind": "console",
+            "x": 0,
+            "z": -7.6,
+            "w": 14,
+            "d": 0.9,
+            "yaw": 0
+          },
+          {
+            "kind": "reception-desk",
+            "x": 13,
+            "z": -6.4,
+            "w": 5.6,
+            "d": 1.2,
+            "yaw": 0
+          },
+          {
+            "kind": "planter",
+            "x": -1,
+            "z": -21.5,
+            "w": 2.7,
+            "d": 2.7,
+            "yaw": 0
+          },
+          {
+            "kind": "sofa",
+            "x": -1,
+            "z": -19.05,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": 3.142
+          },
+          {
+            "kind": "sofa",
+            "x": 1.45,
+            "z": -21.5,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": -1.571
+          },
+          {
+            "kind": "cafe-table",
+            "x": -3,
+            "z": -19.05,
+            "w": 0.7,
+            "d": 0.7,
+            "yaw": 0.785
+          },
+          {
+            "kind": "planter",
+            "x": 7,
+            "z": -23.2,
+            "w": 2.7,
+            "d": 2.7,
+            "yaw": 0
+          },
+          {
+            "kind": "sofa",
+            "x": 7,
+            "z": -20.75,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": 3.142
+          },
+          {
+            "kind": "sofa",
+            "x": 9.45,
+            "z": -23.2,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": -1.571
+          },
+          {
+            "kind": "cafe-table",
+            "x": 5,
+            "z": -20.75,
+            "w": 0.7,
+            "d": 0.7,
+            "yaw": 0.785
+          },
+          {
+            "kind": "planter",
+            "x": 13.6,
+            "z": -20.4,
+            "w": 2.7,
+            "d": 2.7,
+            "yaw": 0
+          },
+          {
+            "kind": "sofa",
+            "x": 13.6,
+            "z": -17.95,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": 3.142
+          },
+          {
+            "kind": "sofa",
+            "x": 16.05,
+            "z": -20.4,
+            "w": 2.6,
+            "d": 0.95,
+            "yaw": -1.571
+          },
+          {
+            "kind": "cafe-table",
+            "x": 11.6,
+            "z": -17.95,
+            "w": 0.7,
+            "d": 0.7,
+            "yaw": 0.785
+          },
+          {
+            "kind": "kiosk",
+            "x": 3,
+            "z": -12.4,
+            "w": 1.3,
+            "d": 0.9,
+            "yaw": 0
+          }
+        ]
+      }
+    },
+    "command": {
+      "file": "command.glb",
+      "lightmap": {
+        "file": "command.lightmap.full.webp",
+        "intensity": 4.2747,
+        "variants": {
+          "full": "command.lightmap.full.webp",
+          "half": "command.lightmap.half.webp",
+          "quarter": "command.lightmap.quarter.webp"
+        }
+      },
+      "bounds": {
+        "minX": 0,
+        "maxX": 44,
+        "minZ": -13,
+        "maxZ": 13
+      },
+      "placement": {
+        "x": 20,
+        "z": -9,
+        "yaw": 0
+      },
+      "height": 5.4,
+      "connectors": {
+        "hq-atrium": {
+          "x": 0,
+          "z": 0
+        }
+      },
+      "departments": {
+        "0": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "cyan"
+        },
+        "1": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "amber"
+        },
+        "2": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "magenta"
+        },
+        "3": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "acid"
+        },
+        "4": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "red"
+        },
+        "5": {
+          "pods": 6,
+          "seats": 24,
+          "accent": "cyan"
+        }
+      },
+      "anchors": {
+        "booth:0": {
+          "x": 5.1,
+          "y": 0,
+          "z": 12,
+          "heading": 0,
+          "pose": "stand",
+          "room": "comms",
+          "led": "booth:0",
+          "approach": {
+            "x": 5.1,
+            "z": 10.6
+          }
+        },
+        "booth:1": {
+          "x": 7,
+          "y": 0,
+          "z": 12,
+          "heading": 0,
+          "pose": "stand",
+          "room": "comms",
+          "led": "booth:1",
+          "approach": {
+            "x": 7,
+            "z": 10.6
+          }
+        },
+        "booth:2": {
+          "x": 5.4,
+          "y": 0,
+          "z": -12,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "comms",
+          "led": "booth:2",
+          "approach": {
+            "x": 5.4,
+            "z": -10.6
+          }
+        },
+        "booth:3": {
+          "x": 7.3,
+          "y": 0,
+          "z": -12,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "comms",
+          "led": "booth:3",
+          "approach": {
+            "x": 7.3,
+            "z": -10.6
+          }
+        },
+        "interact:command-display:0": {
+          "x": 23.5,
+          "y": 0,
+          "z": -3.75,
+          "heading": 0,
+          "pose": "stand",
+          "room": "ops",
+          "approach": {
+            "x": 23.5,
+            "z": -4.25
+          }
+        },
+        "interact:provider-terminal:0": {
+          "x": 5.1,
+          "y": 0,
+          "z": 2.4,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": 2.4
+          }
+        },
+        "interact:provider-terminal:1": {
+          "x": 5.1,
+          "y": 0,
+          "z": 3.6,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": 3.6
+          }
+        },
+        "interact:provider-terminal:2": {
+          "x": 5.1,
+          "y": 0,
+          "z": 4.8,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": 4.8
+          }
+        },
+        "interact:provider-terminal:3": {
+          "x": 5.1,
+          "y": 0,
+          "z": -2.4,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": -2.4
+          }
+        },
+        "interact:provider-terminal:4": {
+          "x": 5.1,
+          "y": 0,
+          "z": -3.6,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": -3.6
+          }
+        },
+        "interact:provider-terminal:5": {
+          "x": 5.1,
+          "y": 0,
+          "z": -4.8,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "comms",
+          "approach": {
+            "x": 5.7,
+            "z": -4.8
+          }
+        },
+        "meet:A:0": {
+          "x": 40.54,
+          "y": 0,
+          "z": 6.9,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 39.65,
+            "z": 6.9
+          }
+        },
+        "meet:A:1": {
+          "x": 40.54,
+          "y": 0,
+          "z": 8,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 39.65,
+            "z": 8
+          }
+        },
+        "meet:A:2": {
+          "x": 40.54,
+          "y": 0,
+          "z": 9.1,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 39.65,
+            "z": 9.1
+          }
+        },
+        "meet:A:3": {
+          "x": 41.96,
+          "y": 0,
+          "z": 6.9,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 42.85,
+            "z": 6.9
+          }
+        },
+        "meet:A:4": {
+          "x": 41.96,
+          "y": 0,
+          "z": 8,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 42.85,
+            "z": 8
+          }
+        },
+        "meet:A:5": {
+          "x": 41.96,
+          "y": 0,
+          "z": 9.1,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-A",
+          "approach": {
+            "x": 42.85,
+            "z": 9.1
+          }
+        },
+        "meet:B:0": {
+          "x": 40.54,
+          "y": 0,
+          "z": -9.1,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 39.65,
+            "z": -9.1
+          }
+        },
+        "meet:B:1": {
+          "x": 40.54,
+          "y": 0,
+          "z": -8,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 39.65,
+            "z": -8
+          }
+        },
+        "meet:B:2": {
+          "x": 40.54,
+          "y": 0,
+          "z": -6.9,
+          "heading": 1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 39.65,
+            "z": -6.9
+          }
+        },
+        "meet:B:3": {
+          "x": 41.96,
+          "y": 0,
+          "z": -9.1,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 42.85,
+            "z": -9.1
+          }
+        },
+        "meet:B:4": {
+          "x": 41.96,
+          "y": 0,
+          "z": -8,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 42.85,
+            "z": -8
+          }
+        },
+        "meet:B:5": {
+          "x": 41.96,
+          "y": 0,
+          "z": -6.9,
+          "heading": -1.5708,
+          "pose": "sit",
+          "room": "meeting-B",
+          "approach": {
+            "x": 42.85,
+            "z": -6.9
+          }
+        },
+        "ws:0:0:0": {
+          "x": 9.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:0:0",
+          "approach": {
+            "x": 9.8,
+            "z": 4.28
+          }
+        },
+        "ws:0:0:1": {
+          "x": 11.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:0:1",
+          "approach": {
+            "x": 11.2,
+            "z": 4.28
+          }
+        },
+        "ws:0:0:2": {
+          "x": 9.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:0:2",
+          "approach": {
+            "x": 9.8,
+            "z": 7.72
+          }
+        },
+        "ws:0:0:3": {
+          "x": 11.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:0:3",
+          "approach": {
+            "x": 11.2,
+            "z": 7.72
+          }
+        },
+        "ws:0:1:0": {
+          "x": 12.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:1:0",
+          "approach": {
+            "x": 12.8,
+            "z": 4.28
+          }
+        },
+        "ws:0:1:1": {
+          "x": 14.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:1:1",
+          "approach": {
+            "x": 14.2,
+            "z": 4.28
+          }
+        },
+        "ws:0:1:2": {
+          "x": 12.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:1:2",
+          "approach": {
+            "x": 12.8,
+            "z": 7.72
+          }
+        },
+        "ws:0:1:3": {
+          "x": 14.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:1:3",
+          "approach": {
+            "x": 14.2,
+            "z": 7.72
+          }
+        },
+        "ws:0:2:0": {
+          "x": 15.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:2:0",
+          "approach": {
+            "x": 15.8,
+            "z": 4.28
+          }
+        },
+        "ws:0:2:1": {
+          "x": 17.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:2:1",
+          "approach": {
+            "x": 17.2,
+            "z": 4.28
+          }
+        },
+        "ws:0:2:2": {
+          "x": 15.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:2:2",
+          "approach": {
+            "x": 15.8,
+            "z": 7.72
+          }
+        },
+        "ws:0:2:3": {
+          "x": 17.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:2:3",
+          "approach": {
+            "x": 17.2,
+            "z": 7.72
+          }
+        },
+        "ws:0:3:0": {
+          "x": 9.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:3:0",
+          "approach": {
+            "x": 9.8,
+            "z": 8.12
+          }
+        },
+        "ws:0:3:1": {
+          "x": 11.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:3:1",
+          "approach": {
+            "x": 11.2,
+            "z": 8.12
+          }
+        },
+        "ws:0:3:2": {
+          "x": 9.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:3:2",
+          "approach": {
+            "x": 9.8,
+            "z": 11.56
+          }
+        },
+        "ws:0:3:3": {
+          "x": 11.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:3:3",
+          "approach": {
+            "x": 11.2,
+            "z": 11.56
+          }
+        },
+        "ws:0:4:0": {
+          "x": 12.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:4:0",
+          "approach": {
+            "x": 12.8,
+            "z": 8.12
+          }
+        },
+        "ws:0:4:1": {
+          "x": 14.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:4:1",
+          "approach": {
+            "x": 14.2,
+            "z": 8.12
+          }
+        },
+        "ws:0:4:2": {
+          "x": 12.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:4:2",
+          "approach": {
+            "x": 12.8,
+            "z": 11.56
+          }
+        },
+        "ws:0:4:3": {
+          "x": 14.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:4:3",
+          "approach": {
+            "x": 14.2,
+            "z": 11.56
+          }
+        },
+        "ws:0:5:0": {
+          "x": 15.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:5:0",
+          "approach": {
+            "x": 15.8,
+            "z": 8.12
+          }
+        },
+        "ws:0:5:1": {
+          "x": 17.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:5:1",
+          "approach": {
+            "x": 17.2,
+            "z": 8.12
+          }
+        },
+        "ws:0:5:2": {
+          "x": 15.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:5:2",
+          "approach": {
+            "x": 15.8,
+            "z": 11.56
+          }
+        },
+        "ws:0:5:3": {
+          "x": 17.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-0",
+          "screen": "ws:0:5:3",
+          "approach": {
+            "x": 17.2,
+            "z": 11.56
+          }
+        },
+        "ws:1:0:0": {
+          "x": 19.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:0:0",
+          "approach": {
+            "x": 19.8,
+            "z": 4.28
+          }
+        },
+        "ws:1:0:1": {
+          "x": 21.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:0:1",
+          "approach": {
+            "x": 21.2,
+            "z": 4.28
+          }
+        },
+        "ws:1:0:2": {
+          "x": 19.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:0:2",
+          "approach": {
+            "x": 19.8,
+            "z": 7.72
+          }
+        },
+        "ws:1:0:3": {
+          "x": 21.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:0:3",
+          "approach": {
+            "x": 21.2,
+            "z": 7.72
+          }
+        },
+        "ws:1:1:0": {
+          "x": 22.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:1:0",
+          "approach": {
+            "x": 22.8,
+            "z": 4.28
+          }
+        },
+        "ws:1:1:1": {
+          "x": 24.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:1:1",
+          "approach": {
+            "x": 24.2,
+            "z": 4.28
+          }
+        },
+        "ws:1:1:2": {
+          "x": 22.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:1:2",
+          "approach": {
+            "x": 22.8,
+            "z": 7.72
+          }
+        },
+        "ws:1:1:3": {
+          "x": 24.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:1:3",
+          "approach": {
+            "x": 24.2,
+            "z": 7.72
+          }
+        },
+        "ws:1:2:0": {
+          "x": 25.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:2:0",
+          "approach": {
+            "x": 25.8,
+            "z": 4.28
+          }
+        },
+        "ws:1:2:1": {
+          "x": 27.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:2:1",
+          "approach": {
+            "x": 27.2,
+            "z": 4.28
+          }
+        },
+        "ws:1:2:2": {
+          "x": 25.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:2:2",
+          "approach": {
+            "x": 25.8,
+            "z": 7.72
+          }
+        },
+        "ws:1:2:3": {
+          "x": 27.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:2:3",
+          "approach": {
+            "x": 27.2,
+            "z": 7.72
+          }
+        },
+        "ws:1:3:0": {
+          "x": 19.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:3:0",
+          "approach": {
+            "x": 19.8,
+            "z": 8.12
+          }
+        },
+        "ws:1:3:1": {
+          "x": 21.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:3:1",
+          "approach": {
+            "x": 21.2,
+            "z": 8.12
+          }
+        },
+        "ws:1:3:2": {
+          "x": 19.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:3:2",
+          "approach": {
+            "x": 19.8,
+            "z": 11.56
+          }
+        },
+        "ws:1:3:3": {
+          "x": 21.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:3:3",
+          "approach": {
+            "x": 21.2,
+            "z": 11.56
+          }
+        },
+        "ws:1:4:0": {
+          "x": 22.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:4:0",
+          "approach": {
+            "x": 22.8,
+            "z": 8.12
+          }
+        },
+        "ws:1:4:1": {
+          "x": 24.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:4:1",
+          "approach": {
+            "x": 24.2,
+            "z": 8.12
+          }
+        },
+        "ws:1:4:2": {
+          "x": 22.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:4:2",
+          "approach": {
+            "x": 22.8,
+            "z": 11.56
+          }
+        },
+        "ws:1:4:3": {
+          "x": 24.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:4:3",
+          "approach": {
+            "x": 24.2,
+            "z": 11.56
+          }
+        },
+        "ws:1:5:0": {
+          "x": 25.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:5:0",
+          "approach": {
+            "x": 25.8,
+            "z": 8.12
+          }
+        },
+        "ws:1:5:1": {
+          "x": 27.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:5:1",
+          "approach": {
+            "x": 27.2,
+            "z": 8.12
+          }
+        },
+        "ws:1:5:2": {
+          "x": 25.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:5:2",
+          "approach": {
+            "x": 25.8,
+            "z": 11.56
+          }
+        },
+        "ws:1:5:3": {
+          "x": 27.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-1",
+          "screen": "ws:1:5:3",
+          "approach": {
+            "x": 27.2,
+            "z": 11.56
+          }
+        },
+        "ws:2:0:0": {
+          "x": 29.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:0:0",
+          "approach": {
+            "x": 29.8,
+            "z": 4.28
+          }
+        },
+        "ws:2:0:1": {
+          "x": 31.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:0:1",
+          "approach": {
+            "x": 31.2,
+            "z": 4.28
+          }
+        },
+        "ws:2:0:2": {
+          "x": 29.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:0:2",
+          "approach": {
+            "x": 29.8,
+            "z": 7.72
+          }
+        },
+        "ws:2:0:3": {
+          "x": 31.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:0:3",
+          "approach": {
+            "x": 31.2,
+            "z": 7.72
+          }
+        },
+        "ws:2:1:0": {
+          "x": 32.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:1:0",
+          "approach": {
+            "x": 32.8,
+            "z": 4.28
+          }
+        },
+        "ws:2:1:1": {
+          "x": 34.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:1:1",
+          "approach": {
+            "x": 34.2,
+            "z": 4.28
+          }
+        },
+        "ws:2:1:2": {
+          "x": 32.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:1:2",
+          "approach": {
+            "x": 32.8,
+            "z": 7.72
+          }
+        },
+        "ws:2:1:3": {
+          "x": 34.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:1:3",
+          "approach": {
+            "x": 34.2,
+            "z": 7.72
+          }
+        },
+        "ws:2:2:0": {
+          "x": 35.8,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:2:0",
+          "approach": {
+            "x": 35.8,
+            "z": 4.28
+          }
+        },
+        "ws:2:2:1": {
+          "x": 37.2,
+          "y": 0,
+          "z": 5.17,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:2:1",
+          "approach": {
+            "x": 37.2,
+            "z": 4.28
+          }
+        },
+        "ws:2:2:2": {
+          "x": 35.8,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:2:2",
+          "approach": {
+            "x": 35.8,
+            "z": 7.72
+          }
+        },
+        "ws:2:2:3": {
+          "x": 37.2,
+          "y": 0,
+          "z": 6.83,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:2:3",
+          "approach": {
+            "x": 37.2,
+            "z": 7.72
+          }
+        },
+        "ws:2:3:0": {
+          "x": 29.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:3:0",
+          "approach": {
+            "x": 29.8,
+            "z": 8.12
+          }
+        },
+        "ws:2:3:1": {
+          "x": 31.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:3:1",
+          "approach": {
+            "x": 31.2,
+            "z": 8.12
+          }
+        },
+        "ws:2:3:2": {
+          "x": 29.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:3:2",
+          "approach": {
+            "x": 29.8,
+            "z": 11.56
+          }
+        },
+        "ws:2:3:3": {
+          "x": 31.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:3:3",
+          "approach": {
+            "x": 31.2,
+            "z": 11.56
+          }
+        },
+        "ws:2:4:0": {
+          "x": 32.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:4:0",
+          "approach": {
+            "x": 32.8,
+            "z": 8.12
+          }
+        },
+        "ws:2:4:1": {
+          "x": 34.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:4:1",
+          "approach": {
+            "x": 34.2,
+            "z": 8.12
+          }
+        },
+        "ws:2:4:2": {
+          "x": 32.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:4:2",
+          "approach": {
+            "x": 32.8,
+            "z": 11.56
+          }
+        },
+        "ws:2:4:3": {
+          "x": 34.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:4:3",
+          "approach": {
+            "x": 34.2,
+            "z": 11.56
+          }
+        },
+        "ws:2:5:0": {
+          "x": 35.8,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:5:0",
+          "approach": {
+            "x": 35.8,
+            "z": 8.12
+          }
+        },
+        "ws:2:5:1": {
+          "x": 37.2,
+          "y": 0,
+          "z": 9.01,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:5:1",
+          "approach": {
+            "x": 37.2,
+            "z": 8.12
+          }
+        },
+        "ws:2:5:2": {
+          "x": 35.8,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:5:2",
+          "approach": {
+            "x": 35.8,
+            "z": 11.56
+          }
+        },
+        "ws:2:5:3": {
+          "x": 37.2,
+          "y": 0,
+          "z": 10.67,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-2",
+          "screen": "ws:2:5:3",
+          "approach": {
+            "x": 37.2,
+            "z": 11.56
+          }
+        },
+        "ws:3:0:0": {
+          "x": 11.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:0:0",
+          "approach": {
+            "x": 11.2,
+            "z": -4.28
+          }
+        },
+        "ws:3:0:1": {
+          "x": 9.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:0:1",
+          "approach": {
+            "x": 9.8,
+            "z": -4.28
+          }
+        },
+        "ws:3:0:2": {
+          "x": 11.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:0:2",
+          "approach": {
+            "x": 11.2,
+            "z": -7.72
+          }
+        },
+        "ws:3:0:3": {
+          "x": 9.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:0:3",
+          "approach": {
+            "x": 9.8,
+            "z": -7.72
+          }
+        },
+        "ws:3:1:0": {
+          "x": 14.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:1:0",
+          "approach": {
+            "x": 14.2,
+            "z": -4.28
+          }
+        },
+        "ws:3:1:1": {
+          "x": 12.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:1:1",
+          "approach": {
+            "x": 12.8,
+            "z": -4.28
+          }
+        },
+        "ws:3:1:2": {
+          "x": 14.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:1:2",
+          "approach": {
+            "x": 14.2,
+            "z": -7.72
+          }
+        },
+        "ws:3:1:3": {
+          "x": 12.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:1:3",
+          "approach": {
+            "x": 12.8,
+            "z": -7.72
+          }
+        },
+        "ws:3:2:0": {
+          "x": 17.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:2:0",
+          "approach": {
+            "x": 17.2,
+            "z": -4.28
+          }
+        },
+        "ws:3:2:1": {
+          "x": 15.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:2:1",
+          "approach": {
+            "x": 15.8,
+            "z": -4.28
+          }
+        },
+        "ws:3:2:2": {
+          "x": 17.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:2:2",
+          "approach": {
+            "x": 17.2,
+            "z": -7.72
+          }
+        },
+        "ws:3:2:3": {
+          "x": 15.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:2:3",
+          "approach": {
+            "x": 15.8,
+            "z": -7.72
+          }
+        },
+        "ws:3:3:0": {
+          "x": 11.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:3:0",
+          "approach": {
+            "x": 11.2,
+            "z": -8.12
+          }
+        },
+        "ws:3:3:1": {
+          "x": 9.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:3:1",
+          "approach": {
+            "x": 9.8,
+            "z": -8.12
+          }
+        },
+        "ws:3:3:2": {
+          "x": 11.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:3:2",
+          "approach": {
+            "x": 11.2,
+            "z": -11.56
+          }
+        },
+        "ws:3:3:3": {
+          "x": 9.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:3:3",
+          "approach": {
+            "x": 9.8,
+            "z": -11.56
+          }
+        },
+        "ws:3:4:0": {
+          "x": 14.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:4:0",
+          "approach": {
+            "x": 14.2,
+            "z": -8.12
+          }
+        },
+        "ws:3:4:1": {
+          "x": 12.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:4:1",
+          "approach": {
+            "x": 12.8,
+            "z": -8.12
+          }
+        },
+        "ws:3:4:2": {
+          "x": 14.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:4:2",
+          "approach": {
+            "x": 14.2,
+            "z": -11.56
+          }
+        },
+        "ws:3:4:3": {
+          "x": 12.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:4:3",
+          "approach": {
+            "x": 12.8,
+            "z": -11.56
+          }
+        },
+        "ws:3:5:0": {
+          "x": 17.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:5:0",
+          "approach": {
+            "x": 17.2,
+            "z": -8.12
+          }
+        },
+        "ws:3:5:1": {
+          "x": 15.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:5:1",
+          "approach": {
+            "x": 15.8,
+            "z": -8.12
+          }
+        },
+        "ws:3:5:2": {
+          "x": 17.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:5:2",
+          "approach": {
+            "x": 17.2,
+            "z": -11.56
+          }
+        },
+        "ws:3:5:3": {
+          "x": 15.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-3",
+          "screen": "ws:3:5:3",
+          "approach": {
+            "x": 15.8,
+            "z": -11.56
+          }
+        },
+        "ws:4:0:0": {
+          "x": 21.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:0:0",
+          "approach": {
+            "x": 21.2,
+            "z": -4.28
+          }
+        },
+        "ws:4:0:1": {
+          "x": 19.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:0:1",
+          "approach": {
+            "x": 19.8,
+            "z": -4.28
+          }
+        },
+        "ws:4:0:2": {
+          "x": 21.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:0:2",
+          "approach": {
+            "x": 21.2,
+            "z": -7.72
+          }
+        },
+        "ws:4:0:3": {
+          "x": 19.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:0:3",
+          "approach": {
+            "x": 19.8,
+            "z": -7.72
+          }
+        },
+        "ws:4:1:0": {
+          "x": 24.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:1:0",
+          "approach": {
+            "x": 24.2,
+            "z": -4.28
+          }
+        },
+        "ws:4:1:1": {
+          "x": 22.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:1:1",
+          "approach": {
+            "x": 22.8,
+            "z": -4.28
+          }
+        },
+        "ws:4:1:2": {
+          "x": 24.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:1:2",
+          "approach": {
+            "x": 24.2,
+            "z": -7.72
+          }
+        },
+        "ws:4:1:3": {
+          "x": 22.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:1:3",
+          "approach": {
+            "x": 22.8,
+            "z": -7.72
+          }
+        },
+        "ws:4:2:0": {
+          "x": 27.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:2:0",
+          "approach": {
+            "x": 27.2,
+            "z": -4.28
+          }
+        },
+        "ws:4:2:1": {
+          "x": 25.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:2:1",
+          "approach": {
+            "x": 25.8,
+            "z": -4.28
+          }
+        },
+        "ws:4:2:2": {
+          "x": 27.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:2:2",
+          "approach": {
+            "x": 27.2,
+            "z": -7.72
+          }
+        },
+        "ws:4:2:3": {
+          "x": 25.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:2:3",
+          "approach": {
+            "x": 25.8,
+            "z": -7.72
+          }
+        },
+        "ws:4:3:0": {
+          "x": 21.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:3:0",
+          "approach": {
+            "x": 21.2,
+            "z": -8.12
+          }
+        },
+        "ws:4:3:1": {
+          "x": 19.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:3:1",
+          "approach": {
+            "x": 19.8,
+            "z": -8.12
+          }
+        },
+        "ws:4:3:2": {
+          "x": 21.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:3:2",
+          "approach": {
+            "x": 21.2,
+            "z": -11.56
+          }
+        },
+        "ws:4:3:3": {
+          "x": 19.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:3:3",
+          "approach": {
+            "x": 19.8,
+            "z": -11.56
+          }
+        },
+        "ws:4:4:0": {
+          "x": 24.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:4:0",
+          "approach": {
+            "x": 24.2,
+            "z": -8.12
+          }
+        },
+        "ws:4:4:1": {
+          "x": 22.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:4:1",
+          "approach": {
+            "x": 22.8,
+            "z": -8.12
+          }
+        },
+        "ws:4:4:2": {
+          "x": 24.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:4:2",
+          "approach": {
+            "x": 24.2,
+            "z": -11.56
+          }
+        },
+        "ws:4:4:3": {
+          "x": 22.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:4:3",
+          "approach": {
+            "x": 22.8,
+            "z": -11.56
+          }
+        },
+        "ws:4:5:0": {
+          "x": 27.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:5:0",
+          "approach": {
+            "x": 27.2,
+            "z": -8.12
+          }
+        },
+        "ws:4:5:1": {
+          "x": 25.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:5:1",
+          "approach": {
+            "x": 25.8,
+            "z": -8.12
+          }
+        },
+        "ws:4:5:2": {
+          "x": 27.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:5:2",
+          "approach": {
+            "x": 27.2,
+            "z": -11.56
+          }
+        },
+        "ws:4:5:3": {
+          "x": 25.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-4",
+          "screen": "ws:4:5:3",
+          "approach": {
+            "x": 25.8,
+            "z": -11.56
+          }
+        },
+        "ws:5:0:0": {
+          "x": 31.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:0:0",
+          "approach": {
+            "x": 31.2,
+            "z": -4.28
+          }
+        },
+        "ws:5:0:1": {
+          "x": 29.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:0:1",
+          "approach": {
+            "x": 29.8,
+            "z": -4.28
+          }
+        },
+        "ws:5:0:2": {
+          "x": 31.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:0:2",
+          "approach": {
+            "x": 31.2,
+            "z": -7.72
+          }
+        },
+        "ws:5:0:3": {
+          "x": 29.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:0:3",
+          "approach": {
+            "x": 29.8,
+            "z": -7.72
+          }
+        },
+        "ws:5:1:0": {
+          "x": 34.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:1:0",
+          "approach": {
+            "x": 34.2,
+            "z": -4.28
+          }
+        },
+        "ws:5:1:1": {
+          "x": 32.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:1:1",
+          "approach": {
+            "x": 32.8,
+            "z": -4.28
+          }
+        },
+        "ws:5:1:2": {
+          "x": 34.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:1:2",
+          "approach": {
+            "x": 34.2,
+            "z": -7.72
+          }
+        },
+        "ws:5:1:3": {
+          "x": 32.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:1:3",
+          "approach": {
+            "x": 32.8,
+            "z": -7.72
+          }
+        },
+        "ws:5:2:0": {
+          "x": 37.2,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:2:0",
+          "approach": {
+            "x": 37.2,
+            "z": -4.28
+          }
+        },
+        "ws:5:2:1": {
+          "x": 35.8,
+          "y": 0,
+          "z": -5.17,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:2:1",
+          "approach": {
+            "x": 35.8,
+            "z": -4.28
+          }
+        },
+        "ws:5:2:2": {
+          "x": 37.2,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:2:2",
+          "approach": {
+            "x": 37.2,
+            "z": -7.72
+          }
+        },
+        "ws:5:2:3": {
+          "x": 35.8,
+          "y": 0,
+          "z": -6.83,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:2:3",
+          "approach": {
+            "x": 35.8,
+            "z": -7.72
+          }
+        },
+        "ws:5:3:0": {
+          "x": 31.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:3:0",
+          "approach": {
+            "x": 31.2,
+            "z": -8.12
+          }
+        },
+        "ws:5:3:1": {
+          "x": 29.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:3:1",
+          "approach": {
+            "x": 29.8,
+            "z": -8.12
+          }
+        },
+        "ws:5:3:2": {
+          "x": 31.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:3:2",
+          "approach": {
+            "x": 31.2,
+            "z": -11.56
+          }
+        },
+        "ws:5:3:3": {
+          "x": 29.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:3:3",
+          "approach": {
+            "x": 29.8,
+            "z": -11.56
+          }
+        },
+        "ws:5:4:0": {
+          "x": 34.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:4:0",
+          "approach": {
+            "x": 34.2,
+            "z": -8.12
+          }
+        },
+        "ws:5:4:1": {
+          "x": 32.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:4:1",
+          "approach": {
+            "x": 32.8,
+            "z": -8.12
+          }
+        },
+        "ws:5:4:2": {
+          "x": 34.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:4:2",
+          "approach": {
+            "x": 34.2,
+            "z": -11.56
+          }
+        },
+        "ws:5:4:3": {
+          "x": 32.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:4:3",
+          "approach": {
+            "x": 32.8,
+            "z": -11.56
+          }
+        },
+        "ws:5:5:0": {
+          "x": 37.2,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:5:0",
+          "approach": {
+            "x": 37.2,
+            "z": -8.12
+          }
+        },
+        "ws:5:5:1": {
+          "x": 35.8,
+          "y": 0,
+          "z": -9.01,
+          "heading": 3.1416,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:5:1",
+          "approach": {
+            "x": 35.8,
+            "z": -8.12
+          }
+        },
+        "ws:5:5:2": {
+          "x": 37.2,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:5:2",
+          "approach": {
+            "x": 37.2,
+            "z": -11.56
+          }
+        },
+        "ws:5:5:3": {
+          "x": 35.8,
+          "y": 0,
+          "z": -10.67,
+          "heading": 0,
+          "pose": "sit",
+          "room": "dept-5",
+          "screen": "ws:5:5:3",
+          "approach": {
+            "x": 35.8,
+            "z": -11.56
+          }
+        }
+      },
+      "nav": {
+        "nodes": {
+          "ap:booth:0": {
+            "x": 5.1,
+            "z": 10.6,
+            "width": 0.35
+          },
+          "ap:booth:1": {
+            "x": 7,
+            "z": 10.6,
+            "width": 0.35
+          },
+          "ap:booth:2": {
+            "x": 5.4,
+            "z": -10.6,
+            "width": 0.35
+          },
+          "ap:booth:3": {
+            "x": 7.3,
+            "z": -10.6,
+            "width": 0.35
+          },
+          "ap:interact:command-display:0": {
+            "x": 23.5,
+            "z": -4.25,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:0": {
+            "x": 5.7,
+            "z": 2.4,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:1": {
+            "x": 5.7,
+            "z": 3.6,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:2": {
+            "x": 5.7,
+            "z": 4.8,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:3": {
+            "x": 5.7,
+            "z": -2.4,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:4": {
+            "x": 5.7,
+            "z": -3.6,
+            "width": 0.35
+          },
+          "ap:interact:provider-terminal:5": {
+            "x": 5.7,
+            "z": -4.8,
+            "width": 0.35
+          },
+          "ap:meet:A:0": {
+            "x": 39.65,
+            "z": 6.9,
+            "width": 0.35
+          },
+          "ap:meet:A:1": {
+            "x": 39.65,
+            "z": 8,
+            "width": 0.35
+          },
+          "ap:meet:A:2": {
+            "x": 39.65,
+            "z": 9.1,
+            "width": 0.35
+          },
+          "ap:meet:A:3": {
+            "x": 42.85,
+            "z": 6.9,
+            "width": 0.35
+          },
+          "ap:meet:A:4": {
+            "x": 42.85,
+            "z": 8,
+            "width": 0.35
+          },
+          "ap:meet:A:5": {
+            "x": 42.85,
+            "z": 9.1,
+            "width": 0.35
+          },
+          "ap:meet:B:0": {
+            "x": 39.65,
+            "z": -9.1,
+            "width": 0.35
+          },
+          "ap:meet:B:1": {
+            "x": 39.65,
+            "z": -8,
+            "width": 0.35
+          },
+          "ap:meet:B:2": {
+            "x": 39.65,
+            "z": -6.9,
+            "width": 0.35
+          },
+          "ap:meet:B:3": {
+            "x": 42.85,
+            "z": -9.1,
+            "width": 0.35
+          },
+          "ap:meet:B:4": {
+            "x": 42.85,
+            "z": -8,
+            "width": 0.35
+          },
+          "ap:meet:B:5": {
+            "x": 42.85,
+            "z": -6.9,
+            "width": 0.35
+          },
+          "ap:ws:0:0:0": {
+            "x": 9.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:0:1": {
+            "x": 11.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:0:2": {
+            "x": 9.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:0:3": {
+            "x": 11.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:1:0": {
+            "x": 12.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:1:1": {
+            "x": 14.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:1:2": {
+            "x": 12.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:1:3": {
+            "x": 14.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:2:0": {
+            "x": 15.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:2:1": {
+            "x": 17.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:0:2:2": {
+            "x": 15.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:2:3": {
+            "x": 17.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:0:3:0": {
+            "x": 9.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:3:1": {
+            "x": 11.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:3:2": {
+            "x": 9.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:0:3:3": {
+            "x": 11.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:0:4:0": {
+            "x": 12.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:4:1": {
+            "x": 14.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:4:2": {
+            "x": 12.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:0:4:3": {
+            "x": 14.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:0:5:0": {
+            "x": 15.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:5:1": {
+            "x": 17.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:0:5:2": {
+            "x": 15.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:0:5:3": {
+            "x": 17.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:0:0": {
+            "x": 19.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:0:1": {
+            "x": 21.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:0:2": {
+            "x": 19.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:0:3": {
+            "x": 21.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:1:0": {
+            "x": 22.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:1:1": {
+            "x": 24.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:1:2": {
+            "x": 22.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:1:3": {
+            "x": 24.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:2:0": {
+            "x": 25.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:2:1": {
+            "x": 27.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:1:2:2": {
+            "x": 25.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:2:3": {
+            "x": 27.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:1:3:0": {
+            "x": 19.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:3:1": {
+            "x": 21.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:3:2": {
+            "x": 19.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:3:3": {
+            "x": 21.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:4:0": {
+            "x": 22.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:4:1": {
+            "x": 24.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:4:2": {
+            "x": 22.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:4:3": {
+            "x": 24.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:5:0": {
+            "x": 25.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:5:1": {
+            "x": 27.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:1:5:2": {
+            "x": 25.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:1:5:3": {
+            "x": 27.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:0:0": {
+            "x": 29.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:0:1": {
+            "x": 31.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:0:2": {
+            "x": 29.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:0:3": {
+            "x": 31.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:1:0": {
+            "x": 32.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:1:1": {
+            "x": 34.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:1:2": {
+            "x": 32.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:1:3": {
+            "x": 34.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:2:0": {
+            "x": 35.8,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:2:1": {
+            "x": 37.2,
+            "z": 4.28,
+            "width": 0.35
+          },
+          "ap:ws:2:2:2": {
+            "x": 35.8,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:2:3": {
+            "x": 37.2,
+            "z": 7.72,
+            "width": 0.35
+          },
+          "ap:ws:2:3:0": {
+            "x": 29.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:3:1": {
+            "x": 31.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:3:2": {
+            "x": 29.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:3:3": {
+            "x": 31.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:4:0": {
+            "x": 32.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:4:1": {
+            "x": 34.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:4:2": {
+            "x": 32.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:4:3": {
+            "x": 34.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:5:0": {
+            "x": 35.8,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:5:1": {
+            "x": 37.2,
+            "z": 8.12,
+            "width": 0.35
+          },
+          "ap:ws:2:5:2": {
+            "x": 35.8,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:2:5:3": {
+            "x": 37.2,
+            "z": 11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:0:0": {
+            "x": 11.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:0:1": {
+            "x": 9.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:0:2": {
+            "x": 11.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:0:3": {
+            "x": 9.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:1:0": {
+            "x": 14.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:1:1": {
+            "x": 12.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:1:2": {
+            "x": 14.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:1:3": {
+            "x": 12.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:2:0": {
+            "x": 17.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:2:1": {
+            "x": 15.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:3:2:2": {
+            "x": 17.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:2:3": {
+            "x": 15.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:3:3:0": {
+            "x": 11.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:3:1": {
+            "x": 9.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:3:2": {
+            "x": 11.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:3:3": {
+            "x": 9.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:4:0": {
+            "x": 14.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:4:1": {
+            "x": 12.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:4:2": {
+            "x": 14.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:4:3": {
+            "x": 12.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:5:0": {
+            "x": 17.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:5:1": {
+            "x": 15.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:3:5:2": {
+            "x": 17.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:3:5:3": {
+            "x": 15.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:0:0": {
+            "x": 21.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:0:1": {
+            "x": 19.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:0:2": {
+            "x": 21.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:0:3": {
+            "x": 19.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:1:0": {
+            "x": 24.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:1:1": {
+            "x": 22.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:1:2": {
+            "x": 24.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:1:3": {
+            "x": 22.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:2:0": {
+            "x": 27.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:2:1": {
+            "x": 25.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:4:2:2": {
+            "x": 27.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:2:3": {
+            "x": 25.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:4:3:0": {
+            "x": 21.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:3:1": {
+            "x": 19.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:3:2": {
+            "x": 21.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:3:3": {
+            "x": 19.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:4:0": {
+            "x": 24.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:4:1": {
+            "x": 22.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:4:2": {
+            "x": 24.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:4:3": {
+            "x": 22.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:5:0": {
+            "x": 27.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:5:1": {
+            "x": 25.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:4:5:2": {
+            "x": 27.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:4:5:3": {
+            "x": 25.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:0:0": {
+            "x": 31.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:0:1": {
+            "x": 29.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:0:2": {
+            "x": 31.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:0:3": {
+            "x": 29.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:1:0": {
+            "x": 34.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:1:1": {
+            "x": 32.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:1:2": {
+            "x": 34.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:1:3": {
+            "x": 32.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:2:0": {
+            "x": 37.2,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:2:1": {
+            "x": 35.8,
+            "z": -4.28,
+            "width": 0.35
+          },
+          "ap:ws:5:2:2": {
+            "x": 37.2,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:2:3": {
+            "x": 35.8,
+            "z": -7.72,
+            "width": 0.35
+          },
+          "ap:ws:5:3:0": {
+            "x": 31.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:3:1": {
+            "x": 29.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:3:2": {
+            "x": 31.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:3:3": {
+            "x": 29.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:4:0": {
+            "x": 34.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:4:1": {
+            "x": 32.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:4:2": {
+            "x": 34.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:4:3": {
+            "x": 32.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:5:0": {
+            "x": 37.2,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:5:1": {
+            "x": 35.8,
+            "z": -8.12,
+            "width": 0.35
+          },
+          "ap:ws:5:5:2": {
+            "x": 37.2,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "ap:ws:5:5:3": {
+            "x": 35.8,
+            "z": -11.56,
+            "width": 0.35
+          },
+          "c:comms_n": {
+            "x": 6.4,
+            "z": 8.8,
+            "width": 1
+          },
+          "c:comms_s": {
+            "x": 6.4,
+            "z": -8.8,
+            "width": 1
+          },
+          "c:corr": {
+            "x": 2,
+            "z": 0,
+            "width": 1.2
+          },
+          "c:door": {
+            "x": 0,
+            "z": 0,
+            "width": 1.2
+          },
+          "c:entry": {
+            "x": 5.6,
+            "z": 0,
+            "width": 1.4
+          },
+          "c:mn_door": {
+            "x": 39.2,
+            "z": 4.1,
+            "width": 0.4
+          },
+          "c:mn_e": {
+            "x": 42.85,
+            "z": 8,
+            "width": 0.4
+          },
+          "c:mn_far": {
+            "x": 41.25,
+            "z": 11.4,
+            "width": 0.6
+          },
+          "c:mn_in": {
+            "x": 41.25,
+            "z": 4.6,
+            "width": 0.6
+          },
+          "c:mn_w": {
+            "x": 39.65,
+            "z": 8,
+            "width": 0.4
+          },
+          "c:ms_door": {
+            "x": 39.2,
+            "z": -4.1,
+            "width": 0.4
+          },
+          "c:ms_e": {
+            "x": 42.85,
+            "z": -8,
+            "width": 0.4
+          },
+          "c:ms_far": {
+            "x": 41.25,
+            "z": -11.4,
+            "width": 0.6
+          },
+          "c:ms_in": {
+            "x": 41.25,
+            "z": -4.6,
+            "width": 0.6
+          },
+          "c:ms_w": {
+            "x": 39.65,
+            "z": -8,
+            "width": 0.4
+          },
+          "c:n0_0": {
+            "x": 8.4,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_1": {
+            "x": 10.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_10": {
+            "x": 33.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_11": {
+            "x": 36.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_12": {
+            "x": 38,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_2": {
+            "x": 13.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_3": {
+            "x": 16.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_4": {
+            "x": 18.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_5": {
+            "x": 20.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_6": {
+            "x": 23.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_7": {
+            "x": 26.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_8": {
+            "x": 28.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n0_9": {
+            "x": 30.5,
+            "z": 4.25,
+            "width": 0.3
+          },
+          "c:n1_0": {
+            "x": 8.4,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_1": {
+            "x": 10.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_10": {
+            "x": 33.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_11": {
+            "x": 36.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_12": {
+            "x": 38,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_2": {
+            "x": 13.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_3": {
+            "x": 16.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_4": {
+            "x": 18.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_5": {
+            "x": 20.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_6": {
+            "x": 23.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_7": {
+            "x": 26.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_8": {
+            "x": 28.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n1_9": {
+            "x": 30.5,
+            "z": 7.92,
+            "width": 0.35
+          },
+          "c:n2_0": {
+            "x": 8.4,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_1": {
+            "x": 10.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_10": {
+            "x": 33.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_11": {
+            "x": 36.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_12": {
+            "x": 38,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_2": {
+            "x": 13.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_3": {
+            "x": 16.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_4": {
+            "x": 18.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_5": {
+            "x": 20.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_6": {
+            "x": 23.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_7": {
+            "x": 26.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_8": {
+            "x": 28.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:n2_9": {
+            "x": 30.5,
+            "z": 11.7,
+            "width": 0.35
+          },
+          "c:s0_0": {
+            "x": 8.4,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_1": {
+            "x": 10.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_10": {
+            "x": 33.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_11": {
+            "x": 36.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_12": {
+            "x": 38,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_2": {
+            "x": 13.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_3": {
+            "x": 16.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_4": {
+            "x": 18.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_5": {
+            "x": 20.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_6": {
+            "x": 23.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_7": {
+            "x": 26.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_8": {
+            "x": 28.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s0_9": {
+            "x": 30.5,
+            "z": -4.25,
+            "width": 0.3
+          },
+          "c:s1_0": {
+            "x": 8.4,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_1": {
+            "x": 10.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_10": {
+            "x": 33.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_11": {
+            "x": 36.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_12": {
+            "x": 38,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_2": {
+            "x": 13.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_3": {
+            "x": 16.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_4": {
+            "x": 18.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_5": {
+            "x": 20.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_6": {
+            "x": 23.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_7": {
+            "x": 26.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_8": {
+            "x": 28.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s1_9": {
+            "x": 30.5,
+            "z": -7.92,
+            "width": 0.35
+          },
+          "c:s2_0": {
+            "x": 8.4,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_1": {
+            "x": 10.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_10": {
+            "x": 33.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_11": {
+            "x": 36.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_12": {
+            "x": 38,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_2": {
+            "x": 13.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_3": {
+            "x": 16.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_4": {
+            "x": 18.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_5": {
+            "x": 20.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_6": {
+            "x": 23.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_7": {
+            "x": 26.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_8": {
+            "x": 28.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:s2_9": {
+            "x": 30.5,
+            "z": -11.7,
+            "width": 0.35
+          },
+          "c:servers": {
+            "x": 38,
+            "z": 0,
+            "width": 1
+          },
+          "c:spine_e": {
+            "x": 28.4,
+            "z": 0,
+            "width": 0.5
+          },
+          "c:spine_w": {
+            "x": 18.6,
+            "z": 0,
+            "width": 0.5
+          }
+        },
+        "edges": [
+          [
+            "ap:booth:0",
+            "c:comms_n"
+          ],
+          [
+            "ap:booth:0",
+            "c:n2_0"
+          ],
+          [
+            "ap:booth:1",
+            "c:comms_n"
+          ],
+          [
+            "ap:booth:1",
+            "c:n2_0"
+          ],
+          [
+            "ap:booth:2",
+            "c:comms_s"
+          ],
+          [
+            "ap:booth:2",
+            "c:s2_0"
+          ],
+          [
+            "ap:booth:3",
+            "c:comms_s"
+          ],
+          [
+            "ap:booth:3",
+            "c:s2_0"
+          ],
+          [
+            "ap:interact:command-display:0",
+            "c:s0_5"
+          ],
+          [
+            "ap:interact:command-display:0",
+            "c:s0_6"
+          ],
+          [
+            "ap:interact:provider-terminal:0",
+            "c:entry"
+          ],
+          [
+            "ap:interact:provider-terminal:0",
+            "c:n0_0"
+          ],
+          [
+            "ap:interact:provider-terminal:1",
+            "c:entry"
+          ],
+          [
+            "ap:interact:provider-terminal:1",
+            "c:n0_0"
+          ],
+          [
+            "ap:interact:provider-terminal:2",
+            "c:comms_n"
+          ],
+          [
+            "ap:interact:provider-terminal:2",
+            "c:n0_0"
+          ],
+          [
+            "ap:interact:provider-terminal:3",
+            "c:entry"
+          ],
+          [
+            "ap:interact:provider-terminal:3",
+            "c:s0_0"
+          ],
+          [
+            "ap:interact:provider-terminal:4",
+            "c:entry"
+          ],
+          [
+            "ap:interact:provider-terminal:4",
+            "c:s0_0"
+          ],
+          [
+            "ap:interact:provider-terminal:5",
+            "c:comms_s"
+          ],
+          [
+            "ap:interact:provider-terminal:5",
+            "c:s0_0"
+          ],
+          [
+            "ap:meet:A:0",
+            "c:mn_in"
+          ],
+          [
+            "ap:meet:A:0",
+            "c:mn_w"
+          ],
+          [
+            "ap:meet:A:1",
+            "c:mn_in"
+          ],
+          [
+            "ap:meet:A:1",
+            "c:mn_w"
+          ],
+          [
+            "ap:meet:A:2",
+            "c:mn_far"
+          ],
+          [
+            "ap:meet:A:2",
+            "c:mn_w"
+          ],
+          [
+            "ap:meet:A:3",
+            "c:mn_e"
+          ],
+          [
+            "ap:meet:A:3",
+            "c:mn_in"
+          ],
+          [
+            "ap:meet:A:4",
+            "c:mn_e"
+          ],
+          [
+            "ap:meet:A:4",
+            "c:mn_in"
+          ],
+          [
+            "ap:meet:A:5",
+            "c:mn_e"
+          ],
+          [
+            "ap:meet:A:5",
+            "c:mn_far"
+          ],
+          [
+            "ap:meet:B:0",
+            "c:ms_far"
+          ],
+          [
+            "ap:meet:B:0",
+            "c:ms_w"
+          ],
+          [
+            "ap:meet:B:1",
+            "c:ms_in"
+          ],
+          [
+            "ap:meet:B:1",
+            "c:ms_w"
+          ],
+          [
+            "ap:meet:B:2",
+            "c:ms_in"
+          ],
+          [
+            "ap:meet:B:2",
+            "c:ms_w"
+          ],
+          [
+            "ap:meet:B:3",
+            "c:ms_e"
+          ],
+          [
+            "ap:meet:B:3",
+            "c:ms_far"
+          ],
+          [
+            "ap:meet:B:4",
+            "c:ms_e"
+          ],
+          [
+            "ap:meet:B:4",
+            "c:ms_in"
+          ],
+          [
+            "ap:meet:B:5",
+            "c:ms_e"
+          ],
+          [
+            "ap:meet:B:5",
+            "c:ms_in"
+          ],
+          [
+            "ap:ws:0:0:0",
+            "c:n0_0"
+          ],
+          [
+            "ap:ws:0:0:0",
+            "c:n0_1"
+          ],
+          [
+            "ap:ws:0:0:1",
+            "c:n0_1"
+          ],
+          [
+            "ap:ws:0:0:1",
+            "c:n0_2"
+          ],
+          [
+            "ap:ws:0:0:2",
+            "c:n1_0"
+          ],
+          [
+            "ap:ws:0:0:2",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:0:3",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:0:3",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:1:0",
+            "c:n0_1"
+          ],
+          [
+            "ap:ws:0:1:0",
+            "c:n0_2"
+          ],
+          [
+            "ap:ws:0:1:1",
+            "c:n0_2"
+          ],
+          [
+            "ap:ws:0:1:1",
+            "c:n0_3"
+          ],
+          [
+            "ap:ws:0:1:2",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:1:2",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:1:3",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:1:3",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:2:0",
+            "c:n0_2"
+          ],
+          [
+            "ap:ws:0:2:0",
+            "c:n0_3"
+          ],
+          [
+            "ap:ws:0:2:1",
+            "c:n0_3"
+          ],
+          [
+            "ap:ws:0:2:1",
+            "c:n0_4"
+          ],
+          [
+            "ap:ws:0:2:2",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:2:2",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:2:3",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:2:3",
+            "c:n1_4"
+          ],
+          [
+            "ap:ws:0:3:0",
+            "c:n1_0"
+          ],
+          [
+            "ap:ws:0:3:0",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:3:1",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:3:1",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:3:2",
+            "c:n2_0"
+          ],
+          [
+            "ap:ws:0:3:2",
+            "c:n2_1"
+          ],
+          [
+            "ap:ws:0:3:3",
+            "c:n2_1"
+          ],
+          [
+            "ap:ws:0:3:3",
+            "c:n2_2"
+          ],
+          [
+            "ap:ws:0:4:0",
+            "c:n1_1"
+          ],
+          [
+            "ap:ws:0:4:0",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:4:1",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:4:1",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:4:2",
+            "c:n2_1"
+          ],
+          [
+            "ap:ws:0:4:2",
+            "c:n2_2"
+          ],
+          [
+            "ap:ws:0:4:3",
+            "c:n2_2"
+          ],
+          [
+            "ap:ws:0:4:3",
+            "c:n2_3"
+          ],
+          [
+            "ap:ws:0:5:0",
+            "c:n1_2"
+          ],
+          [
+            "ap:ws:0:5:0",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:5:1",
+            "c:n1_3"
+          ],
+          [
+            "ap:ws:0:5:1",
+            "c:n1_4"
+          ],
+          [
+            "ap:ws:0:5:2",
+            "c:n2_2"
+          ],
+          [
+            "ap:ws:0:5:2",
+            "c:n2_3"
+          ],
+          [
+            "ap:ws:0:5:3",
+            "c:n2_3"
+          ],
+          [
+            "ap:ws:0:5:3",
+            "c:n2_4"
+          ],
+          [
+            "ap:ws:1:0:0",
+            "c:n0_4"
+          ],
+          [
+            "ap:ws:1:0:0",
+            "c:n0_5"
+          ],
+          [
+            "ap:ws:1:0:1",
+            "c:n0_5"
+          ],
+          [
+            "ap:ws:1:0:1",
+            "c:n0_6"
+          ],
+          [
+            "ap:ws:1:0:2",
+            "c:n1_4"
+          ],
+          [
+            "ap:ws:1:0:2",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:0:3",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:0:3",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:1:0",
+            "c:n0_5"
+          ],
+          [
+            "ap:ws:1:1:0",
+            "c:n0_6"
+          ],
+          [
+            "ap:ws:1:1:1",
+            "c:n0_6"
+          ],
+          [
+            "ap:ws:1:1:1",
+            "c:n0_7"
+          ],
+          [
+            "ap:ws:1:1:2",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:1:2",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:1:3",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:1:3",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:2:0",
+            "c:n0_6"
+          ],
+          [
+            "ap:ws:1:2:0",
+            "c:n0_7"
+          ],
+          [
+            "ap:ws:1:2:1",
+            "c:n0_7"
+          ],
+          [
+            "ap:ws:1:2:1",
+            "c:n0_8"
+          ],
+          [
+            "ap:ws:1:2:2",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:2:2",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:2:3",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:2:3",
+            "c:n1_8"
+          ],
+          [
+            "ap:ws:1:3:0",
+            "c:n1_4"
+          ],
+          [
+            "ap:ws:1:3:0",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:3:1",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:3:1",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:3:2",
+            "c:n2_4"
+          ],
+          [
+            "ap:ws:1:3:2",
+            "c:n2_5"
+          ],
+          [
+            "ap:ws:1:3:3",
+            "c:n2_5"
+          ],
+          [
+            "ap:ws:1:3:3",
+            "c:n2_6"
+          ],
+          [
+            "ap:ws:1:4:0",
+            "c:n1_5"
+          ],
+          [
+            "ap:ws:1:4:0",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:4:1",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:4:1",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:4:2",
+            "c:n2_5"
+          ],
+          [
+            "ap:ws:1:4:2",
+            "c:n2_6"
+          ],
+          [
+            "ap:ws:1:4:3",
+            "c:n2_6"
+          ],
+          [
+            "ap:ws:1:4:3",
+            "c:n2_7"
+          ],
+          [
+            "ap:ws:1:5:0",
+            "c:n1_6"
+          ],
+          [
+            "ap:ws:1:5:0",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:5:1",
+            "c:n1_7"
+          ],
+          [
+            "ap:ws:1:5:1",
+            "c:n1_8"
+          ],
+          [
+            "ap:ws:1:5:2",
+            "c:n2_6"
+          ],
+          [
+            "ap:ws:1:5:2",
+            "c:n2_7"
+          ],
+          [
+            "ap:ws:1:5:3",
+            "c:n2_7"
+          ],
+          [
+            "ap:ws:1:5:3",
+            "c:n2_8"
+          ],
+          [
+            "ap:ws:2:0:0",
+            "c:n0_8"
+          ],
+          [
+            "ap:ws:2:0:0",
+            "c:n0_9"
+          ],
+          [
+            "ap:ws:2:0:1",
+            "c:n0_10"
+          ],
+          [
+            "ap:ws:2:0:1",
+            "c:n0_9"
+          ],
+          [
+            "ap:ws:2:0:2",
+            "c:n1_8"
+          ],
+          [
+            "ap:ws:2:0:2",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:0:3",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:0:3",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:1:0",
+            "c:n0_10"
+          ],
+          [
+            "ap:ws:2:1:0",
+            "c:n0_9"
+          ],
+          [
+            "ap:ws:2:1:1",
+            "c:n0_10"
+          ],
+          [
+            "ap:ws:2:1:1",
+            "c:n0_11"
+          ],
+          [
+            "ap:ws:2:1:2",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:1:2",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:1:3",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:1:3",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:2:0",
+            "c:n0_11"
+          ],
+          [
+            "ap:ws:2:2:0",
+            "c:n0_12"
+          ],
+          [
+            "ap:ws:2:2:1",
+            "c:n0_11"
+          ],
+          [
+            "ap:ws:2:2:1",
+            "c:n0_12"
+          ],
+          [
+            "ap:ws:2:2:2",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:2:2",
+            "c:n1_12"
+          ],
+          [
+            "ap:ws:2:2:3",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:2:3",
+            "c:n1_12"
+          ],
+          [
+            "ap:ws:2:3:0",
+            "c:n1_8"
+          ],
+          [
+            "ap:ws:2:3:0",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:3:1",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:3:1",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:3:2",
+            "c:n2_8"
+          ],
+          [
+            "ap:ws:2:3:2",
+            "c:n2_9"
+          ],
+          [
+            "ap:ws:2:3:3",
+            "c:n2_10"
+          ],
+          [
+            "ap:ws:2:3:3",
+            "c:n2_9"
+          ],
+          [
+            "ap:ws:2:4:0",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:4:0",
+            "c:n1_9"
+          ],
+          [
+            "ap:ws:2:4:1",
+            "c:n1_10"
+          ],
+          [
+            "ap:ws:2:4:1",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:4:2",
+            "c:n2_10"
+          ],
+          [
+            "ap:ws:2:4:2",
+            "c:n2_9"
+          ],
+          [
+            "ap:ws:2:4:3",
+            "c:n2_10"
+          ],
+          [
+            "ap:ws:2:4:3",
+            "c:n2_11"
+          ],
+          [
+            "ap:ws:2:5:0",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:5:0",
+            "c:n1_12"
+          ],
+          [
+            "ap:ws:2:5:1",
+            "c:n1_11"
+          ],
+          [
+            "ap:ws:2:5:1",
+            "c:n1_12"
+          ],
+          [
+            "ap:ws:2:5:2",
+            "c:n2_11"
+          ],
+          [
+            "ap:ws:2:5:2",
+            "c:n2_12"
+          ],
+          [
+            "ap:ws:2:5:3",
+            "c:n2_11"
+          ],
+          [
+            "ap:ws:2:5:3",
+            "c:n2_12"
+          ],
+          [
+            "ap:ws:3:0:0",
+            "c:s0_1"
+          ],
+          [
+            "ap:ws:3:0:0",
+            "c:s0_2"
+          ],
+          [
+            "ap:ws:3:0:1",
+            "c:s0_0"
+          ],
+          [
+            "ap:ws:3:0:1",
+            "c:s0_1"
+          ],
+          [
+            "ap:ws:3:0:2",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:0:2",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:0:3",
+            "c:s1_0"
+          ],
+          [
+            "ap:ws:3:0:3",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:1:0",
+            "c:s0_2"
+          ],
+          [
+            "ap:ws:3:1:0",
+            "c:s0_3"
+          ],
+          [
+            "ap:ws:3:1:1",
+            "c:s0_1"
+          ],
+          [
+            "ap:ws:3:1:1",
+            "c:s0_2"
+          ],
+          [
+            "ap:ws:3:1:2",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:1:2",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:1:3",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:1:3",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:2:0",
+            "c:s0_3"
+          ],
+          [
+            "ap:ws:3:2:0",
+            "c:s0_4"
+          ],
+          [
+            "ap:ws:3:2:1",
+            "c:s0_2"
+          ],
+          [
+            "ap:ws:3:2:1",
+            "c:s0_3"
+          ],
+          [
+            "ap:ws:3:2:2",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:2:2",
+            "c:s1_4"
+          ],
+          [
+            "ap:ws:3:2:3",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:2:3",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:3:0",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:3:0",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:3:1",
+            "c:s1_0"
+          ],
+          [
+            "ap:ws:3:3:1",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:3:2",
+            "c:s2_1"
+          ],
+          [
+            "ap:ws:3:3:2",
+            "c:s2_2"
+          ],
+          [
+            "ap:ws:3:3:3",
+            "c:s2_0"
+          ],
+          [
+            "ap:ws:3:3:3",
+            "c:s2_1"
+          ],
+          [
+            "ap:ws:3:4:0",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:4:0",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:4:1",
+            "c:s1_1"
+          ],
+          [
+            "ap:ws:3:4:1",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:4:2",
+            "c:s2_2"
+          ],
+          [
+            "ap:ws:3:4:2",
+            "c:s2_3"
+          ],
+          [
+            "ap:ws:3:4:3",
+            "c:s2_1"
+          ],
+          [
+            "ap:ws:3:4:3",
+            "c:s2_2"
+          ],
+          [
+            "ap:ws:3:5:0",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:5:0",
+            "c:s1_4"
+          ],
+          [
+            "ap:ws:3:5:1",
+            "c:s1_2"
+          ],
+          [
+            "ap:ws:3:5:1",
+            "c:s1_3"
+          ],
+          [
+            "ap:ws:3:5:2",
+            "c:s2_3"
+          ],
+          [
+            "ap:ws:3:5:2",
+            "c:s2_4"
+          ],
+          [
+            "ap:ws:3:5:3",
+            "c:s2_2"
+          ],
+          [
+            "ap:ws:3:5:3",
+            "c:s2_3"
+          ],
+          [
+            "ap:ws:4:0:0",
+            "c:s0_5"
+          ],
+          [
+            "ap:ws:4:0:0",
+            "c:s0_6"
+          ],
+          [
+            "ap:ws:4:0:1",
+            "c:s0_4"
+          ],
+          [
+            "ap:ws:4:0:1",
+            "c:s0_5"
+          ],
+          [
+            "ap:ws:4:0:2",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:0:2",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:0:3",
+            "c:s1_4"
+          ],
+          [
+            "ap:ws:4:0:3",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:1:0",
+            "c:s0_6"
+          ],
+          [
+            "ap:ws:4:1:0",
+            "c:s0_7"
+          ],
+          [
+            "ap:ws:4:1:1",
+            "c:s0_5"
+          ],
+          [
+            "ap:ws:4:1:1",
+            "c:s0_6"
+          ],
+          [
+            "ap:ws:4:1:2",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:1:2",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:1:3",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:1:3",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:2:0",
+            "c:s0_7"
+          ],
+          [
+            "ap:ws:4:2:0",
+            "c:s0_8"
+          ],
+          [
+            "ap:ws:4:2:1",
+            "c:s0_6"
+          ],
+          [
+            "ap:ws:4:2:1",
+            "c:s0_7"
+          ],
+          [
+            "ap:ws:4:2:2",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:2:2",
+            "c:s1_8"
+          ],
+          [
+            "ap:ws:4:2:3",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:2:3",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:3:0",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:3:0",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:3:1",
+            "c:s1_4"
+          ],
+          [
+            "ap:ws:4:3:1",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:3:2",
+            "c:s2_5"
+          ],
+          [
+            "ap:ws:4:3:2",
+            "c:s2_6"
+          ],
+          [
+            "ap:ws:4:3:3",
+            "c:s2_4"
+          ],
+          [
+            "ap:ws:4:3:3",
+            "c:s2_5"
+          ],
+          [
+            "ap:ws:4:4:0",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:4:0",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:4:1",
+            "c:s1_5"
+          ],
+          [
+            "ap:ws:4:4:1",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:4:2",
+            "c:s2_6"
+          ],
+          [
+            "ap:ws:4:4:2",
+            "c:s2_7"
+          ],
+          [
+            "ap:ws:4:4:3",
+            "c:s2_5"
+          ],
+          [
+            "ap:ws:4:4:3",
+            "c:s2_6"
+          ],
+          [
+            "ap:ws:4:5:0",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:5:0",
+            "c:s1_8"
+          ],
+          [
+            "ap:ws:4:5:1",
+            "c:s1_6"
+          ],
+          [
+            "ap:ws:4:5:1",
+            "c:s1_7"
+          ],
+          [
+            "ap:ws:4:5:2",
+            "c:s2_7"
+          ],
+          [
+            "ap:ws:4:5:2",
+            "c:s2_8"
+          ],
+          [
+            "ap:ws:4:5:3",
+            "c:s2_6"
+          ],
+          [
+            "ap:ws:4:5:3",
+            "c:s2_7"
+          ],
+          [
+            "ap:ws:5:0:0",
+            "c:s0_10"
+          ],
+          [
+            "ap:ws:5:0:0",
+            "c:s0_9"
+          ],
+          [
+            "ap:ws:5:0:1",
+            "c:s0_8"
+          ],
+          [
+            "ap:ws:5:0:1",
+            "c:s0_9"
+          ],
+          [
+            "ap:ws:5:0:2",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:0:2",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:0:3",
+            "c:s1_8"
+          ],
+          [
+            "ap:ws:5:0:3",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:1:0",
+            "c:s0_10"
+          ],
+          [
+            "ap:ws:5:1:0",
+            "c:s0_11"
+          ],
+          [
+            "ap:ws:5:1:1",
+            "c:s0_10"
+          ],
+          [
+            "ap:ws:5:1:1",
+            "c:s0_9"
+          ],
+          [
+            "ap:ws:5:1:2",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:1:2",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:1:3",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:1:3",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:2:0",
+            "c:s0_11"
+          ],
+          [
+            "ap:ws:5:2:0",
+            "c:s0_12"
+          ],
+          [
+            "ap:ws:5:2:1",
+            "c:s0_11"
+          ],
+          [
+            "ap:ws:5:2:1",
+            "c:s0_12"
+          ],
+          [
+            "ap:ws:5:2:2",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:2:2",
+            "c:s1_12"
+          ],
+          [
+            "ap:ws:5:2:3",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:2:3",
+            "c:s1_12"
+          ],
+          [
+            "ap:ws:5:3:0",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:3:0",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:3:1",
+            "c:s1_8"
+          ],
+          [
+            "ap:ws:5:3:1",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:3:2",
+            "c:s2_10"
+          ],
+          [
+            "ap:ws:5:3:2",
+            "c:s2_9"
+          ],
+          [
+            "ap:ws:5:3:3",
+            "c:s2_8"
+          ],
+          [
+            "ap:ws:5:3:3",
+            "c:s2_9"
+          ],
+          [
+            "ap:ws:5:4:0",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:4:0",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:4:1",
+            "c:s1_10"
+          ],
+          [
+            "ap:ws:5:4:1",
+            "c:s1_9"
+          ],
+          [
+            "ap:ws:5:4:2",
+            "c:s2_10"
+          ],
+          [
+            "ap:ws:5:4:2",
+            "c:s2_11"
+          ],
+          [
+            "ap:ws:5:4:3",
+            "c:s2_10"
+          ],
+          [
+            "ap:ws:5:4:3",
+            "c:s2_9"
+          ],
+          [
+            "ap:ws:5:5:0",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:5:0",
+            "c:s1_12"
+          ],
+          [
+            "ap:ws:5:5:1",
+            "c:s1_11"
+          ],
+          [
+            "ap:ws:5:5:1",
+            "c:s1_12"
+          ],
+          [
+            "ap:ws:5:5:2",
+            "c:s2_11"
+          ],
+          [
+            "ap:ws:5:5:2",
+            "c:s2_12"
+          ],
+          [
+            "ap:ws:5:5:3",
+            "c:s2_11"
+          ],
+          [
+            "ap:ws:5:5:3",
+            "c:s2_12"
+          ],
+          [
+            "c:comms_n",
+            "c:entry"
+          ],
+          [
+            "c:comms_n",
+            "c:n1_0"
+          ],
+          [
+            "c:comms_s",
+            "c:entry"
+          ],
+          [
+            "c:comms_s",
+            "c:s1_0"
+          ],
+          [
+            "c:corr",
+            "c:door"
+          ],
+          [
+            "c:corr",
+            "c:entry"
+          ],
+          [
+            "c:entry",
+            "c:n0_0"
+          ],
+          [
+            "c:entry",
+            "c:s0_0"
+          ],
+          [
+            "c:entry",
+            "c:spine_w"
+          ],
+          [
+            "c:mn_door",
+            "c:mn_in"
+          ],
+          [
+            "c:mn_door",
+            "c:n0_12"
+          ],
+          [
+            "c:mn_e",
+            "c:mn_far"
+          ],
+          [
+            "c:mn_e",
+            "c:mn_in"
+          ],
+          [
+            "c:mn_far",
+            "c:mn_w"
+          ],
+          [
+            "c:mn_in",
+            "c:mn_w"
+          ],
+          [
+            "c:ms_door",
+            "c:ms_in"
+          ],
+          [
+            "c:ms_door",
+            "c:s0_12"
+          ],
+          [
+            "c:ms_e",
+            "c:ms_far"
+          ],
+          [
+            "c:ms_e",
+            "c:ms_in"
+          ],
+          [
+            "c:ms_far",
+            "c:ms_w"
+          ],
+          [
+            "c:ms_in",
+            "c:ms_w"
+          ],
+          [
+            "c:n0_0",
+            "c:n0_1"
+          ],
+          [
+            "c:n0_0",
+            "c:n1_0"
+          ],
+          [
+            "c:n0_1",
+            "c:n0_2"
+          ],
+          [
+            "c:n0_10",
+            "c:n0_11"
+          ],
+          [
+            "c:n0_10",
+            "c:n0_9"
+          ],
+          [
+            "c:n0_11",
+            "c:n0_12"
+          ],
+          [
+            "c:n0_12",
+            "c:n1_12"
+          ],
+          [
+            "c:n0_12",
+            "c:servers"
+          ],
+          [
+            "c:n0_2",
+            "c:n0_3"
+          ],
+          [
+            "c:n0_3",
+            "c:n0_4"
+          ],
+          [
+            "c:n0_4",
+            "c:n0_5"
+          ],
+          [
+            "c:n0_4",
+            "c:n1_4"
+          ],
+          [
+            "c:n0_4",
+            "c:spine_w"
+          ],
+          [
+            "c:n0_5",
+            "c:n0_6"
+          ],
+          [
+            "c:n0_6",
+            "c:n0_7"
+          ],
+          [
+            "c:n0_7",
+            "c:n0_8"
+          ],
+          [
+            "c:n0_8",
+            "c:n0_9"
+          ],
+          [
+            "c:n0_8",
+            "c:n1_8"
+          ],
+          [
+            "c:n0_8",
+            "c:spine_e"
+          ],
+          [
+            "c:n1_0",
+            "c:n1_1"
+          ],
+          [
+            "c:n1_0",
+            "c:n2_0"
+          ],
+          [
+            "c:n1_1",
+            "c:n1_2"
+          ],
+          [
+            "c:n1_10",
+            "c:n1_11"
+          ],
+          [
+            "c:n1_10",
+            "c:n1_9"
+          ],
+          [
+            "c:n1_11",
+            "c:n1_12"
+          ],
+          [
+            "c:n1_12",
+            "c:n2_12"
+          ],
+          [
+            "c:n1_2",
+            "c:n1_3"
+          ],
+          [
+            "c:n1_3",
+            "c:n1_4"
+          ],
+          [
+            "c:n1_4",
+            "c:n1_5"
+          ],
+          [
+            "c:n1_4",
+            "c:n2_4"
+          ],
+          [
+            "c:n1_5",
+            "c:n1_6"
+          ],
+          [
+            "c:n1_6",
+            "c:n1_7"
+          ],
+          [
+            "c:n1_7",
+            "c:n1_8"
+          ],
+          [
+            "c:n1_8",
+            "c:n1_9"
+          ],
+          [
+            "c:n1_8",
+            "c:n2_8"
+          ],
+          [
+            "c:n2_0",
+            "c:n2_1"
+          ],
+          [
+            "c:n2_1",
+            "c:n2_2"
+          ],
+          [
+            "c:n2_10",
+            "c:n2_11"
+          ],
+          [
+            "c:n2_10",
+            "c:n2_9"
+          ],
+          [
+            "c:n2_11",
+            "c:n2_12"
+          ],
+          [
+            "c:n2_2",
+            "c:n2_3"
+          ],
+          [
+            "c:n2_3",
+            "c:n2_4"
+          ],
+          [
+            "c:n2_4",
+            "c:n2_5"
+          ],
+          [
+            "c:n2_5",
+            "c:n2_6"
+          ],
+          [
+            "c:n2_6",
+            "c:n2_7"
+          ],
+          [
+            "c:n2_7",
+            "c:n2_8"
+          ],
+          [
+            "c:n2_8",
+            "c:n2_9"
+          ],
+          [
+            "c:s0_0",
+            "c:s0_1"
+          ],
+          [
+            "c:s0_0",
+            "c:s1_0"
+          ],
+          [
+            "c:s0_1",
+            "c:s0_2"
+          ],
+          [
+            "c:s0_10",
+            "c:s0_11"
+          ],
+          [
+            "c:s0_10",
+            "c:s0_9"
+          ],
+          [
+            "c:s0_11",
+            "c:s0_12"
+          ],
+          [
+            "c:s0_12",
+            "c:s1_12"
+          ],
+          [
+            "c:s0_12",
+            "c:servers"
+          ],
+          [
+            "c:s0_2",
+            "c:s0_3"
+          ],
+          [
+            "c:s0_3",
+            "c:s0_4"
+          ],
+          [
+            "c:s0_4",
+            "c:s0_5"
+          ],
+          [
+            "c:s0_4",
+            "c:s1_4"
+          ],
+          [
+            "c:s0_4",
+            "c:spine_w"
+          ],
+          [
+            "c:s0_5",
+            "c:s0_6"
+          ],
+          [
+            "c:s0_6",
+            "c:s0_7"
+          ],
+          [
+            "c:s0_7",
+            "c:s0_8"
+          ],
+          [
+            "c:s0_8",
+            "c:s0_9"
+          ],
+          [
+            "c:s0_8",
+            "c:s1_8"
+          ],
+          [
+            "c:s0_8",
+            "c:spine_e"
+          ],
+          [
+            "c:s1_0",
+            "c:s1_1"
+          ],
+          [
+            "c:s1_0",
+            "c:s2_0"
+          ],
+          [
+            "c:s1_1",
+            "c:s1_2"
+          ],
+          [
+            "c:s1_10",
+            "c:s1_11"
+          ],
+          [
+            "c:s1_10",
+            "c:s1_9"
+          ],
+          [
+            "c:s1_11",
+            "c:s1_12"
+          ],
+          [
+            "c:s1_12",
+            "c:s2_12"
+          ],
+          [
+            "c:s1_2",
+            "c:s1_3"
+          ],
+          [
+            "c:s1_3",
+            "c:s1_4"
+          ],
+          [
+            "c:s1_4",
+            "c:s1_5"
+          ],
+          [
+            "c:s1_4",
+            "c:s2_4"
+          ],
+          [
+            "c:s1_5",
+            "c:s1_6"
+          ],
+          [
+            "c:s1_6",
+            "c:s1_7"
+          ],
+          [
+            "c:s1_7",
+            "c:s1_8"
+          ],
+          [
+            "c:s1_8",
+            "c:s1_9"
+          ],
+          [
+            "c:s1_8",
+            "c:s2_8"
+          ],
+          [
+            "c:s2_0",
+            "c:s2_1"
+          ],
+          [
+            "c:s2_1",
+            "c:s2_2"
+          ],
+          [
+            "c:s2_10",
+            "c:s2_11"
+          ],
+          [
+            "c:s2_10",
+            "c:s2_9"
+          ],
+          [
+            "c:s2_11",
+            "c:s2_12"
+          ],
+          [
+            "c:s2_2",
+            "c:s2_3"
+          ],
+          [
+            "c:s2_3",
+            "c:s2_4"
+          ],
+          [
+            "c:s2_4",
+            "c:s2_5"
+          ],
+          [
+            "c:s2_5",
+            "c:s2_6"
+          ],
+          [
+            "c:s2_6",
+            "c:s2_7"
+          ],
+          [
+            "c:s2_7",
+            "c:s2_8"
+          ],
+          [
+            "c:s2_8",
+            "c:s2_9"
+          ],
+          [
+            "c:servers",
+            "c:spine_e"
+          ]
+        ]
+      },
+      "plan": {
+        "rooms": [
+          {
+            "id": "corridor",
+            "name": "Corridor",
+            "rect": [
+              0,
+              -1.5,
+              4,
+              1.5
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "comms",
+            "name": "Comms",
+            "rect": [
+              4,
+              -13,
+              9,
+              13
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-0",
+            "name": "Department 1",
+            "rect": [
+              9,
+              4.15,
+              18.5,
+              13
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-3",
+            "name": "Department 4",
+            "rect": [
+              9,
+              -13,
+              18.5,
+              -4.15
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-1",
+            "name": "Department 2",
+            "rect": [
+              18.5,
+              4.15,
+              28.5,
+              13
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-4",
+            "name": "Department 5",
+            "rect": [
+              18.5,
+              -13,
+              28.5,
+              -4.15
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-2",
+            "name": "Department 3",
+            "rect": [
+              28.5,
+              4.15,
+              38.5,
+              13
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "dept-5",
+            "name": "Department 6",
+            "rect": [
+              28.5,
+              -13,
+              38.5,
+              -4.15
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "ops",
+            "name": "Operations",
+            "rect": [
+              9,
+              -4.15,
+              38.5,
+              4.15
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "meeting-A",
+            "name": "Meeting A",
+            "rect": [
+              38.5,
+              3,
+              44,
+              13
+            ],
+            "floor": "carpet"
+          },
+          {
+            "id": "servers",
+            "name": "Servers",
+            "rect": [
+              38.5,
+              -3,
+              44,
+              3
+            ],
+            "floor": "concrete"
+          },
+          {
+            "id": "meeting-B",
+            "name": "Meeting B",
+            "rect": [
+              38.5,
+              -13,
+              44,
+              -3
+            ],
+            "floor": "carpet"
+          }
+        ],
+        "walls": [
+          {
+            "a": [
+              4,
+              -13
+            ],
+            "b": [
+              4,
+              13
+            ],
+            "kind": "solid",
+            "openings": [
+              [
+                11.5,
+                14.5
+              ]
+            ],
+            "side": 1,
+            "thick": 0.25,
+            "id": 1,
+            "h": 5.4
+          },
+          {
+            "a": [
+              44,
+              -13
+            ],
+            "b": [
+              44,
+              13
+            ],
+            "kind": "solid",
+            "side": -1,
+            "thick": 0.25,
+            "id": 2,
+            "h": 5.4
+          },
+          {
+            "a": [
+              4,
+              13
+            ],
+            "b": [
+              44,
+              13
+            ],
+            "kind": "solid",
+            "side": 1,
+            "thick": 0.25,
+            "id": 3,
+            "h": 5.4
+          },
+          {
+            "a": [
+              4,
+              -13
+            ],
+            "b": [
+              44,
+              -13
+            ],
+            "kind": "curtain",
+            "side": -1,
+            "thick": 0.18,
+            "id": 4,
+            "h": 5.4
+          },
+          {
+            "a": [
+              0,
+              1.5
+            ],
+            "b": [
+              4,
+              1.5
+            ],
+            "kind": "solid",
+            "side": 1,
+            "thick": 0.2,
+            "id": 5,
+            "h": 3.2
+          },
+          {
+            "a": [
+              0,
+              -1.5
+            ],
+            "b": [
+              4,
+              -1.5
+            ],
+            "kind": "solid",
+            "side": -1,
+            "thick": 0.2,
+            "id": 6,
+            "h": 3.2
+          },
+          {
+            "a": [
+              38.5,
+              3
+            ],
+            "b": [
+              38.5,
+              13
+            ],
+            "kind": "glass",
+            "openings": [
+              [
+                0.6,
+                1.6
+              ]
+            ],
+            "side": 1,
+            "thick": 0.12,
+            "id": 7,
+            "h": 5.4
+          },
+          {
+            "a": [
+              38.5,
+              3
+            ],
+            "b": [
+              44,
+              3
+            ],
+            "kind": "glass",
+            "side": 1,
+            "thick": 0.12,
+            "id": 8,
+            "h": 5.4
+          },
+          {
+            "a": [
+              38.5,
+              -13
+            ],
+            "b": [
+              38.5,
+              -3
+            ],
+            "kind": "glass",
+            "openings": [
+              [
+                8.4,
+                9.4
+              ]
+            ],
+            "side": 1,
+            "thick": 0.12,
+            "id": 9,
+            "h": 5.4
+          },
+          {
+            "a": [
+              38.5,
+              -3
+            ],
+            "b": [
+              44,
+              -3
+            ],
+            "kind": "glass",
+            "side": 1,
+            "thick": 0.12,
+            "id": 10,
+            "h": 5.4
+          }
+        ],
+        "furniture": [
+          {
+            "kind": "context-core",
+            "x": 23.5,
+            "z": 0,
+            "w": 8,
+            "d": 8,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 10.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 13.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 16.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 10.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 13.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 16.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 20.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 23.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 26.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 20.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 23.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 26.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 30.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 33.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 36.5,
+            "z": 6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": 4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": 7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 30.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 33.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 36.5,
+            "z": 9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": 8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": 10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "desk",
+            "x": 10.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 13.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 16.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 10.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 11.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 9.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 13.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 14.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 16.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 17.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 20.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 23.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 26.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 20.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 21.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 19.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 23.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 24.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 22.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 26.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 27.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 25.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 30.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 33.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 36.5,
+            "z": -6,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": -4.88,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": -7.12,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 30.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 31.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 29.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 33.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 34.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 32.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "desk",
+            "x": 36.5,
+            "z": -9.84,
+            "w": 2.8,
+            "d": 1.44,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": -8.72,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 3.142
+          },
+          {
+            "kind": "chair",
+            "x": 37.2,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 35.8,
+            "z": -10.96,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 0
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": 2.4,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": 3.6,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": 4.8,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": -2.4,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": -3.6,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "station",
+            "x": 4.25,
+            "z": -4.8,
+            "w": 1.1,
+            "d": 0.5,
+            "yaw": 1.571
+          },
+          {
+            "kind": "booth",
+            "x": 5.25,
+            "z": 11.95,
+            "w": 1.7,
+            "d": 1.7,
+            "yaw": 3.142
+          },
+          {
+            "kind": "booth",
+            "x": 7.15,
+            "z": 11.95,
+            "w": 1.7,
+            "d": 1.7,
+            "yaw": 3.142
+          },
+          {
+            "kind": "booth",
+            "x": 5.25,
+            "z": -11.95,
+            "w": 1.7,
+            "d": 1.7,
+            "yaw": 0
+          },
+          {
+            "kind": "booth",
+            "x": 7.15,
+            "z": -11.95,
+            "w": 1.7,
+            "d": 1.7,
+            "yaw": 0
+          },
+          {
+            "kind": "meeting-table",
+            "x": 41.25,
+            "z": 8,
+            "w": 1.2,
+            "d": 3.2,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": 6.9,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": 8,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": 9.1,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": 6.9,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": 8,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": 9.1,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "meeting-table",
+            "x": 41.25,
+            "z": -8,
+            "w": 1.2,
+            "d": 3.2,
+            "yaw": 0
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": -9.1,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": -8,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 40.25,
+            "z": -6.9,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": 1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": -9.1,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": -8,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "chair",
+            "x": 42.25,
+            "z": -6.9,
+            "w": 0.62,
+            "d": 0.62,
+            "yaw": -1.571
+          },
+          {
+            "kind": "core-rack",
+            "x": 43.3,
+            "z": -1.86,
+            "w": 0.62,
+            "d": 1,
+            "yaw": -1.571
+          },
+          {
+            "kind": "core-rack",
+            "x": 43.3,
+            "z": -0.62,
+            "w": 0.62,
+            "d": 1,
+            "yaw": -1.571
+          },
+          {
+            "kind": "core-rack",
+            "x": 43.3,
+            "z": 0.62,
+            "w": 0.62,
+            "d": 1,
+            "yaw": -1.571
+          },
+          {
+            "kind": "core-rack",
+            "x": 43.3,
+            "z": 1.86,
+            "w": 0.62,
+            "d": 1,
+            "yaw": -1.571
+          }
+        ]
+      }
+    },
+    "skyline": {
+      "file": "skyline.glb",
+      "lightmap": {
+        "file": "skyline.lightmap.full.webp",
+        "intensity": 0.3878,
+        "variants": {
+          "full": "skyline.lightmap.full.webp",
+          "half": "skyline.lightmap.half.webp",
+          "quarter": "skyline.lightmap.quarter.webp"
+        }
+      },
+      "bounds": {
+        "minX": -640,
+        "maxX": 680,
+        "minZ": -580,
+        "maxZ": -85
+      },
+      "placement": {
+        "x": 0,
+        "z": 0,
+        "yaw": 0
+      },
+      "bands": 3,
+      "streetY": -220,
+      "anchors": {},
+      "nav": {
+        "nodes": {},
+        "edges": []
+      },
+      "plan": {
+        "rooms": [],
+        "walls": [],
+        "furniture": []
+      }
+    }
+  },
+  "character": {
+    "file": "character-cyber.glb",
+    "meta": "character-cyber.json"
+  }
+}

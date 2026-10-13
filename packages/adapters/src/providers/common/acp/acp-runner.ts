@@ -169,7 +169,7 @@ class AcpSession implements RunnerSession {
     const spawn = o.spawn ?? spawnRuntime
     this.t = spawn(o.bin ?? p.bin, o.args ?? p.args, {
       cwd: s.cwd,
-      ...(o.env ? { env: o.env } : {}),
+      ...(o.env || p.env ? { env: { ...p.env, ...o.env } } : {}),
     })
     this.peer = new JsonRpcPeer(this.t.stdout, this.t.stdin, {
       dialect: 'jsonrpc2',

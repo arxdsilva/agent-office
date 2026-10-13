@@ -15,7 +15,7 @@ XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb
 # render on software GL there (TESTING.md: E2E runs on software GL in CI), or the office never loads.
 SOFTWARE_GL := $(if $(XVFB),AGENT_OFFICE_FORCE_SOFTWARE_GL=1,)
 
-.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-projects screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check
+.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-projects screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check perf-special special-assets special-assets-draft special-assets-test screenshots-special
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -74,8 +74,23 @@ screenshots-macos: ## macOS only: capture the real tray menu and a native notifi
 perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs
 
-verify-providers: ## Verify managed sessions against the real, logged-in provider CLIs (uses your accounts)
-	pnpm exec tsx scripts/verify-providers.ts
+perf-special: ## Night City: FPS per preset, load and switch time, GPU memory (needs make build special-assets)
+	$(ELECTRON_ENV) node scripts/perf.mjs --mode special
+
+special-assets: ## Build the Night City asset set with Blender (final bake) → packages/web/public/special3d
+	node assets/special3d/build.mjs --quality final
+
+special-assets-draft: ## Fast Night City asset build for iteration
+	node assets/special3d/build.mjs --quality draft
+
+special-assets-test: ## Blender-side tests of the Night City set (naming, budgets, no logos, wall ids)
+	node assets/special3d/build.mjs --test
+
+screenshots-special: ## Night City README stills from synthetic fixtures → docs/screenshots/special-3d (needs make build)
+	$(ELECTRON_ENV) node scripts/capture/special.mjs
+
+verify-providers: ## Verify managed sessions against the real, logged-in provider CLIs (uses your accounts; ONLY=opencode,goose)
+	pnpm exec tsx scripts/verify-providers.ts $(if $(ONLY),--only $(ONLY),)
 
 codex-schema-check: ## Check our Codex protocol subset against the installed codex's generated schema
 	node scripts/codex-schema-check.mjs

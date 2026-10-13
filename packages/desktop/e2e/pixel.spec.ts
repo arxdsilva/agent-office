@@ -104,6 +104,16 @@ test('2D RPG: switch, walk, talk, alerts, team, objects, leave, back to 3D, rela
   })
 
   await test.step('X2: D moves the player right; walking into a wall stops at the wall', async () => {
+    // Start in the middle of the atrium plaza, so walking east has room (the spawn sits next to
+    // atrium furniture that can block the first metre).
+    const plaza = (await rooms(win)).find((r) => r.placement === 'atrium' && r.name === 'Plaza')
+    const s0 = await state(win)
+    if (plaza && s0.originM)
+      await teleport(
+        win,
+        s0.originM.x + (plaza.rect.tx + plaza.rect.tw / 2) * tileM(s0),
+        s0.originM.z + (plaza.rect.ty + plaza.rect.th / 2) * tileM(s0),
+      )
     await blur(win)
     const start = (await pixel(win)).player
     // Holding D for 1 s at 1.4 m/s moves the player at least 1 m to the right (+x).

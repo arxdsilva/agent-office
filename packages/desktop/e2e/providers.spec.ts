@@ -1,3 +1,4 @@
+import { PROVIDER_IDS } from '@agent-office/shared'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -49,7 +50,13 @@ test('providers: Codex + Cursor managed side by side, an observed Gemini agent, 
   await test.step('PV-1: Connect → Providers lists six providers; enabling Codex and Cursor makes them ready', async () => {
     await win.locator('#connect-btn').click()
     await win.locator('#c-tab-providers').click()
-    await expect(win.locator('#c-prov-list article')).toHaveCount(6)
+    // Every runtime has a card: the six built-in providers plus the open-source runtimes.
+    await expect(win.locator('#c-prov-list article')).toHaveCount(PROVIDER_IDS.length)
+    // The open-source runtimes appear like any other provider (off until the user enables them).
+    for (const id of ['opencode', 'goose', 'kilo', 'qwen', 'cline', 'openhands'] as const)
+      await expect(card(id)).toBeVisible()
+    // Roo Code has no CLI: its card says so instead of offering a toggle that can't work.
+    await expect(card('roo')).toContainText('Roo Code')
     // New providers start disabled; ChatGPT can't be enabled at all (informational card).
     await expect(card('codex')).toContainText('Off')
     await expect(card('chatgpt').locator('[data-action="toggle"]')).toHaveCount(0)

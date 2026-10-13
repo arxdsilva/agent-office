@@ -20,7 +20,7 @@ from mathutils import Vector  # noqa: E402
 
 import build  # noqa: E402
 from lib import anchors as AN  # noqa: E402
-from lib import geometry  # noqa: E402
+from lib import export, geometry  # noqa: E402
 
 # contract §9 caps are wing 190k / atrium 250k / others 60k; these tighter targets keep the visible scene fast
 BUDGET = {'atrium': 250e3, 'wing': 120e3, 'street': 60e3, 'garden': 40e3, 'cap': 60e3}
@@ -181,6 +181,8 @@ def test(spec):
     check(tris <= BUDGET[kind], f'{tag}: {tris} triangles > {BUDGET[kind]:.0f}')
     test_plan(tag, g.plan)
     test_plan_walls(tag, g.plan)
+    test_wall_ids(tag, g.plan, objs['static'] + objs['ceiling'])
+    test_mounted(tag, kind, objs['dynamic'])
     print(f'[test] {spec}: {len(anchors)} anchors, {len(nodes)} nav nodes, {tris} tris', flush=True)
     return m
 
@@ -211,6 +213,67 @@ def test_plan_walls(tag, plan):
         check(w.get('side') in (-1, 1), f'{tag}: walls[{i}] side {w.get("side")!r} is not -1 or 1')
         t = w.get('thick')
         check(isinstance(t, (int, float)) and math.isfinite(t) and t > 0, f'{tag}: walls[{i}] thick {t!r} is not > 0')
+
+
+def _seg_dist(p, a, b):
+    ax, az = a
+    dx, dz = b[0] - ax, b[1] - az
+    L2 = dx * dx + dz * dz
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - az) * dz) / L2))
+    return math.hypot(p[0] - ax - t * dx, p[1] - az - t * dz)
+
+
+def test_wall_ids(tag, plan, meshes):
+    """BL-py (contract §13): every baked/ceiling mesh carries the `_WALLID` point attribute; ids are integers
+    in 0..len(walls), every plan wall has geometry, and a wall's vertices lie on its own plan segment."""
+    walls = plan['walls']
+    for i, w in enumerate(walls):
+        check(w.get('id') == i + 1, f'{tag}: walls[{i}] id {w.get("id")!r} != {i + 1}')
+        check(isinstance(w.get('h'), (int, float)) and w['h'] > 0, f'{tag}: walls[{i}] h {w.get("h")!r} is not > 0')
+    seen = set()
+    far = {}
+    for o in meshes:
+        attr = o.data.attributes.get(geometry.WALLID)
+        if attr is None or attr.data_type != 'FLOAT' or attr.domain != 'POINT':
+            failures.append(f'{tag}: {o.name} has no FLOAT POINT {geometry.WALLID} attribute')
+            continue
+        vals = [0.0] * len(o.data.vertices)
+        attr.data.foreach_get('value', vals)
+        for v, wid in zip(o.data.vertices, vals):
+            k = int(round(wid))
+            if abs(wid - k) > 1e-6 or k < 0 or k > len(walls):
+                failures.append(f'{tag}: {o.name} has {geometry.WALLID} {wid} (not an integer in 0..{len(walls)})')
+                break
+            if k == 0:
+                continue
+            seen.add(k)
+            w = walls[k - 1]
+            # Blender (x, y, z) = glTF (x, −z, y)
+            d = _seg_dist((v.co.x, -v.co.y), w['a'], w['b'])
+            if d > w['thick'] + export.MOUNT_BAND + 0.1:  # walls, and pieces mounted on them
+                far[k] = max(far.get(k, 0.0), d)
+    missing = sorted(set(range(1, len(walls) + 1)) - seen)
+    check(not missing, f'{tag}: plan walls without tagged geometry: {missing[:8]}')
+    for k, d in sorted(far.items())[:8]:
+        failures.append(f'{tag}: wall {k} has a vertex {d:.2f} m from its plan segment')
+
+
+# Runtime nodes that hang on a wall and must fade with it (contract §13): role → ref pattern.
+MOUNTED = {'wing': [('sign', r'wing|adapters|library')], 'atrium': [('screen', 'ledwall')]}
+
+
+def test_mounted(tag, kind, dynamics):
+    """BL-py (contract §13): wall-mounted runtime nodes (signs, the LED wall) carry their wall's id."""
+    import re
+    for role, pat in MOUNTED.get(kind, []):
+        nodes = [o for o in dynamics if o.get('role') == role and re.fullmatch(pat, str(o.get('ref')))]
+        check(nodes, f'{tag}: no {role} node matching {pat}')
+        for o in nodes:
+            attr = o.data.attributes.get(geometry.WALLID)
+            vals = [0.0] * len(o.data.vertices)
+            if attr is not None:
+                attr.data.foreach_get('value', vals)
+            check(vals and min(vals) > 0.5, f'{tag}: wall-mounted {o.name} has no wall id')
 
 
 def main():

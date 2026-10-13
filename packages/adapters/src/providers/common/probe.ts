@@ -3,6 +3,11 @@ import { execFile } from 'node:child_process'
 export interface CliProbeResult {
   /** First 4 KB of stdout. */
   stdout: string
+  /**
+   * First 4 KB of stderr: some CLIs (yargs: OpenCode, Kilo) print `--help` there. Only matched
+   * against a flag pattern; never logged or shown.
+   */
+  stderr: string
   code: number | null
   timedOut: boolean
 }
@@ -19,13 +24,14 @@ export function probeCli(bin: string, args: string[], timeoutMs: number): Promis
       bin,
       args,
       { shell: false, timeout: timeoutMs, maxBuffer: 1024 * 1024, windowsHide: true },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         const out = String(stdout ?? '').slice(0, MAX_STDOUT)
-        if (!err) return resolve({ stdout: out, code: 0, timedOut: false })
+        const errOut = String(stderr ?? '').slice(0, MAX_STDOUT)
+        if (!err) return resolve({ stdout: out, stderr: errOut, code: 0, timedOut: false })
         const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
-        if (e.killed) return resolve({ stdout: out, code: null, timedOut: true })
+        if (e.killed) return resolve({ stdout: out, stderr: errOut, code: null, timedOut: true })
         if (typeof e.code === 'number')
-          return resolve({ stdout: out, code: e.code, timedOut: false })
+          return resolve({ stdout: out, stderr: errOut, code: e.code, timedOut: false })
         reject(err)
       },
     )

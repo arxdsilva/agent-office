@@ -26,6 +26,7 @@ import { PRESETS } from './app/quality.ts'
 import { createSimClock, type SimClock } from './app/sim-clock.ts'
 import { createController } from './controller.ts'
 import { createWorkspaceViews, installWorkspaceKeys } from './adapters/dom/workspace-views.ts'
+import { showSpecialFailure } from './special-3d/failure.ts'
 import { createWorkspaceController, type WorkspaceController } from './workspace-controller.ts'
 import type { AgentPlan } from './app/office-types.ts'
 import type { OfficeGateway, SceneView } from './ports.ts'
@@ -53,7 +54,7 @@ async function startupSettings(
 ): Promise<{ powerPreference: PowerPreference | undefined; viewMode: ViewMode }> {
   try {
     const { graphicsQuality, viewMode } = await gateway.settings.get()
-    const mode: ViewMode = viewMode === 'pixel' ? 'pixel' : '3d'
+    const mode: ViewMode = viewMode === 'pixel' || viewMode === 'special' ? viewMode : '3d'
     if (graphicsQuality === 'auto') return { powerPreference: undefined, viewMode: mode }
     const spec = PRESETS[graphicsQuality] as { powerPreference?: PowerPreference } | undefined
     return { powerPreference: spec?.powerPreference, viewMode: mode }
@@ -104,6 +105,22 @@ function createScene(clock: SimClock, powerPreference: PowerPreference | undefin
   return new Scene(elements, clock, powerPreference ? { powerPreference } : {})
 }
 
+/**
+ * Builds Night City (plan §5.4): its code is a separate, lazy-loaded chunk, so the other modes
+ * never download it. Throws when it can't start (no WebGL 2, `?forceSpecialFail=1`).
+ */
+async function createSpecial(
+  gateway: OfficeGateway,
+  clock: SimClock,
+  powerPreference: PowerPreference | undefined,
+): Promise<SceneView> {
+  const { createSpecialScene } = await import('./special-3d/index.ts')
+  return createSpecialScene(clock, {
+    settings: { get: () => gateway.settings.get(), set: (p) => gateway.settings.set(p) },
+    ...(powerPreference && { powerPreference }),
+  })
+}
+
 /** Last snippet language (per viewer); storage may be unavailable. */
 function storedSnippetLang(): SnippetLang | undefined {
   try {
@@ -123,18 +140,46 @@ async function boot(): Promise<void> {
   // viewMode change. The saved mode's scene is created first, so a 2D user never starts WebGL.
   let resync: (() => Map<string, AgentPlan>) | null = null
   let scene: SceneHost
-  try {
-    scene = new SceneHost({
-      mode: startup.viewMode,
-      factory: (mode) =>
-        mode === 'pixel' ? createPixelScene(clock) : createScene(clock, startup.powerPreference),
-      resync: () => resync?.() ?? new Map(),
-    })
-  } catch (e) {
-    showGfxFailure(gateway, e)
-    return
+  const factory = (mode: ViewMode): SceneView => {
+    switch (mode) {
+      case 'pixel':
+        return createPixelScene(clock)
+      case 'special':
+        throw new Error('Night City loads asynchronously')
+      case '3d':
+        return createScene(clock, startup.powerPreference)
+    }
   }
-  document.body.dataset.mode = startup.viewMode
+  const pickMode = (mode: ViewMode) => void gateway.settings.set({ viewMode: mode }).catch(() => {})
+  const hostDeps = {
+    factory,
+    factoryAsync: async (mode: ViewMode): Promise<SceneView> => {
+      if (mode !== 'special') return factory(mode)
+      try {
+        return await createSpecial(gateway, clock, startup.powerPreference)
+      } catch (e) {
+        showSpecialFailure(e, pickMode)
+        throw e
+      }
+    },
+    resync: () => resync?.() ?? new Map(),
+  }
+  try {
+    scene = await SceneHost.initAsync({ ...hostDeps, mode: startup.viewMode })
+  } catch (e) {
+    // Night City could not start: its failure card is up; Classic 3D runs meanwhile.
+    if (startup.viewMode !== 'special') {
+      showGfxFailure(gateway, e)
+      return
+    }
+    try {
+      scene = await SceneHost.initAsync({ ...hostDeps, mode: '3d' })
+    } catch (e2) {
+      showGfxFailure(gateway, e2)
+      return
+    }
+  }
+  document.body.dataset.mode = scene.mode
   const settings = new DomSettings({ removeImported: () => gateway.projects.removeImported() })
   // Fallback FPS readout in Settings → Graphics until the controller pushes the full stats line.
   scene.onFrameStats((fps, preset) => settings.showFrameRate(fps, preset))
@@ -188,8 +233,8 @@ async function boot(): Promise<void> {
   }
   /** Swaps the scene; when the new one can't start (e.g. no WebGL), goes back to the old mode. */
   const switchMode = async (mode: ViewMode): Promise<void> => {
-    const previous = scene.mode
-    if (mode === previous) return
+    // No early return on `scene.mode`: a switch may still be queued (fast toggling), and the host
+    // serializes switches and ignores one to the mode that is active when its turn comes.
     document.body.dataset.mode = mode
     try {
       await scene.switchTo(mode)

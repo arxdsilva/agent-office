@@ -21,7 +21,8 @@ describe('PROVIDER_DECLS', () => {
   it('PV-1 declares every provider with a unique, non-empty prefix (ChatGPT has none)', () => {
     expect(Object.keys(PROVIDER_DECLS).sort()).toEqual([...PROVIDER_IDS].sort())
     const prefixes = PROVIDER_IDS.map((id) => PROVIDER_DECLS[id].prefix).filter(Boolean)
-    expect(new Set(prefixes).size).toBe(5)
+    // Every provider but ChatGPT has a prefix, and they are unique.
+    expect(new Set(prefixes).size).toBe(PROVIDER_IDS.length - 1)
     expect(PROVIDER_DECLS.chatgpt.prefix).toBe('')
     for (const id of PROVIDER_IDS) expect(PROVIDER_DECLS[id].id).toBe(id)
   })

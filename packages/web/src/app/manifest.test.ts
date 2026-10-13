@@ -320,8 +320,19 @@ describe('parseManifest plan (2D floor plan)', () => {
     })
   })
 
+  it('keeps a wall id and height (contract §13), for the wall cutaway', () => {
+    const j = json()
+    j.modules.wing.plan = {
+      ...plan(),
+      walls: [{ a: [0, 0], b: [4, 0], kind: 'solid', side: 1, thick: 0.15, id: 1, h: 3.6 }],
+    }
+    expect(parseManifest(j).modules.wing.plan!.walls[0]).toMatchObject({ id: 1, h: 3.6 })
+  })
+
   it('names the offending path', () => {
     const cases: [(p: Json) => void, string][] = [
+      [(p) => (p.walls[0].id = 0.5), 'modules.wing.plan.walls[0].id'],
+      [(p) => (p.walls[0].h = 0), 'modules.wing.plan.walls[0].h'],
       [(p) => (p.walls[0].side = 2), 'modules.wing.plan.walls[0].side'],
       [(p) => (p.walls[0].thick = -1), 'modules.wing.plan.walls[0].thick'],
       [(p) => (p.rooms[0].rect = [0, 0, 4]), 'modules.wing.plan.rooms[0].rect'],

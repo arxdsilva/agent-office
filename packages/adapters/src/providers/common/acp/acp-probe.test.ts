@@ -55,6 +55,14 @@ describe('AcpProbe', () => {
     })
   })
 
+  // Real OpenCode 1.19.0 and Kilo 7.8.8 print `acp --help` on stderr (yargs).
+  it('finds the ACP flag when help is printed on stderr', async () => {
+    expect(await fake(base, 'cursor', { FAKE_ACP_HELP_STDERR: '1' }).detect()).toMatchObject({
+      installed: true,
+      flagsOk: true,
+    })
+  })
+
   it('finds the flag past the first 4 KB of help (Copilot)', async () => {
     expect(await fake(copilot, 'copilot').detect()).toEqual({
       installed: true,

@@ -8,12 +8,25 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import type { Pass } from 'three/addons/postprocessing/Pass.js'
 import type { Effective } from '../../app/graphics-types.ts'
+import { patchWallMaterial } from './wall-cutaway.ts'
 
 // Threshold above the plan's 0.85: baked white walls reach ~1.0 in linear HDR and would glow.
 export const BLOOM = { threshold: 1.15, strength: 0.35, radius: 0.5 }
 /** AO samples: half resolution (High), full (custom "Effects: On"), Ultra. */
 const GTAO_SAMPLES = { half: 8, full: 12, ultra: 24 } as const
+
+/**
+ * A scene flavor's pipeline (plan §5.4). Every field is optional: the defaults are Classic 3D's
+ * chain exactly. Night City passes its bloom levels, exposure and a colour-grade pass.
+ */
+export interface PipelineConfig {
+  bloom?: { threshold: number; strength: number; radius: number }
+  /** Passes run on the linear HDR image after bloom, before tone mapping (e.g. a colour grade). */
+  grade?: Pass[]
+  exposure?: number
+}
 
 export interface FrameStats {
   fps: number
@@ -37,14 +50,17 @@ export class RenderPipeline {
   readonly stats: FrameStats = { fps: 0, drawCalls: 0, triangles: 0 }
   private frames = 0
   private frameTime = 0
+  /** The flavor's grade passes (disposed with the pipeline). */
+  private extra: Pass[] = []
 
   constructor(
     private renderer: THREE.WebGLRenderer,
     private scene: THREE.Scene,
     private camera: THREE.PerspectiveCamera,
+    config: PipelineConfig = {},
   ) {
     renderer.toneMapping = THREE.AgXToneMapping
-    renderer.toneMappingExposure = 1
+    renderer.toneMappingExposure = config.exposure ?? 1
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.info.autoReset = false
     this.composer = new EffectComposer(renderer)
@@ -53,16 +69,22 @@ export class RenderPipeline {
     this.gtao.blendIntensity = 0.75
     this.gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.4, thickness: 1.2, scale: 1 })
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6 })
+    // Wall cutaway (contract §13): AO's normal/depth pass skips faded and lowered wall fragments too,
+    // so a hidden wall leaves no dark halo. (Building meshes cast no shadows: castShadow is off.)
+    patchWallMaterial(this.gtao.normalMaterial, 'gtao-normal')
     // Half-resolution AO for Medium: the composer passes full size; scale it here.
     const setSize = this.gtao.setSize.bind(this.gtao)
     this.gtao.setSize = (w: number, h: number) => setSize(w * this.gtaoScale, h * this.gtaoScale)
+    const bloom = config.bloom ?? BLOOM
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(256, 256),
-      BLOOM.strength,
-      BLOOM.radius,
-      BLOOM.threshold,
+      bloom.strength,
+      bloom.radius,
+      bloom.threshold,
     )
-    for (const p of [this.renderPass, this.gtao, this.bloom, this.output, this.smaa])
+    const grade = config.grade ?? []
+    this.extra = grade
+    for (const p of [this.renderPass, this.gtao, this.bloom, ...grade, this.output, this.smaa])
       this.composer.addPass(p)
   }
 
@@ -150,5 +172,6 @@ export class RenderPipeline {
     this.composer.dispose()
     this.gtao.dispose()
     this.bloom.dispose()
+    for (const p of this.extra) p.dispose()
   }
 }

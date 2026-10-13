@@ -14,9 +14,118 @@ def _clear_props(obj):
         del obj[k]
 
 
+# ---------------------------------------------------------------------------- wall-mounted pieces (contract §13)
+MOUNT_BAND = 0.45   # a mounted piece lies within this distance of a wall face (m)
+TOUCH = 0.08        # ... and touches the face (within this gap), or hangs at least MOUNT_Y above the floor
+MOUNT_Y = 1.0
+END_SLACK = 0.05
+
+
+def _wall_frames(walls):
+    """Plan walls (module glTF XZ) → (id, ax, az, ux, uz, L, centre offset, half thickness, top)."""
+    out = []
+    for i, w in enumerate(walls):
+        (ax, az), (bx, bz) = w['a'], w['b']
+        L = ((bx - ax) ** 2 + (bz - az) ** 2) ** 0.5
+        if L < 1e-6:
+            continue
+        ux, uz = (bx - ax) / L, (bz - az) / L
+        half = w.get('thick', 0.15) / 2
+        # +side is the (−dz, dx) normal: the body centre sits side·half from the line
+        out.append((w.get('id', i + 1), ax, az, ux, uz, L, w.get('side', 1) * half, half, w.get('h', 3.6)))
+    return out
+
+
+def _mounted_on(frames, xs, ys, zs):
+    """The wall a piece with glTF bounds (xs, ys, zs) = ((min, max), …) is mounted on, or 0: it lies within
+    MOUNT_BAND of the wall's face, between its ends, below its top, and touches the face or hangs above
+    MOUNT_Y (wall lights, shelves, screens, signs, tiles). The closest wall wins."""
+    corners = [(x, z) for x in xs for z in zs]
+    best, best_gap = 0, None
+    for (wid, ax, az, ux, uz, L, off, half, top) in frames:
+        if ys[1] > top + END_SLACK:
+            continue
+        ss = [(x - ax) * ux + (z - az) * uz for x, z in corners]
+        if min(ss) < -END_SLACK or max(ss) > L + END_SLACK:
+            continue
+        # distance from the body centre line, minus half the body: 0 on the face
+        qs = [(-(x - ax) * uz + (z - az) * ux) - off for x, z in corners]
+        if min(qs) < 0 < max(qs) and max(qs) - min(qs) > 2 * half + 1e-3:
+            continue  # straddles the wall: a piece through it, not on it
+        far = max(abs(q) for q in qs) - half
+        gap = min(abs(q) for q in qs) - half
+        if far > MOUNT_BAND or not (gap <= TOUCH or ys[0] >= MOUNT_Y):
+            continue
+        if best_gap is None or gap < best_gap:
+            best, best_gap = wid, gap
+    return best
+
+
+def _gltf_bounds(verts):
+    """Blender (x, y, z) = glTF (x, −z, y): glTF ((xmin, xmax), (ymin, ymax), (zmin, zmax))."""
+    bx = [v.co.x for v in verts]
+    by = [v.co.y for v in verts]
+    bz = [v.co.z for v in verts]
+    return (min(bx), max(bx)), (min(bz), max(bz)), (-max(by), -min(by))
+
+
+def _islands(bm):
+    """Connected pieces of a bmesh (vertex lists), linked through edges."""
+    seen = set()
+    out = []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        seen.add(v.index)
+        stack, piece = [v], []
+        while stack:
+            u = stack.pop()
+            piece.append(u)
+            for e in u.link_edges:
+                o = e.other_vert(u)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        out.append(piece)
+    return out
+
+
+def tag_mounted(geo):
+    """Give wall-mounted pieces (static and glass batches, dynamic objects) their wall's `_WALLID`, so they
+    fade and lower with it (contract §13). Freestanding furniture, colliders and anchors are untouched."""
+    frames = _wall_frames(geo.plan['walls'])
+    if not frames:
+        return 0
+    n = 0
+    for (group, _mat), b in geo.batches.items():
+        if group not in ('static', 'glass') or not b.bm.verts:
+            continue
+        lay = b.bm.verts.layers.float.get(geometry.WALLID)
+        b.bm.verts.index_update()
+        for piece in _islands(b.bm):
+            if any(v[lay] > 0.5 for v in piece):
+                continue  # the wall itself (or a piece built with wall_tag)
+            wid = _mounted_on(frames, *_gltf_bounds(piece))
+            if wid:
+                for v in piece:
+                    v[lay] = float(wid)
+                n += 1
+    for d in geo.dynamics:
+        if not d.bm.verts:
+            continue
+        wid = _mounted_on(frames, *_gltf_bounds(d.bm.verts))
+        if wid:
+            lay = d.bm.verts.layers.float.get(geometry.WALLID) or d.bm.verts.layers.float.new(geometry.WALLID)
+            for v in d.bm.verts:
+                v[lay] = float(wid)
+            n += 1
+    return n
+
+
 def create_objects(geo, col, name):
     """Returns dict: static/ceiling/glass lists (one object per (group, material)), dynamic, collider."""
     out = {'static': [], 'ceiling': [], 'glass': [], 'roofglass': [], 'dynamic': [], 'collider': []}
+    tag_mounted(geo)
     for (group, mat), b in sorted(geo.batches.items()):
         if not b.bm.faces:
             b.bm.free()
@@ -141,6 +250,7 @@ def export_glb(objs, path):
     bpy.ops.export_scene.gltf(
         filepath=path, export_format='GLB', use_selection=True, export_extras=True, export_yup=True,
         export_apply=True, export_texcoords=True, export_normals=True, export_tangents=False,
+        export_attributes=True,  # contract §13: the `_WALLID` point attribute (custom attributes start with _)
         export_materials='EXPORT', export_vertex_color='MATERIAL', export_cameras=False, export_lights=False,
         export_animations=False, export_skins=False, export_morph=False, export_image_format='AUTO',
         export_unused_images=False, export_unused_textures=False, export_gpu_instances=False)

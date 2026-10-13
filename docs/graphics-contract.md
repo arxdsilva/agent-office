@@ -195,3 +195,40 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 - **Sources:** `assets/pixel/src/**`, hand-authored text pixel grids plus palettes (`docs/pixel-style.md`). **Build:** `make pixel-assets` → `packages/web/public/assets/pixel/{tiles,objects,characters,effects,font}.png` + `atlas.json`.
 - **Sizes:** 16 px per metre (16×16 px floor tiles = 1 m; furniture at its plan size per `assets/pixel/src/sizes.json`); characters 16×24 px; a 5×7 bitmap font. Original work (MIT); no copied or traced third-party sprites, tiles or fonts; no logos.
 - **Budget:** ≤ 2 MB total, included in the 55 MB asset budget (§9).
+
+## 13. Wall ids (additive; Sims-style wall cutaway)
+
+- Every `baked` (and `ceiling`) mesh carries a float vertex attribute `_WALLID` (glTF custom
+  attribute; three.js exposes it as `_wallid`). `0` = not a wall; otherwise the 1-based index of the
+  wall in its module's `plan.walls`.
+- `plan.walls[i]` gains `id` (`i + 1`) and `h` (wall height in metres above the module floor).
+  Glass partitions and curtain walls carry ids too (`kind: 'glass' | 'curtain'`).
+- Walls stay merged per material and lightmapped: the renderer fades or lowers a wall per fragment
+  from a small per-wall table (alpha, lowered), with an ordered dither (opaque, no sorting). The
+  same patch applies to the AO normal/depth material and the shadow depth material.
+- Hiding a wall never changes `collider` boxes, nav graphs, anchors or the floor plan: collision,
+  navigation and picking are unaffected.
+- The optimizer must keep `_WALLID` exact (integers stored as floats; no lossy filter on it); the
+  validator checks it on atrium and wing baked meshes.
+
+## 14. Night City asset set (additive; the optional Special 3D mode)
+
+- A separate set: `packages/web/public/special3d/` with its own `manifest.json`
+  (`{ version: 1, set: 'special', blender, units: 'm', hash, hdri, modules, character }`), built by
+  `assets/special3d/build.mjs` (`make special-assets`) from `assets/blender/special3d/`. The classic
+  pipeline never writes or deletes it, and its budget is separate from §9.
+- Module kinds: `hq-atrium`, `command`, `skyline` (R1); `vault`, `core`, `archive`, `handoff`,
+  `department` (R2). Same placement rules as §3 (translation + yaw, never mirrored).
+- Anchors (in addition to the classic grammar, accepted only in this set):
+  `ws:<dept>:<pod>:<seat>` (workstation seat), `booth:<n>` (secure comm booth), `meet:<room>:<seat>`,
+  `interact:<kind>:<n>` (a semantic interaction; `<kind>` is one of the renderer's
+  `INTERACTION_KINDS`), `player:spawn`.
+- Roles (in addition to §5): `holo` (projected display, driven by live counts), `ad` (exterior
+  advertisement screen; original procedural content), `traffic` (a spline in `extras.points`),
+  `rain-glass` (window glass with the rain shader), `neon` (emissive sign; flicker schedule in extras).
+- Character: `character-cyber.glb` + `.json`, the **same rig and the same 22 clips** as §8 (so the
+  director's plans and timings apply unchanged), new outfit meshes and an `accent` material slot.
+- Budgets: hq-atrium ≤ 16 MB / 300k tris, command ≤ 14 MB / 260k, skyline ≤ 6 MB / 120k,
+  character-cyber ≤ 1.8 MB / 9k tris, set total ≤ 70 MB; visible ≤ 700k tris and ≤ 450 draw calls
+  (High). No third-party logos, trademarks or game assets; the fictional brand is drawn from
+  primitives. Textures are CC0 (pinned in `polyhaven.json`, listed in `assets/LICENSES.md`).

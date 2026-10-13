@@ -22,6 +22,7 @@ const MERGED = [
   'provider',
   'topic',
   'model',
+  'modelProvider',
   'kind',
   'parentId',
   'status',

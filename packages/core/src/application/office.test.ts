@@ -1,3 +1,4 @@
+import { PROVIDER_IDS } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import {
   FakeAgentRunner,
@@ -142,7 +143,7 @@ describe('createOffice: providers', () => {
   it('always exposes a provider catalog (Claude-only binding by default)', async () => {
     const office = createOffice(deps({ runner: new FakeAgentRunner() }))
     const list = await office.providers.list()
-    expect(list).toHaveLength(6)
+    expect(list).toHaveLength(PROVIDER_IDS.length)
     expect(list.find((p) => p.id === 'claude-code')).toMatchObject({
       state: 'managed-available',
       managedCaps: expect.arrayContaining(['chrome']),

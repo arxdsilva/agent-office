@@ -1,7 +1,9 @@
-import type { AgentStatus, Banner } from '@agent-office/shared'
+import type { AgentStatus, Banner, WallMode } from '@agent-office/shared'
 import { COPY } from '../../app/connect-copy.ts'
 import { SESSION_COPY } from '../../app/session-copy.ts'
 import { LIB_COPY } from '../../app/library-copy.ts'
+import { GFX_COPY } from '../../app/graphics-copy.ts'
+import { nextWallMode } from '../../app/walls.ts'
 import type { HudVM } from '../../app/view-models.ts'
 import type { BannerView, HudView } from '../../ports.ts'
 import { byId, el } from './el.ts'
@@ -24,9 +26,34 @@ export class DomHud implements HudView {
     lib.setAttribute('aria-controls', 'library')
     lib.addEventListener('click', () => this.libraryFn())
     btn.before(lib)
+    const walls = document.getElementById('wall-mode-btn')
+    if (walls) {
+      this.renderWallMode(this.wallMode)
+      walls.addEventListener('click', () => this.wallFn(nextWallMode(this.wallMode)))
+    }
   }
 
   private libraryFn: () => void = () => {}
+  private wallMode: WallMode = 'cutaway'
+  private wallFn: (m: WallMode) => void = () => {}
+
+  /** The walls button (#wall-mode-btn) cycles Up → Cutaway → Down; `fn` gets the next mode. */
+  onWallMode(fn: (m: WallMode) => void): void {
+    this.wallFn = fn
+  }
+
+  /** Shows the current wall mode on the HUD button (label, tooltip, data-mode). */
+  renderWallMode(m: WallMode): void {
+    this.wallMode = m
+    const btn = document.getElementById('wall-mode-btn')
+    if (!btn) return
+    const w = GFX_COPY.walls
+    const label = w.modes[m]
+    btn.textContent = `${w.icon[m]} ${label}`
+    btn.dataset.mode = m
+    btn.title = w.tooltip(label, w.modes[nextWallMode(m)])
+    btn.setAttribute('aria-label', w.button(label))
+  }
 
   onLibrary(fn: () => void): void {
     this.libraryFn = fn

@@ -9,6 +9,21 @@ const policy = {
 }
 
 describe('applyEvent', () => {
+  it('keeps the runtime and the model vendor apart (modelProvider merges like model)', () => {
+    const a = applyEvent(
+      undefined,
+      { agentId: 'oc:1', provider: 'opencode', model: 'qwen3-coder', modelProvider: 'openrouter' },
+      1,
+    )!
+    expect(toDto(a)).toMatchObject({
+      provider: 'opencode',
+      model: 'qwen3-coder',
+      modelProvider: 'openrouter',
+    })
+    const b = applyEvent(a, { agentId: 'oc:1', status: 'thinking' }, 2)!
+    expect(toDto(b).modelProvider).toBe('openrouter')
+  })
+
   it('creates an agent with defaults; provider falls back to source, then http', () => {
     expect(applyEvent(undefined, { agentId: 'a', source: 'mock' }, 1000)).toMatchObject({
       id: 'a',

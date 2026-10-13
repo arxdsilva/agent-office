@@ -1,4 +1,4 @@
-import type { ProviderStatus } from '@agent-office/shared'
+import { PROVIDER_IDS, type ProviderStatus } from '@agent-office/shared'
 import type { ProbeResult, ProviderProbe } from '../ports/driven.ts'
 import { describe, expect, it } from 'vitest'
 import {
@@ -73,14 +73,7 @@ describe('ProviderService', () => {
     await tick()
     t.scheduler.fireTimers() // the 3 s timeout
     const list = await p
-    expect(list.map((s) => s.id)).toEqual([
-      'claude-code',
-      'codex',
-      'cursor',
-      'gemini',
-      'copilot',
-      'chatgpt',
-    ])
+    expect(list.map((s) => s.id)).toEqual([...PROVIDER_IDS])
     expect(byId(list, 'codex')).toMatchObject({
       state: 'managed-available',
       enabled: true,

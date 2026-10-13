@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -21,6 +22,7 @@ import {
   ScriptedUpdater,
 } from '@agent-office/core/testing'
 import {
+  PROVIDER_IDS,
   IPC,
   type ConnectionInfo,
   type ContextRef,
@@ -30,7 +32,13 @@ import {
   type StartResult,
 } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { AgentRunner, ProviderProbe, RunnerDecl, StartSession } from '@agent-office/core'
+import {
+  PROVIDER_DECLS,
+  type AgentRunner,
+  type ProviderProbe,
+  type RunnerDecl,
+  type StartSession,
+} from '@agent-office/core'
 import {
   compose,
   VAULT_MEMORY_ONLY_BANNER,
@@ -123,6 +131,18 @@ const notInstalled = (provider: ProviderId): ProviderProbe => ({
   detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
 })
 
+const OSS_ACP = ['opencode', 'goose', 'kilo', 'qwen', 'cline', 'openhands'] as const
+
+/** Not-installed probes for every ACP provider, so no real CLI runs; `over` replaces entries. */
+function noRealClis(
+  over: ComposeOptions['providerOverrides'] = {},
+): NonNullable<ComposeOptions['providerOverrides']> {
+  const out: NonNullable<ComposeOptions['providerOverrides']> = {}
+  for (const id of ['cursor', 'gemini', 'copilot', ...OSS_ACP] as const)
+    out[id] = { probe: notInstalled(id) }
+  return { ...out, ...over }
+}
+
 function setup(
   envVars: Record<string, string | undefined> = {},
   opts: {
@@ -133,6 +153,7 @@ function setup(
     codexProbe?: ProviderProbe
     codexRunner?: AgentRunner
     providerOverrides?: ComposeOptions['providerOverrides']
+    gooseCli?: ComposeOptions['gooseCli']
     fakesDir?: string
     processEnv?: Record<string, string | undefined>
     vault?: MemoryRecordLog
@@ -170,12 +191,10 @@ function setup(
       provider: 'codex',
       detect: async () => ({ installed: false, flagsOk: false, auth: 'unknown' }),
     },
-    // …nor the real Cursor, Gemini or Copilot CLIs.
-    providerOverrides: {
-      cursor: { probe: notInstalled('cursor') },
-      gemini: { probe: notInstalled('gemini') },
-      copilot: { probe: notInstalled('copilot') },
-    },
+    // …nor the real Cursor, Gemini, Copilot, OpenCode, goose, Kilo, Qwen, Cline or OpenHands CLIs.
+    providerOverrides: noRealClis(),
+    // …nor `goose session list` for the history import.
+    gooseCli: async () => '[]',
     ...opts,
   })
   apps.push(app)
@@ -760,7 +779,7 @@ describe('compose: acp providers and observation hooks', () => {
     const { app } = setup()
     await app.start()
     const ids = (await app.office.providers.list()).map((p) => p.id)
-    expect(ids).toEqual(['claude-code', 'codex', 'cursor', 'gemini', 'copilot', 'chatgpt'])
+    expect(ids).toEqual([...PROVIDER_IDS])
     const cursor = (await app.office.providers.list()).find((p) => p.id === 'cursor')
     expect(cursor).toMatchObject({ enabled: false })
   })
@@ -774,11 +793,9 @@ describe('compose: acp providers and observation hooks', () => {
     const { app } = setup(
       {},
       {
-        providerOverrides: {
+        providerOverrides: noRealClis({
           cursor: { probe: notInstalled('cursor'), runner: cursorRunner },
-          gemini: { probe: notInstalled('gemini') },
-          copilot: { probe: notInstalled('copilot') },
-        },
+        }),
       },
     )
     await app.start()
@@ -806,6 +823,53 @@ describe('compose: acp providers and observation hooks', () => {
     expect(await app.office.sessions!.start({ ...START })).toMatch(/^cu:/)
     await app.stopAll()
   })
+
+  describe.each(OSS_ACP.map((id) => [id, PROVIDER_DECLS[id].prefix] as const))(
+    'open-source runtime %s',
+    (id, prefix) => {
+      const start = { ...START, provider: id, modeId: undefined } as StartSession
+
+      it('routes a session to its own runtime', async () => {
+        const runner = new FakeAgentRunner({ provider: id, prefix, caps: ['send-message'] })
+        const { app } = setup(
+          {},
+          { providerOverrides: noRealClis({ [id]: { probe: notInstalled(id), runner } }) },
+        )
+        await app.start()
+        await app.office.providers.setEnabled(id, true)
+        expect(await app.office.sessions!.start(start)).toMatch(new RegExp(`^${prefix}`))
+        expect(runner.sessions).toHaveLength(1)
+        await app.stopAll()
+      })
+
+      it('runs the fake ACP agent with AGENT_OFFICE_FAKE_PROVIDERS=1', async () => {
+        const fakesDir = join(import.meta.dirname, '..', '..', '..', 'adapters', 'test', 'fakes')
+        const { app } = setup(
+          {},
+          {
+            fakesDir,
+            providerOverrides: {},
+            processEnv: { AGENT_OFFICE_FAKE_PROVIDERS: '1' },
+          },
+        )
+        await app.start()
+        await app.office.providers.setEnabled(id, true)
+        expect((await app.office.providers.list()).find((p) => p.id === id)).toMatchObject({
+          state: 'managed-available',
+        })
+        expect(await app.office.sessions!.start(start)).toMatch(new RegExp(`^${prefix}`))
+        await app.stopAll()
+      })
+
+      it('is disabled by default and has no hook installer', async () => {
+        const { app } = setup()
+        await app.start()
+        expect((await app.office.providers.list()).find((p) => p.id === id)).toMatchObject({
+          enabled: false,
+        })
+      })
+    },
+  )
 
   it('installs cursor observation hooks into the configured file, keeping foreign hooks', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ao-hooks-'))
@@ -845,6 +909,114 @@ describe('compose with a projects vault', () => {
     expect(window.sent.filter(([c]) => c === IPC.banner).at(-1)![1]).toEqual(
       VAULT_MEMORY_ONLY_BANNER,
     )
+  })
+
+  it('imports goose history when goose is on, and reads its transcript through the router', async () => {
+    const gooseCli = async (args: string[]) =>
+      args[1] === 'list'
+        ? JSON.stringify([
+            {
+              id: '20260101_1',
+              working_dir: '/work/shop',
+              name: 'Invented goose task',
+              created_at: '2026-01-01T10:00:00Z',
+              last_message_at: '2026-01-01T10:04:00Z',
+            },
+          ])
+        : JSON.stringify({
+            conversation: [
+              {
+                id: 'm1',
+                role: 'user',
+                created: 1,
+                content: [{ type: 'text', text: 'Invented question' }],
+              },
+            ],
+          })
+    const { app } = setup({}, { vault: new MemoryRecordLog(), gooseCli })
+    await app.start()
+    const projects = app.office.projects!
+    // goose is off: nothing of it is listed (Claude's folder is empty too).
+    expect(await projects.history.importHistory({ limit: 10 })).toEqual({ imported: 0, skipped: 0 })
+    await app.office.providers.setEnabled('goose', true)
+    expect(await projects.history.importHistory({ limit: 10 })).toEqual({ imported: 1, skipped: 0 })
+    const [rec] = projects.sessions.list({})
+    expect(rec).toMatchObject({ provider: 'goose', origin: 'imported', hasTranscript: true })
+    const page = await projects.sessions.messages({ sessionId: rec!.id, limit: 10 })
+    expect(page.messages.map((m) => m.text)).toEqual(['Invented question'])
+    await app.stopAll()
+  })
+
+  it('imports OpenCode history through the fake server and observes a user-run server when opted in', async () => {
+    const fakesDir = join(import.meta.dirname, '..', '..', '..', 'adapters', 'test', 'fakes')
+    const fixDir = mkdtempSync(join(tmpdir(), 'ao-comp-oc-'))
+    const fixture = join(fixDir, 'fixture.json')
+    writeFileSync(
+      fixture,
+      JSON.stringify({
+        sessions: [
+          {
+            id: 'ses_inv1',
+            title: 'Invented OpenCode task',
+            directory: '/work/shop',
+            time: { created: 1, updated: 2 },
+          },
+        ],
+        messages: {
+          ses_inv1: [
+            {
+              info: { id: 'msg_1', role: 'user', time: { created: 1 } },
+              parts: [{ type: 'text', text: 'Invented question' }],
+            },
+          ],
+        },
+        events: [],
+      }),
+    )
+    const { app } = setup(
+      {},
+      {
+        vault: new MemoryRecordLog(),
+        fakesDir,
+        processEnv: { AGENT_OFFICE_FAKE_PROVIDERS: '1', FAKE_OC_FIXTURE: fixture },
+      },
+    )
+    await app.start()
+    const projects = app.office.projects!
+    // OpenCode is off: nothing is listed and no server is started.
+    expect(await projects.history.importHistory({ limit: 10 })).toEqual({ imported: 0, skipped: 0 })
+    await app.office.providers.setEnabled('opencode', true)
+    expect(await projects.history.importHistory({ limit: 10 })).toEqual({ imported: 1, skipped: 0 })
+    const rec = projects.sessions.list({}).find((r) => r.provider === 'opencode')!
+    expect(rec).toMatchObject({ origin: 'imported', hasTranscript: true })
+    const page = await projects.sessions.messages({ sessionId: rec.id, limit: 10 })
+    expect(page.messages.map((m) => m.text)).toEqual(['Invented question'])
+
+    // Observe: a server the user runs (here a tiny SSE stand-in) is read once the setting is on.
+    const { createServer: createHttp } = await import('node:http')
+    const srv = createHttp((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write(
+        `data: ${JSON.stringify({ payload: { type: 'session.status', properties: { sessionID: 'ses_live9', status: { type: 'busy' } } } })}\n\n`,
+      )
+    })
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as { port: number }).port
+    try {
+      expect(app.office.query.agent('oc:ses_live9')).toBeUndefined()
+      await app.office.settings.update({ openCodeObserve: { enabled: true, port } })
+      for (let i = 0; i < 200 && !app.office.query.agent('oc:ses_live9'); i++) await wait(10)
+      expect(app.office.query.agent('oc:ses_live9')).toMatchObject({
+        provider: 'opencode',
+        status: 'thinking',
+      })
+      await app.office.settings.update({ openCodeObserve: { enabled: false, port } })
+    } finally {
+      srv.closeAllConnections()
+      srv.close()
+      await app.stopAll()
+      rmSync(fixDir, { recursive: true, force: true })
+    }
   })
 
   it('has no prj channels without a vault', async () => {

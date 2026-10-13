@@ -1,20 +1,21 @@
 // Experimental: import past Claude Code sessions and resume one natively (docs/projects.md §3).
 // Import stores references only (a `tr_` ref, never transcript content); resume is user-only.
-import type { ImportResult } from '@agent-office/shared'
+import type { ImportResult, ProviderId } from '@agent-office/shared'
 import { assertAuthorized, USER, type Principal } from '../domain/authz.ts'
 import { NotFoundError, ValidationError } from '../domain/errors.ts'
+import { PROVIDER_DECLS } from '../domain/providers.ts'
 import {
   canResume,
   newSessionRecord,
   providerSessionIdOf,
   type SessionRecord,
 } from '../domain/session-record.ts'
-import type { Clock, HistorySource } from '../ports/driven.ts'
+import type { Clock, HistorySource, HistorySources, PastSession } from '../ports/driven.ts'
 import type { HistoryImport, ManagedSessions, SessionResume } from '../ports/driving.ts'
 import type { ProjectsStore } from './projects-store.ts'
 import type { SessionVaultService } from './session-vault-service.ts'
 
-const CLAUDE_ID = /^[A-Za-z0-9_-]{1,100}$/
+const SESSION_ID = /^[A-Za-z0-9_-]{1,100}$/
 const REF = /^tr_[A-Za-z0-9_-]{1,100}$/
 const CONTINUE = 'Continue where we left off.'
 
@@ -22,7 +23,8 @@ export interface SessionHistoryDeps {
   store: ProjectsStore
   vault: SessionVaultService
   clock: Clock
-  history?: HistorySource
+  /** One source per provider that has a history; none means history import is unavailable. */
+  history?: HistorySources
   sessions?: () => ManagedSessions | undefined
 }
 
@@ -31,16 +33,45 @@ export class SessionHistoryService implements HistoryImport, SessionResume {
 
   async importHistory(o: { limit: number }, as: Principal = USER): Promise<ImportResult> {
     assertAuthorized(as, 'session.assign', { kind: 'session', projectId: null }, undefined)
-    if (!this.d.history) throw new ValidationError('history import is not available')
+    const sources = Object.entries(this.d.history ?? {}) as [ProviderId, HistorySource][]
+    if (sources.length === 0) throw new ValidationError('history import is not available')
     const limit = Math.max(1, Math.min(500, Math.floor(o.limit)))
-    const past = (await this.d.history.list({ limit })).slice(0, limit)
+    // List every source first: a failing one is skipped while another works, and when all fail
+    // nothing is imported and the error is thrown (no half-imported state).
+    const listed: [ProviderId, HistorySource, PastSession[]][] = []
+    let failure: unknown
+    for (const [provider, source] of sources) {
+      try {
+        listed.push([provider, source, (await source.list({ limit })).slice(0, limit)])
+      } catch (err) {
+        failure ??= err
+      }
+    }
+    if (listed.length === 0) throw failure
+    let imported = 0
+    let skipped = 0
+    for (const [provider, source, past] of listed) {
+      const r = await this.importProvider(provider, source, past)
+      imported += r.imported
+      skipped += r.skipped
+    }
+    return { imported, skipped }
+  }
+
+  private async importProvider(
+    provider: ProviderId,
+    source: HistorySource,
+    past: PastSession[],
+  ): Promise<ImportResult> {
+    const idPattern = source.idPattern ?? SESSION_ID
+    const prefix = PROVIDER_DECLS[provider].prefix
     let imported = 0
     let skipped = 0
     for (const p of past) {
-      const agentId = `cc:${p.providerSessionId}`
+      const agentId = `${prefix}${p.providerSessionId}`
       if (
-        p.provider !== 'claude-code' ||
-        !CLAUDE_ID.test(p.providerSessionId) ||
+        p.provider !== provider ||
+        !idPattern.test(p.providerSessionId) ||
         !REF.test(p.transcriptRef) ||
         this.d.store.sessionByAgent(agentId)
       ) {
@@ -50,7 +81,7 @@ export class SessionHistoryService implements HistoryImport, SessionResume {
       const base = newSessionRecord({
         id: this.d.store.newId('ses'),
         agentId,
-        provider: 'claude-code',
+        provider,
         origin: 'imported',
         title: p.title,
         now: p.startedAt,

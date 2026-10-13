@@ -17,7 +17,7 @@ import type {
   Notifier,
   PlatformInfo,
   RecordLog,
-  HistorySource,
+  HistorySources,
   RepoIdentity,
   RunnerStart,
   Scheduler,
@@ -91,7 +91,7 @@ export interface OfficeDeps {
   repoIdentity?: RepoIdentity
   transcripts?: TranscriptReader
   /** Experimental: lists past provider sessions for the history import. */
-  history?: HistorySource
+  history?: HistorySources
   searchIndex?: SearchIndex
   /** Ids and MCP tokens; without it no MCP token is ever minted. */
   random?: SecureRandom

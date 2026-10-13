@@ -157,7 +157,7 @@ async function boot(
     runtimes: new Map([['codex', codex]]),
     vault,
     repoIdentity: new GitRepoIdentity({ salt: loadOrCreateWorkspaceSalt(home) }),
-    ...(history ? { history } : {}),
+    ...(history ? { history: { 'claude-code': history } } : {}),
     ...(transcripts ? { transcripts } : {}),
     searchIndex: new TextIndex(),
     random: { token: (n) => randomBytes(n).toString('hex') },

@@ -343,8 +343,13 @@ export interface PastSession {
 
 /** Lists past sessions of a provider (Claude Code: ~/.claude/projects). Newest first. */
 export interface HistorySource {
+  /** What a valid `providerSessionId` looks like for this provider. Default: letters, digits, `_`, `-` (≤ 100). */
+  idPattern?: RegExp
   list(o: { limit: number }): Promise<PastSession[]>
 }
+
+/** One history source per provider that documents one (Claude transcripts, OpenCode server, …). */
+export type HistorySources = Partial<Record<ProviderId, HistorySource>>
 
 export interface SearchDoc {
   id: string

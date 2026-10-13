@@ -23,6 +23,8 @@ const MAX_HELP = 256 * 1024
 
 interface CliOut {
   stdout: string
+  /** yargs CLIs (OpenCode, Kilo) print help on stderr. Matched against `acpFlag` only. */
+  stderr: string
   timedOut: boolean
 }
 
@@ -37,14 +39,15 @@ function run(
       bin,
       args,
       { shell: false, timeout: ms, maxBuffer: MAX_HELP, windowsHide: true, env },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         const out = String(stdout ?? '')
-        if (!err) return resolve({ stdout: out, timedOut: false })
+        const errOut = String(stderr ?? '')
+        if (!err) return resolve({ stdout: out, stderr: errOut, timedOut: false })
         const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
-        if (e.killed) return resolve({ stdout: out, timedOut: true })
+        if (e.killed) return resolve({ stdout: out, stderr: errOut, timedOut: true })
         // Exited non-zero (some CLIs print help with code 1), or the help was over the cap.
         if (typeof e.code === 'number' || e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
-          return resolve({ stdout: out, timedOut: false })
+          return resolve({ stdout: out, stderr: errOut, timedOut: false })
         reject(err)
       },
     )
@@ -74,7 +77,7 @@ export class AcpProbe implements ProviderProbe {
       const base = { installed: true, ...(version ? { version } : {}) }
       const help = await run(bin, [...pre, ...(this.profile.helpArgs ?? ['--help'])], left(), env)
       if (help.timedOut) return { ...base, flagsOk: false, auth: 'unknown', error: 'timeout' }
-      return { ...base, flagsOk: this.profile.acpFlag.test(help.stdout), auth: 'unknown' }
+      return { ...base, flagsOk: this.profile.acpFlag.test(help.stdout) || this.profile.acpFlag.test(help.stderr), auth: 'unknown' }
     } catch (err) {
       const code = (err as NodeJS.ErrnoException | undefined)?.code
       if (code === 'ENOENT' || code === 'EACCES')

@@ -134,8 +134,8 @@ def _elevators_reception(g, A, P, t, rng):
             F.task_chair(g, P, color='#2b2b2b')
     g.collider(-20.7, -16.3, -10.0, -8.35, 0, 1.1)
     # backdrop: timber slat screen + planter behind reception
-    g.plan_wall((-22.7, -13.3), (-14.3, -13.3), side=1, thick=0.12)  # timber slat screen (a free-standing partition)
-    with g.at(-18.5, -13.3):
+    w_screen = g.plan_wall((-22.7, -13.3), (-14.3, -13.3), side=1, thick=0.12, h=3.46)  # timber slat screen
+    with g.at(-18.5, -13.3), g.wall_tag(w_screen):  # (a free-standing partition; contract §13)
         for k in range(60):
             x = -4.2 + k * 0.14
             g.box(P['wood'], (0.06, 3.4, 0.12), (x, 1.7, 0), bevel=0.004)

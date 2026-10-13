@@ -44,6 +44,8 @@ import { ClaudeProbe } from '../packages/adapters/src/providers/claude-code/prob
 import { RandomIds, SystemClock, TimerScheduler } from '../packages/adapters/src/system/index.ts'
 import { FileRecordLog, TestKeyProvider, TextIndex } from '../packages/adapters/src/vault/index.ts'
 import {
+  ClineAcpRunner,
+  ClineProbe,
   CodexProbe,
   CodexRunner,
   CopilotAcpRunner,
@@ -52,6 +54,16 @@ import {
   CursorProbe,
   GeminiAcpRunner,
   GeminiProbe,
+  GooseAcpRunner,
+  GooseProbe,
+  KiloAcpRunner,
+  KiloProbe,
+  OpenCodeAcpProbe,
+  OpenCodeAcpRunner,
+  OpenHandsAcpRunner,
+  OpenHandsProbe,
+  QwenAcpRunner,
+  QwenProbe,
 } from '../packages/adapters/src/providers/index.ts'
 
 type Result = 'pass' | 'fail' | 'n/a'
@@ -114,6 +126,57 @@ const TARGETS: Target[] = [
     processPattern: 'copilot --acp',
     askMode: 'agent',
     otherMode: 'plan',
+  },
+  // Open-source ACP runtimes (docs/providers/<id>.md). Each needs its own model/login configured by
+  // the user; modes are the verified ones. The ACP entry is verified, the rest is "built, not yet
+  // verified" until this has run on a logged-in machine.
+  {
+    id: 'opencode',
+    probe: new OpenCodeAcpProbe({}),
+    runner: new OpenCodeAcpRunner({}),
+    processPattern: 'opencode acp',
+    askMode: 'build',
+    otherMode: 'plan',
+  },
+  {
+    id: 'goose',
+    probe: new GooseProbe({}),
+    runner: new GooseAcpRunner({}),
+    processPattern: 'goose acp',
+    askMode: 'approve',
+    otherMode: 'chat',
+  },
+  {
+    id: 'kilo',
+    probe: new KiloProbe({}),
+    runner: new KiloAcpRunner({}),
+    processPattern: 'kilo acp',
+    askMode: 'code',
+    otherMode: 'plan',
+  },
+  {
+    id: 'qwen',
+    probe: new QwenProbe({}),
+    runner: new QwenAcpRunner({}),
+    processPattern: 'qwen --acp',
+    askMode: 'default',
+    otherMode: 'plan',
+  },
+  {
+    id: 'cline',
+    probe: new ClineProbe({}),
+    runner: new ClineAcpRunner({}),
+    processPattern: 'cline --acp',
+    askMode: 'act',
+    otherMode: 'plan',
+  },
+  {
+    // Its only non-dangerous mode is always-ask, so there is no second mode to switch to.
+    id: 'openhands',
+    probe: new OpenHandsProbe({}),
+    runner: new OpenHandsAcpRunner({}),
+    processPattern: 'openhands acp',
+    askMode: 'always-ask',
   },
 ]
 

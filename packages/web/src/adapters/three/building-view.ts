@@ -12,6 +12,7 @@ import type { AABB, BuildingLayout, ModulePlacement, Vec3 } from '../../app/offi
 import type { ProviderSurfaces, SurfaceSlot } from '../../app/capability-vm.ts'
 import { DETAIL_DISTANCE, moduleCulling } from '../../app/culling.ts'
 import { contextHubActive, contextPulse } from '../../app/stations.ts'
+import { wallBases, wallBoxes, type WallBox } from '../../app/walls.ts'
 import { lightmapFile, type AssetStore, type TieredLightmap } from './assets.ts'
 import {
   accentOrBlue,
@@ -22,6 +23,7 @@ import {
   drawStation,
   type Surface,
 } from './surfaces.ts'
+import { injectWalls, InstanceWalls, registerWallMaterial } from './wall-cutaway.ts'
 
 /** World-space box from a `collider` mesh (walk-mode collision, label occlusion). */
 export interface WorldBox {
@@ -137,12 +139,15 @@ function patchCutaway(m: StdMat, mode: CutawayMode): void {
         .replace('#include <lights_fragment_maps>', BAKED_MAPS)
         .replace(
           '#include <tonemapping_fragment>',
-          `if ( uAoOrbit > 0.5 ) {\n  if ( vAoY > ${CAP_HEIGHT.toFixed(2)} && vAoNy > 0.7 ) gl_FragColor.rgb = ${CAP_LINEAR};\n  gl_FragColor.rgb = min( gl_FragColor.rgb, vec3( ${ORBIT_MAX.toFixed(2)} ) );\n}\n#include <tonemapping_fragment>`,
+          `if ( uAoOrbit > 0.5 ) {\n  if ( vAoY > ${CAP_HEIGHT.toFixed(2)} && vAoNy > 0.7 ) gl_FragColor.rgb = ${CAP_LINEAR};\n  gl_FragColor.rgb = min( gl_FragColor.rgb, vec3( ${ORBIT_MAX.toFixed(2)} ) );\n}\nif ( aoWallCap > 0.5 ) gl_FragColor.rgb = ${CAP_LINEAR};\n#include <tonemapping_fragment>`,
         )
     s.fragmentShader = f
+    // Wall cutaway (contract §13): fade/lower walls per fragment from the per-wall table.
+    injectWalls(s)
   }
-  m.customProgramCacheKey = () => `ao-cut-${mode}`
+  m.customProgramCacheKey = () => `ao-cut-${mode}-wall`
   m.userData.cutaway = mode
+  registerWallMaterial(m)
 }
 
 const patchBaked = (m: StdMat) =>
@@ -151,10 +156,22 @@ const patchBaked = (m: StdMat) =>
     m.emissive && m.emissive.getHex() !== 0 && m.emissiveIntensity > 0 ? 'fixture' : 'baked',
   )
 
+/**
+ * Wall-mounted runtime nodes (screens, signs, books on wall shelves; contract §13) carry a wall id but
+ * no cutaway patch: they get the wall chunk alone, so they fade and lower with their wall.
+ */
+function patchWallOnly(m: StdMat): void {
+  m.onBeforeCompile = (s) => injectWalls(s)
+  m.customProgramCacheKey = () => 'ao-wall-only'
+  m.userData.wallOnly = true
+  registerWallMaterial(m)
+}
+
 /** Material clone that keeps the baked shader patch (three's clone() drops onBeforeCompile). */
 function cloneMat<T extends THREE.Material>(m: T): T {
   const c = m.clone()
   if (m.userData.cutaway) patchCutaway(c as unknown as StdMat, m.userData.cutaway as CutawayMode)
+  else if (m.userData.wallOnly) patchWallOnly(c as unknown as StdMat)
   return c
 }
 
@@ -222,13 +239,42 @@ function prepareModule(gltf: GLTF, lightmap: THREE.Texture | null, lm: Lightmap 
       for (const m of matsOf(mesh)) glass.add(m)
   })
   for (const m of glass) if (!m.userData.cutaway) (patchCutaway(m, 'glass'), (m.needsUpdate = true))
-  for (const m of new Set(swap.values())) {
-    m.lightMap = lightmap
-    m.lightMapIntensity = lm?.intensity ?? 1
-    m.envMapIntensity = BAKED_SPECULAR
-    patchBaked(m)
-    m.needsUpdate = true
+  // Wall-mounted pieces outside the baked/glass sets (screens, signs, wall shelves' books).
+  gltf.scene.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry.getAttribute('_wallid')) return
+    for (const m of matsOf(mesh))
+      if (!m.userData.cutaway && !m.userData.wallOnly && !swap.has(m))
+        (patchWallOnly(m), (m.needsUpdate = true))
+  })
+  for (const m of new Set(swap.values())) bakeMaterial(m, lightmap!, lm?.intensity ?? 1)
+}
+
+/**
+ * A lightmapped material (contract §6): the atlas through UV1, no punctual lights and no IBL
+ * diffuse (BAKED_LIGHTS/BAKED_MAPS), specular reflections only. `cutaway` (Classic 3D, the default)
+ * adds the orbit-view cutaway and wall-fade patch; a scene flavor without them (Night City) passes
+ * false and gets the lighting patch alone.
+ */
+export function bakeMaterial(
+  m: StdMat,
+  lightmap: THREE.Texture,
+  intensity: number,
+  o: { cutaway?: boolean } = {},
+): void {
+  m.lightMap = lightmap
+  m.lightMapIntensity = intensity
+  m.envMapIntensity = BAKED_SPECULAR
+  if (o.cutaway ?? true) patchBaked(m)
+  else {
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <lights_fragment_begin>', BAKED_LIGHTS)
+        .replace('#include <lights_fragment_maps>', BAKED_MAPS)
+    }
+    m.customProgramCacheKey = () => 'ao-baked-plain'
   }
+  m.needsUpdate = true
 }
 
 /** `baked` meshes, and ceilings flagged `extras.lightmap`, sample the module atlas through UV1. */
@@ -237,14 +283,14 @@ const isLightmapped = (mesh: THREE.Mesh) =>
   !!mesh.geometry.getAttribute('uv1')
 
 /** The role of the nearest ancestor node that has one (extras land on the node's Object3D). */
-function inherited(o: THREE.Object3D, key: string): unknown {
+export function inherited(o: THREE.Object3D, key: string): unknown {
   for (let p: THREE.Object3D | null = o; p; p = p.parent)
     if (p.userData[key] !== undefined) return p.userData[key]
   return undefined
 }
 
 /** Screen-space transmission is an extra full scene render per frame; plain transparency reads as glass. */
-function toCheapGlass(m: StdMat): StdMat {
+export function toCheapGlass(m: StdMat): StdMat {
   const p = m as THREE.MeshPhysicalMaterial
   if (!p.isMeshPhysicalMaterial || !(p.transmission > 0)) return m
   if (m.userData.cheapGlass) return m.userData.cheapGlass as StdMat
@@ -311,6 +357,9 @@ interface Instance {
   dimmed: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | null
   label: string
   signVariant: number
+  /** Per-instance geometries carrying building-global wall ids (contract §13), and their base. */
+  walls: InstanceWalls[]
+  wallBase: number
 }
 
 const SCREEN_OFF: ScreenState = { color: '#0b0d12', intensity: 0 }
@@ -344,6 +393,10 @@ export class BuildingView {
   private canvasScale = 1
   /** LED wall redraws only when the minute changes (Low and Minimal). */
   private wallThrottle = false
+  /** Wall cutaway (contract §13): every wall's box, and each placement's first global id − 1. */
+  private wallList: WallBox[] = []
+  private wallTotal = 0
+  private wallBase = new Map<string, number>()
   /** Fires when a module finished loading (colliders and surfaces changed). */
   onChange: () => void = () => {}
 
@@ -472,6 +525,10 @@ export class BuildingView {
   /** Adds, updates and removes module instances to match the layout. Wings stream in as they load. */
   setLayout(layout: BuildingLayout): void {
     const seen = new Set<string>()
+    const walls = wallBases(this.manifest, layout.placements)
+    this.wallBase = walls.bases
+    this.wallTotal = walls.total
+    this.wallList = wallBoxes(this.manifest, layout.placements)
     for (const p of layout.placements) {
       seen.add(p.id)
       const files = this.filesFor(p)
@@ -495,6 +552,7 @@ export class BuildingView {
         else this.setContent(inst, placeholder(p, this.boundsFor(p)))
       }
       inst.placement = p
+      this.applyWallBase(inst)
       this.applyDim(inst)
       if (inst.label !== (p.label ?? '') || inst.signVariant !== (p.signVariant ?? 0)) {
         inst.label = p.label ?? ''
@@ -549,7 +607,39 @@ export class BuildingView {
       dimmed: null,
       label: p.label ?? '',
       signVariant: p.signVariant ?? 0,
+      walls: [],
+      wallBase: -1,
     }
+  }
+
+  /** Walls of the building (world boxes, global ids) and their count, for the cutaway. */
+  wallLayout(): { boxes: WallBox[]; total: number } {
+    return { boxes: this.wallList, total: this.wallTotal }
+  }
+
+  /**
+   * Gives each wall-carrying mesh of an instance its own geometry with building-global wall ids
+   * (shared buffers otherwise), so one table and the shared materials serve every instance.
+   */
+  private bindWalls(inst: Instance): void {
+    for (const w of inst.walls) w.dispose()
+    inst.walls = []
+    inst.wallBase = -1
+    if (!inst.content || this.wallBase.get(inst.placement.id) === undefined) return
+    for (const mesh of meshesOf(inst.content)) {
+      if (!mesh.geometry.getAttribute('_wallid')) continue
+      const w = new InstanceWalls(mesh.geometry)
+      mesh.geometry = w.geometry
+      inst.walls.push(w)
+    }
+    this.applyWallBase(inst)
+  }
+
+  private applyWallBase(inst: Instance): void {
+    const base = this.wallBase.get(inst.placement.id)
+    if (base === undefined || base === inst.wallBase || !inst.walls.length) return
+    inst.wallBase = base
+    for (const w of inst.walls) w.setBase(base)
   }
 
   private async populate(inst: Instance, file: string, lm?: Lightmap): Promise<void> {
@@ -571,6 +661,7 @@ export class BuildingView {
     inst.content = content
     inst.group.add(content)
     inst.group.updateMatrixWorld(true)
+    this.bindWalls(inst)
     this.indexRoles(inst)
     this.applyDim(inst, true)
     this.drawSigns(inst)
@@ -700,6 +791,7 @@ export class BuildingView {
     this.group.remove(inst.group)
     this.pickList = null
     for (const t of inst.bookAtlases) t.dispose()
+    for (const w of inst.walls) w.dispose()
     // Geometries and shared materials belong to the cached module; only per-instance copies go.
     inst.group.traverse((o) => {
       const mesh = o as THREE.Mesh

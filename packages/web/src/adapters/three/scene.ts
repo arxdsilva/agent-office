@@ -2,11 +2,10 @@
 // Rendering only: what to show comes from the controller (layout + plans from the director).
 // Graphics (low-spec plan §5): `setGraphics` applies every lever; a frame pacer caps or pauses
 // the render loop; `stats()` reports GPU memory; WebGL context loss and restore are surfaced.
-import { GraphicsAdvancedSchema, STATUS_COLORS, type GraphicsQuality } from '@agent-office/shared'
+import { STATUS_COLORS, type GraphicsQuality, type WallMode } from '@agent-office/shared'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { directoryFixture, toWorld } from '../../app/building.ts'
-import { createPacer } from '../../app/frame-pacer.ts'
 import type { Effective, GraphicsStats, HardwareInfo } from '../../app/graphics-types.ts'
 import type { ViewEntry } from '../../app/library-types.ts'
 import { viewsFor } from '../../app/views.ts'
@@ -17,7 +16,8 @@ import type { AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/offi
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
 import { frameAgents, frameSurfaces } from '../../app/framing.ts'
 import { projectSurfaces, type ProjectLibraryVM } from '../../app/project-library.ts'
-import { effectiveGraphics, resolvePreset, type Preset } from '../../app/quality.ts'
+import { resolvePreset, type Preset } from '../../app/quality.ts'
+import { hoverWall, occluders, WallFader, wallMid, type WallBox } from '../../app/walls.ts'
 import type { ProviderSurfaces } from '../../app/capability-vm.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../../ports.ts'
 import { AssetStore, LoadingScreen, textureBytes, within, type LoadingElements } from './assets.ts'
@@ -28,6 +28,15 @@ import { isEmptyBox, ndcToClient, pointerToNdc } from './viewport.ts'
 import { Labels } from './labels.ts'
 import { LinkSystem } from './links.ts'
 import { RenderPipeline } from './render-pipeline.ts'
+import {
+  FrameLoop,
+  hardwareInfo,
+  presetGraphics,
+  sceneMemory,
+  Teardown,
+  TEXTURE_KEYS,
+} from './scene-kit.ts'
+import { setWallsActive, WallTable } from './wall-cutaway.ts'
 
 export interface SceneElements {
   stage: HTMLElement
@@ -71,31 +80,10 @@ export interface SceneOptions {
 const NO_ENV_FILL = 2.4
 /** Hover raycasts at most every 100 ms (10 Hz). */
 const HOVER_MS = 100
+/** Sight lines aim this far above an agent's feet (chest height, m). */
+const WALL_TARGET_Y = 1.1
 /** GPU memory accounting is cached this long (ms). */
 const MEMORY_MS = 2000
-
-/** The effective graphics for a plain preset (the `setQuality` shim and the start-up default). */
-const presetGraphics = (preset: Preset): Effective =>
-  effectiveGraphics({
-    preset,
-    advanced: GraphicsAdvancedSchema.parse({}),
-    dpr: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
-    power: { focused: true, hidden: false, onBattery: false },
-    saver: { blur: false, hidden: false, battery: 'off' },
-  })
-
-const TEXTURE_KEYS = [
-  'map',
-  'lightMap',
-  'aoMap',
-  'emissiveMap',
-  'normalMap',
-  'roughnessMap',
-  'metalnessMap',
-  'alphaMap',
-  'bumpMap',
-  'envMap',
-] as const
 
 const THEMES = {
   light: { background: 0xe9edf3, sky: 0xeef3ff, ground: 0x8a7a66, fill: 0.45, environment: 1.1 },
@@ -119,10 +107,7 @@ export class ThreeScene implements SceneView {
   private plans = new Map<string, AgentPlan>()
   private desks = new Map<string, string>()
   private gfx: Effective = presetGraphics('high')
-  private pacer = createPacer()
-  private looping = false
-  private lastFrame = -1
-  private frameCount = 0
+  private loop: FrameLoop
   private envMap: THREE.Texture | null = null
   private fillBase = 0.35
   private lastLinks: Link[] = []
@@ -164,9 +149,22 @@ export class ThreeScene implements SceneView {
   private openBanks = new Set<string>()
   private debug = debugEnabled()
   /** Removes the window, document and persistent-DOM listeners (`dispose`). */
-  private teardown: (() => void)[] = []
+  private teardown = new Teardown()
   private disposed = false
   private debugApi: object | null = null
+  /** Wall cutaway (graphics contract §13): mode, boxes, fader and the shared per-wall table. */
+  private wallMode: WallMode = 'cutaway'
+  private walls: WallBox[] = []
+  private wallFader = new WallFader()
+  private wallTable = new WallTable()
+  private wallHover: number | null = null
+  private wallOcc = new Set<number>()
+  private wallTargets: Vec3[] = [
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0 },
+  ]
+  private wallTargetList: Vec3[] = []
+  private wallState: { alpha: Float32Array; lowered: Uint8Array } | null = null
 
   constructor(
     private el: SceneElements,
@@ -182,6 +180,12 @@ export class ThreeScene implements SceneView {
     this.renderer.shadowMap.type = THREE.PCFShadowMap
     el.stage.append(this.renderer.domElement)
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera)
+    this.loop = new FrameLoop(this.renderer, {
+      limit: () => this.limit(),
+      // Stage hidden (the user left the Office): nothing to draw.
+      visible: () => !isEmptyBox(this.box()),
+      frame: (dt) => this.frame(dt),
+    })
     this.labels = new Labels(el.stage, (id) => this.pickFn(id))
     this.cam = new CameraDirector(this.camera, this.renderer.domElement)
     this.loading = new LoadingScreen(el.loading)
@@ -211,7 +215,7 @@ export class ThreeScene implements SceneView {
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => this.resize())
       ro.observe(el.stage)
-      this.teardown.push(() => ro.disconnect())
+      this.teardown.add(() => ro.disconnect())
     }
     this.resize()
     this.bindInput()
@@ -228,9 +232,7 @@ export class ThreeScene implements SceneView {
     type: K,
     fn: (e: (WindowEventMap & DocumentEventMap)[K]) => void,
   ): void {
-    const h = fn as EventListener
-    target.addEventListener(type, h)
-    this.teardown.push(() => target.removeEventListener(type, h))
+    this.teardown.on(target, type, fn)
   }
 
   /**
@@ -241,9 +243,8 @@ export class ThreeScene implements SceneView {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.renderer.setAnimationLoop(null)
-    this.looping = false
-    for (const off of this.teardown.splice(0)) off()
+    this.loop.stop()
+    this.teardown.run()
     if (this.cam.mode === 'walk') this.cam.exitWalk()
     this.cam.onModeChange = () => {}
     this.cam.dispose()
@@ -259,6 +260,7 @@ export class ThreeScene implements SceneView {
       this.building.dispose()
       this.building = null
     }
+    this.wallTable.dispose()
     this.pipeline.dispose()
     this.envMap?.dispose()
     this.envMap = null
@@ -290,28 +292,9 @@ export class ThreeScene implements SceneView {
     return this.gfx.fpsLimit
   }
 
-  /** Starts or stops `setAnimationLoop` to match the limit (0 = paused: no rAF at all). */
+  /** Starts or stops the paced loop to match the limit (0 = paused: no rAF at all). */
   private arm(): void {
-    const run = this.limit() !== 0
-    if (run === this.looping) return
-    this.looping = run
-    if (!run) return this.renderer.setAnimationLoop(null)
-    this.pacer.reset()
-    this.renderer.setAnimationLoop((t) => this.tick(t))
-  }
-
-  /**
-   * One animation frame: the pacer decides whether to render; skipped frames do nothing, so the
-   * next rendered frame advances mixers by the accumulated time (capped at 0.5 s).
-   */
-  private tick(t: number): void {
-    if (this.disposed) return
-    if (isEmptyBox(this.box())) return // stage hidden (user left the Office)
-    if (!this.pacer.shouldRender(t, this.limit())) return
-    const dt = this.lastFrame < 0 ? 0 : Math.min(0.5, (t - this.lastFrame) / 1000)
-    this.lastFrame = t
-    this.frameCount++
-    this.frame(dt)
+    this.loop.arm()
   }
 
   /** GPU driver reset: three re-uploads buffers and textures; render-target content is rebuilt. */
@@ -398,6 +381,7 @@ export class ThreeScene implements SceneView {
     if (!this.building || !this.manifest) return
     this.layout = layout
     this.building.setLayout(layout)
+    this.refreshWalls()
     const b = layout.bounds
     this.cam.setBounds(b)
     this.catcher.scale.set(b.maxX - b.minX + 4, b.maxZ - b.minZ + 4, 1)
@@ -406,6 +390,64 @@ export class ThreeScene implements SceneView {
     this.renderSigns(layout)
     this.updateSurfaces()
     this.placeDirectory(layout)
+  }
+
+  /** Wall boxes after a layout change; a new wall count resets the fader and the table. */
+  private refreshWalls(): void {
+    const { boxes, total } = this.building?.wallLayout() ?? { boxes: [], total: 0 }
+    this.walls = boxes
+    if (total !== this.wallFader.total) {
+      this.wallFader.resize(total)
+      this.wallTable.resize(total)
+      this.wallHover = null
+    }
+  }
+
+  /** Sims-style walls (3D modes): Up, Cutaway (default) or Down. Walk mode is hover-only. */
+  setWallMode(m: WallMode): void {
+    this.wallMode = m
+  }
+
+  /**
+   * Per frame, allocation-free: the walls between the camera and what it looks at (the selected or
+   * followed agent, the focused capability surface) fade in Cutaway; the table uploads on change.
+   */
+  private updateWalls(): void {
+    if (!this.walls.length) return
+    const walk = this.cam.mode === 'walk'
+    // Walking you're inside: hover only (no cutaway, no lowering).
+    const mode: WallMode = walk ? 'up' : this.wallMode
+    const list = this.wallTargetList
+    list.length = 0
+    if (mode === 'cutaway') {
+      const p = this.selected ? this.characters?.positionOf(this.selected) : undefined
+      if (p) {
+        const t = this.wallTargets[0]!
+        t.x = p.x
+        t.y = p.y + WALL_TARGET_Y
+        t.z = p.z
+        list.push(t)
+      }
+      if (this.focusRef) {
+        const sp = this.building?.surfacesOf(this.focusRef)[0]
+        if (sp) {
+          const t = this.wallTargets[1]!
+          t.x = sp.x
+          t.y = sp.y
+          t.z = sp.z
+          list.push(t)
+        }
+      }
+    }
+    occluders(this.walls, this.camera.position, list, 0.15, this.wallOcc)
+    const r = this.wallFader.step(performance.now(), {
+      mode,
+      hovered: walk ? null : this.wallHover,
+      occluding: this.wallOcc,
+    })
+    this.wallState = r
+    if (r.changed) this.wallTable.upload(r.alpha, r.lowered)
+    setWallsActive(r.active)
   }
 
   /** The Project Directory: a pick proxy and a "Project Directory" label at the kiosk (else reception). */
@@ -812,63 +854,18 @@ export class ThreeScene implements SceneView {
    * buffers by byte length.
    */
   private countMemory(now: number): void {
-    const sources = new Map<unknown, number>()
-    const addTex = (t: THREE.Texture | null | undefined) => {
-      if (t && !sources.has(t.source)) sources.set(t.source, textureBytes(t))
-    }
-    const geos = new Set<THREE.BufferGeometry>()
-    let geoBytes = 0
-    this.scene.traverse((o) => {
-      const m = o as THREE.Mesh
-      if (m.geometry && !geos.has(m.geometry)) {
-        geos.add(m.geometry)
-        for (const a of Object.values(m.geometry.attributes))
-          geoBytes += (a as THREE.BufferAttribute).array?.byteLength ?? 0
-        geoBytes += m.geometry.index?.array.byteLength ?? 0
-      }
-      const mats = m.material ? (Array.isArray(m.material) ? m.material : [m.material]) : []
-      for (const mat of mats) {
-        const rec = mat as unknown as Record<string, unknown>
-        for (const k of TEXTURE_KEYS) addTex(rec[k] as THREE.Texture | undefined)
-        const uniforms = (mat as THREE.ShaderMaterial).uniforms
-        if (uniforms)
-          for (const u of Object.values(uniforms))
-            if ((u?.value as THREE.Texture)?.isTexture) addTex(u.value as THREE.Texture)
-      }
-    })
-    for (const t of this.building?.canvasTextures() ?? []) addTex(t)
-    let bytes = [...sources.values()].reduce((a, b) => a + b, 0)
-    const env = this.scene.environment as THREE.Texture | null
-    // PMREM: a half-float CubeUV atlas (~3 × size² texels for a 256 face).
-    if (env) bytes += 768 * 1024 * 8
-    if (this.sun.castShadow) bytes += this.sun.shadow.mapSize.x ** 2 * 4
-    bytes += this.pipeline.targetBytes()
-    this.memory = { at: now, textureMB: bytes / 2 ** 20, geometryMB: geoBytes / 2 ** 20 }
+    const shadow = this.sun.castShadow ? this.sun.shadow.mapSize.x ** 2 * 4 : 0
+    const m = sceneMemory(
+      this.scene,
+      this.building?.canvasTextures() ?? [],
+      shadow + this.pipeline.targetBytes(),
+    )
+    this.memory = { at: now, ...m }
   }
 
   /** What the controller needs to pick the hardware tier (low-spec plan §5.1); null if unreadable. */
   hardwareInfo(): HardwareInfo | null {
-    try {
-      return this.readHardware()
-    } catch {
-      return null
-    }
-  }
-
-  private readHardware(): HardwareInfo {
-    const gl = this.renderer.getContext()
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
-    const str = (v: unknown) => (typeof v === 'string' ? v : '')
-    const nav = navigator as Navigator & { deviceMemory?: number }
-    return {
-      renderer: str(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
-      vendor: str(gl.getParameter(dbg ? dbg.UNMASKED_VENDOR_WEBGL : gl.VENDOR)),
-      maxTextureSize: this.renderer.capabilities.maxTextureSize,
-      dpr: devicePixelRatio,
-      cores: nav.hardwareConcurrency ?? 4,
-      ...(typeof nav.deviceMemory === 'number' ? { memoryGB: nav.deviceMemory } : {}),
-      webgl2: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext,
-    }
+    return hardwareInfo(this.renderer)
   }
 
   onContextLost(fn: () => void): void {
@@ -929,6 +926,7 @@ export class ThreeScene implements SceneView {
     this.cam.update(dt, colliders)
     this.camera.updateMatrixWorld()
     if (this.characters) this.characters.update(simDt, this.camera, now)
+    this.updateWalls()
     if (this.building) {
       this.updateDoors()
       this.building.update(simDt, this.camera, this.openBanks)
@@ -1106,11 +1104,19 @@ export class ThreeScene implements SceneView {
 
   /** Surface under the pointer (orbit mode only, surfaces only), for the hover tooltip. */
   private hoverAt(x: number, y: number): void {
-    if (!this.gfx.hover || this.cam.mode !== 'orbit' || !this.building)
+    if (this.cam.mode !== 'orbit' || !this.building) {
+      this.wallHover = null
       return this.hover(null, x, y)
+    }
     const n = pointerToNdc(this.box(), x, y)
     this.pointer.set(n.x, n.y)
     this.raycaster.setFromCamera(this.pointer, this.camera)
+    // The wall under the pointer (CPU boxes, cheap; contract §13), whatever the hover preset.
+    this.wallHover = hoverWall(this.walls, {
+      o: this.raycaster.ray.origin,
+      d: this.raycaster.ray.direction,
+    })
+    if (!this.gfx.hover) return this.hover(null, x, y)
     this.hover(this.pickSurface(), x, y)
   }
 
@@ -1130,7 +1136,10 @@ export class ThreeScene implements SceneView {
       this.hoverAt(x, y)
     }
     canvas.addEventListener('pointermove', (e) => {
-      if (e.buttons !== 0 || !this.gfx.hover) return this.hover(null, e.clientX, e.clientY)
+      if (e.buttons !== 0) {
+        this.wallHover = null
+        return this.hover(null, e.clientX, e.clientY)
+      }
       pending = [e.clientX, e.clientY]
       const wait = HOVER_MS - (performance.now() - lastHover)
       if (wait <= 0) sample()
@@ -1138,6 +1147,7 @@ export class ThreeScene implements SceneView {
     })
     canvas.addEventListener('pointerleave', () => {
       pending = null
+      this.wallHover = null
       this.hover(null, 0, 0)
     })
     canvas.addEventListener('pointerdown', (e) => {
@@ -1221,7 +1231,7 @@ export class ThreeScene implements SceneView {
       /** The effective graphics applied now. */
       graphics: () => this.gfx,
       /** Frames rendered since start (the frame pacer's output; graphics.spec G3). */
-      frames: () => this.frameCount,
+      frames: () => this.loop.frames,
       /** Camera distance (m) to the nearest surface of a capability, or null. */
       cameraDistanceTo: (ref: CapabilityRef) => {
         const d = (this.building?.surfacesOf(ref) ?? []).map((p) =>
@@ -1331,6 +1341,90 @@ export class ThreeScene implements SceneView {
         })
         return out
       },
+      /** Wall cutaway state (wall-cutaway.spec): alpha by wall id, the lowered ids, the mode. */
+      walls: () => {
+        const st = this.wallState
+        const lowered: number[] = []
+        if (st) for (let i = 1; i < st.lowered.length; i++) if (st.lowered[i]) lowered.push(i)
+        return {
+          total: this.wallFader.total,
+          alpha: st ? Array.from(st.alpha, (a) => Math.round(a * 1000) / 1000) : [],
+          lowered,
+          mode: this.wallMode,
+        }
+      },
+      /** A wall's mid-point in CSS px, or null when off screen. */
+      wallScreenPos: (id: number) => {
+        const w = this.walls.find((b) => b.id === id)
+        if (!w) return null
+        const m = wallMid(w)
+        const v = new THREE.Vector3(m.x, m.y, m.z).project(this.camera)
+        if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null
+        return ndcToClient(this.box(), v.x, v.y)
+      },
+      /** Wall boxes (ids, module, world ends) for specs that pick a wall to look through. */
+      wallBoxes: () =>
+        this.walls.map((w) => ({ id: w.id, module: w.module, a: w.a, b: w.b, h: w.h })),
+      /** An agent's feet and the camera, in world metres (wall-cutaway.spec sight lines). */
+      agentPos: (id: string) => {
+        const p = this.characters?.positionOf(id)
+        return p ? { x: p.x, y: p.y, z: p.z } : null
+      },
+      cameraPos: () => ({
+        x: this.camera.position.x,
+        y: this.camera.position.y,
+        z: this.camera.position.z,
+      }),
+      /** An agent's body (1 m up) in CSS px, or null off screen (click-through-wall picking). */
+      agentScreenPos: (id: string) => {
+        const p = this.characters?.positionOf(id)
+        if (!p) return null
+        const v = new THREE.Vector3(p.x, p.y + 1, p.z).project(this.camera)
+        if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null
+        return ndcToClient(this.box(), v.x, v.y)
+      },
+      /**
+       * Opaque building surfaces between the camera and an agent's chest, as the shader draws them
+       * now: faded or lowered wall pieces, glass, hidden ceilings and cut-away fixtures don't count.
+       */
+      sightBlockers: (id: string, dy = 1.1) => {
+        const p = this.characters?.positionOf(id)
+        if (!p || !this.building) return null
+        const target = new THREE.Vector3(p.x, p.y + dy, p.z)
+        const dir = target.clone().sub(this.camera.position)
+        const dist = dir.length()
+        const rc = new THREE.Raycaster(this.camera.position.clone(), dir.normalize(), 0, dist - 0.3)
+        const st = this.wallState
+        const orbit = this.cam.mode === 'orbit'
+        const out: { name: string; wall: number; x: number; y: number; z: number }[] = []
+        for (const h of rc.intersectObject(this.building.group, true)) {
+          let shown = true
+          for (let o: THREE.Object3D | null = h.object; o; o = o.parent) shown &&= o.visible
+          if (!shown) continue
+          const mesh = h.object as THREE.Mesh
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+          const mat = mats[h.face?.materialIndex ?? 0] ?? mats[0]!
+          if (!mat.visible || (mat.transparent && mat.opacity < 0.5)) continue
+          const cut = mat.userData.cutaway as string | undefined
+          if (orbit && (cut === 'fixture' || cut === 'glass') && h.point.y > 3.3) continue
+          const v = h.face ? (mesh.geometry.getAttribute('_wallid')?.getX(h.face.a) ?? 0) : 0
+          const wall = v % 1 > 0.25 ? Math.floor(v) : 0
+          if (wall && st) {
+            if (st.lowered[wall] && h.point.y > 1.0) continue
+            if (st.alpha[wall]! < 0.5) continue
+          }
+          out.push({
+            name: mesh.name,
+            wall,
+            x: Math.round(h.point.x * 100) / 100,
+            y: Math.round(h.point.y * 100) / 100,
+            z: Math.round(h.point.z * 100) / 100,
+          })
+        }
+        return out
+      },
+      /** Until the controller sends settings.wallMode: drive the mode directly. */
+      setWallMode: (m: WallMode) => this.setWallMode(m),
       /** The current scene background as a hex number (theme.spec). */
       sceneBackground: () => this.background.getHex(),
       stats: () => ({

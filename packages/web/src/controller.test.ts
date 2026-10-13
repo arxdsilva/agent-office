@@ -247,6 +247,7 @@ function fakeViews() {
   const handlers: Record<string, (...a: any[]) => void> = {}
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & {
+    wallModes: string[]
     loads: string[]
     wentTo: string[]
     idleMs: number
@@ -278,6 +279,10 @@ function fakeViews() {
     statsCalls: 0,
     setGraphics(e) {
       this.graphics.push(e)
+    },
+    wallModes: [],
+    setWallMode(m) {
+      this.wallModes.push(m)
     },
     stats() {
       this.statsCalls++
@@ -380,7 +385,7 @@ function fakeViews() {
     onDraft: on('draft'),
     onPickCapability: on('chip'),
   }
-  const hud: HudView & { vm: HudVM | null; badge: boolean | null } = {
+  const hud: HudView & { vm: HudVM | null; badge: boolean | null; wallMode: string | null } = {
     vm: null,
     badge: null,
     render(vm) {
@@ -390,6 +395,11 @@ function fakeViews() {
     onConnect: on('hudConnect'),
     onNewSession: on('newSession'),
     onLibrary: on('library'),
+    onWallMode: on('hudWallMode'),
+    wallMode: null,
+    renderWallMode(m) {
+      this.wallMode = m
+    },
     setConnectBadge(on) {
       this.badge = on
     },
@@ -1682,6 +1692,17 @@ describe('controller: theme', () => {
   })
 })
 
+describe('controller: wall mode (Sims-style cutaway)', () => {
+  // C-wall-1: the saved wall mode reaches the scene and the HUD button; the HUD button saves the next.
+  it('applies settings.wallMode and saves the HUD choice', async () => {
+    const t = await setup({ ...DEFAULT_SETTINGS, wallMode: 'down' })
+    expect(t.scene.wallModes.at(-1)).toBe('down')
+    expect(t.hud.wallMode).toBe('down')
+    await t.handlers.hudWallMode!('up')
+    expect(t.api.settings.set).toHaveBeenCalledWith({ wallMode: 'up' })
+  })
+})
+
 describe('controller: new session dialog', () => {
   it('C-new: opens from the HUD with the fallback models; Start stays disabled until ready', async () => {
     const t = await setup()
@@ -2005,6 +2026,7 @@ function pixelScene(v: ReturnType<typeof fakeViews>) {
   s.onZoom = (fn) => void ((v.handlers as Record<string, unknown>).sceneZoom = fn)
   s.onRun = (fn) => void ((v.handlers as Record<string, unknown>).sceneRun = fn)
   s.onPickFixture = (fn) => void ((v.handlers as Record<string, unknown>).pickFixture = fn)
+  s.onPickInteraction = (fn) => void ((v.handlers as Record<string, unknown>).pickInteraction = fn)
   s.setInputSuspended = (on) => void s.suspended.push(on)
   s.follow = (id) => void s.followed.push(id)
   s.travelTo = (t) => void s.travels.push(t)
@@ -2077,6 +2099,24 @@ describe('controller: 2D RPG mode (C-mode)', () => {
     await t.flush()
     expect(t.viewModes).toEqual(['pixel', '3d'])
     expect(t.pixelHud.minimap).toBeNull()
+  })
+
+  // C-mode-NC: Night City uses the dialogue box too, so switching 2D → Night City keeps it open.
+  it('keeps the dialogue open from 2D into Night City; 3D closes it', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    const open = t.dialogue.vm
+    expect(open).not.toBeNull()
+    t.handlers.settingsChange!({ viewMode: 'special' })
+    await t.flush()
+    await t.flush()
+    expect(t.viewModes).toEqual(['special'])
+    expect(t.pixelHud.shown.at(-1)).toBe(false)
+    expect(t.dialogue.isOpen()).toBe(true)
+    t.handlers.settingsChange!({ viewMode: '3d' })
+    await t.flush()
+    await t.flush()
+    expect(t.dialogue.isOpen()).toBe(false)
   })
 
   it('starts in 2D without switching (main already built the 2D scene)', async () => {
@@ -2406,6 +2446,24 @@ describe('controller: 2D movement in every view and the minimap (C-move, C-map)'
       'perform',
       { type: 'open-memory', projectId: 'prj_atlas000001' },
     ])
+  })
+
+  // C-int-1: Night City's semantic world objects run the same commands as the desktop UI.
+  it('routes semantic interactions to the workspace, the agent panel and Connect', async () => {
+    const ws = workspaceBridge()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: ws,
+    })
+    const pick = (t.handlers as Record<string, (h: unknown) => void>).pickInteraction!
+    pick({ kind: 'memory-terminal', anchor: 'interact:memory-terminal:0' })
+    expect(ws.calls).toContainEqual(['perform', { type: 'open-memory' }])
+    pick({ kind: 'agent-workstation', anchor: 'ws:claude-code:0:0', agentId: 'a' })
+    expect(t.panel.vm?.name).toBe('Ada')
+    pick({ kind: 'provider-terminal', anchor: 'interact:provider-terminal:0' })
+    await t.flush()
+    expect(t.connect.opens.length).toBeGreaterThan(0)
+    pick({ kind: 'project-directory', anchor: 'interact:project-directory:0' })
+    expect(t.dialogue.vm?.actions.length).toBeGreaterThan(0)
   })
 
   // C-proj-6: New Agent lists the projects first (#ns-project); the pick reaches sessions.start.

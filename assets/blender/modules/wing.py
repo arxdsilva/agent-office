@@ -383,14 +383,17 @@ def _room_sign(g, P, ref, z):
 
 def _front(g, A, P, t, rng):
     """x = 24: solid behind the meeting rooms, glass front with two doors between them; z = 0 partition."""
-    g.plan_wall((23.92, -9.0), (23.92, -2.6), side=1, thick=0.15)  # body x ∈ [23.85, 24]
-    g.plan_wall((23.92, 2.6), (23.92, 9.0), side=1, thick=0.15)
-    g.plan_wall((24.0, 0.0), (30.0, 0.0), side=1, thick=0.16)  # body z ∈ ±0.08
-    g.box_b(P['wall'], 23.85, 24.0, 0, H, -8.85, -2.6, bevel=0.003)
-    g.box_b(P['wall'], 23.85, 24.0, 0, H, 2.6, 8.85, bevel=0.003)
+    w_s = g.plan_wall((23.92, -9.0), (23.92, -2.6), side=1, thick=0.15, h=H)  # body x ∈ [23.85, 24]
+    w_n = g.plan_wall((23.92, 2.6), (23.92, 9.0), side=1, thick=0.15, h=H)
+    w_p = g.plan_wall((24.0, 0.0), (30.0, 0.0), side=1, thick=0.16, h=H)  # body z ∈ ±0.08
+    with g.wall_tag(w_s):  # contract §13
+        g.box_b(P['wall'], 23.85, 24.0, 0, H, -8.85, -2.6, bevel=0.003)
+    with g.wall_tag(w_n):
+        g.box_b(P['wall'], 23.85, 24.0, 0, H, 2.6, 8.85, bevel=0.003)
     glass_partition(g, P, (23.92, -2.6), (23.92, 0.0), h=2.9, spacing=1.3, door=(1.1, 2.2), top=H)
     glass_partition(g, P, (23.92, 0.0), (23.92, 2.6), h=2.9, spacing=1.3, door=(0.4, 1.5), top=H)
-    g.box_b(P['wall'], 24.0, ROOM_X1, 0, H, -0.08, 0.08, bevel=0.003)
+    with g.wall_tag(w_p):
+        g.box_b(P['wall'], 24.0, ROOM_X1, 0, H, -0.08, 0.08, bevel=0.003)
     _room_sign(g, P, 'adapters', -0.95)
     _room_sign(g, P, 'library', 0.95)
     g.collider(23.85, 24.0, -8.85, -2.6, 0, H)

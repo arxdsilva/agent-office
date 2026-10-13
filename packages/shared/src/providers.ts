@@ -1,5 +1,8 @@
 // Provider integrations (plan "multi-provider platform" §1; docs/provider-integrations.md).
-// One provider = one agent runtime (Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, ChatGPT).
+// One provider = one agent runtime (Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, ChatGPT,
+// and the open-source runtimes: OpenCode, goose, Kilo Code, Qwen Code, Cline, Aider, Continue,
+// OpenHands, Roo Code). The runtime is not the model vendor: an OpenCode session stays an OpenCode
+// agent whatever model it runs (`Agent.modelProvider`).
 // What a session can do is declared as capabilities; the UI gates every control on them.
 // Additive only: these types travel over IPC and appear in public docs.
 import { z } from 'zod'
@@ -14,6 +17,15 @@ export const PROVIDER_IDS = [
   'gemini',
   'copilot',
   'chatgpt',
+  'opencode',
+  'goose',
+  'kilo',
+  'qwen',
+  'cline',
+  'aider',
+  'continue',
+  'openhands',
+  'roo',
 ] as const
 export type ProviderId = (typeof PROVIDER_IDS)[number]
 export const ProviderIdSchema = z.enum(PROVIDER_IDS)
@@ -31,6 +43,12 @@ export const SESSION_CAPS = [
   'attach-context',
   'chrome',
   'resume',
+  /** Each message runs one task (CLI task mode); there is no live conversation. */
+  'one-shot',
+  /** Past sessions can be listed and read through the provider's documented interface. */
+  'history',
+  /** Sessions started outside agent-office can be discovered (read-only). */
+  'discover-sessions',
 ] as const
 export type SessionCap = (typeof SESSION_CAPS)[number]
 
@@ -62,6 +80,10 @@ export const PROVIDER_HINTS = [
   'probe-failed',
   'opt-in-tunnel',
   'no-observation-surface',
+  /** The integration is planned: nothing is advertised until it is verified. */
+  'planned',
+  /** No supported, documented interface exists (e.g. an IDE-only extension). */
+  'not-supported',
 ] as const
 export type ProviderHint = (typeof PROVIDER_HINTS)[number]
 
@@ -74,7 +96,7 @@ export interface ModeOption {
 }
 export const ModeIdSchema = z.string().min(1).max(60)
 
-export type ManagedIntegration = 'agent-sdk' | 'app-server' | 'acp'
+export type ManagedIntegration = 'agent-sdk' | 'app-server' | 'acp' | 'http' | 'sdk' | 'cli-task'
 export type ObserveIntegration = 'transcripts' | 'hooks'
 
 export interface ProviderStatus {

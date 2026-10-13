@@ -2,14 +2,14 @@
   "version": 1,
   "blender": "5.2.2",
   "units": "m",
-  "hash": "cf7adb911668d302ab285c5e8c04abb29c92ff4f67d6425cf2c37c8d3186a42e",
+  "hash": "81a9acf44251ef653ebaa2b65d77cc17c20e0feb4b89bc9ec4b49515b696a83a",
   "hdri": "hdri/office.hdr",
   "modules": {
     "atrium": {
       "file": "atrium.glb",
       "lightmap": {
         "file": "atrium.lightmap.full.webp",
-        "intensity": 11.1705,
+        "intensity": 11.3988,
         "variants": {
           "full": "atrium.lightmap.full.webp",
           "half": "atrium.lightmap.half.webp",
@@ -1657,7 +1657,9 @@
               ]
             ],
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 1,
+            "h": 7.2
           },
           {
             "a": [
@@ -1670,7 +1672,9 @@
             ],
             "kind": "solid",
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 2,
+            "h": 7.2
           },
           {
             "a": [
@@ -1683,7 +1687,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 3,
+            "h": 7.2
           },
           {
             "a": [
@@ -1696,7 +1702,9 @@
             ],
             "kind": "curtain",
             "side": 1,
-            "thick": 0.16
+            "thick": 0.16,
+            "id": 4,
+            "h": 7.2
           },
           {
             "a": [
@@ -1709,7 +1717,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 5,
+            "h": 3.46
           }
         ],
         "furniture": [
@@ -2328,7 +2338,7 @@
       "file": "street.glb",
       "lightmap": {
         "file": "street.lightmap.full.webp",
-        "intensity": 13.1493,
+        "intensity": 13.1499,
         "variants": {
           "full": "street.lightmap.full.webp",
           "half": "street.lightmap.half.webp",
@@ -2496,7 +2506,7 @@
       "file": "garden.glb",
       "lightmap": {
         "file": "garden.lightmap.full.webp",
-        "intensity": 13.7346,
+        "intensity": 13.7485,
         "variants": {
           "full": "garden.lightmap.full.webp",
           "half": "garden.lightmap.half.webp",
@@ -2765,7 +2775,9 @@
               ]
             ],
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 1,
+            "h": 3.6
           },
           {
             "a": [
@@ -2778,7 +2790,9 @@
             ],
             "kind": "glass",
             "side": 1,
-            "thick": 0.06
+            "thick": 0.06,
+            "id": 2,
+            "h": 2.9
           },
           {
             "a": [
@@ -2791,7 +2805,9 @@
             ],
             "kind": "glass",
             "side": 1,
-            "thick": 0.06
+            "thick": 0.06,
+            "id": 3,
+            "h": 2.9
           },
           {
             "a": [
@@ -2804,7 +2820,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 4,
+            "h": 3.6
           },
           {
             "a": [
@@ -2817,7 +2835,9 @@
             ],
             "kind": "solid",
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 5,
+            "h": 3.6
           },
           {
             "a": [
@@ -2830,7 +2850,9 @@
             ],
             "kind": "curtain",
             "side": 1,
-            "thick": 0.14
+            "thick": 0.14,
+            "id": 6,
+            "h": 3.6
           }
         ],
         "furniture": [
@@ -2998,7 +3020,9 @@
             ],
             "kind": "curtain",
             "side": -1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 1,
+            "h": 3.6
           },
           {
             "a": [
@@ -3011,7 +3035,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 2,
+            "h": 4
           },
           {
             "a": [
@@ -3024,7 +3050,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 3,
+            "h": 4
           }
         ],
         "furniture": []
@@ -3036,7 +3064,7 @@
           "file": "wing-terracotta.glb",
           "lightmap": {
             "file": "wing-terracotta.lightmap.full.webp",
-            "intensity": 11.1888,
+            "intensity": 11.4819,
             "variants": {
               "full": "wing-terracotta.lightmap.full.webp",
               "half": "wing-terracotta.lightmap.half.webp",
@@ -3050,7 +3078,7 @@
           "file": "wing-nordic.glb",
           "lightmap": {
             "file": "wing-nordic.lightmap.full.webp",
-            "intensity": 11.5513,
+            "intensity": 11.5566,
             "variants": {
               "full": "wing-nordic.lightmap.full.webp",
               "half": "wing-nordic.lightmap.half.webp",
@@ -3064,7 +3092,7 @@
           "file": "wing-forest.glb",
           "lightmap": {
             "file": "wing-forest.lightmap.full.webp",
-            "intensity": 11.0807,
+            "intensity": 11.3422,
             "variants": {
               "full": "wing-forest.lightmap.full.webp",
               "half": "wing-forest.lightmap.half.webp",
@@ -3078,7 +3106,7 @@
           "file": "wing-ocean.glb",
           "lightmap": {
             "file": "wing-ocean.lightmap.full.webp",
-            "intensity": 10.9961,
+            "intensity": 11.0156,
             "variants": {
               "full": "wing-ocean.lightmap.full.webp",
               "half": "wing-ocean.lightmap.half.webp",
@@ -3092,7 +3120,7 @@
           "file": "wing-neon.glb",
           "lightmap": {
             "file": "wing-neon.lightmap.full.webp",
-            "intensity": 10.4566,
+            "intensity": 10.5145,
             "variants": {
               "full": "wing-neon.lightmap.full.webp",
               "half": "wing-neon.lightmap.half.webp",
@@ -3106,7 +3134,7 @@
           "file": "wing-brass.glb",
           "lightmap": {
             "file": "wing-brass.lightmap.full.webp",
-            "intensity": 10.4268,
+            "intensity": 10.4205,
             "variants": {
               "full": "wing-brass.lightmap.full.webp",
               "half": "wing-brass.lightmap.half.webp",
@@ -5733,7 +5761,9 @@
               ]
             ],
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 1,
+            "h": 3.6
           },
           {
             "a": [
@@ -5746,7 +5776,9 @@
             ],
             "kind": "glass",
             "side": 1,
-            "thick": 0.06
+            "thick": 0.06,
+            "id": 2,
+            "h": 2.9
           },
           {
             "a": [
@@ -5759,7 +5791,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 3,
+            "h": 3.6
           },
           {
             "a": [
@@ -5772,7 +5806,9 @@
             ],
             "kind": "solid",
             "side": -1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 4,
+            "h": 3.6
           },
           {
             "a": [
@@ -5785,7 +5821,9 @@
             ],
             "kind": "curtain",
             "side": 1,
-            "thick": 0.14
+            "thick": 0.14,
+            "id": 5,
+            "h": 3.6
           },
           {
             "a": [
@@ -5798,7 +5836,9 @@
             ],
             "kind": "glass",
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 6,
+            "h": 3.6
           },
           {
             "a": [
@@ -5817,7 +5857,9 @@
               ]
             ],
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 7,
+            "h": 3.6
           },
           {
             "a": [
@@ -5830,7 +5872,9 @@
             ],
             "kind": "glass",
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 8,
+            "h": 3.6
           },
           {
             "a": [
@@ -5849,7 +5893,9 @@
               ]
             ],
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 9,
+            "h": 3.6
           },
           {
             "a": [
@@ -5862,7 +5908,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 10,
+            "h": 3.6
           },
           {
             "a": [
@@ -5875,7 +5923,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.15
+            "thick": 0.15,
+            "id": 11,
+            "h": 3.6
           },
           {
             "a": [
@@ -5888,7 +5938,9 @@
             ],
             "kind": "solid",
             "side": 1,
-            "thick": 0.16
+            "thick": 0.16,
+            "id": 12,
+            "h": 3.6
           },
           {
             "a": [
@@ -5907,7 +5959,9 @@
               ]
             ],
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 13,
+            "h": 3.6
           },
           {
             "a": [
@@ -5926,7 +5980,9 @@
               ]
             ],
             "side": 1,
-            "thick": 0.12
+            "thick": 0.12,
+            "id": 14,
+            "h": 3.6
           }
         ],
         "furniture": [

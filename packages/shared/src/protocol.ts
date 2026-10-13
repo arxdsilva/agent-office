@@ -32,6 +32,8 @@ export const AgentEventSchema = z.object({
   topic: z.string().max(200).optional(),
   /** Model in use, e.g. claude-opus-5-5. */
   model: z.string().max(100).optional(),
+  /** Who serves the model (e.g. openrouter, anthropic) when it differs from the runtime. */
+  modelProvider: z.string().max(100).optional(),
   /** Role or type of agent, e.g. a subagent's agentType. */
   kind: z.string().max(100).optional(),
   /** Agent that spawned this one; subagents sit next to their parent. */
@@ -87,6 +89,8 @@ export interface Agent {
   provider: string
   topic: string
   model?: string
+  /** Who serves the model when it differs from the runtime (OpenCode → OpenRouter, …). */
+  modelProvider?: string
   kind?: string
   parentId?: string
   status: AgentStatus

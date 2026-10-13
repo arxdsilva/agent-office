@@ -50,6 +50,12 @@ can't change models has no model menu.
 | Cursor | `cursor` | `cu:` | `agent acp` (ACP) | Cursor hooks (`~/.cursor/hooks.json`) | agent 2026.10.01-e373342 |
 | Gemini CLI | `gemini` | `gm:` | `gemini --acp` (ACP) | Gemini hooks (`~/.gemini/settings.json`) | 0.63.0 |
 | GitHub Copilot CLI | `copilot` | `gh:` | `copilot --acp` (ACP, public preview) | Copilot hooks (`~/.copilot/hooks/*.json`) | 1.0.96 |
+| OpenCode | `opencode` | `oc:` | `opencode acp` (ACP) | — | 1.19.0 (built, not yet verified) |
+| goose | `goose` | `go:` | `goose acp` (ACP) | — | 1.54.0 (built, not yet verified) |
+| Kilo Code | `kilo` | `ki:` | `kilo acp` (ACP) | — | 7.8.8 (built, not yet verified) |
+| Qwen Code | `qwen` | `qw:` | `qwen --acp` (ACP) | — | 0.25.1 (built, not yet verified) |
+| Cline | `cline` | `cl:` | `cline --acp` (ACP) | — | 3.0.70 (built, not yet verified) |
+| OpenHands | `openhands` | `oh:` | `openhands acp` (ACP) | — | CLI 1.16.0 (built, not yet verified) |
 | ChatGPT | `chatgpt` | — | — (disabled) | — (disabled) | — |
 
 Ids are provider-scoped: `<prefix><native id>`. Sessions are **never** merged by project folder. The
@@ -156,7 +162,7 @@ Mode presets (`ModeOption`; `AskForApproval` = `untrusted | on-request | never`,
 `full-access` is marked `dangerous`: it is offered and accepted only when Settings → "Allow Bypass
 permissions mode" is on.
 
-### 5.2 ACP agents (Cursor `agent acp`, Gemini `gemini --acp`, Copilot `copilot --acp`)
+### 5.2 ACP agents (Cursor `agent acp`, Gemini `gemini --acp`, Copilot `copilot --acp`, OpenCode, goose, Kilo, Qwen, Cline, OpenHands)
 
 Official docs: https://agentclientprotocol.com · Cursor https://cursor.com/docs/cli/acp · Gemini
 https://geminicli.com/docs/cli/acp-mode/ · Copilot https://docs.github.com/en/copilot (ACP server).
@@ -193,7 +199,27 @@ Modes per profile (`id` is what agent-office stores; `native` is the agent's id 
 | Gemini CLI | `default` Ask before tools · `autoEdit` Auto-approve edits · `yolo` Auto-approve everything · `plan` Plan (read-only; used only if the user enabled it, i.e. the agent advertises it) | `autoEdit`, `yolo` |
 | Copilot CLI | `agent` · `plan` · `autopilot` Autopilot (allow all). Short ids map to the agent's URL ids `https://agentclientprotocol.com/protocol/session-modes#agent` / `#plan` / `#autopilot` | `autopilot` |
 
+| OpenCode | `build` · `plan` (read-only) | — |
+| goose | `approve` Ask before tools · `smart_approve` · `auto` · `chat` | `smart_approve`, `auto` |
+| Kilo Code | `code` · `ask` · `plan` · `debug` · `orchestrator` | — |
+| Qwen Code | `default` · `plan` · `auto-edit` · `auto` · `yolo` | `auto-edit`, `auto`, `yolo` |
+| Cline | `act` · `plan` (ids to verify) | — |
+| OpenHands | `always-ask` · `llm-approve` · `always-approve` | `llm-approve`, `always-approve` |
+
 A mode must be in the profile **and** advertised by the agent; otherwise it is not applied.
+
+The open-source runtimes (`docs/providers/<id>.md`) follow the same lifecycle with these differences:
+
+- **Subcommand CLIs** (`opencode acp`, `goose acp`, `kilo acp`, `openhands acp`) set `helpArgs: ['acp', '--help']`
+  so the probe checks the subcommand's own help; `qwen --acp` and `cline --acp` check `--help` for the flag.
+- **No auth method is ever called.** What they advertise in `initialize` are terminal hints
+  (`opencode-login`, `goose-provider`, `kilo-login`), browser logins (`cline*`, `oauth`) or an API key
+  (`openai`); `authMethodPrefer` is empty and a missing login exits `auth` with the profile's `loginHint`.
+- **Safe permission defaults.** OpenCode and Kilo allow edits (and, for OpenCode, shell and web fetches) by
+  default, so no card would show. The profile's fixed `env` (`OPENCODE_CONFIG_CONTENT`, `KILO_CONFIG_CONTENT`)
+  makes them ask. goose's own default mode is `auto`, so sessions start in `approve`. Cline's CLI approves
+  every tool by default, so it is started with `--auto-approve false` (⚠️ whether ACP then asks is not verified).
+- **OpenHands** is a Python CLI (about 2.3 s per call), so its probe budget is 10 s; `--cloud` is never used.
 
 ### 5.3 Permission decisions
 
@@ -305,6 +331,12 @@ Run on macOS, 2026-10-12, with `make verify-providers` against the real, logged-
 | Cursor | 2026.10.01-e373342 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
 | Copilot CLI | 1.0.96 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
 | Gemini CLI | 0.63.0 | pass | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pending |
+| OpenCode | 1.19.0 | built, not yet verified | | | | | | | | | | | n/a |
+| goose | 1.54.0 | built, not yet verified | | | | | | | | | | | n/a |
+| Kilo Code | 7.8.8 | built, not yet verified | | | | | | | | | | | n/a |
+| Qwen Code | 0.25.1 | built, not yet verified | | | | | | | | | | | n/a |
+| Cline | 3.0.70 | built, not yet verified | | | | | | | | | | | n/a |
+| OpenHands | CLI 1.16.0 | built, not yet verified | | | | | | | | | | | n/a |
 
 Legend:
 
@@ -316,6 +348,10 @@ Legend:
   the CLI's auth error (`-32000 Gemini API key is missing`), but the session checks need a login.
 - **pending**: observation hooks are verified against fixtures and the real hook script end to end with
   the local API (`e2e.observe-hooks`); verification with the real provider firing the hooks is pending.
+- **built, not yet verified**: the profile, probe, composition wiring and the fake-agent suites exist and
+  pass; the `initialize` handshake was checked against the real CLI (auth methods and capabilities are in
+  `docs/providers/<id>.md`), but no real session was started. Run `make verify-providers ONLY=<id>` on a
+  logged-in machine to fill the row.
 - Codex protocol subset: `make codex-schema-check` found 52/52 expectations against 0.162.1.
 
 Handshakes observed on the real CLIs:
@@ -344,6 +380,12 @@ Every provider follows the same path:
 | Gemini CLI | `npm i -g @google/gemini-cli`; needs `gemini --acp` | run `gemini` once and sign in |
 | Copilot CLI | `npm i -g @github/copilot`; needs `copilot --acp` (public preview) | `copilot login` |
 | Claude Code | `npm i -g @anthropic-ai/claude-code` | run `claude`, then `/login` |
+| OpenCode | `npm i -g opencode-ai`; needs `opencode acp` | `opencode auth login` (or configure a model) |
+| goose | `brew install block-goose-cli`; needs `goose acp` | `goose configure` |
+| Kilo Code | `npm i -g @kilocode/cli` (`kilo`, also `kilocode`); needs `kilo acp` | `kilo auth login` |
+| Qwen Code | `npm i -g @qwen-code/qwen-code`; needs `qwen --acp` | run `qwen` once and configure a model |
+| Cline | `npm i -g cline`; needs `cline --acp` | `cline auth` |
+| OpenHands | `uv tool install openhands`; needs `openhands acp` | `openhands login` (or its settings) |
 
 Check the vendor's own install page if a command above has changed; agent-office only needs the
 binary on the `PATH` of the app. ⚠️ verify: install commands are the vendors' public ones, not tested here.

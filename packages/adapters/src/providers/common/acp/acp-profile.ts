@@ -34,6 +34,11 @@ export interface AcpProfile {
   /** Known modes (the core validates mode ids against these); the agent must also advertise them. */
   modes?: AcpMode[]
   defaultModeId?: string
+  /**
+   * Fixed environment for the CLI (merged under the caller's `env`). Only for settings that make
+   * the agent ask before acting, never credentials.
+   */
+  env?: Record<string, string>
   /** Overrides of the default ACP tool kind → tool name map. */
   toolKindMap?: Partial<Record<string, string>>
 }

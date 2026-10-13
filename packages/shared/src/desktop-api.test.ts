@@ -213,7 +213,9 @@ describe('provider contracts', () => {
         modeId: 'ask',
       },
     )
-    expect(NewSessionArgsSchema.safeParse({ ...base, provider: 'aider' }).success).toBe(false)
+    expect(NewSessionArgsSchema.safeParse({ ...base, provider: 'not-a-provider' }).success).toBe(
+      false,
+    )
     expect(NewSessionArgsSchema.safeParse({ ...base, modeId: 'x'.repeat(61) }).success).toBe(false)
   })
 

@@ -15,22 +15,39 @@
 //
 // Options: --modules atrium,street,garden,cap,wing:terracotta,…  (default: all)   --jobs N (parallel Blender
 // processes; default 3 for draft, 1 for final and previews)   --skip-character
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  ASSETS,
+  BLENDER_DIR,
+  CACHE,
+  ROOT,
+  blenderArgs,
+  ensureSources,
+  findBlender,
+  gltfTools,
+  glbStats,
+  lightmapEntries,
+  lightmapTiers,
+  mergeFragments,
+  moduleFiles,
+  moduleSlug,
+  mergeWingPlans,
+  optimizeGlb,
+  optimizePng,
+  pool,
+  rgbaOf,
+  run,
+  sha256,
+  walk,
+} from './lib/pipeline.mjs';
 
-const ASSETS = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.dirname(ASSETS);
-const BLENDER_DIR = path.join(ASSETS, 'blender');
-const CACHE = path.join(ASSETS, 'cache');
 const PUBLIC = path.join(ROOT, 'packages', 'web', 'public', 'assets');
 const OUT = path.join(ASSETS, 'out');
 /** Raw Blender exports of the last final build (full-quality JPEG textures, 8-bit PNG lightmaps). */
 const RAW = path.join(CACHE, 'work-final');
-const PINS_FILE = path.join(BLENDER_DIR, 'polyhaven.json');
-const BLENDER_VERSION = '5.2';
 const THEMES = ['terracotta', 'nordic', 'forest', 'ocean', 'neon', 'brass'];
 const ALL_MODULES = ['atrium', 'street', 'garden', 'cap', ...THEMES.map((t) => `wing:${t}`)];
 
@@ -69,222 +86,19 @@ function parseArgs(argv) {
   return a;
 }
 
-// ------------------------------------------------------------------------------------------- blender
-function childEnv() {
-  // Never leak Electron's "run as node" switches into Blender (or anything else we spawn).
-  const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('ELECTRON_')) env[k] = v;
-  return env;
-}
-
-function run(cmd, args, { logFile, quiet = false } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { env: childEnv(), cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
-    const log = logFile ? fs.createWriteStream(logFile) : null;
-    let tail = '';
-    const onData = (buf) => {
-      const s = buf.toString();
-      log?.write(s);
-      tail = (tail + s).slice(-6000);
-      if (!quiet) {
-        for (const line of s.split('\n')) if (line.startsWith('[asset]') || line.startsWith('[test]')) console.log(line);
-      }
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('error', reject);
-    child.on('close', (code) => {
-      log?.end();
-      if (code === 0) resolve(tail);
-      else reject(Object.assign(new Error(`${path.basename(cmd)} exited with ${code}\n${tail}`), { tail }));
-    });
-  });
-}
-
-async function findBlender() {
-  const bin = process.env.BLENDER || '/Applications/Blender.app/Contents/MacOS/Blender';
-  if (!fs.existsSync(bin)) throw new Error(`Blender not found at ${bin} (set $BLENDER)`);
-  const out = await run(bin, ['--version'], { quiet: true });
-  const m = out.match(/Blender (\d+)\.(\d+)\.(\d+)/);
-  if (!m) throw new Error(`cannot parse Blender version from: ${out.slice(0, 200)}`);
-  const version = `${m[1]}.${m[2]}.${m[3]}`;
-  if (`${m[1]}.${m[2]}` !== BLENDER_VERSION) throw new Error(`Blender ${BLENDER_VERSION}.x required, found ${version}`);
-  return { bin, version };
-}
-
-function blenderArgs(script, scriptArgs) {
-  return ['--background', '--factory-startup', '--python-exit-code', '1', '--python', script, '--', ...scriptArgs];
-}
-
-async function pool(items, jobs, fn) {
-  const results = [];
-  let next = 0;
-  const workers = Array.from({ length: Math.min(jobs, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i], i);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-// ---------------------------------------------------------------------------------------- poly haven
-function sha256(buf) {
-  return createHash('sha256').update(buf).digest('hex');
-}
-
-function sourceList(pins) {
-  const list = [];
-  for (const [id, t] of Object.entries(pins.textures)) {
-    for (const map of t.maps) {
-      const file = `${id}_${map}_${t.res}.jpg`;
-      list.push({ file: `textures/${file}`, url: `https://dl.polyhaven.org/file/ph-assets/Textures/jpg/${t.res}/${id}/${file}` });
-    }
-  }
-  const h = pins.hdri;
-  const hf = `${h.id}_${h.res}.hdr`;
-  list.push({ file: `hdri/${hf}`, url: `https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/${h.res}/${hf}` });
-  return list;
-}
-
-async function ensureSources({ pin = false } = {}) {
-  const pins = JSON.parse(fs.readFileSync(PINS_FILE, 'utf8'));
-  const list = sourceList(pins);
-  let changed = false;
-  for (const { file, url } of list) {
-    const dest = path.join(CACHE, file);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    if (!fs.existsSync(dest)) {
-      console.log(`[asset] download ${url}`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`download failed ${res.status} ${url}`);
-      fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
-    }
-    const sum = sha256(fs.readFileSync(dest));
-    const pinned = pins.sha256[file];
-    if (!pinned || pin) {
-      if (!pin) throw new Error(`no sha256 pin for ${file}; run node assets/build.mjs --pin`);
-      if (pinned !== sum) changed = true;
-      pins.sha256[file] = sum;
-    } else if (pinned !== sum) {
-      throw new Error(`sha256 mismatch for ${file} (cached ${sum}, pinned ${pinned}); delete assets/cache/${file}`);
-    }
-  }
-  if (pin && changed) {
-    pins.sha256 = Object.fromEntries(Object.entries(pins.sha256).sort(([a], [b]) => a.localeCompare(b)));
-    fs.writeFileSync(PINS_FILE, JSON.stringify(pins, null, 2) + '\n');
-    console.log(`[asset] pinned ${list.length} files in ${path.relative(ROOT, PINS_FILE)}`);
-  }
-  return { pins, hdri: path.join(CACHE, list[list.length - 1].file) };
-}
-
 // ---------------------------------------------------------------------------------------------- hash
-function walk(dir) {
-  const out = [];
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === '__pycache__' || e.name.startsWith('.')) continue;
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
-}
-
 function inputHash(quality, pins) {
   const h = createHash('sha256');
   h.update(`quality=${quality}\n`);
-  for (const f of walk(BLENDER_DIR).sort()) {
+  // The Night City scripts (blender/special3d, contract §14) are not inputs of the classic set.
+  const special = path.join(BLENDER_DIR, 'special3d') + path.sep;
+  for (const f of walk(BLENDER_DIR).filter((f) => !f.startsWith(special)).sort()) {
     h.update(`${path.relative(ASSETS, f).split(path.sep).join('/')}\0${sha256(fs.readFileSync(f))}\n`);
   }
   for (const [file, sum] of Object.entries(pins.sha256).sort(([a], [b]) => a.localeCompare(b))) h.update(`${file}\0${sum}\n`);
   h.update(`build.mjs\0${sha256(fs.readFileSync(fileURLToPath(import.meta.url)))}\n`);
+  h.update(`lib/pipeline.mjs\0${sha256(fs.readFileSync(path.join(ASSETS, 'lib', 'pipeline.mjs')))}\n`);
   return h.digest('hex');
-}
-
-// ------------------------------------------------------------------------------------------ optimize
-async function gltfTools() {
-  const { NodeIO, Logger } = await import('@gltf-transform/core');
-  const { ALL_EXTENSIONS } = await import('@gltf-transform/extensions');
-  const fns = await import('@gltf-transform/functions');
-  const { MeshoptEncoder, MeshoptDecoder } = await import('meshoptimizer');
-  const sharp = (await import('sharp')).default;
-  await MeshoptEncoder.ready;
-  await MeshoptDecoder.ready;
-  const io = new NodeIO()
-    .setLogger(new Logger(Logger.Verbosity.ERROR))
-    .registerExtensions(ALL_EXTENSIONS)
-    .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
-  return { io, fns, sharp, MeshoptEncoder };
-}
-
-async function optimizeGlb(tools, src, dest, { skinned = false } = {}) {
-  const { io, fns, sharp, MeshoptEncoder } = tools;
-  const doc = await io.read(src);
-  const steps = [
-    fns.dedup(),
-    // keepAttributes: TEXCOORD_1 (lightmap UVs) is not referenced by any material but the runtime needs it.
-    fns.prune({ keepAttributes: true, keepExtras: true, keepLeaves: skinned }),
-    fns.weld(),
-    fns.textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 82, resize: [1024, 1024], slots: /^baseColor/ }),
-    fns.textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 82, resize: [512, 512], slots: /^(normal|metallicRoughness|occlusion|emissive)/ }),
-  ];
-  // No instance(): static geometry is joined and lightmapped (unique UV1), and runtime-driven nodes must
-  // keep their own extras, so there is nothing that may be merged into EXT_mesh_gpu_instancing.
-  if (skinned) steps.push(fns.meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
-  else steps.push(fns.meshopt({ encoder: MeshoptEncoder, level: 'high', quantizePosition: 16, quantizeTexcoord: 16, quantizeNormal: 10 }));
-  await doc.transform(...steps);
-  await hashTextures(tools, doc);
-  await io.write(dest, doc);
-}
-
-async function optimizePng(tools, src, dest) {
-  // Lossless: sharp's png `effort` (like quality/colours) switches to a 256-colour palette, which bands lightmaps.
-  const buf = await tools.sharp(src).png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
-  fs.writeFileSync(dest, buf);
-}
-
-// ------------------------------------------------------------------------- textures and lightmaps (§6, §6b)
-// No KTX2: three's Basis transcoder needs eval (`new Function`), which the app's CSP forbids (§6b).
-
-async function rgbaOf(sharp, input, size) {
-  let img = sharp(Buffer.isBuffer(input) || typeof input === 'string' ? input : Buffer.from(input));
-  if (size) img = img.resize(size[0], size[1], { fit: 'fill', kernel: 'lanczos3' });
-  const { data, info } = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { data: new Uint8Array(data), width: info.width, height: info.height };
-}
-
-/** Contract §6b: extras.hash = sha1 over the decoded RGBA of the shipped image, first 12 hex chars. */
-async function hashTextures(tools, doc) {
-  for (const t of doc.getRoot().listTextures()) {
-    const { data } = await rgbaOf(tools.sharp, t.getImage());
-    t.setExtras({ ...t.getExtras(), hash: createHash('sha1').update(data).digest('hex').slice(0, 12) });
-  }
-}
-
-/** Contract §6: full, ½ and ¼ tiers of a lightmap PNG as WebP (sharp lanczos3 downscales). */
-async function lightmapTiers(tools, srcPng, destDir, base) {
-  const meta = await tools.sharp(srcPng).metadata();
-  const variants = {};
-  for (const [tier, div] of [['full', 1], ['half', 2], ['quarter', 4]]) {
-    let img = tools.sharp(srcPng);
-    if (div > 1) img = img.resize(Math.max(1, Math.floor(meta.width / div)), Math.max(1, Math.floor(meta.height / div)), { fit: 'fill', kernel: 'lanczos3' });
-    const file = `${base}.lightmap.${tier}.webp`;
-    // WebP q95 from the 24-bit bake: SSIM ≥ 0.97 against it (AV-visual); lossless would break the 55 MB budget.
-    fs.writeFileSync(path.join(destDir, file), await img.webp({ quality: 95, effort: 6 }).toBuffer());
-    variants[tier] = file;
-  }
-  return variants;
-}
-
-/** Every lightmap entry of a manifest, with the glb base name it belongs to (atrium, wing-terracotta, …). */
-function lightmapEntries(manifest) {
-  const out = [];
-  for (const [id, m] of Object.entries(manifest.modules)) {
-    if (id === 'wing') for (const t of Object.values(m.themes)) out.push({ base: t.file.replace(/\.glb$/, ''), lm: t.lightmap });
-    else if (m.lightmap) out.push({ base: m.file.replace(/\.glb$/, ''), lm: m.lightmap });
-  }
-  return out;
 }
 
 /** Publish a staged build: public/assets gets exactly the stage; assets/out|draft also keeps the PNG lightmap sources. */
@@ -299,28 +113,6 @@ function publish(stage, pngStage, outDir) {
 }
 
 // -------------------------------------------------------------------------------------------- verify
-async function inspectGlb(tools, file) {
-  const doc = await tools.io.read(file);
-  let tris = 0;
-  let draws = 0;
-  const roles = {};
-  for (const node of doc.getRoot().listNodes()) {
-    const mesh = node.getMesh();
-    if (!mesh) continue;
-    const role = node.getExtras()?.role ?? 'none';
-    roles[role] = (roles[role] ?? 0) + 1;
-    for (const prim of mesh.listPrimitives()) {
-      const idx = prim.getIndices();
-      const count = idx ? idx.getCount() : prim.getAttribute('POSITION').getCount();
-      if (role !== 'collider') {
-        tris += count / 3;
-        draws += 1;
-      }
-    }
-  }
-  return { tris: Math.round(tris), draws, roles };
-}
-
 async function verify(tools, dir) {
   const validator = (await import('gltf-validator')).default;
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
@@ -342,7 +134,7 @@ async function verify(tools, dir) {
     }
     const bytes = fs.readFileSync(p);
     const report = await validator.validateBytes(new Uint8Array(bytes), { maxIssues: 50, ignoredIssues: ['UNUSED_OBJECT'] });
-    const info = await inspectGlb(tools, p);
+    const info = await glbStats(tools, p);
     const lmBytes = f.lightmap ? fs.statSync(path.join(dir, f.lightmap)).size : 0;
     const b = BUDGETS[f.kind];
     rows.push({ file: f.file, kb: Math.round(bytes.length / 1024), lightmapKb: Math.round(lmBytes / 1024), tris: info.tris, draws: info.draws, errors: report.issues.numErrors, warnings: report.issues.numWarnings });
@@ -449,37 +241,6 @@ async function visual(tools) {
   console.log(`[asset] visual ok (lightmap tiers SSIM ≥ ${SSIM_MIN})`);
 }
 
-// ---------------------------------------------------------------------------------------------- main
-function moduleSlug(m) {
-  return m.replace(':', '-');
-}
-
-/**
- * Contract §11: one floor plan is shared by every wing theme. Rooms and walls must match across themes;
- * furniture is the multiset intersection, so theme-only decor (an arcade cabinet, extra plants) is left out
- * and the shared plan lists only what every wing really has.
- */
-function mergeWingPlans(plans) {
-  const [first, ...rest] = plans;
-  for (const { theme, plan } of rest)
-    for (const k of ['rooms', 'walls'])
-      if (JSON.stringify(plan[k]) !== JSON.stringify(first.plan[k])) throw new Error(`wing:${theme} plan.${k} differ from wing:${first.theme}`);
-  const counts = (plan) => {
-    const c = new Map();
-    for (const f of plan.furniture) c.set(JSON.stringify(f), (c.get(JSON.stringify(f)) ?? 0) + 1);
-    return c;
-  };
-  const others = rest.map(({ plan }) => counts(plan));
-  const used = new Map();
-  const furniture = first.plan.furniture.filter((f) => {
-    const key = JSON.stringify(f);
-    const n = (used.get(key) ?? 0) + 1;
-    used.set(key, n);
-    return others.every((c) => (c.get(key) ?? 0) >= n);
-  });
-  return { rooms: first.plan.rooms, walls: first.plan.walls, furniture };
-}
-
 async function build(args) {
   const t0 = Date.now();
   const blender = await findBlender();
@@ -515,29 +276,7 @@ async function build(args) {
   } else if (!args.skipCharacter) console.warn('[asset] WARN assets/blender/modules/character.py not found; continuing without character');
 
   // Merge module fragments (a partial --modules build reuses earlier fragments from the same work dir).
-  const modules = {};
-  const wingThemes = {};
-  const wingPlans = [];
-  let wingShared = null;
-  for (const m of ALL_MODULES) {
-    const frag = path.join(work, `${moduleSlug(m)}.json`);
-    if (!fs.existsSync(frag)) continue;
-    const f = JSON.parse(fs.readFileSync(frag, 'utf8'));
-    if (m.startsWith('wing:')) {
-      const theme = m.slice(5);
-      wingThemes[theme] = f.theme;
-      if (f.module.plan) wingPlans.push({ theme, plan: f.module.plan });
-      if (!wingShared) wingShared = f.module;
-      else if (JSON.stringify(wingShared.anchors) !== JSON.stringify(f.module.anchors) || JSON.stringify(wingShared.nav) !== JSON.stringify(f.module.nav))
-        throw new Error(`wing:${theme} anchors/nav differ from the other themes`);
-    } else modules[m] = f.module;
-  }
-  if (wingShared) {
-    const themes = {};
-    for (const t of THEMES) if (wingThemes[t]) themes[t] = wingThemes[t];
-    modules.wing = { themes, ...wingShared };
-    if (wingPlans.length) modules.wing.plan = mergeWingPlans(wingPlans);
-  }
+  const modules = mergeFragments(work, ALL_MODULES, THEMES);
 
   const manifest = { version: 1, blender: blender.version, units: 'm', hash, hdri: 'hdri/office.hdr', modules };
   if (character) manifest.character = { file: 'character.glb', meta: 'character.json' };
@@ -549,12 +288,7 @@ async function build(args) {
   fs.mkdirSync(path.join(stage, 'hdri'), { recursive: true });
   fs.mkdirSync(pngStage, { recursive: true });
   const tools = await gltfTools();
-  const files = [];
-  for (const [id, m] of Object.entries(modules)) {
-    if (id === 'wing') for (const t of Object.values(m.themes)) files.push(t.file);
-    else files.push(m.file);
-  }
-  for (const f of files) await optimizeGlb(tools, path.join(work, f), path.join(stage, f));
+  for (const f of moduleFiles(modules)) await optimizeGlb(tools, path.join(work, f), path.join(stage, f));
   // Lightmaps: the PNG stays in assets/out|draft as the source; public/assets gets the WebP tiers.
   for (const { base, lm } of lightmapEntries(manifest)) {
     const png = path.join(pngStage, lm.file);
@@ -603,11 +337,7 @@ async function repack() {
     return dst;
   };
   const tools = await gltfTools();
-  const glbs = [];
-  for (const [id, m] of Object.entries(manifest.modules)) {
-    if (id === 'wing') for (const t of Object.values(m.themes)) glbs.push(t.file);
-    else glbs.push(m.file);
-  }
+  const glbs = moduleFiles(manifest.modules);
   const sources = new Map();
   for (const f of glbs) sources.set(f, fs.existsSync(path.join(RAW, f)) ? path.join(RAW, f) : fromPublished(f));
   const lmSources = new Map();

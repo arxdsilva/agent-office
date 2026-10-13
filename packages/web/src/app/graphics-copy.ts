@@ -76,4 +76,17 @@ export const GFX_COPY = {
   keepFailing: 'Graphics keep failing: switch to Minimal?',
   switchMinimal: 'Switch to Minimal',
   softwareNote: 'Software rendering detected: using Minimal',
+  /** Sims-style walls (graphics contract §13): Settings → Graphics and the HUD button. */
+  walls: {
+    title: 'Walls',
+    modes: { up: 'Up', cutaway: 'Cutaway', down: 'Down' },
+    help: {
+      up: 'Walls stay up. The wall under the pointer fades.',
+      cutaway: 'Walls between the camera and the agent you follow fade away.',
+      down: 'Every wall is cut to 1 m, like a floor plan.',
+    },
+    icon: { up: '▮', cutaway: '◧', down: '▁' },
+    button: (label: string) => `Walls: ${label}`,
+    tooltip: (label: string, next: string) => `Walls: ${label}. Click for ${next}`,
+  },
 } as const

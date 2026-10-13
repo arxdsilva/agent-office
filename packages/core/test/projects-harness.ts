@@ -76,7 +76,7 @@ export function harness(over: Partial<ProjectsDeps> = {}, log = new FakeRecordLo
     log: logger,
     repoIdentity: repos,
     transcripts,
-    history,
+    history: { 'claude-code': history },
     searchIndex: search,
     random,
     enabledProviders: async () => ['claude-code', 'codex'] as ProviderId[],

@@ -191,7 +191,7 @@ def _denoise(img, workdir):
     sc.render.image_settings.file_format = 'OPEN_EXR'
     sc.render.image_settings.color_depth = '32'
     bpy.ops.render.render(scene=sc.name)
-    path = os.path.join(workdir, f'_denoise_{img.name}.exr')
+    path = os.path.join(workdir, f'_denoise_{os.getpid()}_{img.name}.exr')  # parallel jobs share workdir
     bpy.data.images['Render Result'].save_render(path, scene=sc)
     out = bpy.data.images.load(path)
     arr = np.array(out.pixels[:], dtype=np.float32).reshape(h, w, 4)

@@ -64,6 +64,15 @@ const status = (id: ProviderId, over: Partial<ProviderStatus> = {}): ProviderSta
     gemini: 'Gemini CLI',
     copilot: 'Copilot CLI',
     chatgpt: 'ChatGPT',
+    opencode: 'OpenCode',
+    goose: 'goose',
+    kilo: 'Kilo Code',
+    qwen: 'Qwen Code',
+    cline: 'Cline',
+    aider: 'Aider',
+    continue: 'Continue',
+    openhands: 'OpenHands',
+    roo: 'Roo Code',
   }[id],
   state: 'managed-available',
   enabled: true,
@@ -349,7 +358,7 @@ describe('emptyStateVM: providers tile', () => {
     expect(t).toMatchObject({
       id: 'providers',
       title: COPY.empty.providers.title,
-      body: 'Codex, Cursor, Gemini CLI, Copilot CLI',
+      body: 'Codex, Cursor, Gemini, Copilot, OpenCode, goose, Kilo, Qwen and more',
       button: 'Set up',
     })
     expect(t.pill.tone).toBe('ok')

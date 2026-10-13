@@ -387,6 +387,17 @@ function plan(v: unknown, path: string): ModulePlan | undefined {
         throw new ManifestError(`${p}.thick`, 'expected a positive number')
       wall.thick = wo.thick
     }
+    // Wall id and height (contract §13, additive).
+    if (wo.id !== undefined) {
+      if (!Number.isInteger(wo.id) || (wo.id as number) < 1)
+        throw new ManifestError(`${p}.id`, 'expected a positive integer')
+      wall.id = wo.id as number
+    }
+    if (wo.h !== undefined) {
+      if (typeof wo.h !== 'number' || !(wo.h > 0))
+        throw new ManifestError(`${p}.h`, 'expected a positive number')
+      wall.h = wo.h
+    }
     return wall
   })
   const furniture = arr(o.furniture, `${path}.furniture`).map((f, i): PlanFurniture => {
