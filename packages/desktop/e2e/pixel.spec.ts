@@ -291,8 +291,12 @@ test('2D RPG: switch, walk, talk, alerts, team, objects, leave, back to 3D, rela
     // Name tags are back for the agents, Ada included.
     await expect(win.locator('.tag[data-agent-id="mock:ada"]')).toBeAttached({ timeout: 20_000 })
     expect(await win.locator('.tag').count()).toBeGreaterThanOrEqual(8)
-    // The chat thread still has the message sent from 2D.
-    await win.locator('.tag[data-agent-id="mock:ada"]').click()
+    // The chat thread still has the message sent from 2D. Pick Ada the way a tag click does
+    // (she may be walking, so her tag is never "stable" for a real click on slow software GL).
+    await win.evaluate(() =>
+      (window as unknown as { __aoDebug: { focus(id: string): void } }).__aoDebug.focus('mock:ada'),
+    )
+    await expect(win.locator('#p-name')).toHaveText('Ada')
     await expect(win.locator('#p-thread li.user').last()).toContainText('hi from 2D')
     await win.locator('#p-input').press('Escape')
     await expect(win.locator('#panel')).toBeHidden()
@@ -463,7 +467,13 @@ async function walkedSomewhere(win: Page, ms: number): Promise<number> {
 }
 
 test('2D polish: walk in every view, the minimap, Main Street, meeting tables, kitchens', async () => {
-  const profile = profileWith({ viewMode: 'pixel' })
+  // A collapsed sidebar and a 1440×900 window keep the stage ≥ 960 device px wide even at 1×
+  // (CI Macs): the integer fit scale is then ≥ 2, so ZM-1 has a crisp level to zoom out to.
+  const profile = profileWith({
+    viewMode: 'pixel',
+    layout: { sidebarCollapsed: true },
+    windowBounds: { x: 0, y: 0, width: 1440, height: 900 },
+  })
   // 2D has no 3D name tags to wait for; the canvas and the debug entities say it's ready.
   const { app, win, errors } = await launch(profile, {
     env: { AGENT_OFFICE_DEBUG: '1' },
@@ -618,6 +628,7 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
     await blur(win)
     const s0 = await state(win)
     const before = s0.view!
+    expect(s0.zoom, 'the default zoom leaves room to zoom out').toBeGreaterThan(1)
     // Two steps out: fewer device px per art px (crisp integer levels), and a much wider view
     // (the view stops growing once the whole office fits, so ≥ 1.5×, not 2×).
     await win.keyboard.press('-')

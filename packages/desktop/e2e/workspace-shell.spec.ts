@@ -88,6 +88,13 @@ test('workspace shell: office first, palette, pane switching, persisted sidebar,
   })
 
   await test.step('WS-6: with one project and startView auto, the next relaunch opens on the Overview', async () => {
+    // Projects persist only in the encrypted vault; without an OS keychain (headless Linux CI)
+    // the vault is memory-only and a relaunch has no projects, so the Office is the right start.
+    const vault = await projectsApi(second.win, (p) => p.overview().then((o) => o.vault))
+    if (vault === 'memory-only') {
+      await second.app.close()
+      test.skip(true, 'vault is memory-only (no OS keychain): nothing persists')
+    }
     const proj = await projectsApi(second.win, (p) => p.create({ name: 'Shell Demo' }))
     expect(proj.id).toMatch(/^prj_/)
     await expect(second.win.locator('#sb-project-list li[data-project-id]')).toHaveCount(1)

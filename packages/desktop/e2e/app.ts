@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron, type ElectronApplication, type Page } from '@playwright/test'
@@ -30,6 +30,16 @@ export async function launch(
   profile: Profile = newProfile(),
   opts: LaunchOptions = {},
 ): Promise<{ app: ElectronApplication; win: Page; profile: Profile; errors: string[] }> {
+  // Software GL (headless Linux CI): Auto would pick Minimal, which hides far name tags. E2E runs on
+  // Low with every tag shown (TESTING.md), unless the spec saved its own settings (graphics specs do).
+  const settingsFile = join(profile.userData, 'settings.json')
+  if (process.env.AGENT_OFFICE_FORCE_SOFTWARE_GL === '1' && !existsSync(settingsFile)) {
+    mkdirSync(profile.userData, { recursive: true })
+    writeFileSync(
+      settingsFile,
+      JSON.stringify({ graphicsQuality: 'low', graphicsAdvanced: { labels: 'all' } }),
+    )
+  }
   // Drop inherited ELECTRON_* vars (e.g. ELECTRON_RUN_AS_NODE from VS Code terminals would start plain Node).
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([k, v]) => !k.startsWith('ELECTRON_') && v !== undefined),

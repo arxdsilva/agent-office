@@ -29,6 +29,7 @@ type ProjectsApi = {
   agentOffice: {
     projects: {
       list(): Promise<{ id: string; name: string }[]>
+      overview(): Promise<{ vault: 'encrypted' | 'memory-only' }>
       create(a: { name: string; folders?: string[] }): Promise<{ id: string; name: string }>
       createMemory(d: object): Promise<{ id: string; title: string; state: string }>
       memories(a: object): Promise<{ id: string; title: string; state: string }[]>

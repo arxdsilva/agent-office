@@ -1533,3 +1533,11 @@ body .banner {
 :is(.ws-pane, .ws-dialog) .sv-notice:empty {
   display: none;
 }
+
+/* The agent panel stays open over the other views (permission cards must stay reachable); the
+   pane makes room for it instead of sitting under it. 380px panel + 16px gaps on both sides. */
+@media (min-width: 641px) {
+  body:has(#panel:not([hidden])) .ws-pane {
+    right: 412px;
+  }
+}

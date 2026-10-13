@@ -24,6 +24,10 @@ export class DomLibrary implements LibraryView {
   private pickFn: (ref: CapabilityRef) => void = () => {}
   /** Option elements in list order (shelf rows, then overflow) with their refs. */
   private options: { node: HTMLElement; ref: CapabilityRef }[] = []
+  /** Row nodes by capability id, reused while the row's data is unchanged (agents update often). */
+  private rowCache = new Map<string, { key: string; node: HTMLElement }>()
+  private overflowGroup: { key: string; node: HTMLElement } | null = null
+  private tabsKey = ''
   /** Keyboard cursor: the active option's capability id. */
   private active: string | null = null
   private focusKey = ''
@@ -146,6 +150,10 @@ export class DomLibrary implements LibraryView {
 
   private renderTabs(vm: LibraryVM): void {
     const tabs = [...vm.tabs].sort((a, b) => TABS.indexOf(a.id) - TABS.indexOf(b.id))
+    const key = JSON.stringify([tabs, vm.tab])
+    this.rows.setAttribute('aria-labelledby', `lib-tab-${vm.tab}`)
+    if (key === this.tabsKey) return
+    this.tabsKey = key
     this.tabs.replaceChildren(
       ...tabs.map((t) => {
         const on = t.id === vm.tab
@@ -175,26 +183,47 @@ export class DomLibrary implements LibraryView {
     empty.textContent = nothing ? (vm.empty ?? '') : ''
     this.rows.hidden = nothing
 
-    const children: HTMLElement[] = vm.rows.map((r) => this.row(r))
+    const seen = new Set<string>()
+    const children: HTMLElement[] = vm.rows.map((r) => this.row(r, seen))
     if (vm.overflow.length) {
-      const group = el('div', undefined, 'lib-overflow')
-      group.setAttribute('role', 'group')
-      group.id = 'lib-overflow'
-      const head = el('div', vm.overflowLabel ?? LIB_COPY.overflow(vm.overflow.length), 'lib-group')
-      head.id = 'lib-overflow-h'
-      head.setAttribute('role', 'presentation')
-      group.setAttribute('aria-labelledby', head.id)
-      group.append(head, ...vm.overflow.map((r) => this.row(r)))
+      const label = vm.overflowLabel ?? LIB_COPY.overflow(vm.overflow.length)
+      const rows = vm.overflow.map((r) => this.row(r, seen))
+      if (this.overflowGroup?.key !== label) {
+        const group = el('div', undefined, 'lib-overflow')
+        group.setAttribute('role', 'group')
+        group.id = 'lib-overflow'
+        const head = el('div', label, 'lib-group')
+        head.id = 'lib-overflow-h'
+        head.setAttribute('role', 'presentation')
+        group.setAttribute('aria-labelledby', head.id)
+        group.append(head)
+        this.overflowGroup = { key: label, node: group }
+      }
+      const group = this.overflowGroup.node
+      const head = group.firstElementChild!
+      if (!sameChildren(group, [head, ...rows])) group.replaceChildren(head, ...rows)
       children.push(group)
     }
-    this.rows.replaceChildren(...children)
+    for (const id of this.rowCache.keys()) if (!seen.has(id)) this.rowCache.delete(id)
+    // Replace only when something changed, so a row under the pointer stays the same element.
+    if (!sameChildren(this.rows, children)) this.rows.replaceChildren(...children)
     if (!this.options.some((o) => o.ref.id === this.active)) this.active = null
     this.markActive(false)
   }
 
-  private row(r: LibraryRowVM): HTMLElement {
-    const node = el('div', undefined, 'lib-row')
+  private row(r: LibraryRowVM, seen: Set<string>): HTMLElement {
+    seen.add(r.ref.id)
+    const key = JSON.stringify(r)
+    const hit = this.rowCache.get(r.ref.id)
+    const node = hit?.key === key ? hit.node : this.buildRow(r)
+    if (hit?.key !== key) this.rowCache.set(r.ref.id, { key, node })
     node.id = `lib-opt-${this.options.length}`
+    this.options.push({ node, ref: r.ref })
+    return node
+  }
+
+  private buildRow(r: LibraryRowVM): HTMLElement {
+    const node = el('div', undefined, 'lib-row')
     node.setAttribute('role', 'option')
     node.setAttribute('aria-selected', 'false')
     node.tabIndex = -1
@@ -220,7 +249,6 @@ export class DomLibrary implements LibraryView {
       this.markActive(false)
       this.pickFn(ref)
     })
-    this.options.push({ node, ref })
     return node
   }
 
@@ -286,4 +314,10 @@ export class DomLibrary implements LibraryView {
       this.pickFn(hit.ref)
     }
   }
+}
+
+/** True when `parent` already holds exactly `children`, in order. */
+function sameChildren(parent: Element, children: readonly Element[]): boolean {
+  if (parent.children.length !== children.length) return false
+  return children.every((c, i) => parent.children[i] === c)
 }

@@ -359,6 +359,10 @@ export class CameraDirector {
   private keys = new Set<string>()
   private saved = { position: new THREE.Vector3(), target: new THREE.Vector3() }
   private flight: Flight | null = null
+  /** A camera flight is running (debug hook: E2E waits for it to end instead of guessing a time). */
+  get flying(): boolean {
+    return this.flight !== null
+  }
   private follow: (() => THREE.Vector3 | undefined) | null = null
   private followPos = new THREE.Vector3()
   private bobPhase = 0

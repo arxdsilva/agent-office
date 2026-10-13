@@ -31,7 +31,9 @@ test('renderer is sandboxed: no Node, no popups, no navigation, CSP present', as
   const probe = await win.evaluate(() => ({
     require: typeof (window as unknown as { require?: unknown }).require,
     process: typeof (window as unknown as { process?: unknown }).process,
-    popup: window.open('https://example.com') === null,
+    // Every popup is denied. http is never handed to the OS browser (https would be, through
+    // shell.openExternal: security.test.ts covers that rule), so the test launches nothing.
+    popup: window.open('http://example.com/') === null,
     csp:
       document
         .querySelector('meta[http-equiv="Content-Security-Policy"]')

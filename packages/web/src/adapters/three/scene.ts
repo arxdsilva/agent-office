@@ -1299,6 +1299,7 @@ export class ThreeScene implements SceneView {
         return {
           target: { x: t.x, y: t.y, z: t.z },
           following: this.cam.following ? this.selected : null,
+          flying: this.cam.flying,
         }
       },
       walkTo: (pos: Vec3T, heading: number) => this.cam.walkAt(new THREE.Vector3(...pos), heading),

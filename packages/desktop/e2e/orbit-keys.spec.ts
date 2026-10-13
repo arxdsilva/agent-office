@@ -8,7 +8,12 @@ import { launch, newProfile } from './app.ts'
 // AGENT_OFFICE_DEBUG=1 installs the renderer's __aoDebug hook (orbit(), view()).
 test.setTimeout(90_000)
 
-type Orbit = { target: { x: number; y: number; z: number }; following: string | null }
+type Orbit = {
+  target: { x: number; y: number; z: number }
+  following: string | null
+  /** A camera flight is running. */
+  flying: boolean
+}
 type Debug = {
   ready(): boolean
   view(id: string): boolean
@@ -61,8 +66,9 @@ test('WASD pans the orbit camera, not while typing, and ends follow mode', async
   await expect(win.locator('#p-name')).toHaveText('Ada')
   await expect.poll(async () => (await orbit(win)).following).toBe('mock:ada')
 
-  // Pan with D (focus off the composer; long enough to outlast the 0.8 s focus flight, during
-  // which keys don't pan): follow mode ends, just like a drag pan.
+  // Pan with D once the focus flight has landed (keys don't pan during a flight; on software GL
+  // it takes longer than its nominal 0.8 s): follow mode ends, just like a drag pan.
+  await expect.poll(async () => (await orbit(win)).flying, { timeout: 20_000 }).toBe(false)
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await hold(win, 'KeyD', 1500)
   await expect.poll(async () => (await orbit(win)).following).toBeNull()
