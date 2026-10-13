@@ -408,6 +408,7 @@ interface PixelMapDebug {
   /** 16 at GBA scale: tiles are 16 px, so one tile is 16 / pxPerMetre metres. */
   pxPerMetre?: number
   zoom?: number
+  zoomLevel?: { level: number; levels: number; atDefault: boolean }
   run?: boolean
 }
 interface PxRect {
@@ -656,7 +657,9 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
     expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
     // The HUD's ⌂ button returns to the default zoom.
     await win.locator('#pixel-zoom [data-zoom="0"]').click()
-    await expect.poll(async () => Math.round((await state(win)).view!.w)).toBe(Math.round(before.w))
+    // Back at the default level. Compare levels, not view widths: on a small CI screen the window
+    // settles to its final size after the first measurement, which changes the default itself.
+    await expect.poll(async () => (await state(win)).zoomLevel?.atDefault).toBe(true)
   })
 
   await test.step('RUN-1: walking covers 2.5 m/s; R makes running the default (≥ 4 m/s)', async () => {

@@ -135,15 +135,41 @@ test('walls fade on hover and in Cutaway, stay in Up, lower in Down; picking and
       { timeout: 60_000, intervals: [1000] },
     )
     .toBe(true)
-  const near = boxes
-    .filter((b) => b.h >= 3)
-    .map((b) => ({ b, c: closest(ada, b.a, b.b) }))
-    .filter(({ c }) => c.d > 0.6 && c.d < 8)
-    .sort((p, q) => p.c.d - q.c.d)[0]!
-  expect(near).toBeDefined()
-  const wid = near.b.id
-  const dir = { x: (near.c.x - ada.x) / near.c.d, z: (near.c.z - ada.z) / near.c.d }
-  const cam: [number, number, number] = [near.c.x + dir.x * 3, 2.2, near.c.z + dir.z * 3]
+  /**
+   * Frames a view of Ada through the full-height wall nearest her current position. Mock agents
+   * move (on a slow CI runner Ada can stand up between framing and checking), so the steps below
+   * re-frame whenever she has moved.
+   */
+  const frameAt = (p: V3) => {
+    const n = boxes
+      .filter((b) => b.h >= 3)
+      .map((b) => ({ b, c: closest(p, b.a, b.b) }))
+      .filter(({ c }) => c.d > 0.6 && c.d < 8)
+      .sort((x, y) => x.c.d - y.c.d)[0]
+    // In a corridor (no full-height wall within reach): no framing; the caller keeps waiting.
+    if (!n) return null
+    const d = { x: (n.c.x - p.x) / n.c.d, z: (n.c.z - p.z) / n.c.d }
+    return {
+      near: n,
+      wid: n.b.id,
+      dir: d,
+      cam: [n.c.x + d.x * 3, 2.2, n.c.z + d.z * 3] as [number, number, number],
+      ada: p,
+    }
+  }
+  const first = frameAt(ada)
+  expect(first).not.toBeNull()
+  let { near, wid, dir, cam } = first!
+  const reframeIfMoved = async () => {
+    const now = await dbg(win, (d) => d.agentPos('mock:ada'))
+    if (!now || Math.hypot(now.x - ada.x, now.z - ada.z) < 0.5) return
+    const f = frameAt(now)
+    // Still walking through a corridor: wait for her to reach a spot with a wall to look through.
+    if (!f) return
+    ada = now
+    ;({ near, wid, dir, cam } = f)
+    await dbg(win, look, { cam, ada })
+  }
   /**
    * Opaque surfaces on the sight line (camera → Ada's head) that belong to the wall or hang on it:
    * tagged wall pieces, and anything else within 0.6 m of the wall's line (wall-mounted decor that
@@ -175,11 +201,29 @@ test('walls fade on hover and in Cutaway, stay in Up, lower in Down; picking and
       )
       .toBe(false)
     await dbg(win, look, { cam, ada })
-    await expect.poll(() => alphaOf(win, wid), { timeout: 3000 }).toBeLessThanOrEqual(0.1)
+    // 20 s: software GL on CI renders a few frames per second, and Ada may walk to another room
+    // (re-framed when she gets there).
+    await expect
+      .poll(
+        async () => {
+          await reframeIfMoved()
+          return alphaOf(win, wid)
+        },
+        { timeout: 20_000, intervals: [250] },
+      )
+      .toBeLessThanOrEqual(0.1)
     expect((await walls(win)).mode).toBe('cutaway')
     // Nothing opaque is left on the sight line: the wall and everything mounted on it (shelves,
     // tiles, screens) fade together (a raycast that reads the same per-wall table as the shader).
-    await expect.poll(wallBlockers, { timeout: 3000 }).toEqual([])
+    await expect
+      .poll(
+        async () => {
+          await reframeIfMoved()
+          return wallBlockers()
+        },
+        { timeout: 20_000, intervals: [250] },
+      )
+      .toEqual([])
     await shot(win, 'cutaway')
     if (process.env.WALL_SHOTS) {
       // A higher orbit angle for the visual review.
@@ -214,12 +258,23 @@ test('walls fade on hover and in Cutaway, stay in Up, lower in Down; picking and
 
   await test.step('3: Up keeps that wall solid from the same view', async () => {
     await dbg(win, (d) => d.setWallMode('up'))
+    await reframeIfMoved()
     await dbg(win, look, { cam, ada })
     await win.mouse.move(2, 60)
-    await expect.poll(() => alphaOf(win, wid), { timeout: 3000 }).toBe(1)
     expect((await walls(win)).mode).toBe('up')
-    // ... and the solid wall blocks the sight line again.
-    expect((await wallBlockers()).some((b) => b.wall === wid)).toBe(true)
+    // The wall in front of Ada is solid again and blocks the sight line (re-framed if she walked to
+    // another spot meanwhile).
+    await expect
+      .poll(
+        async () => {
+          await reframeIfMoved()
+          return (
+            (await alphaOf(win, wid)) === 1 && (await wallBlockers()).some((b) => b.wall === wid)
+          )
+        },
+        { timeout: 20_000, intervals: [250] },
+      )
+      .toBe(true)
     await shot(win, 'up')
   })
 

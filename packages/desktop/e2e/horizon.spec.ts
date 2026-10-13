@@ -190,29 +190,45 @@ test('Horizon: intro, same rooms and seats, panel, calm and bright, mode round t
       '(mock) got it: hi from Horizon',
     )
     await win.locator('#p-input').press('Escape')
-    const base = (await dbg(win, (d) => d.gpu()))!
-    // Ten round trips on a real GPU; three under software GL (each scene build is slow there).
-    const rounds = process.env.AGENT_OFFICE_FORCE_SOFTWARE_GL === '1' ? 3 : 10
-    for (let i = 0; i < rounds; i++) {
+    // Memory once every wing has streamed in: steady across two readings 1.5 s apart. A reading
+    // taken mid-stream records a half-loaded building and reads as a "leak" later.
+    const settled = async () => {
+      let last = (await dbg(win, (d) => d.gpu()))!
+      await expect
+        .poll(
+          async () => {
+            await win.waitForTimeout(1500)
+            const now = (await dbg(win, (d) => d.gpu()))!
+            const steady = now.textureMB === last.textureMB && now.geometryMB === last.geometryMB
+            last = now
+            return steady
+          },
+          { timeout: 60_000 },
+        )
+        .toBe(true)
+      return last
+    }
+    const roundTrip = async () => {
       await toggle('3d').click()
       await expect.poll(() => classicReady(win), { timeout: 60_000 }).toBe(true)
       await toggle('special').click()
       await expect.poll(() => horizonReady(win), { timeout: 60_000 }).toBe(true)
     }
+    // The baseline is taken after one round trip, so it includes whatever a rebuild keeps (a
+    // lightmap tier, caches) and a leak shows as growth across the later rounds.
+    await roundTrip()
+    const base = await settled()
+    // Ten round trips on a real GPU; three under software GL (each scene build is slow there).
+    const rounds = process.env.AGENT_OFFICE_FORCE_SOFTWARE_GL === '1' ? 3 : 10
+    for (let i = 0; i < rounds; i++) await roundTrip()
     await expect(win.locator('#stage canvas')).toHaveCount(1)
-    // Memory settles once the wings have streamed in again.
-    await expect
-      .poll(
-        async () => {
-          const after = (await dbg(win, (d) => d.gpu()))!
-          return (
-            Math.abs(after.textureMB - base.textureMB) <= Math.max(1, base.textureMB * 0.05) &&
-            Math.abs(after.geometryMB - base.geometryMB) <= Math.max(0.5, base.geometryMB * 0.05)
-          )
-        },
-        { timeout: 60_000 },
-      )
-      .toBe(true)
+    const after = await settled()
+    expect(Math.abs(after.textureMB - base.textureMB)).toBeLessThanOrEqual(
+      Math.max(1, base.textureMB * 0.05),
+    )
+    expect(Math.abs(after.geometryMB - base.geometryMB)).toBeLessThanOrEqual(
+      Math.max(0.5, base.geometryMB * 0.05),
+    )
   })
 
   await test.step('9: a forced start failure shows #horizon-failure; Classic 3D still works', async () => {
