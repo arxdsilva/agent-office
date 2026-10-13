@@ -370,7 +370,12 @@ async function until(fn: () => boolean, ms = 5000): Promise<void> {
 
 // What the real CLIs did on a verification run (2026-10-13), reproduced by the fake.
 describe('real CLI behaviours', () => {
-  const start = (profile: AcpProfile, id: ProviderId, env: Record<string, string> = {}, modeId?: string) =>
+  const start = (
+    profile: AcpProfile,
+    id: ProviderId,
+    env: Record<string, string> = {},
+    modeId?: string,
+  ) =>
     new AcpRunner(profile, {
       bin: process.execPath,
       args: [FAKE, '--profile', id],

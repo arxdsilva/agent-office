@@ -223,3 +223,37 @@ export function modelChoice(result: unknown): ModelChoice | undefined {
   })
   return models.length ? { via: 'set_model', models } : undefined
 }
+
+/** A session's modes: the stable `modes` field, else a `select` config option with category `mode`. */
+export interface ModeChoice {
+  ids: string[]
+  current?: string
+  /** Set when the modes come from a config option (`session/set_config_option`). */
+  configId?: string
+}
+
+export function modeChoice(result: unknown): ModeChoice {
+  const r = obj(result)
+  const modes = obj(r?.modes)
+  if (modes) {
+    const ids = (Array.isArray(modes.availableModes) ? modes.availableModes : []).flatMap((m) => {
+      const id = str(obj(m)?.id)
+      return id ? [id] : []
+    })
+    return { ids, ...(str(modes.currentModeId) ? { current: str(modes.currentModeId)! } : {}) }
+  }
+  const configs = Array.isArray(r?.configOptions) ? r.configOptions : []
+  for (const c of configs.map(obj)) {
+    if (!c || c.category !== 'mode' || c.type !== 'select' || !str(c.id)) continue
+    const ids = (Array.isArray(c.options) ? c.options : []).flatMap((x) => {
+      const v = str(obj(x)?.value)
+      return v ? [v] : []
+    })
+    return {
+      ids,
+      configId: str(c.id)!,
+      ...(str(c.currentValue) ? { current: str(c.currentValue)! } : {}),
+    }
+  }
+  return { ids: [] }
+}

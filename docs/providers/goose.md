@@ -19,8 +19,8 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
   --session-id=<id> --format json` returns `conversation[]` messages `{id, role, created, content[]}` with
   content blocks `text`, `toolRequest`, `toolResponse`, `thinking`. Verified with an **invented** Claude-format
   `.jsonl` imported into a throwaway `GOOSE_PATH_ROOT` (the user's goose data was not touched).
-- Session/new was **not** run: the mode ids below come from goose's documented permission modes and are
-  applied only if the agent advertises them.
+- Session/new was run on 2026-10-13 but stopped at provider setup (see Verification), so the mode ids below
+  still come from goose's documented permission modes and are applied only if the agent advertises them.
 
 ## Integration
 
@@ -54,4 +54,15 @@ advertises no client `fs` or `terminal`. Observed caps: none (no observation sur
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=goose` on a logged-in machine and record the version here.
+Real run on 2026-10-13 with **goose 1.54.0**: **blocked on user setup**. No AI provider is configured on this
+machine, so `session/new` answers `-32603 "Internal error"` with data `Failed to resolve provider: Configuration
+value not found: GOOSE_PROVIDER`.
+
+| detect | auth | start | stream | approve | reply | deny | interrupt | models | modes | stop |
+| ------ | ---- | ----- | ------ | ------- | ----- | ---- | --------- | ------ | ----- | ---- |
+| pass   | n/a  | setup | n/a    | n/a     | n/a   | n/a  | n/a       | n/a    | n/a   | pass |
+
+- Fixed: this used to end as "goose could not be started". The profile's `setupError` now maps it to the auth
+  exit: "goose has no AI provider set up. Run `goose configure` in a terminal, then start the session again."
+- To finish verifying: run `goose configure`, then `make verify-providers ONLY=goose`.
+- Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.

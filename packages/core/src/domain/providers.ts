@@ -130,6 +130,7 @@ export const PROVIDER_DECLS: Readonly<Record<ProviderId, ProviderDecl>> = {
     integration: { managed: 'acp' },
     docsUrl: 'https://opencode.ai/docs/server/',
     loginHint: 'opencode auth login',
+    testedVersion: '1.19.0',
   },
   goose: {
     id: 'goose',
@@ -151,6 +152,7 @@ export const PROVIDER_DECLS: Readonly<Record<ProviderId, ProviderDecl>> = {
     integration: { managed: 'acp' },
     docsUrl: 'https://github.com/Kilo-Org/kilocode',
     loginHint: 'kilo auth login',
+    testedVersion: '7.8.8',
     hint: 'no-observation-surface',
   },
   qwen: {

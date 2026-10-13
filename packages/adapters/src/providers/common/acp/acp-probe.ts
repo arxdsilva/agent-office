@@ -77,7 +77,11 @@ export class AcpProbe implements ProviderProbe {
       const base = { installed: true, ...(version ? { version } : {}) }
       const help = await run(bin, [...pre, ...(this.profile.helpArgs ?? ['--help'])], left(), env)
       if (help.timedOut) return { ...base, flagsOk: false, auth: 'unknown', error: 'timeout' }
-      return { ...base, flagsOk: this.profile.acpFlag.test(help.stdout) || this.profile.acpFlag.test(help.stderr), auth: 'unknown' }
+      return {
+        ...base,
+        flagsOk: this.profile.acpFlag.test(help.stdout) || this.profile.acpFlag.test(help.stderr),
+        auth: 'unknown',
+      }
     } catch (err) {
       const code = (err as NodeJS.ErrnoException | undefined)?.code
       if (code === 'ENOENT' || code === 'EACCES')

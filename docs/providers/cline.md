@@ -5,7 +5,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
 
 ## Verified on this machine
 
-- Installed version: 3.0.70
+- Installed version: 3.0.71 (3.0.70 when first checked)
 - Entry point: `cline --acp` (ACP mode).
 - Integration kind: ACP
 
@@ -15,7 +15,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
   `sessionCapabilities`.
 - Help text matched by the probe: `cline --help` lists `--acp  Run in Agent Client Protocol (ACP) mode`.
 - `cline --help`: `--auto-approve <boolean>` defaults to **true** ("approve all tools"); `--yolo` also exists.
-- Session/new was **not** run (account use).
+- Session/new was run on 2026-10-13 and stopped at auth (see Verification).
 
 ## Integration
 
@@ -47,4 +47,9 @@ advertises no client `fs` or `terminal`. Observed caps: none (no observation sur
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=cline` on a logged-in machine and record the version here.
+Real run on 2026-10-13 with **Cline 3.0.71**: **needs a login**. `session/new` answers `-32000 "Authentication
+required: Call authenticate before starting a session"`; the session ends with the auth hint ("Run `cline
+auth`"). detect pass, start blocked, stop pass. To finish: run `cline auth`, then `make verify-providers
+ONLY=cline`.
+
+Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.

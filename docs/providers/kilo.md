@@ -16,7 +16,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
 - Primary agents (`kilo agent list`): `ask`, `code`, `debug`, `orchestrator`, `plan`. Modes are those.
 - Default permissions: `bash` asks except for a read-only allow list; **edit and webfetch are allowed without
   asking**.
-- Session/new was **not** run (account use).
+- Session/new was run on 2026-10-13 (see Verification): models and modes both come as `configOptions`.
 
 ## Integration
 
@@ -49,4 +49,16 @@ advertises no client `fs` or `terminal`. Observed caps: none (no observation sur
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=kilo` on a logged-in machine and record the version here.
+Real session verified on 2026-10-13 with **Kilo 7.8.8** (`pnpm exec tsx scripts/verify-providers.ts --only kilo`), signed out, on the free model `kilo/kilo-auto/free` picked at start:
+
+| detect | auth | start | stream | approve | reply | deny | interrupt | models | modes | stop |
+| ------ | ---- | ----- | ------ | ------- | ----- | ---- | --------- | ------ | ----- | ---- |
+| pass   | n/a  | pass  | pass   | pass    | pass  | pass | pass      | pass   | pass  | pass |
+
+- Like OpenCode, `session/new` sends modes only as a `mode` config option (`code`, `ask`, `debug`,
+  `orchestrator`, `plan`); the runner switches them with `session/set_config_option`.
+- Signed out, the default model is a Kilo Gateway model (`kilo/google/gemini-3-pro-image` here): `session/new`
+  works, then `session/prompt` fails with `-32603 "Internal error: You need to sign in to use this model."`.
+  The profile's `setupError` turns that into a turn error that tells the user to run `kilo auth login` or pick
+  another model; the session stays open. To use the default model, run `kilo auth login`.
+- Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.

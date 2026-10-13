@@ -4,6 +4,7 @@ import {
   DEFAULT_TOOL_KINDS,
   messageChunk,
   modelChoice,
+  modeChoice,
   permissionRequest,
   replySnippet,
   shortModeId,
@@ -368,5 +369,42 @@ describe('modelChoice', () => {
     expect(modelChoice({ sessionId: 's' })).toBeUndefined()
     expect(modelChoice({ models: { availableModels: [] } })).toBeUndefined()
     expect(modelChoice(null)).toBeUndefined()
+  })
+})
+
+describe('modeChoice', () => {
+  it('reads the stable modes field', () => {
+    expect(
+      modeChoice({ modes: { currentModeId: 'a', availableModes: [{ id: 'a' }, { id: 'b' }, {}] } }),
+    ).toEqual({ ids: ['a', 'b'], current: 'a' })
+    expect(modeChoice({ modes: {} })).toEqual({ ids: [] })
+  })
+
+  it('falls back to a "mode" select config option (OpenCode 1.19, Kilo 7.8)', () => {
+    const configOptions = [
+      { id: 'model', category: 'model', type: 'select', options: [{ value: 'm' }] },
+      {
+        id: 'mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'build',
+        options: [{ value: 'build' }, { value: 'plan' }, { name: 'no value' }],
+      },
+    ]
+    expect(modeChoice({ configOptions })).toEqual({
+      ids: ['build', 'plan'],
+      current: 'build',
+      configId: 'mode',
+    })
+    expect(
+      modeChoice({ configOptions: [{ id: 'mode', category: 'mode', type: 'select' }] }),
+    ).toEqual({ ids: [], configId: 'mode' })
+  })
+
+  it('has no modes otherwise', () => {
+    expect(modeChoice(undefined)).toEqual({ ids: [] })
+    expect(modeChoice({ configOptions: [{ category: 'mode', type: 'select' }] })).toEqual({
+      ids: [],
+    })
   })
 })

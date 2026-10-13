@@ -5,7 +5,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
 
 ## Verified on this machine
 
-- Installed version: installed with `uv tool install openhands`
+- Installed version: OpenHands CLI 1.16.0 (installed with `uv tool install openhands`)
 - Entry point: `openhands acp` (ACP). `openhands serve` exists; remote or containerized workspaces need explicit consent.
 - Integration kind: ACP
 
@@ -18,7 +18,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
 - Modes (from `openhands_cli/acp_impl/confirmation.py`): `always-ask`, `always-approve`, `llm-approve`.
 - Not used: `--cloud` (remote workspace, would need `openHandsRemoteConsent`), `--override-with-envs`,
   `--always-approve`.
-- Session/new was **not** run (account/LLM use).
+- Session/new was run on 2026-10-13 and stopped at auth (see Verification).
 
 ## Integration
 
@@ -47,4 +47,9 @@ advertises no client `fs` or `terminal`. Observed caps: none (no observation sur
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=openhands` on a logged-in machine and record the version here.
+Real run on 2026-10-13 with **OpenHands CLI 1.16.0** (SDK 1.21.0): **needs a login**. `session/new` answers
+`-32000 "Authentication required"` (`reason: "Authentication required to create a session"`); the session ends
+with the auth hint ("Run `openhands login`"). detect pass, start blocked, stop pass. To finish: run `openhands
+login` (or configure an LLM), then `make verify-providers ONLY=openhands`.
+
+Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.

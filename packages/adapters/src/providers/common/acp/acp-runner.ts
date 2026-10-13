@@ -33,6 +33,7 @@ import {
   messageChunk,
   type ModelChoice,
   modelChoice,
+  modeChoice,
   permissionRequest,
   shortModeId,
   stopReasonOutcome,
@@ -142,6 +143,7 @@ class AcpSession implements RunnerSession {
   private toolKinds = new Map<string, string>()
   private agentModes = new Set<string>()
   private currentMode: string | undefined
+  private modeConfigId: string | undefined
   private models: ModelChoice | undefined
   private permissions = new Set<() => void>()
   private events = new Set<(e: Omit<AgentEvent, 'agentId'>) => void>()
@@ -161,7 +163,9 @@ class AcpSession implements RunnerSession {
     })
     this.sessionId.catch(() => {})
     this.messages = {
-      auth: `${p.label} needs a login. Run \`${p.loginHint}\`, then start the session again.`,
+      auth:
+        p.authMessage ??
+        `${p.label} needs a login. Run \`${p.loginHint}\`, then start the session again.`,
       folder: 'The folder does not exist.',
       runtime: `${p.label} could not be started.`,
       crash: `${p.label} stopped unexpectedly.`,
@@ -207,12 +211,10 @@ class AcpSession implements RunnerSession {
       if (typeof result.sessionId !== 'string' || !result.sessionId)
         return this.fail('runtime', 'session')
       this.id = result.sessionId
-      const modes = obj(result.modes)
-      for (const m of Array.isArray(modes?.availableModes) ? modes.availableModes : []) {
-        const id = obj(m)?.id
-        if (typeof id === 'string') this.agentModes.add(id)
-      }
-      if (typeof modes?.currentModeId === 'string') this.currentMode = modes.currentModeId
+      const modes = modeChoice(result)
+      for (const id of modes.ids) this.agentModes.add(id)
+      this.currentMode = modes.current
+      this.modeConfigId = modes.configId
       this.models = modelChoice(result)
       await this.applyStartOptions()
       if (this.ended) return
@@ -248,6 +250,7 @@ class AcpSession implements RunnerSession {
     try {
       return await this.peer.request(M.sessionNew, params)
     } catch (err) {
+      if (this.isSetupError(err)) return this.fail('auth', 'setup')
       if (!isAuthError(err)) throw err
     }
     const advertised = new Set(
@@ -271,8 +274,7 @@ class AcpSession implements RunnerSession {
   private async applyStartOptions(): Promise<void> {
     const native = this.allowedMode(this.s.modeId)
     if (native && native !== this.currentMode)
-      await this.peer
-        .request(M.setMode, { sessionId: this.id, modeId: native })
+      await this.requestMode(native)
         .then(() => (this.currentMode = native))
         .catch((err) => {
           if (err instanceof PeerClosedError) throw err
@@ -283,6 +285,24 @@ class AcpSession implements RunnerSession {
         if (err instanceof PeerClosedError) throw err
         this.o.log?.warn(`${this.p.provider}: start model not applied`)
       })
+  }
+
+  /** `session/set_mode`, or `session/set_config_option` when the modes came as a config option. */
+  private requestMode(native: string): Promise<unknown> {
+    return this.modeConfigId
+      ? this.peer.request(M.setConfigOption, {
+          sessionId: this.id,
+          configId: this.modeConfigId,
+          value: native,
+        })
+      : this.peer.request(M.setMode, { sessionId: this.id, modeId: native })
+  }
+
+  /** A profile-known "no provider / not signed in" error (code and our own text are what we log). */
+  private isSetupError(err: unknown): boolean {
+    if (!(err instanceof RpcError) || !this.p.setupError) return false
+    const data = typeof err.data === 'string' ? err.data : JSON.stringify(err.data ?? '')
+    return this.p.setupError.test(`${err.message} ${data}`)
   }
 
   private listen(): void {
@@ -384,6 +404,11 @@ class AcpSession implements RunnerSession {
         },
         (err) => {
           if (err instanceof PeerClosedError || this.ended) return
+          if (this.isSetupError(err)) {
+            // Another model may work without it, so the session stays open.
+            this.o.log?.warn(`${this.p.provider}: prompt needs setup`)
+            return this.endTurn({ status: 'error' }, { text: this.messages.auth, isError: true })
+          }
           this.o.log?.warn(
             `${this.p.provider}: prompt failed (${err instanceof RpcError ? err.code : 'error'})`,
           )
@@ -463,7 +488,7 @@ class AcpSession implements RunnerSession {
     await this.sessionId
     const native = this.allowedMode(modeId)
     if (!native) throw new Error(`Mode not available: ${modeId.slice(0, 60)}`)
-    await this.peer.request(M.setMode, { sessionId: this.id, modeId: native })
+    await this.requestMode(native)
     this.currentMode = native
   }
 

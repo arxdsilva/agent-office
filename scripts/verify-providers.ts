@@ -91,6 +91,8 @@ interface Target {
   /** A mode that asks before running commands, and a different one to switch to. */
   askMode?: string
   otherMode?: string
+  /** A model that needs no login, when the CLI's default model does (picked at start, like the UI). */
+  model?: string
 }
 
 const TARGETS: Target[] = [
@@ -153,6 +155,8 @@ const TARGETS: Target[] = [
     processPattern: 'kilo acp',
     askMode: 'code',
     otherMode: 'plan',
+    // Kilo's default gateway model needs `kilo auth login`; its free auto model does not (7.8.8).
+    model: 'kilo/kilo-auto/free',
   },
   {
     id: 'qwen',
@@ -220,6 +224,7 @@ async function verify(t: Target): Promise<Record<Check, Result> & { notes: strin
       cwd: dir,
       mode: 'default',
       modeId: t.askMode,
+      ...(t.model ? { model: t.model } : {}),
       extraDirs: [],
       chrome: false,
       allowBypass: false,

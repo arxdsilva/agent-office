@@ -39,6 +39,14 @@ export interface AcpProfile {
    * the agent ask before acting, never credentials.
    */
   env?: Record<string, string>
+  /**
+   * Errors that mean "no provider or login set up" although the agent reports them as internal
+   * errors (matched against the message and data). They become the auth exit at `session/new`, and a
+   * turn error with the login hint at `session/prompt`.
+   */
+  setupError?: RegExp
+  /** Replaces the default "<label> needs a login. Run `<loginHint>`…" exit message. */
+  authMessage?: string
   /** Overrides of the default ACP tool kind → tool name map. */
   toolKindMap?: Partial<Record<string, string>>
 }

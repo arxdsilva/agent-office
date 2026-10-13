@@ -322,7 +322,8 @@ automatically (grouping by provider).
 
 ## 10. Capability matrix (verified)
 
-Run on macOS, 2026-10-12, with `make verify-providers` against the real, logged-in CLIs (section 11).
+Run on macOS, 2026-10-12 (Codex, Cursor, Copilot, Gemini) and 2026-10-13 (the open-source ACP runtimes),
+with `make verify-providers` against the real CLIs (section 11).
 
 | Provider | Version | Detect | Auth | Start | Stream | Approve | Reply | Deny | Interrupt | Models | Modes | Stop | Observe hooks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -331,12 +332,12 @@ Run on macOS, 2026-10-12, with `make verify-providers` against the real, logged-
 | Cursor | 2026.10.01-e373342 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
 | Copilot CLI | 1.0.96 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | pending |
 | Gemini CLI | 0.63.0 | pass | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pending |
-| OpenCode | 1.19.0 | built, not yet verified | | | | | | | | | | | n/a |
-| goose | 1.54.0 | built, not yet verified | | | | | | | | | | | n/a |
-| Kilo Code | 7.8.8 | built, not yet verified | | | | | | | | | | | n/a |
-| Qwen Code | 0.25.1 | built, not yet verified | | | | | | | | | | | n/a |
-| Cline | 3.0.70 | built, not yet verified | | | | | | | | | | | n/a |
-| OpenHands | CLI 1.16.0 | built, not yet verified | | | | | | | | | | | n/a |
+| OpenCode | 1.19.0 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | n/a |
+| goose | 1.54.0 | pass | n/a | needs setup | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pass | n/a |
+| Kilo Code | 7.8.8 | pass | n/a | pass | pass | pass | pass | pass | pass | pass | pass | pass | n/a |
+| Qwen Code | 0.25.1 | pass | n/a | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pass | n/a |
+| Cline | 3.0.71 | pass | n/a | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pass | n/a |
+| OpenHands | CLI 1.16.0 | pass | n/a | needs login | not verified | not verified | not verified | not verified | not verified | not verified | not verified | pass | n/a |
 
 Legend:
 
@@ -346,6 +347,12 @@ Legend:
 - **needs login / not verified**: the CLI was installed but not logged in on the test machine. Gemini's
   protocol is verified against the fake ACP agent, and a real `initialize` plus `session/new` reached
   the CLI's auth error (`-32000 Gemini API key is missing`), but the session checks need a login.
+- **needs setup** (goose): no AI provider configured; `session/new` answers `-32603` with
+  `Configuration value not found: GOOSE_PROVIDER`, shown as "Run `goose configure`". Qwen, Cline and
+  OpenHands answered `session/new` with `-32000` auth required and show their login hints.
+- Kilo was verified signed out on its free `kilo/kilo-auto/free` model (the verify target picks it at
+  start); its default gateway model fails the prompt with "You need to sign in to use this model", shown as
+  a turn error with "Run `kilo auth login`, or pick a model…".
 - **pending**: observation hooks are verified against fixtures and the real hook script end to end with
   the local API (`e2e.observe-hooks`); verification with the real provider firing the hooks is pending.
 - **built, not yet verified**: the profile, probe, composition wiring and the fake-agent suites exist and
@@ -360,6 +367,8 @@ Handshakes observed on the real CLIs:
 - Copilot advertises `copilot-login` (a terminal login) and 19 models, plus the config options
   `reasoning_effort` and `allow_all`.
 - No tested CLI advertises `additionalDirectories`, so extra folders are not sent to ACP agents.
+- OpenCode 1.19.0 and Kilo 7.8.8 send no `modes` in `session/new`: modes come only as a `configOptions`
+  entry with `category: "mode"`, switched with `session/set_config_option` (the runner falls back to it).
 
 ## 11. Setup and troubleshooting
 

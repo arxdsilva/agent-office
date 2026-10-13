@@ -20,6 +20,11 @@ export const KILO_PROFILE: AcpProfile = {
   caps: [...PROVIDER_DECLS.kilo.managedCaps],
   authMethodPrefer: [],
   loginHint: 'kilo auth login',
+  // Signed out, 7.8.8 still opens a session on its Kilo Gateway default model, then answers the
+  // prompt with -32603 "Internal error: You need to sign in to use this model."
+  setupError: /sign in to use this model/i,
+  authMessage:
+    'Kilo Code needs a login for this model. Run `kilo auth login` in a terminal, or pick a model from a provider you have set up.',
   env: {
     KILO_CONFIG_CONTENT: JSON.stringify({ permission: { edit: 'ask', webfetch: 'ask' } }),
   },

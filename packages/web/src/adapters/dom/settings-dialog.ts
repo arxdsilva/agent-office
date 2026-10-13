@@ -151,6 +151,8 @@ export interface DomSettingsDeps {
 export class DomSettings implements SettingsView {
   private dialog = byId<HTMLDialogElement>('settings')
   private changeFn: (patch: SettingsPatch) => void | Promise<void> = () => {}
+  /** Checkbox values sent but not yet echoed back by the saved settings. */
+  private pendingBoxes = new Map<string, boolean>()
   private hookFn: (a: 'install' | 'uninstall') => void | Promise<void> = () => {}
   private checkFn: () => void | Promise<void> = () => {}
   private installFn: () => void | Promise<void> = () => {}
@@ -166,10 +168,11 @@ export class DomSettings implements SettingsView {
     this.bindBypass()
     this.bindAutoImport()
     for (const key of CHECKBOXES) {
-      byId<HTMLInputElement>(`s-${key}`).addEventListener(
-        'change',
-        (e) => void this.changeFn({ [key]: (e.target as HTMLInputElement).checked }),
-      )
+      byId<HTMLInputElement>(`s-${key}`).addEventListener('change', (e) => {
+        const checked = (e.target as HTMLInputElement).checked
+        this.pendingBoxes.set(key, checked)
+        void this.changeFn({ [key]: checked })
+      })
     }
     this.bindGraphics()
     this.bindWalls()
@@ -486,6 +489,8 @@ export class DomSettings implements SettingsView {
   }
 
   showError(message: string): void {
+    // A failed save leaves the old settings: the next render shows them again.
+    if (message) this.pendingBoxes.clear()
     byId('s-error').textContent = message
   }
 
@@ -495,7 +500,14 @@ export class DomSettings implements SettingsView {
     if (!this.confirm.open)
       byId<HTMLInputElement>('s-allowBypassPermissions').checked =
         vm.allowBypassPermissions ?? false
-    for (const key of CHECKBOXES) byId<HTMLInputElement>(`s-${key}`).checked = vm[key]
+    for (const key of CHECKBOXES) {
+      // A box the user just toggled keeps its value until the saved settings echo it back: the
+      // dialog re-renders every second (the live graphics line) and must not flip it back meanwhile.
+      const pending = this.pendingBoxes.get(key)
+      if (pending !== undefined && pending !== vm[key]) continue
+      this.pendingBoxes.delete(key)
+      byId<HTMLInputElement>(`s-${key}`).checked = vm[key]
+    }
     // The setting is only changed through its confirm dialogs: don't flip the box under them.
     if (!this.importOn.open && !this.importOff.open)
       byId<HTMLInputElement>('s-autoImportHistory').checked = vm.autoImportHistory

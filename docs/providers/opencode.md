@@ -17,8 +17,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
   (`opencode acp --help`).
 - Primary agents (`opencode agent list`): `build`, `plan` (the others are subagents). These are the modes.
 - Default permissions allow edit, bash and webfetch without asking: no card would ever show.
-- Session/new was **not** run (it would use the account), so models and the advertised mode ids are from the
-  docs and `agent list`, not from a live answer.
+- Session/new was run on 2026-10-13 (see Verification): models and modes both come as `configOptions`.
 
 ## Integration
 
@@ -95,4 +94,14 @@ forwards that variable.
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=opencode` on a logged-in machine and record the version here.
+Real session verified on 2026-10-13 with **OpenCode 1.19.0** (`pnpm exec tsx scripts/verify-providers.ts --only opencode`), on the user's free default model `opencode/big-pickle`:
+
+| detect | auth | start | stream | approve | reply | deny | interrupt | models | modes | stop |
+| ------ | ---- | ----- | ------ | ------- | ----- | ---- | --------- | ------ | ----- | ---- |
+| pass   | n/a  | pass  | pass   | pass    | pass  | pass | pass      | pass   | pass  | pass |
+
+- `session/new` returns **no `modes` field**: the modes come only as a `configOptions` entry with
+  `category: "mode"` (`build`, `plan`), next to the `model` one. The runner reads them from there and switches
+  them with `session/set_config_option {configId: "mode"}` (fixed: `modes` failed before).
+- With `OPENCODE_CONFIG_CONTENT` the shell command raised a `session/request_permission` (`Bash`) as expected.
+- Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.

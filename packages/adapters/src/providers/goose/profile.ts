@@ -18,6 +18,11 @@ export const GOOSE_PROFILE: AcpProfile = {
   caps: [...PROVIDER_DECLS.goose.managedCaps],
   authMethodPrefer: [],
   loginHint: 'goose configure',
+  // With no provider set up, 1.54.0 answers session/new with -32603 "Internal error" and data
+  // "Failed to resolve provider: Configuration value not found: GOOSE_PROVIDER".
+  setupError: /Failed to resolve provider|Configuration value not found: GOOSE_(PROVIDER|MODEL)/,
+  authMessage:
+    'goose has no AI provider set up. Run `goose configure` in a terminal, then start the session again.',
   modes: [
     { id: 'approve', label: 'Ask before tools' },
     { id: 'smart_approve', label: 'Ask only for risky tools', dangerous: true },

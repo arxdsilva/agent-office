@@ -18,7 +18,9 @@
 // fails too) · FAKE_ACP_VERSION (answer another protocolVersion) · FAKE_ACP_SESSION (session id) ·
 // FAKE_ACP_ADDDIRS=1 (advertise additionalDirectories) · FAKE_ACP_NOMODELS=1 · FAKE_ACP_NOFLAG=1
 // (help without the ACP flag) · FAKE_ACP_HANG=1 (--version never returns) · FAKE_LOG (append
-// every received message, as JSON lines).
+// every received message, as JSON lines) · FAKE_ACP_UNCONFIGURED=1 (no provider/login: the profile's
+// `unconfigured` error, at session/new (goose) or session/prompt (Kilo), as the real CLIs answer).
+// OpenCode and Kilo advertise modes only as a `mode` config option (no `modes`), like the real ones.
 import { appendFileSync } from 'node:fs'
 import { probeMcp } from './mcp-probe.mjs'
 
@@ -157,6 +159,7 @@ const PROFILES = {
       { id: 'plan', name: 'plan' },
     ],
     models: 'config',
+    modesVia: 'config',
     authMessage: 'Run `opencode auth login` in the terminal',
   },
   goose: {
@@ -175,6 +178,13 @@ const PROFILES = {
     ],
     models: 'models',
     authMessage: 'Provider not configured',
+    // goose 1.54.0 with no provider configured, on session/new.
+    unconfigured: {
+      at: 'session/new',
+      code: -32603,
+      message: 'Internal error',
+      data: 'Failed to resolve provider: Configuration value not found: GOOSE_PROVIDER',
+    },
   },
   kilo: {
     authMethods: [
@@ -192,7 +202,15 @@ const PROFILES = {
       { id: 'orchestrator', name: 'orchestrator' },
     ],
     models: 'config',
+    modesVia: 'config',
     authMessage: 'Run `kilo auth login` in the terminal',
+    // Kilo 7.8.8 signed out: session/new works, the default gateway model fails on session/prompt.
+    unconfigured: {
+      at: 'session/prompt',
+      code: -32603,
+      message: 'Internal error: You need to sign in to use this model.',
+      data: { service: 'session', errorName: 'APIError' },
+    },
   },
   qwen: {
     authMethods: [
@@ -411,6 +429,14 @@ async function prompt(m) {
   return endTurn(m.id, 'end_turn')
 }
 
+/** The profile's "no provider / not signed in" error at this method, when FAKE_ACP_UNCONFIGURED. */
+function unconfigured(method, id) {
+  const u = P.unconfigured
+  if (!env.FAKE_ACP_UNCONFIGURED || !u || u.at !== method) return false
+  send({ jsonrpc: '2.0', id, error: { code: u.code, message: u.message, data: u.data } })
+  return true
+}
+
 function handle(m) {
   log(m)
   if (m.method === undefined) {
@@ -455,10 +481,13 @@ function handle(m) {
           env: Object.fromEntries((s.env ?? []).map((e) => [e.name, e.value])),
         }
       }
+      if (unconfigured('session/new', m.id)) return
       const noModels = !!env.FAKE_ACP_NOMODELS || P.models === 'none'
       return reply(m.id, {
         sessionId,
-        modes: { currentModeId: currentMode, availableModes: P.modes },
+        ...(P.modesVia === 'config'
+          ? {}
+          : { modes: { currentModeId: currentMode, availableModes: P.modes } }),
         ...(!noModels && P.models !== 'config'
           ? { models: { currentModelId: currentModel, availableModels: MODELS } }
           : {}),
@@ -475,6 +504,11 @@ function handle(m) {
       if (P.models === 'models' || P.models === 'none')
         return fail(m.id, -32601, 'Method not found')
       if (m.params?.configId === 'model') currentModel = m.params.value
+      if (m.params?.configId === 'mode') {
+        if (!P.modes.some((x) => x.id === m.params?.value))
+          return fail(m.id, -32602, 'Invalid mode')
+        currentMode = m.params.value
+      }
       return reply(m.id, { configOptions: configOptions() })
     case 'session/set_model':
       if (P.models === 'config' || P.models === 'none')
@@ -484,6 +518,7 @@ function handle(m) {
     case 'session/prompt':
       if (m.params?.sessionId !== sessionId) return fail(m.id, -32602, 'Unknown session')
       if (active) return fail(m.id, -32600, 'A prompt is already running')
+      if (unconfigured('session/prompt', m.id)) return
       void prompt(m)
       return
     case 'session/cancel':

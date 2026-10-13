@@ -15,7 +15,7 @@ and `docs/provider-integrations.md` list it as supported only after a real-CLI c
   `mcpCapabilities {sse, http}`, `promptCapabilities {image, audio, embeddedContext}`.
 - Help text matched by the probe: `qwen --help` lists `--acp  Starts the agent in ACP mode`.
 - Approval modes (`--approval-mode`): `plan`, `default`, `auto-edit`, `auto`, `yolo`.
-- Session/new was **not** run (account/model use); the mode ids are applied only if the agent advertises them.
+- Session/new was run on 2026-10-13 and stopped at auth (see Verification); the mode ids are applied only if the agent advertises them.
 
 ## Integration
 
@@ -42,4 +42,9 @@ advertises no client `fs` or `terminal`. Observed caps: none (no observation sur
 
 ## Verification
 
-Fake-agent contract suites, probe and E2E (including MCP retrieval) pass. A real session is **not yet verified**: run `make verify-providers ONLY=qwen` on a logged-in machine and record the version here.
+Real run on 2026-10-13 with **Qwen Code 0.25.1**: **needs a login**. `session/new` answers `-32000
+"Authentication required: Use Qwen Code CLI to authenticate first."`; the session ends with the auth hint
+("Run `qwen`"). detect pass, start blocked, stop pass. To finish: run `qwen` and set up auth or a model
+(`/auth`), then `make verify-providers ONLY=qwen`.
+
+Fake-agent contract suites, probe and E2E (including MCP retrieval) pass.
