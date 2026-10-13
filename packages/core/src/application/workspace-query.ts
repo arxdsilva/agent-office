@@ -135,6 +135,13 @@ export class WorkspaceQueryService implements ProjectWorkspaceQuery {
         }
       case 'agent-project':
         return { type: 'agent-project', agentId: c.agentId, projectId: c.projectId }
+      case 'harness':
+        return {
+          type: 'harness',
+          ...(c.harnessId ? { harnessId: c.harnessId } : {}),
+          ...(c.projectId ? { projectId: c.projectId } : {}),
+          ...(c.agentId ? { agentId: c.agentId } : {}),
+        }
       default:
         return undefined
     }

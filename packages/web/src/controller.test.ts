@@ -18,7 +18,18 @@ import {
   type TestEventResult,
   type UpdateState,
 } from '@agent-office/shared'
-import { byProviderAndTopic, type Agent } from '@agent-office/shared'
+import {
+  byProviderAndTopic,
+  type Agent,
+  type HarnessBadge,
+  type ProjectMessage,
+} from '@agent-office/shared'
+import {
+  badge as harnessBadge,
+  effective,
+  inspection,
+  report,
+} from './app/workspace/__fixtures__/harness.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureManifest } from './app/__fixtures__/manifest.ts'
 import { LEAVE_MS } from './app/behavior.ts'
@@ -93,7 +104,22 @@ const connInfo = (over: Partial<ConnectionInfo> = {}): ConnectionInfo => ({
 })
 
 /** The projects API (docs/projects.md): inert in these tests; the workspace controller has its own. */
+/** Harness mocks shared by the projects stub; rebuilt for every gateway. */
+let hx = harnessMocks()
+function harnessMocks() {
+  return {
+    push: (_m: ProjectMessage) => {},
+    coverage: vi.fn(async (_p: string, provider: string) => ({
+      effective: effective(),
+      report: report({ provider: provider as never }),
+    })),
+    inspect: vi.fn(async (agentId: string) => inspection({ agentId })),
+    cancelGates: vi.fn(async () => {}),
+    badges: vi.fn(async (): Promise<HarnessBadge[]> => []),
+  }
+}
 const projectsStub = (): AgentOfficeApi['projects'] => {
+  hx = harnessMocks()
   const never = async () => {
     throw new Error('projects API not used in this test')
   }
@@ -127,7 +153,31 @@ const projectsStub = (): AgentOfficeApi['projects'] => {
     resumeSession: never,
     removeImported: never,
     importStatus: vi.fn(async () => ({ on: false, imported: 0, added: 0 })),
-    onPush: () => () => {},
+    onPush: (cb: (m: ProjectMessage) => void) => {
+      hx.push = cb
+      return () => {}
+    },
+    harness: {
+      list: vi.fn(async () => []),
+      get: never,
+      versions: never,
+      create: never,
+      update: never,
+      publish: never,
+      archive: never,
+      attach: never,
+      detach: never,
+      templates: vi.fn(async () => []),
+      createFromTemplate: never,
+      importDetect: never,
+      importPreview: never,
+      importCommit: never,
+      coverage: hx.coverage,
+      inspect: hx.inspect,
+      runGates: never,
+      cancelGates: hx.cancelGates,
+      badges: hx.badges,
+    },
   }
 }
 
@@ -248,7 +298,7 @@ function fakeViews() {
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & {
     wallModes: string[]
-    rosters: { agents: Agent[]; now: number }[]
+    rosters: { agents: Agent[]; now: number; harness?: HarnessBadge[] }[]
     loads: string[]
     wentTo: string[]
     idleMs: number
@@ -389,6 +439,8 @@ function fakeViews() {
     onToggleUse: on('toggleUse'),
     onDraft: on('draft'),
     onPickCapability: on('chip'),
+    onTab: on('panelTab'),
+    onHarnessAction: on('harnessAction'),
   }
   const hud: HudView & { vm: HudVM | null; badge: boolean | null; wallMode: string | null } = {
     vm: null,
@@ -435,6 +487,7 @@ function fakeViews() {
     onChange: on('nsChange'),
     onStart: on('nsStart'),
     onClose: on('nsClose'),
+    onInspectHarness: on('nsInspectHarness'),
   }
   const mql = {
     matches: false,
@@ -620,6 +673,7 @@ async function setup(
     isWindows?: boolean
     hardware?: HardwareInfo | null
     dpr?: number
+    workspace?: ReturnType<typeof harnessBridge>
   } = {},
 ) {
   const g = fakeGateway(initial, opts.agents)
@@ -633,6 +687,7 @@ async function setup(
   const c = createController({
     gateway: g.api,
     ...views,
+    ...(opts.workspace && { workspace: opts.workspace }),
     matchMedia: () => mql,
     grouping: byProviderAndTopic,
     clock: { now: () => now },
@@ -672,6 +727,23 @@ async function setup(
   /** Moves the clock without director ticks. */
   const setNow = (ms: number) => void (now = ms)
   return { ...g, ...v, page, c, tick, advance, timers, fire, push, flush, setNow }
+}
+
+/** A workspace bridge that records what the office asks of it. */
+function harnessBridge() {
+  const calls: unknown[] = []
+  return {
+    calls,
+    projectDirectory: () => ({
+      heading: '',
+      empty: '',
+      createProject: { id: 'new', label: '', enabled: true },
+      entries: [],
+    }),
+    selectProject: async () => {},
+    perform: async (a: unknown) => void calls.push(a),
+    openProjectPicker: () => {},
+  }
 }
 
 /** `document` (visibility, focus) and `window` (focus/blur events) stand-ins. */
@@ -2654,5 +2726,122 @@ describe('controller: providers', () => {
     const t = await setup(undefined, withProviders(list), { agents: [cu] })
     t.handlers.pick!('cu:1')
     expect(t.panel.vm?.composer.placeholder).toBe('Observation only — reply in Cursor')
+  })
+})
+
+describe('controller: Harness (Compliance Inspector)', () => {
+  const inProject = (id: string) => agent(id, { projectId: 'prj_atlas000001' })
+
+  it('shows the tabs only for agents in a project and starts on Details', async () => {
+    const t = await setup(undefined, undefined, { agents: [inProject('a'), agent('b')] })
+    t.c.select('a')
+    expect(t.panel.vm?.tabs).toMatchObject({ show: true, active: 'details' })
+    t.c.select('b')
+    expect(t.panel.vm?.tabs).toBeUndefined()
+  })
+
+  it('fetches the inspection when the Harness tab opens and renders it', async () => {
+    const t = await setup(undefined, undefined, { agents: [inProject('a')] })
+    t.c.select('a')
+    expect(hx.inspect).not.toHaveBeenCalled()
+    t.handlers.panelTab!('harness')
+    await t.flush()
+    expect(hx.inspect).toHaveBeenCalledWith('a')
+    expect(t.panel.vm?.tabs?.active).toBe('harness')
+    expect(t.panel.vm?.harness?.state).toBe('ready')
+    expect(t.panel.vm?.harness?.countsLine).toBe('12 allowed · 2 blocked · 1 asked')
+  })
+
+  it('goes back to Details when another agent is selected', async () => {
+    const t = await setup(undefined, undefined, { agents: [inProject('a'), inProject('b')] })
+    t.c.select('a')
+    t.handlers.panelTab!('harness')
+    t.c.select('b')
+    expect(t.panel.vm?.tabs?.active).toBe('details')
+  })
+
+  it('refetches on a harness push for the selected agent and on a permission change', async () => {
+    const t = await setup(undefined, undefined, { agents: [inProject('a')] })
+    t.c.select('a')
+    t.handlers.panelTab!('harness')
+    await t.flush()
+    hx.inspect.mockClear()
+    hx.push({ type: 'harness', agentId: 'a' })
+    await t.flush()
+    expect(hx.inspect).toHaveBeenCalledTimes(1)
+    hx.push({ type: 'harness', agentId: 'someone-else' })
+    await t.flush()
+    expect(hx.inspect).toHaveBeenCalledTimes(1)
+    t.push({ type: 'permission', agentId: 'a', requests: [] })
+    await t.flush()
+    expect(hx.inspect).toHaveBeenCalledTimes(2)
+  })
+
+  it('Run validation goes through the workspace, Cancel straight to the gateway', async () => {
+    const ws = harnessBridge()
+    const t = await setup(undefined, undefined, { agents: [inProject('a')], workspace: ws })
+    t.c.select('a')
+    t.handlers.harnessAction!('run-gates')
+    await t.flush()
+    expect(ws.calls).toContainEqual({ type: 'run-gates', agentId: 'a' })
+    t.handlers.harnessAction!('cancel-gates')
+    await t.flush()
+    expect(hx.cancelGates).toHaveBeenCalledWith('a')
+    t.handlers.harnessAction!('open-harnesses')
+    expect(ws.calls).toContainEqual({ type: 'open-harnesses', projectId: 'prj_atlas000001' })
+  })
+
+  it('passes the harness badges into the roster and only re-pushes when they change', async () => {
+    hx = harnessMocks()
+    hx.badges.mockResolvedValue([harnessBadge({ agentId: 'a' })])
+    const t = await setup(undefined, undefined, { agents: [agent('a')] })
+    // The stub above was replaced by setup's own gateway: set the badge on the live one.
+    hx.badges.mockResolvedValue([harnessBadge({ agentId: 'a' })])
+    hx.push({ type: 'harness' })
+    await t.flush()
+    expect(t.scene.rosters.at(-1)?.harness?.[0]?.agentId).toBe('a')
+    const n = t.scene.rosters.length
+    hx.push({ type: 'harness' })
+    await t.flush()
+    expect(t.scene.rosters.length).toBe(n)
+  })
+
+  it('shows coverage for the picked provider and project in the New Session dialog', async () => {
+    const ws = harnessBridge()
+    const t = await setup(undefined, undefined, { workspace: ws })
+    t.handlers.newSession!()
+    await t.flush()
+    expect(t.newSession.vm?.harness).toBeUndefined()
+    t.handlers.nsChange!({ projectId: 'prj_atlas000001' })
+    await t.flush()
+    expect(hx.coverage).toHaveBeenCalledWith('prj_atlas000001', 'claude-code')
+    expect(t.newSession.vm?.harness?.state).toBe('ready')
+    expect(t.newSession.vm?.harness?.coverage?.rows).toHaveLength(6)
+  })
+
+  it('Inspect closes the dialog and opens the Harness Builder for the project', async () => {
+    const ws = harnessBridge()
+    const t = await setup(undefined, undefined, { workspace: ws })
+    t.handlers.newSession!()
+    await t.flush()
+    t.handlers.nsChange!({ projectId: 'prj_atlas000001' })
+    t.handlers.nsInspectHarness!()
+    expect(t.newSession.vm).toBeNull()
+    expect(ws.calls).toContainEqual({ type: 'open-harnesses', projectId: 'prj_atlas000001' })
+  })
+
+  it('shows the harness start error', async () => {
+    const t = await setup()
+    t.handlers.newSession!()
+    t.handlers.nsFolder!()
+    await t.flush()
+    t.api.sessions.start = vi.fn(async () => ({
+      ok: false as const,
+      code: 'harness' as const,
+      error: 'No path rules here',
+    }))
+    t.handlers.nsChange!({ text: 'go' })
+    await t.handlers.nsStart!()
+    expect(t.newSession.vm?.error).toBe('A strict harness blocks this runtime: No path rules here')
   })
 })

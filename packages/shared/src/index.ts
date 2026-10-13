@@ -4,3 +4,4 @@ export { byProviderAndTopic, groupAgents, type Grouping, type Row, type Zone } f
 export * from './desktop-api.ts'
 export * from './providers.ts'
 export * from './projects.ts'
+export * from './harness.ts'

@@ -221,7 +221,7 @@ describe('permissionRequest', () => {
     expect(none.input).toEqual({ command: '' })
   })
 
-  it('Edit/Read: file_path from the first location', () => {
+  it('Edit/Read: every location in file_paths, file_path = the first', () => {
     const e = permissionRequest(
       {
         toolCall: {
@@ -233,9 +233,21 @@ describe('permissionRequest', () => {
       },
       cwd,
     )
-    expect(e).toEqual({ tool: 'Edit', input: { file_path: '/work/app/a.ts' }, cwd })
+    expect(e).toEqual({
+      tool: 'Edit',
+      input: { file_path: '/work/app/a.ts', file_paths: ['/work/app/a.ts', '/b'] },
+      cwd,
+    })
     const r = permissionRequest({ toolCall: { toolCallId: 't', kind: 'read' }, options: [] }, cwd)
-    expect(r).toEqual({ tool: 'Read', input: { file_path: '' }, cwd })
+    expect(r).toEqual({ tool: 'Read', input: { file_path: '', file_paths: [] }, cwd })
+    const junk = permissionRequest(
+      {
+        toolCall: { toolCallId: 't', kind: 'edit', locations: [null, { path: 3 }, { path: '/c' }] },
+        options: [],
+      },
+      cwd,
+    )
+    expect(junk.input).toEqual({ file_path: '/c', file_paths: ['/c'] })
   })
 
   it('Grep/WebFetch keep only the field the summary shows; other tools get no input', () => {

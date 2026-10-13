@@ -2,7 +2,16 @@
 // Each view renders a pure view model and reports user intent through callbacks; the workspace
 // controller owns every decision. The lead folds this file into ports.ts later.
 import type { ProjectLibraryVM } from './app/project-library.ts'
-import type { MemoryKind, MemoryScope, TaskView } from '@agent-office/shared'
+import type {
+  HarnessDraft,
+  MemoryKind,
+  MemoryScope,
+  RuleCategory,
+  TaskView,
+} from '@agent-office/shared'
+import type { HarnessBuilderVM } from './app/workspace/harness-builder-vm.ts'
+import type { EditorTab } from './app/workspace/harness-vm.ts'
+import type { HarnessDialogTab } from './app/workspace/state.ts'
 
 export type TaskState = TaskView['state']
 import type {
@@ -142,6 +151,46 @@ export interface HandoffView {
   onCancel(fn: () => void): Off
 }
 
+/** The Harness Builder dialog (`<dialog id="harness">`, docs/harness.md). */
+export interface HarnessView {
+  render(vm: HarnessBuilderVM): void
+  onClose(fn: () => void): Off
+  onTab(fn: (tab: HarnessDialogTab) => void): Off
+  onEditorTab(fn: (tab: EditorTab) => void): Off
+  /** "New harness". */
+  onCreate(fn: () => void): Off
+  onTemplate(fn: (templateId: string) => void): Off
+  /** A card button: edit, publish, archive, attach or detach. */
+  onCard(
+    fn: (harnessId: string, action: 'edit' | 'publish' | 'archive' | 'attach' | 'detach') => void,
+  ): Off
+  /** The nested confirm (`#hb-confirm`). */
+  onConfirm(fn: () => void): Off
+  onConfirmCancel(fn: () => void): Off
+  /** "Save changes" in the editor. */
+  onSave(fn: (harnessId: string, draft: HarnessDraft) => void): Off
+  /** "Import rules from project…" (library and editor). */
+  onImportStart(fn: () => void): Off
+  onDetect(fn: () => void): Off
+  onPreview(fn: () => void): Off
+  onToggleCandidate(fn: (tempId: string, on: boolean) => void): Off
+  onToggleGate(fn: (tempId: string, on: boolean) => void): Off
+  onEditCandidate(
+    fn: (
+      tempId: string,
+      patch: {
+        name?: string
+        text?: string
+        category?: RuleCategory
+        severity?: 'required' | 'recommended'
+      },
+    ) => void,
+  ): Off
+  onImportName(fn: (name: string) => void): Off
+  onImportAttach(fn: (attach: boolean) => void): Off
+  onCommit(fn: () => void): Off
+}
+
 /** What the workspace asks of the office scene and the rest of the app. */
 export interface WorkspaceSceneHooks {
   select(agentId: string): void
@@ -155,6 +204,8 @@ export interface WorkspaceSceneHooks {
   /** The selected project's Library collections for the scene; `null` clears them. */
   /** The agent selected in the Office, if any (default for the Context Inspector). */
   selectedAgentId?(): string | null
+  /** The Harness Builder opened or closed: the scene pauses its input meanwhile. */
+  setModalOpen?(open: boolean): void
   setProjectLibrary?(vm: ProjectLibraryVM | null): void
 }
 
@@ -168,4 +219,6 @@ export interface WorkspaceViews {
   palette: PaletteView
   newProject: NewProjectView
   handoff: HandoffView
+  /** Optional: shells without the Harness Builder (and older tests) leave it out. */
+  harness?: HarnessView
 }

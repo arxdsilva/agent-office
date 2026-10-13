@@ -2,8 +2,10 @@
 // Rules: the Inspector says "retrieved" and "delivered to the agent" (never "read" or "knows");
 // agent-reported work is labelled as unverified; suggestions are never applied silently.
 import type { EvidenceLevel, MemoryState } from '@agent-office/shared'
+import { HARNESS_COPY } from './harness-copy.ts'
 
 export const WS_COPY = {
+  harness: HARNESS_COPY,
   nav: { overview: 'Overview', office: 'Office', sessions: 'Sessions', memory: 'Memory' },
   projectsHeading: 'Projects',
   projectsEmpty: 'No projects yet. Create one to group your agents, sessions and memory.',
@@ -244,6 +246,8 @@ export const WS_COPY = {
       searchMemory: 'Search memory',
       review: 'Review approvals',
       inspect: 'Inspect context',
+      harnesses: HARNESS_COPY.palette.harnesses,
+      importRules: HARNESS_COPY.palette.importRules,
       continueWork: 'Continue work',
       importHistory: 'Import Claude history (experimental)',
       removeImported: 'Remove imported memory',

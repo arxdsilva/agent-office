@@ -12,6 +12,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AgentRunner,
+  EnforcementDecl,
   Logger,
   RunnerDecision,
   RunnerExit,
@@ -21,6 +22,7 @@ import type {
 } from '@agent-office/core'
 import type { AgentEvent, ModelOption, PermissionMode } from '@agent-office/shared'
 import { lineToEvent, newParseContext } from '../sources/claude-code/line-mapper.ts'
+import { type ChildEvent, claudeHarnessOptions } from './claude-policy.ts'
 
 export type QueryFn = (params: {
   prompt: string | AsyncIterable<SDKUserMessage>
@@ -86,7 +88,22 @@ function classify(err: unknown): { exit: RunnerExit; tag: string } {
   return { exit: { error: 'crash' }, tag: code ? `${name} ${code}` : name }
 }
 
+/** What the Agent SDK lets us enforce of a harness (docs/harness.md §3). */
+export const CLAUDE_ENFORCEMENT: EnforcementDecl = {
+  instructions: 'native',
+  toolDeny: 'hook',
+  pathDeny: 'hook',
+  commandDeny: 'partial',
+  fsIsolation: 'sandbox',
+  subagents: 'inherited',
+  nonInterceptingModes: ['bypassPermissions'],
+  interceptingMode: 'default',
+}
+
 export class ClaudeSdkRunner implements AgentRunner {
+  /** Claude stays a runner without `decl` (cc: ids); its harness support is declared here. */
+  readonly enforcement: EnforcementDecl = CLAUDE_ENFORCEMENT
+
   constructor(private o: ClaudeSdkRunnerOptions) {}
 
   start(s: RunnerStart): RunnerSession {
@@ -112,11 +129,16 @@ class SdkSession implements RunnerSession {
   private results = new Set<(r: { text: string; isError: boolean }) => void>()
   private permissionFn: ((r: RunnerPermission) => Promise<RunnerDecision>) | undefined
   private exitFns = new Set<(e: RunnerExit) => void>()
+  private childFns = new Set<(c: ChildEvent) => void>()
+  /** Subagent types by SDK agent id (from SubagentStart), for permission requests. */
+  private childTypes = new Map<string, string>()
+  private mode: PermissionMode
 
   constructor(
     private o: ClaudeSdkRunnerOptions,
     private s: RunnerStart,
   ) {
+    this.mode = s.mode
     this.ctx = newParseContext({
       ...(o.claudeHome ? { claudeHome: o.claudeHome } : {}),
       ...(o.projectsDir ? { projectsDir: o.projectsDir } : {}),
@@ -136,9 +158,12 @@ class SdkSession implements RunnerSession {
 
   private options(): Options {
     const { s, o } = this
-    const canUseTool: CanUseTool = async (tool, input): Promise<PermissionResult> => {
+    const canUseTool: CanUseTool = async (tool, input, opts): Promise<PermissionResult> => {
       if (!this.permissionFn) return { behavior: 'deny', message: 'No approver is connected.' }
-      const d = await this.permissionFn({ tool, input, cwd: s.cwd })
+      const agentId = typeof opts?.agentID === 'string' ? opts.agentID : undefined
+      const type = agentId ? this.childTypes.get(agentId) : undefined
+      const agent = agentId ? { agent: { id: agentId, ...(type ? { type } : {}) } } : {}
+      const d = await this.permissionFn({ tool, input, cwd: s.cwd, ...agent })
       return d.behavior === 'allow'
         ? { behavior: 'allow', updatedInput: input }
         : { behavior: 'deny', message: d.message }
@@ -155,6 +180,13 @@ class SdkSession implements RunnerSession {
       // The hook exits early on AGENT_OFFICE_MANAGED: managed sessions don't use the inbox.
       env: { ...o.env, AGENT_OFFICE_MANAGED: '1' },
       canUseTool,
+      // Harness (docs/harness.md §3) and subagent hooks; without a harness only the latter.
+      ...claudeHarnessOptions(s.harness, {
+        cwd: s.cwd,
+        mode: () => this.mode,
+        child: (c) => this.onChildEvent(c),
+        log: o.log,
+      }),
       // Claude in Chrome: the CLI's `--chrome` flag (not a typed SDK option).
       ...(s.chrome ? { extraArgs: { chrome: null } } : {}),
       ...(o.executable ? { pathToClaudeCodeExecutable: o.executable } : {}),
@@ -231,6 +263,13 @@ class SdkSession implements RunnerSession {
     }
   }
 
+  private onChildEvent(c: ChildEvent): void {
+    const id = c.childId.slice(3)
+    if (c.event.status === 'done') this.childTypes.delete(id)
+    else if (c.kind && this.childTypes.size < 256) this.childTypes.set(id, c.kind)
+    for (const fn of this.childFns) fn(c)
+  }
+
   private fail(err: unknown): void {
     const { exit, tag } = classify(err)
     const e: RunnerExit = this.authFailed && exit.error === 'crash' ? { error: 'auth' } : exit
@@ -256,6 +295,7 @@ class SdkSession implements RunnerSession {
 
   async setMode(mode: PermissionMode): Promise<void> {
     await (await this.query).setPermissionMode(mode)
+    this.mode = mode
   }
 
   async setModel(model: string): Promise<void> {
@@ -298,5 +338,10 @@ class SdkSession implements RunnerSession {
 
   onExit(fn: (e: RunnerExit) => void): void {
     this.exitFns.add(fn)
+  }
+
+  onChild(fn: (c: ChildEvent) => void): () => void {
+    this.childFns.add(fn)
+    return () => this.childFns.delete(fn)
   }
 }

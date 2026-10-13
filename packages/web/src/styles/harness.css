@@ -1,0 +1,253 @@
+/* Harness Builder and Compliance Inspector (docs/harness.md). Only the existing palette variables. */
+.harness-dialog {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+}
+.harness-dialog[open] {
+  display: flex;
+}
+.harness-body {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+}
+.harness-panels {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.hb-panel[hidden] {
+  display: none;
+}
+.hb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.hb-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hb-cards,
+.hb-rules,
+.hb-gates,
+.hb-cands,
+.hb-gate-cands,
+.hb-templates,
+.hb-coverage,
+.ih-gates,
+.ih-denied {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hb-card {
+  padding: 12px;
+}
+.hb-card-top,
+.hb-rule-top,
+.hb-cand-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hb-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+.hb-subtabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hb-subtab {
+  font: inherit;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 6px 10px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.hb-subtab.active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.hb-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.hb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hb-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.hb-rule textarea,
+.hb-cand textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.hb-policy {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hb-cov {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hb-cov-label {
+  min-width: 140px;
+}
+.harness-dialog .tone-good,
+.harness-tab .tone-good,
+.ns-harness .tone-good {
+  color: var(--ok);
+}
+.harness-dialog .tone-warn,
+.harness-tab .tone-warn,
+.ns-harness .tone-warn {
+  color: var(--warn);
+}
+.harness-dialog .tone-bad,
+.harness-tab .tone-bad,
+.ns-harness .tone-bad {
+  color: var(--error);
+}
+.hb-rejected {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+/* Agent Details tabs and the Inspector */
+.tabstrip {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin: 8px 0;
+}
+.tabstrip button {
+  font: inherit;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 6px 12px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.tabstrip button[aria-selected='true'] {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.tabstrip button[data-badge]::after {
+  content: attr(data-badge);
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+.harness-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 0;
+}
+#panel[data-tab='harness'] #p-meta,
+#panel[data-tab='harness'] #p-used,
+#panel[data-tab='harness'] #p-hint,
+#panel[data-tab='harness'] #p-thread,
+#panel[data-tab='harness'] #p-form {
+  display: none;
+}
+.ih-status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ih-gate code,
+.hb-gate-cmd {
+  font-size: 12px;
+}
+
+/* New Session */
+.ns-harness {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ns-harness[hidden] {
+  display: none;
+}
+.ns-harness-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ns-harness-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Minimal mode: the harness pill, colored by the weakest coverage of required rules */
+.mm-harness {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  --c: var(--muted);
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+}
+.mm-harness[data-coverage='enforced'] {
+  --c: var(--ok);
+}
+.mm-harness[data-coverage='partial'] {
+  --c: var(--warn);
+}
+.mm-harness[data-coverage='unsupported'] {
+  --c: var(--error);
+}
+.mm-harness[data-verification='failed'] {
+  --c: var(--error);
+}
+
+@media (max-width: 640px) {
+  .harness-body {
+    flex-direction: column;
+  }
+  .hb-form {
+    grid-template-columns: 1fr;
+  }
+}

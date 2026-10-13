@@ -1,5 +1,6 @@
 // How one ACP agent (Cursor `agent acp`, Gemini `gemini --acp`, Copilot `copilot --acp`) is run and
 // shown: docs/provider-integrations.md §5.2. The shared AcpRunner/AcpProbe take nothing else.
+import type { EnforcementDecl } from '@agent-office/core'
 import type { ProviderId, SessionCap } from '@agent-office/shared'
 
 /** A mode the profile offers. `native` is the agent's own id when it differs (Copilot uses URLs). */
@@ -49,6 +50,8 @@ export interface AcpProfile {
   authMessage?: string
   /** Overrides of the default ACP tool kind → tool name map. */
   toolKindMap?: Partial<Record<string, string>>
+  /** Replaces the default ACP harness enforcement (`ACP_ENFORCEMENT`, docs/harness.md §3). */
+  enforcement?: EnforcementDecl
 }
 
 /** The agent's id for a profile mode (undefined: not a profile mode). */

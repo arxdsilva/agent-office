@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
+  ActionPolicy,
+  PolicyAction,
+  PolicyDecision,
   RunnerDecision,
   RunnerExit,
   RunnerPermission,
@@ -157,7 +160,17 @@ describe('AcpRunner (fake agent process)', () => {
       ],
       defaultModeId: 'default',
       fallbackModels: [],
+      enforcement: {
+        instructions: 'first-message',
+        toolDeny: 'approval',
+        pathDeny: 'partial',
+        commandDeny: 'partial',
+        fsIsolation: 'none',
+        subagents: 'none',
+      },
     })
+    // Every profile gets the same default enforcement from the shared builder.
+    expect(new AcpRunner(COPILOTISH).decl.enforcement).toEqual(r.decl.enforcement)
     // Native ids stay inside the adapter.
     expect(JSON.stringify(new AcpRunner(COPILOTISH).decl)).not.toContain('https:')
   })
@@ -334,6 +347,76 @@ describe('AcpRunner (fake agent process)', () => {
     s.push('go')
     await until(() => results.length === 1)
     expect(f.responses()[0]!.result.outcome.optionId).toBe('reject')
+  })
+
+  describe('harness', () => {
+    const policy = (action: PolicyDecision['action'] | 'throw') => {
+      const calls: PolicyAction[] = []
+      const h: ActionPolicy = {
+        evaluate: (a) => {
+          calls.push(a)
+          if (action === 'throw') throw new Error('x')
+          return { action, ruleIds: ['rul_1'], reason: 'No listing', basis: 'heuristic' }
+        },
+        instructions: 'HARNESS RULES',
+        native: {
+          deniedTools: [],
+          denyPaths: [],
+          askPaths: [],
+          denyCommands: [],
+          askCommands: [],
+          fsIsolation: 'off',
+        },
+        interceptAll: true,
+        unsupported: [],
+      }
+      return { h, calls }
+    }
+
+    it('ACP-H1 prepends the instructions to the first prompt only', async () => {
+      const f = real()
+      const { s, results, decide } = f.start({ harness: policy('allow').h })
+      decide({ behavior: 'allow' })
+      await s.sessionId
+      s.push('first')
+      await until(() => results.length === 1)
+      s.push('second')
+      await until(() => results.length === 2)
+      const prompts = f
+        .received()
+        .filter((m) => m.method === 'session/prompt')
+        .map((m) => m.params.prompt[0].text)
+      expect(prompts).toEqual(['HARNESS RULES\n\nfirst', 'second'])
+    })
+
+    it.each(['deny', 'throw'] as const)(
+      'ACP-H2 a harness %s rejects once without asking the user',
+      async (action) => {
+        const f = real()
+        const { h, calls } = policy(action)
+        const { s, results, perms, decide } = f.start({ harness: h })
+        decide({ behavior: 'allow' })
+        await s.sessionId
+        s.push('go')
+        await until(() => results.length === 1)
+        expect(perms).toEqual([])
+        expect(calls[0]).toMatchObject({ tool: 'Bash', cwd: dir, provider: 'cursor' })
+        expect(f.responses()[0]!.result).toEqual({
+          outcome: { outcome: 'selected', optionId: 'reject' },
+        })
+      },
+    )
+
+    it('ACP-H3 a harness ask continues to the permission card', async () => {
+      const f = real()
+      const { s, results, perms, decide } = f.start({ harness: policy('ask').h })
+      decide({ behavior: 'allow' })
+      await s.sessionId
+      s.push('go')
+      await until(() => results.length === 1)
+      expect(perms).toHaveLength(1)
+      expect(f.responses()[0]!.result.outcome.optionId).toBe('allow')
+    })
   })
 
   // ACP-8: interrupt sends session/cancel and answers the open permission with cancelled.

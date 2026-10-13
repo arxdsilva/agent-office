@@ -1,9 +1,11 @@
 // The projects layer's in-memory state, rebuilt from the vault (RecordLog) at startup and appended
 // on every change (docs/projects.md §3). Partitions: 'catalog' (projects, repo links, session
 // records, assignments, project-less memory), 'p/<prj>' (memory versions, tasks, handoffs,
-// activity), 's/<ses>' (agent-office chat for that session).
+// activity), 's/<ses>' (agent-office chat, harness snapshot, harness events and gate results of
+// that session). Harness versions live in 'catalog' (docs/harness.md §1).
 import type { ActivityEvent } from '../domain/activity.ts'
 import type { Handoff } from '../domain/handoff.ts'
+import type { GateResult, Harness, HarnessEvent, HarnessSnapshot } from '../domain/harness-types.ts'
 import { IMPORT_ORIGIN, isMoveTombstone, moveTombstone, type MemoryItem } from '../domain/memory.ts'
 import { idFrom, type Project } from '../domain/project.ts'
 import type { SessionRecord } from '../domain/session-record.ts'
@@ -29,6 +31,13 @@ export type StoreChange =
   | { type: 'chat'; sessionId: string; message: ChatRecord }
   | { type: 'retrieval'; projectId: string; agentId: string; memoryIds: string[] }
   | { type: 'agent-project'; agentId: string; projectId: string | null }
+  | { type: 'harness'; harnessId?: string; projectId?: string; agentId?: string }
+
+/** A gate the trusted runner is executing now (memory only; the final GateResult is stored). */
+export type RunningGate = Pick<
+  GateResult,
+  'gateId' | 'name' | 'required' | 'harnessVersion' | 'startedAt'
+>
 
 export interface StoreDeps {
   log: RecordLog
@@ -39,6 +48,8 @@ export interface StoreDeps {
 }
 
 const MAX_ACTIVITY = 2000
+const MAX_HARNESS_EVENTS = 500
+const MAX_GATE_RESULTS = 100
 const COMPACT_MIN = 200
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -52,6 +63,7 @@ function keyOf(r: VaultRecord): string {
   const d = r.data
   if (r.t === 'memory') return `memory:${String(d.id)}:${String(d.version)}`
   if (r.t === 'activity') return `activity:${String(d.id)}`
+  if (r.t === 'harness') return `harness:${String(d.id)}:${String(d.version)}`
   return `${r.t}:${String(d.id)}`
 }
 
@@ -68,6 +80,12 @@ export class ProjectsStore {
   private activity = new Map<string, ActivityEvent[]>()
   private chat = new Map<string, ChatRecord[]>()
   private byAgent = new Map<string, string>()
+  /** Harness lineage id → every version, oldest first. */
+  private harnesses = new Map<string, Harness[]>()
+  private snapshots = new Map<string, HarnessSnapshot>()
+  private harnessEvents = new Map<string, HarnessEvent[]>()
+  private gateResults = new Map<string, GateResult[]>()
+  private running = new Map<string, Map<string, RunningGate>>()
   private subs = new Set<(c: StoreChange) => void>()
   private queue: Promise<void> = Promise.resolve()
   private n = 0
@@ -134,6 +152,22 @@ export class ProjectsStore {
       case 'activity':
         if (hasId(d, 'act_') && typeof d.projectId === 'string')
           this.indexActivity(d as unknown as ActivityEvent)
+        return
+      case 'harness':
+        if (hasId(d, 'hrn_') && typeof d.version === 'number' && Array.isArray(d.rules))
+          this.indexHarness(d as unknown as Harness)
+        return
+      case 'harness-snapshot':
+        if (hasId(d, 'hsn_') && typeof d.sessionId === 'string')
+          this.snapshots.set(d.sessionId, d as unknown as HarnessSnapshot)
+        return
+      case 'harness-event':
+        if (hasId(d, 'hev_') && typeof d.sessionId === 'string')
+          this.indexHarnessEvent(d as unknown as HarnessEvent)
+        return
+      case 'gate-result':
+        if (hasId(d, 'gtr_') && typeof d.sessionId === 'string')
+          this.indexGateResult(d as unknown as GateResult)
         return
       case 'message':
         if (partition.startsWith('s/') && typeof d.id === 'string' && typeof d.text === 'string')
@@ -238,7 +272,70 @@ export class ProjectsStore {
     return this.write(`s/${sessionId}`, 'message', m)
   }
 
+  putHarness(h: Harness): Promise<void> {
+    this.indexHarness(h)
+    this.emit({ type: 'harness', harnessId: h.id })
+    return this.write('catalog', 'harness', h)
+  }
+
+  putHarnessSnapshot(s: HarnessSnapshot): Promise<void> {
+    this.snapshots.set(s.sessionId, s)
+    this.emit({ type: 'harness', agentId: s.agentId, projectId: s.projectId })
+    return this.write(`s/${s.sessionId}`, 'harness-snapshot', s)
+  }
+
+  addHarnessEvent(e: HarnessEvent): Promise<void> {
+    this.indexHarnessEvent(e)
+    this.emit({ type: 'harness', agentId: e.agentId, projectId: e.projectId })
+    return this.write(`s/${e.sessionId}`, 'harness-event', e)
+  }
+
+  putGateResult(r: GateResult): Promise<void> {
+    this.indexGateResult(r)
+    this.emit({ type: 'harness', projectId: r.projectId })
+    return this.write(`s/${r.sessionId}`, 'gate-result', r)
+  }
+
+  /** Marks a gate running (memory only); `undefined` clears `gateId`. */
+  setGateRunning(sessionId: string, g: RunningGate | undefined, gateId = g?.gateId): void {
+    const m = this.running.get(sessionId) ?? new Map<string, RunningGate>()
+    if (g) m.set(g.gateId, g)
+    else if (gateId) m.delete(gateId)
+    if (m.size) this.running.set(sessionId, m)
+    else this.running.delete(sessionId)
+  }
+
   // ── reads ──
+
+  harnessVersions(id: string): Harness[] {
+    return [...(this.harnesses.get(id) ?? [])]
+  }
+
+  /** The latest version of a lineage. */
+  harness(id: string): Harness | undefined {
+    return this.harnesses.get(id)?.at(-1)
+  }
+
+  /** The latest version of every lineage. */
+  allHarnesses(): Harness[] {
+    return [...this.harnesses.values()].map((v) => v.at(-1)!)
+  }
+
+  harnessSnapshot(sessionId: string): HarnessSnapshot | undefined {
+    return this.snapshots.get(sessionId)
+  }
+
+  harnessEventsOf(sessionId: string): HarnessEvent[] {
+    return [...(this.harnessEvents.get(sessionId) ?? [])]
+  }
+
+  gateResultsOf(sessionId: string): GateResult[] {
+    return [...(this.gateResults.get(sessionId) ?? [])]
+  }
+
+  runningGates(sessionId: string): RunningGate[] {
+    return [...(this.running.get(sessionId)?.values() ?? [])]
+  }
 
   sessionByAgent(agentId: string): SessionRecord | undefined {
     const id = this.byAgent.get(agentId)
@@ -323,6 +420,29 @@ export class ProjectsStore {
     list.push(e)
     if (list.length > MAX_ACTIVITY) list.splice(0, list.length - MAX_ACTIVITY)
     this.activity.set(e.projectId, list)
+  }
+
+  private indexHarness(h: Harness): void {
+    const list = (this.harnesses.get(h.id) ?? []).filter((v) => v.version !== h.version)
+    list.push(h)
+    list.sort((a, b) => a.version - b.version)
+    this.harnesses.set(h.id, list)
+  }
+
+  private indexHarnessEvent(e: HarnessEvent): void {
+    const list = this.harnessEvents.get(e.sessionId) ?? []
+    list.push(e)
+    if (list.length > MAX_HARNESS_EVENTS) list.splice(0, list.length - MAX_HARNESS_EVENTS)
+    this.harnessEvents.set(e.sessionId, list)
+  }
+
+  private indexGateResult(r: GateResult): void {
+    const list = this.gateResults.get(r.sessionId) ?? []
+    const i = list.findIndex((x) => x.id === r.id)
+    if (i >= 0) list[i] = r
+    else list.push(r)
+    if (list.length > MAX_GATE_RESULTS) list.splice(0, list.length - MAX_GATE_RESULTS)
+    this.gateResults.set(r.sessionId, list)
   }
 
   private indexChat(sessionId: string, m: ChatRecord): void {

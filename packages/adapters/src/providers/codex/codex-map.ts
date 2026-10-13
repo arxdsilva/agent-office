@@ -116,9 +116,12 @@ export function approvalToPermission(
     return { tool: 'Bash', input: { command }, cwd }
   }
   const changes = Array.isArray(item?.changes) ? (item.changes as unknown[]) : []
-  const first = changes[0] as { path?: unknown } | undefined
-  const file_path = typeof first?.path === 'string' ? first.path : ''
-  return { tool: 'Edit', input: { file_path }, cwd }
+  // Every changed path (a harness checks them all); `file_path` stays the first for the card.
+  const file_paths = changes.flatMap((c) => {
+    const p = (c as { path?: unknown } | null)?.path
+    return typeof p === 'string' && p ? [p] : []
+  })
+  return { tool: 'Edit', input: { file_path: file_paths[0] ?? '', file_paths }, cwd }
 }
 
 const MCP_TOOL = /^[A-Za-z0-9_.-]{1,64}$/

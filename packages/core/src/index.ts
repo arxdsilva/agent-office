@@ -99,5 +99,49 @@ export {
 export { bm25, rankContext, tokenize, DEFAULT_BUDGET_CHARS } from './domain/context-rank.ts'
 export { DATA_PREFACE, CONTEXT_OPEN, CONTEXT_CLOSE, renderContextBlock } from './domain/handoff.ts'
 export type { Project, RepoLink } from './domain/project.ts'
+export type * from './domain/harness-types.ts'
 export type { SessionRecord } from './domain/session-record.ts'
 export type { MemoryItem } from './domain/memory.ts'
+// Harness Builder (docs/harness.md)
+export { HarnessService } from './application/harness-service.ts'
+export {
+  HarnessImportService,
+  type FormatOf,
+  type ParseRuleFile,
+} from './application/harness-import-service.ts'
+export { HarnessPolicyService } from './application/harness-policy-service.ts'
+export {
+  CancelController,
+  HarnessValidationService,
+} from './application/harness-validation-service.ts'
+export {
+  compilePolicy,
+  compileGlob,
+  nativeOf,
+  normalizePath,
+  toolClass,
+  OUTSIDE,
+  OPAQUE_RULE,
+  TOOL_CLASSES,
+} from './domain/harness-policy.ts'
+export { commandName, parseCommands, type ParsedCommands } from './domain/shell-words.ts'
+export { coverageFor, toReportView, COVERAGE_REASONS } from './domain/harness-coverage.ts'
+export {
+  HARNESS_OPEN,
+  HARNESS_CLOSE,
+  HARNESS_PREFACE,
+  renderHarnessBlock,
+} from './domain/harness-instructions.ts'
+export { redactSummary } from './domain/harness-events.ts'
+export { detectConflicts, normalizeRuleText } from './domain/harness-conflicts.ts'
+export { resolveEffective, versionKey } from './domain/harness-resolve.ts'
+export { gateFeedback, verificationState, completionState } from './domain/harness-verification.ts'
+export {
+  formatOf,
+  parseRuleFile,
+  classifyCategory,
+  RULE_FILE_RULES,
+  type RawCandidate,
+  type RawGate,
+  type ParsedRuleFile,
+} from './domain/harness-import.ts'

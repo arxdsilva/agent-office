@@ -30,6 +30,10 @@ export const ACTIONS = [
   'handoff.manage',
   'context.preview',
   'search',
+  /** Harnesses (docs/harness.md): list, inspect, coverage. */
+  'harness.read',
+  /** create, edit, publish, archive, attach, import, run gates */
+  'harness.manage',
 ] as const
 export type Action = (typeof ACTIONS)[number]
 
@@ -38,6 +42,8 @@ export type Resource =
   | { kind: 'summary'; projectId: string | null }
   | { kind: 'session'; projectId: string | null }
   | { kind: 'project'; projectId: string | null }
+  /** A harness or its attachment; projectId null for harnesses outside one project. */
+  | { kind: 'harness'; projectId: string | null }
 
 export type Decision = { ok: true } | { ok: false; reason: string }
 
@@ -90,7 +96,7 @@ export function authorize(
     case 'project.read':
       return resource.kind === 'project' && own ? ALLOW : deny('project')
     default:
-      // chat, transcripts, review, assignment, policy, handoffs, previews, search: the user only.
+      // chat, transcripts, review, assignment, policy, handoffs, previews, search, harnesses: the user only.
       return deny('user-only')
   }
 }

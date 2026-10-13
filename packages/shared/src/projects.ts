@@ -188,6 +188,13 @@ export const ACTIVITY_KINDS = [
   'agent.error',
   /** One aggregated entry per automatic import run and project (docs/projects.md §8b). */
   'memory.imported',
+  // Harnesses (docs/harness.md). Texts carry rule names and gate names, never tool input.
+  'harness.attached',
+  'harness.published',
+  'harness.denied',
+  'validation.started',
+  'validation.passed',
+  'validation.failed',
 ] as const
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
 export interface ActivityView {
@@ -406,3 +413,5 @@ export type ProjectMessage =
   | { type: 'retrieval'; projectId: string; agentId: string; memoryIds: string[] }
   | { type: 'agent-project'; agentId: string; projectId: string | null }
   | { type: 'vault'; status: 'encrypted' | 'memory-only' }
+  /** A harness, an attachment, a policy decision or a gate result changed (docs/harness.md). */
+  | { type: 'harness'; harnessId?: string; projectId?: string; agentId?: string }

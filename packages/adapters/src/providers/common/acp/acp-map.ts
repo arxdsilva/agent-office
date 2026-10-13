@@ -124,9 +124,13 @@ export function permissionRequest(
   const kind = str(call?.kind) ?? o.knownKind
   const tool = toolName(kind, o.toolKindMap) ?? 'Tool'
   const raw = obj(call?.rawInput) ?? {}
-  const firstPath = () => {
+  // Every location (a harness checks them all); `file_path` stays the first for the card.
+  const paths = () => {
     const locs = Array.isArray(call?.locations) ? call.locations : []
-    return str(obj(locs[0])?.path) ?? ''
+    return locs.flatMap((l) => {
+      const p = str(obj(l)?.path)
+      return p ? [p] : []
+    })
   }
   let input: Obj = {}
   switch (tool) {
@@ -140,7 +144,10 @@ export function permissionRequest(
     }
     case 'Edit':
     case 'Read':
-      input = { file_path: firstPath() }
+      {
+        const file_paths = paths()
+        input = { file_path: file_paths[0] ?? '', file_paths }
+      }
       break
     case 'Grep': {
       const pattern = str(raw.pattern) ?? str(raw.query)

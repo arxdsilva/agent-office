@@ -293,4 +293,86 @@ describe('createOffice: projects (docs/projects.md)', () => {
     expect(again.projects!.memory.list({ scope: p.id }).map((m) => m.title)).toEqual(['Use JWT'])
     expect(again.projects!.workspace.overview().vault).toBe('encrypted')
   })
+
+  it('OF-harness: the project harness reaches a managed session end-to-end (deny, strict refusal, inspector)', async () => {
+    const codex = new FakeAgentRunner({
+      provider: 'codex',
+      prefix: 'cx:',
+      caps: ['launch', 'send-message', 'stop'],
+      enforcement: {
+        instructions: 'native',
+        toolDeny: 'approval',
+        pathDeny: 'partial',
+        commandDeny: 'approval',
+        fsIsolation: 'partial',
+        subagents: 'none',
+      },
+    })
+    const settingsRepo = new FakeSettingsRepository()
+    await settingsRepo.save({
+      ...(await settingsRepo.load()),
+      providers: { codex: { enabled: true } },
+    })
+    const d = deps({
+      vault: new FakeRecordLog(),
+      runtimes: new Map([
+        ['codex', codex],
+        ['cursor', new FakeAgentRunner({ provider: 'cursor', prefix: 'cu:', caps: ['launch'] })],
+      ]),
+      settingsRepo,
+      repoIdentity: new FakeRepoIdentity().set('/work/shop', identity),
+      random: new SeqRandom(),
+    })
+    const office = createOffice(d)
+    const projects = office.projects!
+    await projects.load()
+    const p = await projects.catalog.create({ name: 'Shop', folders: ['/work/shop'] })
+    const h = await projects.harness.create({
+      name: 'Std',
+      rules: [
+        {
+          name: 'No rm',
+          text: 'Never rm',
+          category: 'security',
+          enforcement: 'runtime-policy',
+          policy: { effect: 'deny', commands: ['rm'] },
+        },
+      ],
+    })
+    await projects.harness.publish(h.id)
+    await projects.harness.attach(p.id, h.id)
+    expect(projects.policy.preview(p.id, 'codex').report.rows[0]).toMatchObject({
+      capability: 'instructions',
+      level: 'enforced',
+    })
+    const start = {
+      provider: 'codex' as const,
+      projectId: p.id,
+      cwd: '/work/shop',
+      name: 'cx',
+      mode: 'default' as const,
+      extraDirs: [],
+      chrome: false,
+      first: { text: 'go', context: [], use: [] },
+    }
+    const agentId = await office.sessions!.start(start)
+    expect(codex.last().options.harness?.native.denyCommands).toEqual(['rm'])
+    await expect(codex.last().ask('Bash', { command: 'rm -rf /' })).resolves.toMatchObject({
+      behavior: 'deny',
+    })
+    expect(projects.policy.inspect(agentId).counts.denied).toBe(1)
+    // Strict: a runtime that declares no enforcement cannot receive a required rule; the start is refused.
+    await projects.harness.update(h.id, {
+      name: 'Std',
+      launchPolicy: 'strict',
+      rules: [
+        { name: 'Notes', text: 'Write notes', category: 'coding', enforcement: 'instruction' },
+      ],
+    })
+    await projects.harness.publish(h.id)
+    await expect(office.sessions!.start({ ...start, provider: 'cursor' })).rejects.toMatchObject({
+      code: 'harness',
+    })
+    await expect(office.sessions!.start(start)).resolves.toMatch(/^cx:/)
+  })
 })

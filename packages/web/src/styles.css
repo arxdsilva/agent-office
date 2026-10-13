@@ -3,6 +3,7 @@
 @import './styles/library.css';
 @import './styles/workspace.css';
 @import './styles/minimal.css';
+@import './styles/harness.css';
 
 :root {
   --bg: #eef0f3;

@@ -2,7 +2,15 @@ import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { RunnerExit, RunnerPermission, RunnerSession, RunnerStart } from '@agent-office/core'
+import type {
+  ActionPolicy,
+  PolicyAction,
+  PolicyDecision,
+  RunnerExit,
+  RunnerPermission,
+  RunnerSession,
+  RunnerStart,
+} from '@agent-office/core'
 import {
   managedRuntimeContract,
   MemoryLogger,
@@ -323,7 +331,13 @@ describe('CodexRunner (fake app-server process)', () => {
     await s.sessionId
     s.push('/file')
     await until(() => results.length > 0)
-    expect(asked).toEqual([{ tool: 'Edit', input: { file_path: `${dir}/src/app.ts` }, cwd: dir }])
+    expect(asked).toEqual([
+      {
+        tool: 'Edit',
+        input: { file_path: `${dir}/src/app.ts`, file_paths: [`${dir}/src/app.ts`] },
+        cwd: dir,
+      },
+    ])
     expect(results[0]!.text).toBe('Edited.')
     expect(events.find((e) => e.status === 'tool')).toEqual({ status: 'tool', tool: 'Edit' })
     expect(JSON.stringify(events)).not.toContain('SENTINEL')
@@ -458,6 +472,147 @@ describe('CodexRunner (fake app-server process)', () => {
       sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/extra/one'] },
     })
     expect(t2!.params).toEqual({ threadId: 'thr_fake1', input: [{ type: 'text', text: 'two' }] })
+  })
+
+  describe('harness', () => {
+    const policy = (action: PolicyDecision['action'], interceptAll = true) => {
+      const calls: PolicyAction[] = []
+      const h: ActionPolicy = {
+        evaluate: (a) => {
+          calls.push(a)
+          return { action, ruleIds: ['rul_1'], reason: 'No pushing', basis: 'heuristic' }
+        },
+        instructions: 'Follow the project rules.',
+        native: {
+          deniedTools: [],
+          denyPaths: [],
+          askPaths: [],
+          denyCommands: [],
+          askCommands: [],
+          fsIsolation: 'off',
+        },
+        interceptAll,
+        unsupported: [],
+      }
+      return { h, calls }
+    }
+
+    it('declares its enforcement', () => {
+      expect(new CodexRunner().decl.enforcement).toEqual({
+        instructions: 'native',
+        toolDeny: 'approval',
+        pathDeny: 'partial',
+        commandDeny: 'partial',
+        fsIsolation: 'partial',
+        subagents: 'none',
+        nonInterceptingModes: ['auto', 'full-access'],
+        interceptingMode: 'ask',
+      })
+    })
+
+    it('sends developerInstructions and forces the untrusted approval floor on every turn', async () => {
+      const f = real()
+      const { s, results } = f.start({ modeId: 'auto', harness: policy('allow').h })
+      s.onPermission(async () => ({ behavior: 'allow' }))
+      await s.sessionId
+      expect(f.received()[3]!.params).toEqual({
+        cwd: dir,
+        approvalPolicy: 'untrusted',
+        sandbox: 'workspace-write',
+        developerInstructions: 'Follow the project rules.',
+      })
+      await s.setModeId!('read-only')
+      s.push('one')
+      await until(() => results.length === 1)
+      s.push('two')
+      await until(() => results.length === 2)
+      const turns = f.received().filter((m) => m.method === 'turn/start')
+      expect(turns.map((t) => t.params.approvalPolicy)).toEqual(['untrusted', 'untrusted'])
+    })
+
+    it('keeps the preset approval policy when the harness does not intercept', async () => {
+      const f = real()
+      await f.start({ modeId: 'auto', harness: policy('allow', false).h }).s.sessionId
+      expect(f.received()[3]!.params).toMatchObject({
+        approvalPolicy: 'on-request',
+        developerInstructions: 'Follow the project rules.',
+      })
+    })
+
+    it('refuses full access under an intercepting harness', async () => {
+      const r = new CodexRunner({ bin: process.execPath, args: [FAKE, 'app-server'] })
+      expect(() =>
+        r.start({ ...START, modeId: 'full-access', allowBypass: true, harness: policy('allow').h }),
+      ).toThrow('harness forbids full access')
+      const f = real()
+      const { s } = f.start({ allowBypass: true, harness: policy('allow').h })
+      await s.sessionId
+      await expect(s.setModeId!('full-access')).rejects.toThrow('harness forbids full access')
+    })
+
+    it('a harness deny declines a command without asking the user', async () => {
+      const f = real()
+      const { h, calls } = policy('deny')
+      const { s, results } = f.start({ harness: h })
+      const asked: RunnerPermission[] = []
+      s.onPermission(async (r) => {
+        asked.push(r)
+        return { behavior: 'allow' }
+      })
+      await s.sessionId
+      s.push('go')
+      await until(() => results.length > 0)
+      expect(asked).toEqual([])
+      expect(calls).toEqual([
+        {
+          tool: 'Bash',
+          input: { command: 'git status SENTINEL_CMD' },
+          cwd: dir,
+          provider: 'codex',
+        },
+      ])
+      expect(f.received().find((m) => m.result?.decision)?.result).toEqual({ decision: 'decline' })
+    })
+
+    it('a harness ask or allow continues to the permission card (file change as Edit)', async () => {
+      for (const action of ['ask', 'allow'] as const) {
+        const f = real()
+        const { h, calls } = policy(action)
+        const { s, results } = f.start({ harness: h })
+        const asked: RunnerPermission[] = []
+        s.onPermission(async (r) => {
+          asked.push(r)
+          return { behavior: 'allow' }
+        })
+        await s.sessionId
+        s.push('/file')
+        await until(() => results.length > 0)
+        expect(calls[0]).toMatchObject({
+          tool: 'Edit',
+          input: { file_path: `${dir}/src/app.ts`, file_paths: [`${dir}/src/app.ts`] },
+        })
+        expect(asked).toHaveLength(1)
+        expect(f.received().find((m) => m.result?.decision)?.result).toEqual({
+          decision: 'accept',
+        })
+      }
+    })
+
+    it('an evaluate exception declines', async () => {
+      const f = real()
+      const h: ActionPolicy = {
+        ...policy('allow').h,
+        evaluate: () => {
+          throw new Error('x')
+        },
+      }
+      const { s, results } = f.start({ harness: h })
+      s.onPermission(async () => ({ behavior: 'allow' }))
+      await s.sessionId
+      s.push('go')
+      await until(() => results.length > 0)
+      expect(f.received().find((m) => m.result?.decision)?.result).toEqual({ decision: 'decline' })
+    })
   })
 
   // Other server requests get a JSON-RPC error so Codex never waits on us.

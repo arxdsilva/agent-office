@@ -1,5 +1,6 @@
 import { PERMISSION_MODES, type PermissionMode, type ProviderId } from '@agent-office/shared'
 import { SESSION_COPY } from '../../app/session-copy.ts'
+import type { NewSessionHarnessVM } from '../../app/session-types.ts'
 import type { NewSessionVM, UseMenuVM } from '../../app/session-types.ts'
 import type { NewSessionView } from '../../ports.ts'
 import { byId, el } from './el.ts'
@@ -39,6 +40,9 @@ export class DomNewSession implements NewSessionView {
   private changeFn: (patch: Patch) => void = () => {}
   private startFn: () => void | Promise<void> = () => {}
   private closeFn: () => void = () => {}
+  private inspectFn: () => void = () => {}
+  private harnessBox: HTMLElement | null = null
+  private harnessKey = ''
 
   constructor() {
     const c = SESSION_COPY.newSession
@@ -127,6 +131,9 @@ export class DomNewSession implements NewSessionView {
   }
   onClose(fn: () => void) {
     this.closeFn = fn
+  }
+  onInspectHarness(fn: () => void) {
+    this.inspectFn = fn
   }
 
   isOpen(): boolean {
@@ -232,9 +239,72 @@ export class DomNewSession implements NewSessionView {
     this.useBtn.disabled = !vm.composer.canAddUse
     this.text.placeholder = vm.composer.placeholder
 
+    this.renderHarness(vm.harness)
+
     const s = SESSION_COPY.newSession
     this.start.disabled = !vm.canStart
     this.start.textContent = vm.starting ? s.starting : s.start
     byId('ns-error').textContent = vm.error ?? vm.limit ?? ''
+  }
+
+  /** `#ns-harness` is created here (not in index.html), before the footer of the form. */
+  private renderHarness(h: NewSessionHarnessVM | undefined): void {
+    if (!this.harnessBox) {
+      const box = el('section', undefined, 'ns-harness')
+      box.id = 'ns-harness'
+      const form = byId('ns-form')
+      // Above the error line and the Start button row, below the first message.
+      form.insertBefore(box, byId('ns-error'))
+      this.harnessBox = box
+    }
+    const box = this.harnessBox
+    box.hidden = !h
+    const key = JSON.stringify(h ?? null)
+    if (!h || key === this.harnessKey) {
+      if (!h) this.harnessKey = ''
+      return
+    }
+    this.harnessKey = key
+    const head = el('div', undefined, 'ns-harness-head')
+    head.append(el('h3', h.heading))
+    const inspect = el('button', h.inspect.label, 'btn small')
+    inspect.type = 'button'
+    inspect.id = 'ns-harness-inspect'
+    inspect.addEventListener('click', () => this.inspectFn())
+    head.append(inspect)
+    const rows: HTMLElement[] = [head]
+    box.dataset.state = h.state
+    if (h.message) rows.push(el('p', h.message, 'muted'))
+    if (h.state === 'ready') {
+      const names = el('ul', undefined, 'chips')
+      for (const n of h.names) names.append(el('li', n, 'chip'))
+      rows.push(names, el('p', h.rulesLine, 'muted small'))
+      if (h.coverage) {
+        const ul = el('ul', undefined, 'hb-coverage')
+        for (const r of h.coverage.rows) {
+          const li = el('li', undefined, `hb-cov tone-${r.tone}`)
+          li.dataset.capability = r.capability
+          li.dataset.level = r.level
+          li.title = r.reason
+          li.append(
+            el('span', r.label, 'hb-cov-label'),
+            el('span', r.word, `badge-t tone-${r.tone}`),
+          )
+          ul.append(li)
+        }
+        rows.push(ul)
+      }
+      if (h.warning) {
+        const w = el(
+          'p',
+          h.warning.text,
+          h.warning.blocked ? 'ns-harness-warn tone-bad' : 'ns-harness-warn tone-warn',
+        )
+        w.setAttribute('role', 'alert')
+        rows.push(w)
+        for (const why of h.warning.reasons) rows.push(el('p', why, 'small muted'))
+      }
+    }
+    box.replaceChildren(...rows)
   }
 }

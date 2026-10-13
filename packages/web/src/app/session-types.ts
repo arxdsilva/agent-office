@@ -9,6 +9,7 @@ import type {
   ProviderId,
 } from '@agent-office/shared'
 import type { Pill } from './connect-types.ts'
+import type { EnforcementReportVM } from './workspace/harness-vm.ts'
 
 export interface ModeOptionVM {
   /** A Claude `PermissionMode`, or a provider mode id (`ModeOption.id`) for other providers. */
@@ -100,6 +101,22 @@ export interface NewSessionForm {
   use: string[]
 }
 
+/** The Harness block of the New Session dialog (docs/harness.md). */
+export interface NewSessionHarnessVM {
+  visible: boolean
+  heading: string
+  state: 'loading' | 'none' | 'failed' | 'ready'
+  message: string
+  /** "Team standards v2" per attached harness. */
+  names: string[]
+  rulesLine: string
+  /** The six coverage rows for the picked provider. */
+  coverage: EnforcementReportVM | null
+  /** A strict harness blocks the runtime, or required rules are only partly enforced. */
+  warning: { text: string; reasons: string[]; blocked: boolean } | null
+  inspect: { label: string }
+}
+
 export interface NewSessionVM {
   /** Dialog heading, e.g. "New Codex session". */
   title: string
@@ -119,6 +136,8 @@ export interface NewSessionVM {
   text: string
   composer: ComposerVM
   canStart: boolean
+  /** The Harness block (`#ns-harness`): shown only with a project picked. */
+  harness?: NewSessionHarnessVM
   starting: boolean
   error?: string
   /** "Stop a session first (6 running)". */

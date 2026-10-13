@@ -17,12 +17,27 @@ import {
   type ProviderHooks,
   type Scheduler,
   type SettingsManagement,
+  type HarnessImport,
+  type HarnessManagement,
+  type HarnessPolicyEngine,
+  type HarnessValidation,
   type UpdateManagement,
   type UserChat,
 } from '@agent-office/core'
 import { z } from 'zod'
 import {
+  AgentIdArgsSchema,
   AnswerArgsSchema,
+  CoverageArgsSchema,
+  HarnessAttachArgsSchema,
+  HarnessDraftSchema,
+  HarnessIdArgsSchema,
+  HarnessUpdateArgsSchema,
+  ImportCommitArgsSchema,
+  ImportDetectArgsSchema,
+  ImportPreviewArgsSchema,
+  RunGatesArgsSchema,
+  TemplateArgsSchema,
   AssignSessionArgsSchema,
   ContextPreviewArgsSchema,
   CopyTextSchema,
@@ -94,6 +109,14 @@ export function useLabel(id: string): string {
 
 class InvalidContextError extends Error {}
 
+/** The Harness Builder services (docs/harness.md); typed by port so this file never names a class. */
+export interface HarnessPorts {
+  harness: HarnessManagement
+  harnessImport: HarnessImport
+  policy: HarnessPolicyEngine
+  validation: HarnessValidation
+}
+
 /** The driving ports the renderer may reach through IPC — nothing concrete. */
 export interface IpcPorts {
   query: OfficeQuery
@@ -124,21 +147,22 @@ export interface IpcPorts {
   /** Called after a provider action so connection info is pushed again. */
   onProvidersChanged?: () => void
   /** Projects, memory, handoffs and search (only with a vault); the `prj:*` channels need it. */
-  projects?: Pick<
-    Projects,
-    | 'catalog'
-    | 'repos'
-    | 'sessions'
-    | 'assignment'
-    | 'memory'
-    | 'context'
-    | 'handoffs'
-    | 'workspace'
-    | 'search'
-    | 'tasks'
-    | 'history'
-    | 'knowledge'
-  >
+  projects?: HarnessPorts &
+    Pick<
+      Projects,
+      | 'catalog'
+      | 'repos'
+      | 'sessions'
+      | 'assignment'
+      | 'memory'
+      | 'context'
+      | 'handoffs'
+      | 'workspace'
+      | 'search'
+      | 'tasks'
+      | 'history'
+      | 'knowledge'
+    >
 }
 
 /** Absolute paths (posix or windows) never leave main, not even inside an error message. */
@@ -499,6 +523,44 @@ function projectHandlers(
       prj.knowledge.removeImported(id),
     ),
     [IPC.prjImportStatus]: guard(() => prj.knowledge.status()),
+    // Harness Builder (docs/harness.md): user actions; ids and repo-relative paths only.
+    [IPC.hrnList]: guard(() => prj.harness.list()),
+    [IPC.hrnGet]: h(HarnessIdArgsSchema, (a) => prj.harness.get(a.harnessId)),
+    [IPC.hrnVersions]: h(HarnessIdArgsSchema, (a) => prj.harness.versions(a.harnessId)),
+    [IPC.hrnCreate]: h(HarnessDraftSchema, (a) => prj.harness.create(a)),
+    [IPC.hrnUpdate]: h(HarnessUpdateArgsSchema, (a) => prj.harness.update(a.harnessId, a.draft)),
+    [IPC.hrnPublish]: h(HarnessIdArgsSchema, (a) => prj.harness.publish(a.harnessId)),
+    [IPC.hrnArchive]: h(HarnessIdArgsSchema, (a) => prj.harness.archive(a.harnessId)),
+    [IPC.hrnAttach]: h(HarnessAttachArgsSchema, (a) =>
+      prj.harness.attach(a.projectId, a.harnessId),
+    ),
+    [IPC.hrnDetach]: h(HarnessAttachArgsSchema, (a) =>
+      prj.harness.detach(a.projectId, a.harnessId),
+    ),
+    [IPC.hrnTemplates]: guard(() => prj.harness.templates()),
+    [IPC.hrnFromTemplate]: h(TemplateArgsSchema, (a) =>
+      prj.harness.createFromTemplate(a.templateId),
+    ),
+    [IPC.hrnImportDetect]: h(ImportDetectArgsSchema, (a) => prj.harnessImport.detect(a.projectId)),
+    [IPC.hrnImportPreview]: h(ImportPreviewArgsSchema, (a) =>
+      prj.harnessImport.preview({
+        projectId: a.projectId,
+        ...(a.paths ? { paths: a.paths } : {}),
+      }),
+    ),
+    [IPC.hrnImportCommit]: h(ImportCommitArgsSchema, (a) => prj.harnessImport.commit(a)),
+    [IPC.hrnCoverage]: h(CoverageArgsSchema, (a) => prj.policy.preview(a.projectId, a.provider)),
+    [IPC.hrnInspect]: h(AgentIdArgsSchema, (a) => prj.policy.inspect(a.agentId)),
+    [IPC.hrnRunGates]: h(RunGatesArgsSchema, (a) =>
+      prj.validation.run({
+        agentId: a.agentId,
+        ...(a.gateIds ? { gateIds: a.gateIds } : {}),
+      }),
+    ),
+    [IPC.hrnCancelGates]: h(AgentIdArgsSchema, (a) => {
+      prj.validation.cancel(a.agentId)
+    }),
+    [IPC.hrnBadges]: guard(() => prj.policy.badges()),
   }
 }
 
@@ -526,6 +588,8 @@ export function createProjectPushBridge(
         return `memory:${m.memory.id}`
       case 'agent-project':
         return `agent-project:${m.agentId}`
+      case 'harness':
+        return `harness:${m.harnessId ?? ''}:${m.projectId ?? ''}:${m.agentId ?? ''}` // same subject collapses
       default:
         return `${m.type}:${++n}` // activity and retrievals are events: keep each
     }

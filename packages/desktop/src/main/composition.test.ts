@@ -911,6 +911,19 @@ describe('compose with a projects vault', () => {
     )
   })
 
+  it('exposes the harness channels with a vault and none without', async () => {
+    const withVault = setup({}, { vault: new MemoryRecordLog() })
+    await withVault.app.start()
+    expect([...withVault.handlers.keys()]).toEqual(
+      expect.arrayContaining([IPC.hrnList, IPC.hrnImportDetect, IPC.hrnRunGates, IPC.hrnBadges]),
+    )
+    // A fresh vault holds no harnesses yet; the call goes through the real core service.
+    expect(await withVault.call(IPC.hrnList)).toEqual([])
+    const bare = setup()
+    await bare.app.start()
+    expect([...bare.handlers.keys()]).not.toContain(IPC.hrnList)
+  })
+
   it('imports goose history when goose is on, and reads its transcript through the router', async () => {
     const gooseCli = async (args: string[]) =>
       args[1] === 'list'

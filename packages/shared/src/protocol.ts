@@ -165,6 +165,8 @@ export interface PermissionRequestVM {
   summary: string
   /** '~'-abbreviated working directory, when relevant. */
   where?: string
+  /** Set when a harness rule turned this into a question (docs/harness.md): its id and name. */
+  rule?: { id: string; name: string }
 }
 
 /** Present only on agents whose session agent-office started (any provider with a managed runtime). */

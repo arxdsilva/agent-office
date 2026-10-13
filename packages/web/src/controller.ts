@@ -4,6 +4,9 @@ import {
   type ConnectionInfo,
   type ContextRef,
   type Grouping,
+  type HarnessBadge,
+  type HarnessInspection,
+  type HarnessPreview,
   type HookStatus,
   type ModelOption,
   type ProviderId,
@@ -15,6 +18,12 @@ import {
 } from '@agent-office/shared'
 import { capabilityBubbles, capabilityPanelVM, surfacesVM, usedChips } from './app/capability-vm.ts'
 import { createDirector, type Director } from './app/director.ts'
+import {
+  harnessTabVM,
+  newSessionHarnessVM,
+  panelTabsVM,
+  type PanelTab,
+} from './app/harness-inspector-vm.ts'
 import { GFX_COPY } from './app/graphics-copy.ts'
 import type { Effective, GraphicsStats, HardwareInfo, Tier } from './app/graphics-types.ts'
 import type { LibraryMap } from './app/library.ts'
@@ -284,6 +293,23 @@ export function createController(d: ControllerDeps) {
   /** Agent a successful start created: selected as soon as it shows up. */
   let pendingSelect: string | null = null
 
+  // Harness Compliance Inspector (docs/harness.md): the Harness tab, Minimal badges, New Session block.
+  let panelTab: PanelTab = 'details'
+  const inspections = new Map<string, HarnessInspection>()
+  const inspecting = new Set<string>()
+  const inspectAgain = new Set<string>()
+  let harnessBadges: HarnessBadge[] = []
+  let badgesKey = '[]'
+  let badgesBusy = false
+  let badgesAgain = false
+  /** The Harness Builder (owned by the workspace) is open: input is paused like for other dialogs. */
+  let externalModal = false
+  let nsHarness: {
+    key: string
+    status: 'loading' | 'ready' | 'failed'
+    preview?: HarnessPreview
+  } | null = null
+
   // Connecting agents (plan §2): live facts from main, the empty card's phase, first arrivals.
   let connInfo: ConnectionInfo | undefined
   let ready = false
@@ -363,7 +389,61 @@ export function createController(d: ControllerDeps) {
           color: e.color,
         })) ?? [],
       now: d.clock.now(),
+      harness: harnessBadges,
     })
+  }
+
+  /** Per-agent harness badges for Minimal mode; pushes the roster only when they changed. */
+  async function refreshBadges() {
+    const h = d.gateway.projects?.harness
+    if (!h?.badges) return
+    if (badgesBusy) {
+      badgesAgain = true
+      return
+    }
+    badgesBusy = true
+    try {
+      do {
+        badgesAgain = false
+        try {
+          const next = await h.badges()
+          const key = JSON.stringify(next)
+          if (key !== badgesKey) {
+            badgesKey = key
+            harnessBadges = next
+            pushRoster()
+          }
+        } catch {
+          // decoration: keep the last badges
+        }
+      } while (badgesAgain)
+    } finally {
+      badgesBusy = false
+    }
+  }
+
+  /** The Harness tab's data for one agent; a request that arrives while one runs refetches after. */
+  async function fetchInspection(id: string) {
+    const h = d.gateway.projects?.harness
+    if (!h?.inspect) return
+    if (inspecting.has(id)) {
+      inspectAgain.add(id)
+      return
+    }
+    inspecting.add(id)
+    try {
+      do {
+        inspectAgain.delete(id)
+        try {
+          inspections.set(id, await h.inspect(id))
+        } catch {
+          // keep the last inspection
+        }
+      } while (inspectAgain.has(id))
+    } finally {
+      inspecting.delete(id)
+    }
+    if (selected === id) renderPanel()
   }
 
   /** Silent idle agents turn "No recent activity" with no event: push once per agent when they do. */
@@ -476,7 +556,7 @@ export function createController(d: ControllerDeps) {
     const provider = (state.agents.get(id) ?? plans.get(id)?.agent)?.provider
     const caps = provider ? (state.capabilities.get(provider) ?? []) : []
     const models = modelsCache.get(id)
-    return panelVM(
+    const base = panelVM(
       state,
       id,
       d.clock.now(),
@@ -490,6 +570,11 @@ export function createController(d: ControllerDeps) {
         ...(drafts.has(id) && { draft: drafts.get(id)! }),
       },
     )
+    // Details | Harness tabs only for agents that work on a project.
+    const agent = state.agents.get(id) ?? plans.get(id)?.agent
+    if (!agent?.projectId || !d.gateway.projects?.harness) return base
+    const ins = inspections.get(id) ?? null
+    return { ...base, tabs: panelTabsVM(panelTab, ins), harness: harnessTabVM(ins) }
   }
 
   /** A managed session's model list, fetched once; the alias fallback when it can't be listed. */
@@ -671,7 +756,9 @@ export function createController(d: ControllerDeps) {
 
   const select = (id: string | null) => {
     // Agents walking out (removed from state, still planned) stay selectable while they leave.
-    selected = id && (state.agents.has(id) || plans.has(id)) ? id : null
+    const next = id && (state.agents.has(id) || plans.has(id)) ? id : null
+    if (next !== selected) panelTab = 'details'
+    selected = next
     d.scene.select(selected)
     if (!selected) {
       d.panel.close()
@@ -700,7 +787,8 @@ export function createController(d: ControllerDeps) {
       dialogueAt !== null ||
       d.settings.isOpen() ||
       d.connect.isOpen() ||
-      d.newSession.isOpen()
+      d.newSession.isOpen() ||
+      externalModal
     if (on === suspended) return
     suspended = on
     d.scene.setInputSuspended?.(on)
@@ -1159,6 +1247,30 @@ export function createController(d: ControllerDeps) {
     inSession((id) => d.gateway.sessions.answer(id, requestId, decision))(),
   )
 
+  // Details | Harness tabs and the Compliance Inspector's buttons (docs/harness.md)
+  d.panel.onTab?.((tab) => {
+    panelTab = tab
+    if (tab === 'harness' && selected) void fetchInspection(selected)
+    renderPanel()
+  })
+  d.panel.onHarnessAction?.((action) => {
+    const id = selected
+    if (!id) return
+    const projectId = (state.agents.get(id) ?? plans.get(id)?.agent)?.projectId
+    if (action === 'open-harnesses') {
+      void d.workspace?.perform({ type: 'open-harnesses', ...(projectId && { projectId }) })
+    } else if (action === 'run-gates') {
+      // The call returns when the gates finished; pushes refresh the running state meanwhile.
+      void Promise.resolve(d.workspace?.perform({ type: 'run-gates', agentId: id })).then(() =>
+        fetchInspection(id),
+      )
+    } else {
+      void Promise.resolve(d.gateway.projects?.harness?.cancelGates(id))
+        .catch(() => {})
+        .then(() => fetchInspection(id))
+    }
+  })
+
   // New session dialog (plan §2.4)
   const runningCount = () =>
     [...state.agents.values()].filter((a) => a.managed && a.managed.phase !== 'ended').length
@@ -1178,8 +1290,32 @@ export function createController(d: ControllerDeps) {
             .projectDirectory()
             .entries.map((e) => ({ id: e.projectId, name: e.name })),
         }),
+        harness: newSessionHarnessVM({
+          ...(form.projectId && { projectId: form.projectId }),
+          status: nsHarness?.key === harnessKey() ? nsHarness.status : 'loading',
+          ...(nsHarness?.key === harnessKey() &&
+            nsHarness.preview && { preview: nsHarness.preview }),
+        }),
       },
     )
+  const harnessKey = () => `${form.projectId ?? ''}|${form.provider}`
+  /** What the attached harnesses mean for the picked provider on the picked project. */
+  const loadNsHarness = async () => {
+    const h = d.gateway.projects?.harness
+    const projectId = form.projectId
+    if (!h?.coverage || !projectId) return
+    const key = harnessKey()
+    if (nsHarness?.key === key && nsHarness.status !== 'failed') return
+    nsHarness = { key, status: 'loading' }
+    renderNewSession()
+    try {
+      const preview = await h.coverage(projectId, form.provider)
+      nsHarness = { key, status: 'ready', preview }
+    } catch {
+      nsHarness = { key, status: 'failed' }
+    }
+    if (harnessKey() === key) renderNewSession()
+  }
   /** A provider's models for the dialog, fetched once; the list stays empty when it fails. */
   const loadProviderModels = async (id: ProviderId) => {
     if (id === CLAUDE || providerModels.has(id)) return
@@ -1205,6 +1341,7 @@ export function createController(d: ControllerDeps) {
     nsStarting = false
     d.newSession.open(nsVM())
     void loadProviderModels(form.provider)
+    void loadNsHarness()
     try {
       const list = await d.gateway.sessions.models()
       if (list.length) globalModels = list
@@ -1276,6 +1413,12 @@ export function createController(d: ControllerDeps) {
       void loadProviderModels(form.provider)
     }
     renderNewSession()
+    if (switched || patch.projectId !== undefined) void loadNsHarness()
+  })
+  d.newSession.onInspectHarness?.(() => {
+    const projectId = form.projectId
+    d.newSession.close()
+    void d.workspace?.perform({ type: 'open-harnesses', ...(projectId && { projectId }) })
   })
   d.newSession.onStart(async () => {
     if (!nsVM().canStart || !form.folder) return
@@ -1525,6 +1668,7 @@ export function createController(d: ControllerDeps) {
         if (prefill.objective) form.text = prefill.objective
         if (prefill.projectId) form.projectId = prefill.projectId
         renderNewSession()
+        void loadNsHarness()
       })
     },
     openConnect() {
@@ -1533,6 +1677,12 @@ export function createController(d: ControllerDeps) {
     /** The agent selected in the Office (the Context Inspector defaults to it). */
     selectedAgentId(): string | null {
       return selected
+    },
+    /** The Harness Builder (a workspace dialog) opened or closed: pause scene input meanwhile. */
+    setExternalModal(open: boolean) {
+      if (open === externalModal) return
+      externalModal = open
+      updateSuspension()
     },
     /** The workspace hides the Office stage for other views: pause rendering and input there. */
     setOfficeVisible(on: boolean) {
@@ -1555,6 +1705,9 @@ export function createController(d: ControllerDeps) {
           noteArrivals()
           pushRoster()
           render()
+          // A permission question (maybe from a harness rule) changes what the Inspector shows.
+          if (m.type === 'permission' && m.agentId === selected && panelTab === 'harness')
+            void fetchInspection(m.agentId)
           if (pendingSelect && state.agents.has(pendingSelect)) {
             const id = pendingSelect
             pendingSelect = null
@@ -1577,6 +1730,15 @@ export function createController(d: ControllerDeps) {
           update = s
           void renderSettings(false)
         }),
+        // Harness changes (a rule published, an action blocked, a gate finished) refresh the badges
+        // and, while its tab is open, the selected agent's inspection.
+        d.gateway.projects?.onPush?.((m) => {
+          if (m.type === 'harness' || m.type === 'agent-project') void refreshBadges()
+          if (m.type !== 'harness' || !selected || panelTab !== 'harness') return
+          const projectId = (state.agents.get(selected) ?? plans.get(selected)?.agent)?.projectId
+          if (!m.agentId || m.agentId === selected || (m.projectId && m.projectId === projectId))
+            void fetchInspection(selected)
+        }) ?? (() => {}),
         d.gateway.app.onPower(onPower),
         d.gateway.app.onWindowVisibility((visible) => {
           windowVisible = visible
@@ -1609,6 +1771,7 @@ export function createController(d: ControllerDeps) {
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       noteArrivals()
       pushRoster()
+      void refreshBadges()
       ready = true
       stops.push(
         d.after(EMPTY_GRACE_MS, () => {

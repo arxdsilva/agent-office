@@ -102,11 +102,12 @@ export class DomDashboard implements DashboardView {
 
     if (vm.sections.length) {
       inner.append(this.metrics(vm))
-      const by = (id: SectionId) => vm.sections.find((s) => s.id === id)
+      const by = (id: SectionId) =>
+        id === 'harness' ? vm.harness : vm.sections.find((s) => s.id === id)
       const left = el('div', undefined, 'pd-col')
       const right = el('div', undefined, 'pd-col')
       for (const [col, ids] of [
-        [left, ['active', 'tasks', 'knowledge'] as SectionId[]],
+        [left, ['active', 'tasks', 'knowledge', 'harness'] as SectionId[]],
         [right, ['activity', 'completed'] as SectionId[]],
       ] as const) {
         for (const id of ids) {

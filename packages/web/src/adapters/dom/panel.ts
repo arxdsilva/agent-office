@@ -14,6 +14,8 @@ import {
   type SessionHeaderVM,
   type UseMenuVM,
 } from '../../app/session-types.ts'
+import { HARNESS_COPY } from '../../app/workspace/harness-copy.ts'
+import type { HarnessTabVM } from '../../app/harness-inspector-vm.ts'
 import type { PanelVM } from '../../app/view-models.ts'
 import type { CapabilityRef, PanelView } from '../../ports.ts'
 import { byId, el } from './el.ts'
@@ -109,9 +111,16 @@ export class DomPanel implements PanelView {
   private openUseFn: () => UseMenuVM = () => ({ groups: [] })
   private toggleUseFn: (id: string) => void = () => {}
   private draftFn: (text: string) => void = () => {}
+  private tabFn: (tab: 'details' | 'harness') => void = () => {}
+  private harnessFn: (a: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void = () => {}
+  private renderedHarness = ''
 
   constructor() {
     byId('p-close').addEventListener('click', () => this.closeFn())
+    byId('p-tab-details').textContent = HARNESS_COPY.tab.details
+    byId('p-tab-harness').textContent = HARNESS_COPY.tab.harness
+    byId('p-tab-details').addEventListener('click', () => this.tabFn('details'))
+    byId('p-tab-harness').addEventListener('click', () => this.tabFn('harness'))
     byId('p-form').addEventListener('submit', (e) => {
       e.preventDefault()
       this.submit()
@@ -200,6 +209,12 @@ export class DomPanel implements PanelView {
   onDraft(fn: (text: string) => void) {
     this.draftFn = fn
   }
+  onTab(fn: (tab: 'details' | 'harness') => void) {
+    this.tabFn = fn
+  }
+  onHarnessAction(fn: (a: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void) {
+    this.harnessFn = fn
+  }
   private pickCapFn: (ref: CapabilityRef) => void = () => {}
   onPickCapability(fn: (ref: CapabilityRef) => void) {
     this.pickCapFn = fn
@@ -264,11 +279,122 @@ export class DomPanel implements PanelView {
     }
     byId('p-meta').replaceChildren(...rows)
     renderChips(byId('p-used'), vm.used, panelProvider(vm), (ref) => this.pickCapFn(ref))
+    this.renderTabs(vm)
     this.renderHint(vm)
     this.renderSession(vm.session)
     this.renderPermission(vm.permission)
     this.renderComposer(vm.composer)
     this.renderThread(vm)
+  }
+
+  /** Details | Harness: the strip, the active tab (CSS hides the details column) and the Inspector. */
+  private renderTabs(vm: PanelVM): void {
+    const t = vm.tabs
+    byId('p-tabs').hidden = !t?.show
+    const active = t?.show ? t.active : 'details'
+    this.root.dataset.tab = active
+    for (const id of ['details', 'harness'] as const) {
+      const b = byId(`p-tab-${id}`)
+      b.setAttribute('aria-selected', String(active === id))
+      b.tabIndex = active === id ? 0 : -1
+    }
+    if (t?.badge) byId('p-tab-harness').dataset.badge = t.badge
+    else delete byId('p-tab-harness').dataset.badge
+    const sec = byId('p-harness')
+    sec.hidden = active !== 'harness' || !vm.harness
+    if (sec.hidden) return
+    const key = JSON.stringify(vm.harness)
+    if (key === this.renderedHarness) return
+    this.renderedHarness = key
+    sec.replaceChildren(...this.harnessBlocks(vm.harness!))
+  }
+
+  private harnessBlocks(h: HarnessTabVM): HTMLElement[] {
+    const manage = el('button', h.labels.open, 'btn small')
+    manage.type = 'button'
+    manage.dataset.action = 'open-harnesses'
+    manage.addEventListener('click', () => this.harnessFn('open-harnesses'))
+    if (h.state !== 'ready') return [el('p', h.message, 'muted hb-empty'), manage]
+    const out: HTMLElement[] = []
+    const applied = el('div', undefined, 'ih-applied')
+    applied.append(el('h3', h.labels.applied))
+    const names = el('ul', undefined, 'chips')
+    for (const n of h.applied) names.append(el('li', n, 'chip'))
+    applied.append(names)
+    out.push(applied)
+    if (h.coverage) {
+      const cov = el('div', undefined, 'ih-coverage')
+      cov.append(el('h3', h.labels.coverage))
+      const ul = el('ul', undefined, 'hb-coverage')
+      for (const r of h.coverage.rows) {
+        const li = el('li', undefined, `hb-cov tone-${r.tone}`)
+        li.dataset.capability = r.capability
+        li.dataset.level = r.level
+        li.title = r.reason
+        li.append(el('span', r.label, 'hb-cov-label'), el('span', r.word, `badge-t tone-${r.tone}`))
+        ul.append(li)
+      }
+      cov.append(ul)
+      out.push(cov)
+    }
+    const status = el('div', undefined, 'ih-status')
+    const comp = el('span', h.completion.text, `badge-t tone-${h.completion.tone}`)
+    comp.dataset.role = 'completion'
+    const ver = el('span', h.verification.text, `badge-t tone-${h.verification.tone}`)
+    ver.dataset.role = 'verification'
+    status.append(comp, ver)
+    if (h.retries) status.append(el('span', h.retries, 'muted small'))
+    out.push(status)
+    const counts = el('p', h.countsLine, 'ih-counts')
+    counts.dataset.role = 'counts'
+    out.push(el('h3', h.labels.activity), counts)
+    out.push(el('h3', h.labels.gates))
+    if (!h.gates.length) out.push(el('p', h.gatesEmpty, 'muted'))
+    const gl = el('ul', undefined, 'ih-gates')
+    for (const g of h.gates) {
+      const li = el('li', undefined, `ih-gate tone-${g.tone}`)
+      li.dataset.gateId = g.id
+      li.append(
+        el('span', g.mark, 'ih-mark'),
+        el('strong', ` ${g.name} `),
+        el('code', g.command),
+        el('span', ` ${g.statusLabel}`, 'muted small'),
+      )
+      if (g.tail) {
+        const d = el('details')
+        d.append(el('summary', 'Output'), el('pre', g.tail))
+        li.append(d)
+      }
+      gl.append(li)
+    }
+    out.push(gl)
+    if (h.pinWarning) out.push(el('p', h.pinWarning, 'tone-warn'))
+    const run = el('button', h.run.label, 'btn small primary')
+    run.type = 'button'
+    run.dataset.action = h.run.action
+    run.disabled = !h.run.enabled
+    if (h.run.hint) run.title = h.run.hint
+    run.addEventListener('click', () => this.harnessFn(h.run.action))
+    out.push(run)
+    out.push(el('h3', h.labels.denied))
+    if (!h.denied.length) out.push(el('p', h.deniedEmpty, 'muted'))
+    const dl = el('ul', undefined, 'ih-denied')
+    for (const d of h.denied) {
+      const li = el('li', undefined, 'ih-deny')
+      li.dataset.eventId = d.id
+      li.append(
+        el('strong', d.tool),
+        el('span', ` ${d.summary}`),
+        el(
+          'span',
+          ` ${d.ruleNames.map((n) => HARNESS_COPY.tab.rule(n)).join(' · ')}`,
+          'muted small',
+        ),
+      )
+      dl.append(li)
+    }
+    out.push(dl, manage)
+    return out
   }
 
   private renderHint(vm: PanelVM): void {
@@ -397,6 +523,8 @@ export class DomPanel implements PanelView {
     title.id = 'p-perm-title'
     const what = el('p', `⌘ ${p.request.tool} · ${p.request.summary}`, 'perm-what')
     const rows: HTMLElement[] = [title, what]
+    if (p.request.rule)
+      rows.push(el('p', HARNESS_COPY.tab.askedBy(p.request.rule.name), 'muted perm-rule'))
     if (p.request.where)
       rows.push(el('p', SESSION_COPY.permission.where(p.request.where), 'muted perm-where'))
     const actions = el('div', undefined, 'perm-actions')

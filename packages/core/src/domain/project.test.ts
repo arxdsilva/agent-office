@@ -97,3 +97,18 @@ describe('project', () => {
     expect(providerAccess(undefined, 'codex')).toBe('none')
   })
 })
+
+describe('harness attachments', () => {
+  it('attach is idempotent, capped at 16; detach refuses unknown ids', async () => {
+    const { attachHarness, detachHarness, MAX_HARNESSES } = await import('./project.ts')
+    let p = createProject({ id: 'prj_aaaaaaaaaaaa', name: 'Shop', now: 1 })
+    p = attachHarness(p, 'hrn_a', 5)
+    expect(p.harnesses).toEqual([{ harnessId: 'hrn_a', attachedAt: 5 }])
+    expect(attachHarness(p, 'hrn_a', 6)).toBe(p)
+    for (let i = 1; i < MAX_HARNESSES; i++) p = attachHarness(p, `hrn_${i}`, 7)
+    expect(() => attachHarness(p, 'hrn_x', 8)).toThrow(ValidationError)
+    p = detachHarness(p, 'hrn_a')
+    expect(p.harnesses!.some((h) => h.harnessId === 'hrn_a')).toBe(false)
+    expect(() => detachHarness(p, 'hrn_a')).toThrow(ValidationError)
+  })
+})

@@ -68,9 +68,25 @@ describe('checkCodexSchema', () => {
   it('relies on ThreadStartParams.config and reports it when missing', () => {
     expect(CODEX_RELIES_ON.definitions.ThreadStartParams).toContain('config')
     const b = complete()
-    b.definitions.ThreadStartParams = obj(['cwd', 'model', 'approvalPolicy', 'sandbox'])
+    b.definitions.ThreadStartParams = obj([
+      'cwd',
+      'model',
+      'approvalPolicy',
+      'sandbox',
+      'developerInstructions',
+    ])
     const bad = checkCodexSchema(b).rows.find((x) => x.name === 'ThreadStartParams')!
     expect(bad).toMatchObject({ ok: false, missing: ['config'] })
+  })
+
+  // Harness instructions (docs/harness.md §3) go in `developerInstructions`, never `baseInstructions`.
+  it('relies on ThreadStartParams.developerInstructions and reports it when missing', () => {
+    expect(CODEX_RELIES_ON.definitions.ThreadStartParams).toContain('developerInstructions')
+    expect(CODEX_RELIES_ON.definitions.ThreadStartParams).not.toContain('baseInstructions')
+    const b = complete()
+    b.definitions.ThreadStartParams = obj(['cwd', 'model', 'approvalPolicy', 'sandbox', 'config'])
+    const bad = checkCodexSchema(b).rows.find((x) => x.name === 'ThreadStartParams')!
+    expect(bad).toMatchObject({ ok: false, missing: ['developerInstructions'] })
   })
 
   it('reads method names from a union', () => {

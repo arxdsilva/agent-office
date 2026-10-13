@@ -143,7 +143,14 @@ export const CODEX_RELIES_ON = {
     GetAccountParams: ['refreshToken'],
     GetAccountResponse: ['requiresOpenaiAuth', 'account'],
     // `config`: free-form config.toml overrides; carries `mcp_servers` (experimental, docs/projects.md §5).
-    ThreadStartParams: ['cwd', 'model', 'approvalPolicy', 'sandbox', 'config'],
+    ThreadStartParams: [
+      'cwd',
+      'model',
+      'approvalPolicy',
+      'sandbox',
+      'config',
+      'developerInstructions',
+    ],
     ThreadStartResponse: ['thread'],
     Thread: ['id'],
     TurnStartParams: ['threadId', 'input', 'model', 'approvalPolicy', 'sandboxPolicy'],

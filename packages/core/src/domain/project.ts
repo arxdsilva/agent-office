@@ -7,6 +7,7 @@ import {
 } from '@agent-office/shared'
 import type { RepoIdentityInfo } from '../ports/driven.ts'
 import { ValidationError } from './errors.ts'
+import type { HarnessAttachment } from './harness-types.ts'
 
 export const PROJECT_COLORS = [
   '#4f7cff',
@@ -39,6 +40,8 @@ export interface Project {
   archivedAt?: number
   repos: RepoLink[]
   policy: ContextPolicy
+  /** Attached harnesses (docs/harness.md), ≤ MAX_HARNESSES; absent on older records. */
+  harnesses?: HarnessAttachment[]
 }
 
 /** `prefix_` + 16 chars of [a-z0-9] derived from a random token (any alphabet, ≥ 16 chars). */
@@ -135,4 +138,21 @@ export function removeRepo(p: Project, repoId: string): Project {
 export function providerAccess(p: Project | undefined, provider: string): ProviderAccess {
   if (!p) return 'none'
   return (p.policy.providers as Record<string, ProviderAccess | undefined>)[provider] ?? 'none'
+}
+
+export const MAX_HARNESSES = 16
+
+/** Attaching twice is a no-op (same project returned). */
+export function attachHarness(p: Project, harnessId: string, now: number): Project {
+  const list = p.harnesses ?? []
+  if (list.some((h) => h.harnessId === harnessId)) return p
+  if (list.length >= MAX_HARNESSES) throw new ValidationError('too many harnesses')
+  return { ...p, harnesses: [...list, { harnessId, attachedAt: now }] }
+}
+
+export function detachHarness(p: Project, harnessId: string): Project {
+  const list = p.harnesses ?? []
+  if (!list.some((h) => h.harnessId === harnessId))
+    throw new ValidationError('this harness is not attached')
+  return { ...p, harnesses: list.filter((h) => h.harnessId !== harnessId) }
 }

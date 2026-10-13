@@ -16,6 +16,7 @@ import {
   ValidationError,
   type SessionStartCode,
 } from '../domain/errors.ts'
+import type { ActionPolicy, EnforcementDecl, SessionHarnessHooks } from '../domain/harness-types.ts'
 import { newUserMessage } from '../domain/message.ts'
 import { ENDED_CAPS } from '../domain/providers.ts'
 import { RateWindow } from '../domain/rate-limit.ts'
@@ -24,6 +25,7 @@ import {
   composePrompt,
   contextChips,
   MODE_LABELS,
+  modeOf,
   summarizeToolRequest,
 } from '../domain/session-prompt.ts'
 import type {
@@ -110,6 +112,13 @@ export interface ManagedSessionDeps {
   mcpLaunch?: (token: string) => RunnerStart['mcp']
   /** Sessions started outside a project report their folder for matching. */
   observation?: SessionObservation
+  /** Harness policy for project sessions (docs/harness.md); without it nothing is enforced. */
+  harness?: SessionHarnessHooks
+}
+
+/** The rule name on a harness permission card: the reason up to " — " (≤ 60 chars). */
+function ruleNameOf(reason: string): string {
+  return (reason.split(' — ')[0] ?? '').slice(0, 60) || 'Harness rule'
 }
 
 /** Never an absolute path: the last segment of a POSIX or Windows path. */
@@ -122,6 +131,8 @@ interface Pending {
   vm: PermissionRequestVM
   key: string
   resolve: (d: RunnerDecision) => void
+  /** A harness rule asked: answered once, never remembered for the session. */
+  harness?: boolean
 }
 
 interface Session {
@@ -140,6 +151,11 @@ interface Session {
   models?: ModelOption[]
   /** This session's MCP token (revoked when it ends). */
   mcpTokenId?: string
+  /** The bound harness policy, and what the runtime enforces (mode switches are checked). */
+  policy?: ActionPolicy
+  enforcement?: EnforcementDecl
+  /** Subagent agent ids this session reported (owned, ended with it). */
+  children: Set<string>
   /**
    * Runner callbacks that arrived before start() registered the session (the first prompt is pushed
    * before the id is known); replayed in order once it is registered, dropped if the start fails.
@@ -207,6 +223,18 @@ export class ManagedSessionService implements ManagedSessions {
     if (o.projectId && this.d.projectExists && !this.d.projectExists(o.projectId))
       throw new ValidationError('unknown project')
     const sessionProvider = decl?.provider ?? 'claude-code'
+    const enforcement = runtime.enforcement ?? decl?.enforcement
+    const policy = o.projectId
+      ? await this.prepareHarness(o, sessionProvider, mode?.id, enforcement)
+      : undefined
+    // Advisory harness: a mode the runtime cannot intercept in is coerced (strict refused above).
+    const blind = (m: string | undefined) =>
+      !!policy && m !== undefined && !!enforcement?.nonInterceptingModes?.includes(m)
+    const permissionMode: PermissionMode = blind(o.mode)
+      ? (modeOf(enforcement?.interceptingMode) ?? 'default')
+      : o.mode
+    const runMode =
+      blind(mode?.id) && decl ? this.coercedMode(decl, enforcement?.interceptingMode) : mode
     const minted =
       o.projectId && this.d.mcp && this.d.mcpLaunch
         ? this.d.mcp.mint({ projectId: o.projectId, provider: sessionProvider })
@@ -220,12 +248,13 @@ export class ManagedSessionService implements ManagedSessions {
       const runner = runtime.start({
         cwd: o.cwd,
         ...(o.model ? { model: o.model } : {}),
-        mode: o.mode,
+        mode: permissionMode,
         extraDirs: o.extraDirs,
         chrome: o.chrome,
-        allowBypass: bypass || !!mode?.dangerous,
-        ...(mode ? { modeId: mode.id } : {}),
+        allowBypass: permissionMode === 'bypassPermissions' || !!runMode?.dangerous,
+        ...(runMode ? { modeId: runMode.id } : {}),
         ...(mcp ? { mcp } : {}),
+        ...(policy ? { harness: policy } : {}),
         // Native resume is Claude-only; other runners never see it.
         ...(o.resume && sessionProvider === 'claude-code' ? { resume: o.resume } : {}),
       })
@@ -241,6 +270,9 @@ export class ManagedSessionService implements ManagedSessions {
         pending: new Map(),
         interrupted: false,
         ...(minted ? { mcpTokenId: minted.tokenId } : {}),
+        ...(policy ? { policy } : {}),
+        ...(enforcement ? { enforcement } : {}),
+        children: new Set(),
         early: [],
       }
       const sess = s
@@ -254,6 +286,7 @@ export class ManagedSessionService implements ManagedSessions {
           ),
       )
       runner.onExit((e) => this.onRunnerExit(sess, e))
+      runner.onChild?.((c) => this.whenRegistered(sess, () => this.onRunnerChild(sess, c)))
       // The first prompt goes in before the id: some runtimes (Claude CLI 2.1.x) report their
       // session id only once it arrives. Every runner queues prompts until it is ready.
       runner.push(composePrompt(o.first))
@@ -290,9 +323,9 @@ export class ManagedSessionService implements ManagedSessions {
     ])
     this.patch(agentId, (a) => ({
       ...a,
-      permissionMode: o.mode,
+      permissionMode,
       ...(decl ? { caps: [...decl.caps] } : {}),
-      ...(mode ? { modeId: mode.id } : {}),
+      ...(runMode ? { modeId: runMode.id } : {}),
       ...(o.projectId ? { projectId: o.projectId } : {}),
       managed: {
         chrome: o.chrome,
@@ -303,6 +336,8 @@ export class ManagedSessionService implements ManagedSessions {
       },
     }))
     this.cancelHeartbeat ??= this.d.scheduler.every(HEARTBEAT_MS, () => this.heartbeat())
+    if (policy && o.projectId)
+      this.d.harness!.bind({ agentId, sessionId, projectId: o.projectId, policy })
     this.record(s, o.first)
     const early = s.early ?? []
     delete s.early
@@ -324,6 +359,7 @@ export class ManagedSessionService implements ManagedSessions {
     this.limit(agentId)
     if (mode === 'bypassPermissions' && !(await this.d.settings.get()).allowBypassPermissions)
       throw new NotAllowedError('Bypass permissions is turned off in Settings')
+    this.assertIntercepting(s, mode)
     await s.runner.setMode(mode)
     this.patch(agentId, (a) => ({ ...a, permissionMode: mode }))
     this.systemLine(agentId, SYSTEM.mode(MODE_LABELS[mode]))
@@ -371,13 +407,16 @@ export class ManagedSessionService implements ManagedSessions {
     const mode = this.modeOption(s.decl, modeId)
     if (mode?.dangerous && !(await this.d.settings.get()).allowBypassPermissions)
       throw new NotAllowedError('Dangerous modes are turned off in Settings')
+    this.assertIntercepting(s, modeId)
     await s.runner.setModeId(modeId)
     this.patch(agentId, (a) => ({ ...a, modeId }))
     this.systemLine(agentId, SYSTEM.mode(mode?.label ?? modeId))
   }
 
   owns(agentId: string): boolean {
-    return this.sessions.has(agentId)
+    if (this.sessions.has(agentId)) return true
+    for (const s of this.sessions.values()) if (s.children.has(agentId)) return true
+    return false
   }
 
   async interrupt(agentId: string): Promise<void> {
@@ -412,7 +451,7 @@ export class ManagedSessionService implements ManagedSessions {
     s.pending.delete(requestId)
     if (decision === 'deny') p.resolve({ behavior: 'deny', message: SYSTEM.denied })
     else p.resolve({ behavior: 'allow' })
-    if (decision === 'allow-session') {
+    if (decision === 'allow-session' && !p.harness) {
       s.allow.add(p.key)
       for (const [id, other] of s.pending)
         if (other.key === p.key) {
@@ -455,6 +494,8 @@ export class ManagedSessionService implements ManagedSessions {
     if (!this.isLive(s)) return
     const text = r.text.slice(0, MAX_REPLY)
     if (text) this.d.inbox.reply(s.agentId, text)
+    if (s.policy)
+      this.d.harness?.turnEnded(s.agentId, { isError: r.isError, interrupted: s.interrupted })
     if (s.interrupted) {
       s.interrupted = false
       return
@@ -466,15 +507,50 @@ export class ManagedSessionService implements ManagedSessions {
 
   private onRunnerPermission(s: Session, r: RunnerPermission): Promise<RunnerDecision> {
     if (!this.isLive(s)) return Promise.resolve({ behavior: 'deny', message: SYSTEM.ended })
+    let rule: PermissionRequestVM['rule']
+    if (s.policy && this.d.harness) {
+      const d = this.d.harness.evaluate(s.agentId, {
+        tool: r.tool,
+        input: r.input,
+        cwd: r.cwd,
+        provider: s.provider,
+        agentRole: r.agent?.type ?? 'main',
+      })
+      if (d.action === 'deny') return Promise.resolve({ behavior: 'deny', message: d.reason })
+      if (d.action === 'ask') rule = { id: d.ruleIds[0] ?? 'harness', name: ruleNameOf(d.reason) }
+    }
     const key = allowKey(r.tool, r.input)
-    if (s.allow.has(key)) return Promise.resolve({ behavior: 'allow' })
+    if (!rule && s.allow.has(key)) return Promise.resolve({ behavior: 'allow' })
     return new Promise((resolve) => {
       const id = (this.d.permId ?? randomPermId)()
       const { tool, summary } = summarizeToolRequest(r.tool, r.input, r.cwd)
       const where = (this.d.displayPath ?? basenameOnly)(r.cwd)
-      s.pending.set(id, { vm: { id, tool, summary, where }, key, resolve })
+      s.pending.set(id, {
+        vm: { id, tool, summary, where, ...(rule ? { rule } : {}) },
+        key,
+        resolve,
+        ...(rule ? { harness: true } : {}),
+      })
       this.pendingChanged(s)
     })
+  }
+
+  /** A subagent's event: reported as its own agent under this session (and owned by it). */
+  private onRunnerChild(
+    s: Session,
+    c: { childId: string; event: Omit<AgentEvent, 'agentId' | 'parentId'> },
+  ): void {
+    if (!this.isLive(s) || !c.childId || c.childId === s.agentId) return
+    s.children.add(c.childId)
+    this.report([
+      {
+        ...c.event,
+        agentId: c.childId,
+        parentId: s.agentId,
+        source: 'managed',
+        provider: s.provider,
+      },
+    ])
   }
 
   private onRunnerExit(s: Session, e: RunnerExit): void {
@@ -499,6 +575,40 @@ export class ManagedSessionService implements ManagedSessions {
   private runtime(provider: ProviderId): AgentRunner | undefined {
     const r = this.d.runtimes?.get(provider)
     return r ?? (provider === 'claude-code' ? this.d.runner : undefined)
+  }
+
+  /** Resolves the project's harness; any failure other than a refusal also refuses (fail closed). */
+  private async prepareHarness(
+    o: StartSession,
+    provider: ProviderId,
+    modeId: string | undefined,
+    enforcement: EnforcementDecl | undefined,
+  ): Promise<ActionPolicy | undefined> {
+    if (!this.d.harness || !o.projectId) return undefined
+    try {
+      return await this.d.harness.prepare({
+        projectId: o.projectId,
+        provider,
+        cwd: o.cwd,
+        mode: o.mode,
+        ...(modeId !== undefined ? { modeId } : {}),
+        ...(enforcement ? { enforcement } : {}),
+      })
+    } catch (err) {
+      throw err instanceof SessionStartError ? err : new SessionStartError('harness')
+    }
+  }
+
+  private coercedMode(decl: RunnerDecl, modeId: string | undefined) {
+    const m = modeId !== undefined ? decl.modes?.find((x) => x.id === modeId) : undefined
+    if (!m) throw new NotAllowedError("This mode can't be used with the project's harness")
+    return m
+  }
+
+  /** With a bound harness, a mode the runtime cannot intercept in is refused. */
+  private assertIntercepting(s: Session, mode: string): void {
+    if (s.policy && s.enforcement?.nonInterceptingModes?.includes(mode))
+      throw new NotAllowedError("This mode can't be used with the project's harness")
   }
 
   /** Throws for an id the declaration doesn't offer. */
@@ -577,6 +687,11 @@ export class ManagedSessionService implements ManagedSessions {
     if (!this.isLive(s)) return
     this.sessions.delete(s.agentId)
     if (s.mcpTokenId) this.d.mcp?.revoke(s.mcpTokenId)
+    if (s.policy) this.d.harness?.ended(s.agentId)
+    if (s.children.size)
+      this.report(
+        [...s.children].map((agentId) => ({ agentId, status: 'done' as const, text: '' })),
+      )
     if (this.sessions.size === 0) {
       this.cancelHeartbeat?.()
       this.cancelHeartbeat = undefined

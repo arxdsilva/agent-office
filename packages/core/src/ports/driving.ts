@@ -38,6 +38,17 @@ import type {
   SessionMessageView,
   SessionSummary,
   UpdateState,
+  GateResultView,
+  HarnessBadge,
+  HarnessDetail,
+  HarnessDraft,
+  HarnessInspection,
+  HarnessPreview,
+  HarnessSummary,
+  HarnessTemplateView,
+  ImportCommitArgs,
+  ImportPreview,
+  ImportSourceView,
 } from '@agent-office/shared'
 
 /** Minimal cancellation signal (structurally compatible with the platform AbortSignal). */
@@ -354,4 +365,49 @@ export interface KnowledgeImport {
 /** Experimental: continue a past Claude Code session natively as a managed session. */
 export interface SessionResume {
   resume(sessionId: string): Promise<{ agentId: string }>
+}
+
+// ── Harness Builder (docs/harness.md) ───────────────────────────────────────────────────────────
+// User actions only: every method authorizes `harness.read` / `harness.manage` (user principal).
+// Agents have no port into harnesses (no MCP tool), so they cannot weaken their own rules.
+
+export interface HarnessManagement {
+  list(): HarnessSummary[]
+  get(harnessId: string): HarnessDetail
+  /** Every stored version, oldest first. */
+  versions(harnessId: string): HarnessDetail[]
+  create(draft: HarnessDraft): Promise<HarnessDetail>
+  /** Edits the draft; on a published harness it opens `version + 1` as a new draft. */
+  update(harnessId: string, draft: HarnessDraft): Promise<HarnessDetail>
+  /** Freezes the current draft. Throws ValidationError for an empty harness or unresolved conflicts of kind `policy-opposite` inside one harness. */
+  publish(harnessId: string): Promise<HarnessDetail>
+  archive(harnessId: string): Promise<HarnessDetail>
+  attach(projectId: string, harnessId: string): Promise<HarnessSummary[]>
+  detach(projectId: string, harnessId: string): Promise<HarnessSummary[]>
+  attached(projectId: string): HarnessSummary[]
+  templates(): HarnessTemplateView[]
+  createFromTemplate(templateId: string): Promise<HarnessDetail>
+}
+
+/** Import of rule files from a project's repositories: read-only scan, reviewed commit to a draft. */
+export interface HarnessImport {
+  detect(projectId: string): Promise<ImportSourceView[]>
+  preview(o: { projectId: string; paths?: string[] }): Promise<ImportPreview>
+  /** Builds a draft harness from a preview's selected candidates. Never publishes. */
+  commit(o: ImportCommitArgs): Promise<HarnessDetail>
+}
+
+/** Read model of what applies to a project's sessions and what happened (the Compliance Inspector). */
+export interface HarnessPolicyEngine {
+  /** What a new session of `provider` on this project would get. */
+  preview(projectId: string, provider: ProviderId): HarnessPreview
+  inspect(agentId: string): HarnessInspection
+  badges(): HarnessBadge[]
+}
+
+/** Validation gates through the trusted runner (explicit user action, or `turn-end` trigger). */
+export interface HarnessValidation {
+  run(o: { agentId: string; gateIds?: string[] }): Promise<GateResultView[]>
+  cancel(agentId: string): void
+  results(agentId: string): GateResultView[]
 }

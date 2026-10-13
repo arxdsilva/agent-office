@@ -101,6 +101,18 @@ Render API-provided text with `textContent` and elements built with `document.cr
 | Make deletion real: deleting a memory, session or project drops its vault records and search entries                                                                                                                                                                                                                   | Keep "deleted" data in indexes or logs                                                                                                        |
 | Prove it with sentinel fixtures: the vault files never contain a known plaintext; MCP never returns another project's sentinel                                                                                                                                                                                         | Ship a new store, tool or import path without a no-leak test                                                                                  |
 
+## Harnesses (`docs/harness.md`)
+
+| Do                                                                                                                                                     | Don't                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Decide in core (`harness-policy.ts`) and the runners (PreToolUse hook, approval channel); deny beats ask beats allow; an engine error is a deny        | Let the renderer, an agent message or a memory item decide or change a policy                 |
+| Record harness events with the tool name and a ≤ 120-char `summarizeToolRequest` summary; redact gate output (`redactOutput`) before storing ≤ 8 KB    | Store raw tool input, commands, env values or absolute paths in events, activity, IPC or logs |
+| Run gates only from the published harness version in the vault, as argv with `shell: false`, a scrubbed env and a process-tree timeout                 | Execute anything discovered during import, or re-read gate commands from the repository       |
+| Report coverage from each runner's `EnforcementDecl`: `enforced` only behind a trusted boundary; command rules at most `partial` without an OS sandbox | Call an instruction "enforced", or silently turn a hard restriction into a prompt             |
+| Keep `harness.read`/`harness.manage` user-only in `authz.ts`; no MCP tool touches harnesses; `propose_memory` only ever creates pending memory         | Give agents or subagents any path to weaken their own (or a parent's) harness                 |
+| Import read-only: no symlinks, ≤ 256 KB per file, ≤ 64 KB parsed, repo-relative paths; the result is always a draft the user reviews and publishes     | Auto-publish imported rules, write provider files, or follow links out of the repository      |
+| Prove it with sentinels: a `SECRET` in tool input never appears in events or views; gate stderr with a token is masked; vault bytes hold no plaintext  | Ship a new runner compiler, importer source or gate path without a no-leak test               |
+
 ## Hook
 
 - Must **fail open**: short timeout (≤1.5s), no output and exit 0 on any error — it must never break or slow a Claude session.

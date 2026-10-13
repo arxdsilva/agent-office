@@ -5,6 +5,7 @@
 // -32601 from the peer, so the agent never waits on us.
 import type {
   AgentRunner,
+  EnforcementDecl,
   Logger,
   RunnerDecision,
   RunnerDecl,
@@ -82,6 +83,20 @@ const M = {
   requestPermission: 'session/request_permission',
 } as const
 
+/**
+ * What an ACP runtime gives a harness by default (docs/harness.md §3): the instruction block in the
+ * first prompt, and only the permission requests the agent chooses to raise.
+ */
+export const ACP_ENFORCEMENT: EnforcementDecl = {
+  instructions: 'first-message',
+  toolDeny: 'approval',
+  pathDeny: 'partial',
+  commandDeny: 'partial',
+  fsIsolation: 'none',
+  subagents: 'none',
+}
+const MAX_INSTRUCTIONS = 16 * 1024
+
 /** The declaration the core sees: native mode ids stay inside the adapter. */
 export function acpDecl(p: AcpProfile): RunnerDecl {
   return {
@@ -99,6 +114,7 @@ export function acpDecl(p: AcpProfile): RunnerDecl {
       : {}),
     ...(p.defaultModeId ? { defaultModeId: p.defaultModeId } : {}),
     fallbackModels: [],
+    enforcement: { ...(p.enforcement ?? ACP_ENFORCEMENT) },
   }
 }
 
@@ -149,6 +165,7 @@ class AcpSession implements RunnerSession {
   private events = new Set<(e: Omit<AgentEvent, 'agentId'>) => void>()
   private results = new Set<(r: { text: string; isError: boolean }) => void>()
   private permissionFn: ((r: RunnerPermission) => Promise<RunnerDecision>) | undefined
+  private instructed = false
   private exitFns = new Set<(e: RunnerExit) => void>()
   private messages: Record<NonNullable<RunnerExit['error']>, string>
 
@@ -359,6 +376,9 @@ class AcpSession implements RunnerSession {
     })
     if (!this.permissionFn || this.closed)
       return chooseOption(options, { behavior: 'deny', message: 'No decision' })
+    // The harness decides first: a deny is a reject_once and never reaches the user.
+    if (this.harnessDenies(perm))
+      return chooseOption(options, { behavior: 'deny', message: 'Blocked by the project harness' })
     let cancel!: () => void
     const cancelled = new Promise<'cancel'>((r) => (cancel = () => r('cancel')))
     this.permissions.add(cancel)
@@ -373,6 +393,25 @@ class AcpSession implements RunnerSession {
       return chooseOption(options, d)
     } finally {
       this.permissions.delete(cancel)
+    }
+  }
+
+  private harnessDenies(perm: RunnerPermission): boolean {
+    const h = this.s.harness
+    if (!h) return false
+    try {
+      const d = h.evaluate({
+        tool: perm.tool,
+        input: perm.input,
+        cwd: perm.cwd,
+        provider: this.p.provider,
+      })
+      return d.action === 'deny'
+    } catch (err) {
+      this.o.log?.warn(
+        `${this.p.provider}: harness evaluate failed (${err instanceof Error ? err.name : 'error'})`,
+      )
+      return true
     }
   }
 
@@ -472,6 +511,12 @@ class AcpSession implements RunnerSession {
 
   push(prompt: string): void {
     if (this.ended || this.closed) return
+    // ACP has no system prompt: the harness instructions lead the first prompt (docs/harness.md §3).
+    const instructions = this.s.harness?.instructions?.slice(0, MAX_INSTRUCTIONS)
+    if (instructions && !this.instructed) {
+      this.instructed = true
+      prompt = `${instructions}\n\n${prompt}`
+    }
     this.queue.push(prompt)
     this.pump()
   }

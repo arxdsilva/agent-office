@@ -204,6 +204,10 @@ export interface PanelView {
   onDraft(fn: (text: string) => void): void
   /** A "Skills & rules used" / "Connections used" chip was clicked. */
   onPickCapability(fn: (ref: CapabilityRef) => void): void
+  /** The Details | Harness tab strip (only shown for agents in a project). */
+  onTab?(fn: (tab: 'details' | 'harness') => void): void
+  /** The Compliance Inspector's buttons (`data-action`). */
+  onHarnessAction?(fn: (action: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void): void
 }
 
 /** The new-session dialog (`<dialog id="new-session">`), plan §2.4. */
@@ -236,6 +240,8 @@ export interface NewSessionView {
   ): void
   onStart(fn: () => void | Promise<void>): void
   onClose(fn: () => void): void
+  /** "Inspect" in the Harness block: opens the Harness Builder for the picked project. */
+  onInspectHarness?(fn: () => void): void
 }
 
 export interface HudView {

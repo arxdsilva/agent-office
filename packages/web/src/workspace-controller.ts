@@ -5,6 +5,7 @@
 import type {
   AgentOfficeApi,
   HandoffView as HandoffData,
+  HarnessDraft,
   MemoryDraft,
   ProjectMessage,
   Settings,
@@ -13,6 +14,8 @@ import { dashboardVM } from './app/workspace/dashboard-vm.ts'
 import { libraryCounts } from './app/workspace/library-counts.ts'
 import { projectLibraryVM } from './app/project-library.ts'
 import { handoffProviders, handoffVM } from './app/workspace/handoff-vm.ts'
+import { harnessBuilderVM } from './app/workspace/harness-builder-vm.ts'
+import { startableProviders } from './app/view-models.ts'
 import { inspectorVM } from './app/workspace/inspector-vm.ts'
 import { memoryVM, removeImportedTarget } from './app/workspace/memory-vm.ts'
 import { newProjectVM } from './app/workspace/new-project-vm.ts'
@@ -97,8 +100,13 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   let cancelDeep: (() => void) | null = null
   let libSeq = 0
 
+  let harnessWasOpen = false
   function render(): void {
     if (disposed) return
+    if (state.harness.open !== harnessWasOpen) {
+      harnessWasOpen = state.harness.open
+      scene.setModalOpen?.(harnessWasOpen)
+    }
     views.shell.render(shellVM(state, { sidebarCollapsed: collapsed }))
     views.overview.render(overviewVM(state, now()))
     views.dashboard.render(
@@ -112,6 +120,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     views.palette.render(paletteVM(state))
     views.newProject.render(newProjectVM(state))
     views.handoff.render(handoffVM(state))
+    views.harness?.render(harnessBuilderVM(state))
   }
 
   function dispatch(e: WorkspaceEvent): void {
@@ -127,6 +136,183 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
       dispatch({ type: 'error', error: errorText(e) })
       return undefined
     }
+  }
+
+  // ── Harness Builder (docs/harness.md) ──────────────────────────────────────────────────────
+  const hui = (patch: Partial<WorkspaceState['harness']>): void =>
+    dispatch({ type: 'harness-ui', patch })
+
+  /** A harness call from the dialog: a failure becomes the dialog's own error line. */
+  async function hguard<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await fn()
+    } catch (e) {
+      hui({ error: errorText(e), busy: false })
+      return undefined
+    }
+  }
+  /** The library; quiet unless the dialog is open (the dashboard section is decoration). */
+  async function loadHarnesses(): Promise<void> {
+    const h = api.harness
+    if (!h) return
+    if (state.harness.open) {
+      const list = await hguard(() => h.list())
+      if (list && !disposed) dispatch({ type: 'harnesses', list })
+      return
+    }
+    try {
+      const list = await h.list()
+      if (!disposed) dispatch({ type: 'harnesses', list })
+    } catch {
+      // keep whatever is shown
+    }
+  }
+  async function loadTemplates(): Promise<void> {
+    const h = api.harness
+    const templates = h ? await hguard(() => h.templates()) : undefined
+    if (templates && !disposed) hui({ templates })
+  }
+  async function reloadHarnessDetail(): Promise<void> {
+    const h = api.harness
+    const id = state.harness.detail?.id
+    if (!h || !id) return
+    const detail = await hguard(() => h.get(id))
+    if (detail && !disposed) dispatch({ type: 'harness-detail', detail })
+  }
+  /** What each ready provider would enforce on the dialog's project. */
+  async function loadCoverage(): Promise<void> {
+    const h = api.harness
+    const pid = state.harness.projectId
+    if (!h || !pid) {
+      hui({ coverage: [] })
+      return
+    }
+    if (!state.providers.length) await loadProviders()
+    const ids = startableProviders(state.providers).map((p) => p.id)
+    const results = await hguard(() => Promise.all(ids.map((id) => h.coverage(pid, id))))
+    if (results && !disposed && state.harness.projectId === pid)
+      hui({ coverage: results.map((r) => r.report) })
+  }
+  async function openHarnessDialog(patch: Partial<WorkspaceState['harness']>): Promise<void> {
+    hui({ open: true, error: null, confirm: null, busy: false, ...patch })
+    await Promise.all([loadHarnesses(), loadTemplates()])
+  }
+  const closeHarnessDialog = (): void => hui({ open: false, confirm: null, error: null })
+
+  async function openHarnessEditor(harnessId: string): Promise<void> {
+    const h = api.harness
+    if (!h) return
+    await openHarnessDialog({
+      tab: 'editor',
+      editorTab: 'overview',
+      projectId: state.harness.projectId ?? state.projectId,
+    })
+    const detail = await hguard(() => h.get(harnessId))
+    if (detail) dispatch({ type: 'harness-detail', detail })
+    void loadCoverage()
+  }
+
+  async function detectSources(): Promise<void> {
+    const h = api.harness
+    const pid = state.harness.projectId
+    if (!h || !pid) return
+    hui({ busy: true, error: null })
+    const sources = await hguard(() => h.importDetect(pid))
+    hui({ busy: false })
+    if (sources) dispatch({ type: 'import-sources', sources })
+  }
+  async function previewImport(): Promise<void> {
+    const h = api.harness
+    const pid = state.harness.projectId
+    if (!h || !pid) return
+    hui({ busy: true, error: null })
+    const preview = await hguard(() => h.importPreview({ projectId: pid as never }))
+    hui({ busy: false })
+    if (preview) dispatch({ type: 'import-preview', preview })
+  }
+  async function commitImport(): Promise<void> {
+    const h = api.harness
+    const hs = state.harness
+    const preview = hs.preview
+    if (!h || !preview) return
+    const name = (hs.importName || WS_COPY.harness.import.defaultName).trim()
+    if (!name) return
+    const chosen = new Set(hs.selection.selected)
+    const edits = Object.entries(hs.edits)
+      .filter(([id]) => chosen.has(id))
+      .map(([tempId, e]) => ({ tempId, ...e }))
+    hui({ busy: true, error: null })
+    const detail = await hguard(() =>
+      h.importCommit({
+        previewId: preview.previewId,
+        name,
+        selected: hs.selection.selected as never,
+        ...(edits.length && { edits: edits as never }),
+        gates: hs.selection.gates as never,
+        attach: hs.importAttach,
+      }),
+    )
+    hui({ busy: false })
+    if (!detail) return
+    dispatch({ type: 'import-preview', preview: null })
+    dispatch({ type: 'import-sources', sources: null })
+    dispatch({ type: 'harness-detail', detail })
+    hui({ tab: 'editor', editorTab: 'overview', importName: '', importAttach: false })
+    await loadHarnesses()
+  }
+
+  async function runConfirm(): Promise<void> {
+    const h = api.harness
+    const c = state.harness.confirm
+    const pid = state.harness.projectId
+    if (!h || !c) return
+    hui({ confirm: null, busy: true, error: null })
+    const ok = await hguard(async () => {
+      if (c.kind === 'publish') await h.publish(c.harnessId)
+      else if (c.kind === 'archive') await h.archive(c.harnessId)
+      else if (!pid) throw new Error(WS_COPY.harness.library.hints.attachNeedsProject)
+      else if (c.kind === 'attach') await h.attach(pid, c.harnessId)
+      else await h.detach(pid, c.harnessId)
+      return true
+    })
+    hui({ busy: false })
+    if (!ok) return
+    await loadHarnesses()
+    if (state.harness.detail?.id === c.harnessId) await reloadHarnessDetail()
+  }
+
+  async function saveHarness(harnessId: string, draft: HarnessDraft): Promise<void> {
+    const h = api.harness
+    if (!h) return
+    hui({ busy: true, error: null })
+    const detail = await hguard(() => h.update({ harnessId: harnessId as never, draft }))
+    hui({ busy: false })
+    if (!detail) return
+    dispatch({ type: 'harness-detail', detail })
+    await loadHarnesses()
+  }
+  async function createHarness(templateId?: string): Promise<void> {
+    const h = api.harness
+    if (!h) return
+    hui({ busy: true, error: null })
+    const detail = await hguard(() =>
+      templateId
+        ? h.createFromTemplate(templateId)
+        : h.create({ name: WS_COPY.harness.library.create }),
+    )
+    hui({ busy: false })
+    if (!detail) return
+    dispatch({ type: 'harness-detail', detail })
+    hui({ tab: 'editor', editorTab: 'overview' })
+    await loadHarnesses()
+  }
+  async function runGates(agentId: string): Promise<void> {
+    const h = api.harness
+    if (!h) return
+    const ran = await guard(() => h.runGates({ agentId }))
+    if (!ran) return
+    const inspection = await guard(() => h.inspect(agentId))
+    if (inspection) dispatch({ type: 'harness-inspection', agentId, inspection })
   }
 
   // ── Data loading ────────────────────────────────────────────────────────────────────────────
@@ -280,7 +466,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         await Promise.all([loadProjects(), loadProviders(), loadOverview()])
         break
       case 'project':
-        if (state.projectId) await loadDashboard(state.projectId)
+        if (state.projectId) await Promise.all([loadDashboard(state.projectId), loadHarnesses()])
         break
       case 'sessions':
         await Promise.all([loadSessions(), loadImportStatus()])
@@ -624,6 +810,33 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         if (agentId) state = { ...state, inspectAgentId: agentId }
         return go('context', pid ?? null)
       }
+      case 'open-harnesses':
+        return openHarnessDialog({
+          tab: 'library',
+          projectId: a.projectId ?? state.projectId,
+          detail: null,
+        })
+      case 'harness-edit':
+        return openHarnessEditor(a.harnessId)
+      case 'harness-import':
+        await openHarnessDialog({
+          tab: 'import',
+          projectId: a.projectId,
+          sources: null,
+          preview: null,
+          edits: {},
+          importName: '',
+          importAttach: false,
+        })
+        return detectSources()
+      case 'harness-attach':
+        return openHarnessDialog({
+          tab: 'library',
+          projectId: a.projectId,
+          confirm: { kind: 'attach', harnessId: a.harnessId },
+        })
+      case 'run-gates':
+        return runGates(a.agentId)
       case 'focus-agent':
         await go('office')
         scene.select(a.agentId)
@@ -639,12 +852,28 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
 
   // ── Wiring ──────────────────────────────────────────────────────────────────────────────────
   function onPush(msg: ProjectMessage): void {
+    const hadInspection =
+      msg.type === 'harness' && !!msg.agentId && msg.agentId in state.harness.inspections
     dispatch({ type: 'push', msg })
     // The sidebar counts (unassigned sessions, pending approvals) come from the overview.
     if (msg.type === 'projects' || msg.type === 'session' || msg.type === 'memory')
       void refreshOverview()
     if (msg.type === 'projects' || msg.type === 'session' || msg.type === 'memory')
       void refreshLibrary()
+    if (msg.type === 'harness') {
+      if (state.harness.open) {
+        void loadHarnesses()
+        void reloadHarnessDetail()
+      } else if (state.view === 'project') void loadHarnesses()
+      // The reducer dropped the stale inspection of that agent: fetch the new one.
+      const h = api.harness
+      if (hadInspection && msg.agentId && h) {
+        const agentId = msg.agentId
+        void guard(() => h.inspect(agentId)).then((ins) => {
+          if (ins && !disposed) dispatch({ type: 'harness-inspection', agentId, inspection: ins })
+        })
+      }
+    }
     // Automatic import adds sessions and memory in the background: keep its status line current.
     if ((msg.type === 'session' || msg.type === 'memory') && state.view === 'sessions')
       void loadImportStatus()
@@ -800,6 +1029,57 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   v.handoff.onLaunch(() => void launchHandoff())
   v.handoff.onCancel(() => closeHandoff())
 
+  const hv = v.harness
+  if (hv) {
+    hv.onClose(() => closeHarnessDialog())
+    hv.onTab((tab) => {
+      hui({ tab, error: null })
+      if (tab === 'coverage') void loadCoverage()
+    })
+    hv.onEditorTab((editorTab) => {
+      hui({ editorTab })
+      if (editorTab === 'providers') void loadCoverage()
+    })
+    hv.onCreate(() => void createHarness())
+    hv.onTemplate((id) => void createHarness(id))
+    hv.onCard((harnessId, action) => {
+      if (action === 'edit') void openHarnessEditor(harnessId)
+      else hui({ confirm: { kind: action, harnessId } })
+    })
+    hv.onConfirm(() => void runConfirm())
+    hv.onConfirmCancel(() => hui({ confirm: null }))
+    hv.onSave((id, draft) => void saveHarness(id, draft))
+    hv.onImportStart(() => {
+      const pid = state.harness.projectId
+      if (pid) void perform({ type: 'harness-import', projectId: pid })
+      else hui({ tab: 'import', error: null })
+    })
+    hv.onDetect(() => void detectSources())
+    hv.onPreview(() => void previewImport())
+    hv.onToggleCandidate((tempId, on) => {
+      const cur = state.harness.selection
+      const selected = on
+        ? [...new Set([...cur.selected, tempId])]
+        : cur.selected.filter((x) => x !== tempId)
+      hui({ selection: { ...cur, selected } })
+    })
+    hv.onToggleGate((tempId, on) => {
+      const cur = state.harness.selection
+      const gates = on
+        ? [...new Set([...cur.gates, tempId])]
+        : cur.gates.filter((x) => x !== tempId)
+      hui({ selection: { ...cur, gates } })
+    })
+    hv.onEditCandidate((tempId, patch) =>
+      hui({
+        edits: { ...state.harness.edits, [tempId]: { ...state.harness.edits[tempId], ...patch } },
+      }),
+    )
+    hv.onImportName((importName) => hui({ importName }))
+    hv.onImportAttach((importAttach) => hui({ importAttach }))
+    hv.onCommit(() => void commitImport())
+  }
+
   const ctl: WorkspaceController = {
     async start() {
       offs.push(api.onPush(onPush))
@@ -837,6 +1117,14 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     escape() {
       if (state.palette.open) {
         ctl.closePalette()
+        return true
+      }
+      if (state.harness.confirm) {
+        hui({ confirm: null })
+        return true
+      }
+      if (state.harness.open) {
+        closeHarnessDialog()
         return true
       }
       if (state.removeImportedConfirm) {

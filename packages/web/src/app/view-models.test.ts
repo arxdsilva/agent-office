@@ -31,6 +31,7 @@ import {
 import { cap } from './__fixtures__/capabilities.ts'
 import { CHROME_ID, MAX_MANAGED, type Draft, type NewSessionForm } from './session-types.ts'
 import { SESSION_COPY } from './session-copy.ts'
+import { newSessionHarnessVM } from './harness-inspector-vm.ts'
 
 const agent = (over: Partial<Agent> = {}): Agent => ({
   id: 'a',
@@ -1025,6 +1026,23 @@ describe('newSessionVM', () => {
     expect(startErrorText({ ok: false, code: 'other', error: 'boom' }, 0)).toBe(
       "Couldn't start: boom",
     )
+  })
+
+  it('explains a harness start error and never hides a hard restriction', () => {
+    expect(
+      startErrorText({ ok: false, code: 'harness', error: 'Path rules are not enforced' }, 0),
+    ).toBe('A strict harness blocks this runtime: Path rules are not enforced')
+  })
+
+  it('carries the Harness block only when it is visible', () => {
+    const hidden = newSessionVM(form(), undefined, false, 0, {
+      harness: newSessionHarnessVM({ status: 'ready' }),
+    })
+    expect(hidden.harness).toBeUndefined()
+    const shown = newSessionVM(form(), undefined, false, 0, {
+      harness: newSessionHarnessVM({ projectId: 'prj_1', status: 'loading' }),
+    })
+    expect(shown.harness).toMatchObject({ visible: true, state: 'loading' })
   })
 })
 

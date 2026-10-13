@@ -1,4 +1,6 @@
 // Pure view models: everything the DOM adapters show, computed from state. No DOM here.
+import type { HarnessTabVM, PanelTabsVM } from './harness-inspector-vm.ts'
+import type { NewSessionHarnessVM } from './session-types.ts'
 import {
   AGENT_STATUSES,
   BATTERY_PRESETS,
@@ -202,6 +204,10 @@ export interface PanelVM {
   permission: PermissionCardVM | null
   /** Draft text for this agent (restored into the input when the panel opens on it). */
   draftText: string
+  /** Details | Harness tabs: only on agents that work on a project (docs/harness.md). */
+  tabs?: PanelTabsVM
+  /** The Compliance Inspector, drawn in `#p-harness` while its tab is active. */
+  harness?: HarnessTabVM
 }
 
 export interface ThreadItemVM {
@@ -598,6 +604,8 @@ export function newSessionVM(
     providers?: ProviderStatus[]
     /** Projects for the picker (id + name only). */
     projects?: { id: string; name: string }[]
+    /** What the attached harnesses mean for this provider on the picked project. */
+    harness?: NewSessionHarnessVM
   } = {},
 ): NewSessionVM {
   const ns = SESSION_COPY.newSession
@@ -655,6 +663,7 @@ export function newSessionVM(
       canAddUse: !starting && form.use.length < MAX_USE,
     },
     canStart: !!form.folder && !!form.text.trim() && !starting && !limit,
+    ...(opts.harness?.visible && { harness: opts.harness }),
     starting,
     ...(opts.error && { error: opts.error }),
     ...(limit && { limit }),
@@ -673,6 +682,8 @@ export function startErrorText(r: Extract<StartResult, { ok: false }>, running: 
       return e.folder
     case 'limit':
       return SESSION_COPY.newSession.limit(Math.max(running, MAX_MANAGED))
+    case 'harness':
+      return e.harness(r.error)
     default:
       return e.generic(r.error)
   }

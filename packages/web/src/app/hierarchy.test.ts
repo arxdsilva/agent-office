@@ -1,4 +1,4 @@
-import { STATUS_COLORS, type Agent } from '@agent-office/shared'
+import { STATUS_COLORS, type Agent, type HarnessBadge } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import { buildHierarchy, lifecycleOf } from './hierarchy.ts'
 import type { AgentNodeVM, FinishedStore, HierarchyOpts, ProjectNodeVM } from './hierarchy-types.ts'
@@ -359,5 +359,51 @@ describe('performance', () => {
     const vms = build(agents)
     expect(performance.now() - t0).toBeLessThan(50)
     expect(vms.length).toBeGreaterThan(0)
+  })
+})
+
+describe('harness badges', () => {
+  const badge = (over: Partial<HarnessBadge> = {}): HarnessBadge => ({
+    agentId: 'm',
+    harnessNames: ['Team standards'],
+    ruleCount: 3,
+    coverage: 'partial',
+    verification: 'verified',
+    completion: 'harness-verified',
+    denied: 0,
+    ...over,
+  })
+  const run = (harness?: HarnessBadge[]) =>
+    (
+      buildHierarchy(
+        {
+          agents: [ag({ id: 'm', projectId: 'p1' }), ag({ id: 'x', projectId: 'p1' })],
+          projects: PROJECTS,
+          now: 2000,
+          ...(harness && { harness }),
+        },
+        NONE,
+        OPTS,
+      ) as unknown as Arr<LProject>
+    )[0].roots
+
+  it('attaches the badge to its agent only', () => {
+    const roots = run([badge()])
+    expect(roots[0].harness).toMatchObject({ text: 'Harness: verified', coverage: 'partial' })
+    expect(roots[1].harness).toBeUndefined()
+  })
+
+  it('has no badge when the roster carries none', () => {
+    expect(run()[0].harness).toBeUndefined()
+  })
+
+  it('changes the node hash when coverage, verification, completion or blocked count change', () => {
+    const base = run([badge()])[0].hash
+    expect(run([badge()])[0].hash).toBe(base)
+    expect(run([badge({ coverage: 'enforced' })])[0].hash).not.toBe(base)
+    expect(run([badge({ verification: 'failed' })])[0].hash).not.toBe(base)
+    expect(run([badge({ completion: 'validation-failed' })])[0].hash).not.toBe(base)
+    expect(run([badge({ denied: 4 })])[0].hash).not.toBe(base)
+    expect(run()[0].hash).not.toBe(base)
   })
 })

@@ -9,6 +9,8 @@ import type { AgentState } from '../../src/domain/agent.ts'
 import type { Note } from '../../src/domain/attention.ts'
 import { ValidationError } from '../../src/domain/errors.ts'
 import type { TrayModel } from '../../src/domain/tray.ts'
+import type { GateRun, GateSpec } from '../../src/domain/harness-types.ts'
+import type { CancelSignal } from '../../src/ports/driving.ts'
 import type {
   AgentRepository,
   CapabilityRepository,
@@ -16,6 +18,7 @@ import type {
   Clock,
   EventPublisher,
   EventSubscriber,
+  GateRunner,
   HookRunner,
   IdGenerator,
   JsonConfigStore,
@@ -336,3 +339,82 @@ export class FakeWindow implements WindowState {
 }
 export * from './agent-runner.ts'
 export * from './projects.ts'
+
+/**
+ * Scripted validation runner: results by gate id (in order, the last one repeats), every call
+ * recorded, `hold(id)` keeps a gate running until `release(id)` or an abort (→ cancelled).
+ */
+export class FakeGateRunner implements GateRunner {
+  calls: { spec: GateSpec; cwd: string }[] = []
+  private scripts = new Map<string, Partial<GateRun>[]>()
+  private held = new Set<string>()
+  private waiting = new Map<string, (() => void)[]>()
+
+  script(gateId: string, ...runs: Partial<GateRun>[]): this {
+    this.scripts.set(gateId, runs)
+    return this
+  }
+
+  hold(gateId: string): this {
+    this.held.add(gateId)
+    return this
+  }
+
+  /** Lets held runs of this gate finish (and stops holding it). */
+  release(gateId: string): void {
+    this.held.delete(gateId)
+    for (const go of this.waiting.get(gateId)?.splice(0) ?? []) go()
+  }
+
+  /** Gate ids currently held open. */
+  running(): string[] {
+    return [...this.waiting].flatMap(([id, w]) => w.map(() => id))
+  }
+
+  async run(spec: GateSpec, o: { cwd: string; signal?: CancelSignal }): Promise<GateRun> {
+    this.calls.push({ spec, cwd: o.cwd })
+    const cancelled: GateRun = {
+      status: 'cancelled',
+      exitCode: null,
+      durationMs: 1,
+      outputTail: '',
+    }
+    if (o.signal?.aborted) return cancelled
+    if (this.held.has(spec.id)) {
+      const aborted = await new Promise<boolean>((resolve) => {
+        const list = this.waiting.get(spec.id) ?? []
+        this.waiting.set(spec.id, list)
+        const onAbort = () => {
+          const i = list.indexOf(go)
+          if (i >= 0) list.splice(i, 1)
+          resolve(true)
+        }
+        const go = () => {
+          o.signal?.removeEventListener('abort', onAbort)
+          resolve(false)
+        }
+        list.push(go)
+        o.signal?.addEventListener('abort', onAbort, { once: true })
+      })
+      if (aborted) return cancelled
+    }
+    const runs = this.scripts.get(spec.id)
+    const next = runs && runs.length > 1 ? runs.shift()! : runs?.[0]
+    const status = next?.status ?? 'pass'
+    return {
+      status,
+      exitCode:
+        next && 'exitCode' in next
+          ? next.exitCode!
+          : status === 'pass'
+            ? 0
+            : status === 'fail'
+              ? 1
+              : null,
+      durationMs: next?.durationMs ?? 1,
+      outputTail: next?.outputTail ?? '',
+      ...(next?.pinChanged !== undefined ? { pinChanged: next.pinChanged } : {}),
+      ...(next?.spawnError !== undefined ? { spawnError: next.spawnError } : {}),
+    }
+  }
+}

@@ -17,6 +17,14 @@ import {
   provider,
   session,
 } from './app/workspace/__fixtures__/projects.ts'
+import {
+  detail,
+  effective,
+  inspection,
+  preview,
+  report,
+  summary,
+} from './app/workspace/__fixtures__/harness.ts'
 import type { PaletteVM } from './app/workspace/types.ts'
 import { createWorkspaceController } from './workspace-controller.ts'
 import type { WorkspaceViews, WorkspaceSceneHooks } from './workspace-ports.ts'
@@ -126,6 +134,31 @@ function setup(over: { settings?: Partial<Settings>; gateway?: Record<string, un
       push = cb
       return unsub
     }),
+    harness: {
+      list: vi.fn(async () => [summary({ projectIds: [P1] })]),
+      get: vi.fn(async () => detail()),
+      templates: vi.fn(async () => [
+        { id: 'basic', name: 'Basic', description: 'Starter', ruleCount: 2, gateCount: 0 },
+      ]),
+      create: vi.fn(async () => detail({ status: 'draft', version: 1 })),
+      createFromTemplate: vi.fn(async () => detail({ status: 'draft', version: 1 })),
+      update: vi.fn(async () => detail({ name: 'Renamed' })),
+      publish: vi.fn(async () => detail()),
+      archive: vi.fn(async () => detail({ status: 'archived' })),
+      attach: vi.fn(async () => [summary({ projectIds: [P1] })]),
+      detach: vi.fn(async () => []),
+      importDetect: vi.fn(async () => preview().sources),
+      importPreview: vi.fn(async () => preview()),
+      importCommit: vi.fn(async () => detail({ status: 'draft', version: 1 })),
+      coverage: vi.fn(async (_p: string, provider: string) => ({
+        effective: effective(),
+        report: report({ provider: provider as never }),
+      })),
+      inspect: vi.fn(async (agentId: string) => inspection({ agentId })),
+      runGates: vi.fn(async () => []),
+      cancelGates: vi.fn(async () => {}),
+      badges: vi.fn(async () => []),
+    },
   }
   const gateway = {
     projects,
@@ -153,6 +186,7 @@ function setup(over: { settings?: Partial<Settings>; gateway?: Record<string, un
     'palette',
     'newProject',
     'handoff',
+    'harness',
   ] as const
   const v = Object.fromEntries(names.map((n) => [n, fakeView()])) as Record<
     (typeof names)[number],
@@ -1298,5 +1332,195 @@ describe('automatic knowledge import', () => {
     await t.ctl.perform({ type: 'open-memory', projectId: P1 })
     t.cb('memory', 'onFilter')('auto-imported')
     expect(t.v.memory.last.rows.map((r: { id: string }) => r.id)).toEqual(['mem_iiiiiiiiii'])
+  })
+})
+
+describe('Harness Builder', () => {
+  const open = async (t: ReturnType<typeof setup>, projectId = P1) => {
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-harnesses', projectId })
+  }
+
+  it('opens the library for a project and loads the harnesses and templates', async () => {
+    const t = setup()
+    await open(t)
+    const vm = t.v.harness.last
+    expect(vm.open).toBe(true)
+    expect(vm.tab).toBe('library')
+    expect(vm.library.items.map((c: any) => c.name)).toEqual(['Team standards'])
+    expect(vm.library.items[0].attachedHere).toBe(true)
+    expect(vm.templates.map((x: any) => x.id)).toEqual(['basic'])
+  })
+
+  it('opens the editor on harness-edit and fetches the detail', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
+    expect(t.projects.harness.get).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+    expect(t.v.harness.last.tab).toBe('editor')
+    expect(t.v.harness.last.editor.title).toBe('Team standards')
+  })
+
+  it('confirms before publishing, archiving, attaching and detaching', async () => {
+    const t = setup()
+    await open(t)
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    expect(t.v.harness.last.confirm).toMatchObject({ open: true, okLabel: 'Publish' })
+    expect(t.projects.harness.publish).not.toHaveBeenCalled()
+    t.cb('harness', 'onConfirmCancel')()
+    expect(t.v.harness.last.confirm.open).toBe(false)
+
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.projects.harness.publish).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'attach')
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.projects.harness.attach).toHaveBeenCalledWith(P1, 'hrn_aaaaaaaaaa')
+
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'detach')
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.projects.harness.detach).toHaveBeenCalledWith(P1, 'hrn_aaaaaaaaaa')
+
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'archive')
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.projects.harness.archive).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+  })
+
+  it('harness-attach opens the dialog with the attach confirm already asked', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-attach', projectId: P1, harnessId: 'hrn_aaaaaaaaaa' })
+    expect(t.v.harness.last.confirm).toMatchObject({ open: true, okLabel: 'Attach' })
+  })
+
+  it('shows a failed change in the dialog, not as a global error', async () => {
+    const t = setup()
+    await open(t)
+    t.projects.harness.publish.mockRejectedValueOnce(new Error('Not a draft'))
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.v.harness.last.error).toBe('Not a draft')
+    expect(t.ctl.getState().error).toBeNull()
+  })
+
+  it('runs the import flow: detect, preview, select, edit, create a draft', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-import', projectId: P1 })
+    await flush()
+    expect(t.projects.harness.importDetect).toHaveBeenCalledWith(P1)
+    expect(t.v.harness.last.tab).toBe('import')
+    expect(t.v.harness.last.import.sources).toHaveLength(2)
+
+    await t.cb('harness', 'onPreview')()
+    await flush()
+    expect(t.v.harness.last.import.preview.groups).toHaveLength(2)
+
+    t.cb('harness', 'onToggleCandidate')('cand_3', false)
+    t.cb('harness', 'onToggleGate')('cand_g1', true)
+    t.cb('harness', 'onEditCandidate')('cand_1', { name: 'TDD first' })
+    t.cb('harness', 'onImportName')('Imported')
+    t.cb('harness', 'onImportAttach')(true)
+    await t.cb('harness', 'onCommit')()
+    await flush()
+    expect(t.projects.harness.importCommit).toHaveBeenCalledWith({
+      previewId: 'prv_aaaaaa',
+      name: 'Imported',
+      selected: ['cand_1'],
+      edits: [{ tempId: 'cand_1', name: 'TDD first' }],
+      gates: ['cand_g1'],
+      attach: true,
+    })
+    expect(t.v.harness.last.tab).toBe('editor')
+    expect(t.v.harness.last.import.preview).toBeNull()
+  })
+
+  it('saves editor changes and shows the returned detail', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
+    const draft = { name: 'Renamed' }
+    await t.cb('harness', 'onSave')('hrn_aaaaaaaaaa', draft)
+    await flush()
+    expect(t.projects.harness.update).toHaveBeenCalledWith({ harnessId: 'hrn_aaaaaaaaaa', draft })
+    expect(t.v.harness.last.editor.title).toBe('Renamed')
+  })
+
+  it('creates a harness and one from a template', async () => {
+    const t = setup()
+    await open(t)
+    await t.cb('harness', 'onCreate')()
+    await flush()
+    expect(t.projects.harness.create).toHaveBeenCalledWith({ name: 'New harness' })
+    await t.cb('harness', 'onTemplate')('basic')
+    await flush()
+    expect(t.projects.harness.createFromTemplate).toHaveBeenCalledWith('basic')
+    expect(t.v.harness.last.tab).toBe('editor')
+  })
+
+  it('loads the coverage of every startable provider for the project', async () => {
+    const t = setup()
+    await open(t)
+    t.cb('harness', 'onTab')('coverage')
+    await flush()
+    await flush()
+    const calls = t.projects.harness.coverage.mock.calls.map((c: unknown[]) => c[1])
+    expect(calls).toContain('claude-code')
+    expect(t.v.harness.last.coverage.reports.length).toBe(calls.length)
+  })
+
+  it('run-gates runs, then stores the fresh inspection', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'run-gates', agentId: 'cc:1' })
+    expect(t.projects.harness.runGates).toHaveBeenCalledWith({ agentId: 'cc:1' })
+    expect(t.ctl.getState().harness.inspections['cc:1']?.agentId).toBe('cc:1')
+  })
+
+  it('refreshes the library and the open detail on a harness push', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
+    t.projects.harness.list.mockClear()
+    t.projects.harness.get.mockClear()
+    t.push({ type: 'harness', harnessId: 'hrn_aaaaaaaaaa' })
+    await flush()
+    expect(t.projects.harness.list).toHaveBeenCalled()
+    expect(t.projects.harness.get).toHaveBeenCalled()
+  })
+
+  it('refetches the inspection of an agent it already holds when a push names it', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'run-gates', agentId: 'cc:1' })
+    t.projects.harness.inspect.mockClear()
+    t.push({ type: 'harness', agentId: 'cc:1' })
+    await flush()
+    expect(t.projects.harness.inspect).toHaveBeenCalledWith('cc:1')
+    expect(t.ctl.getState().harness.inspections['cc:1']).toBeDefined()
+  })
+
+  it('Escape closes the confirm first, then the dialog', async () => {
+    const t = setup()
+    await open(t)
+    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'archive')
+    expect(t.ctl.escape()).toBe(true)
+    expect(t.v.harness.last.confirm.open).toBe(false)
+    expect(t.v.harness.last.open).toBe(true)
+    expect(t.ctl.escape()).toBe(true)
+    expect(t.v.harness.last.open).toBe(false)
+  })
+
+  it('works against a gateway without harnesses (older main)', async () => {
+    const t = setup({ gateway: { projects: { ...setup().projects, harness: undefined } } })
+    await t.ctl.start()
+    await t.ctl.navigate('project', P1)
+    expect(t.ctl.getState().error).toBeNull()
   })
 })

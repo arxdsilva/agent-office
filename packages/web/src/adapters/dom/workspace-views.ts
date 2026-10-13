@@ -3,6 +3,7 @@ import type { WorkspaceViews } from '../../workspace-ports.ts'
 import { DomContextInspector } from './context-inspector.ts'
 import { DomDashboard } from './dashboard.ts'
 import { DomHandoff } from './handoff.ts'
+import { DomHarnessBuilder } from './harness-builder.ts'
 import { DomMemoryBrowser } from './memory-browser.ts'
 import { DomNewProject } from './new-project.ts'
 import { DomOverview } from './overview.ts'
@@ -21,6 +22,7 @@ export function createWorkspaceViews(doc: Document = document): WorkspaceViews {
     palette: new DomPalette(doc),
     newProject: new DomNewProject(doc),
     handoff: new DomHandoff(doc),
+    harness: new DomHarnessBuilder(doc),
   }
 }
 
@@ -30,7 +32,7 @@ export interface WorkspaceKeyTarget {
   escape(): boolean
 }
 
-const OWN_DIALOGS = new Set(['palette', 'np-dialog', 'ho-dialog'])
+const OWN_DIALOGS = new Set(['palette', 'np-dialog', 'ho-dialog', 'harness', 'hb-confirm'])
 
 /** Ctrl/Cmd+K → palette, Esc → controller.escape(). Returns a function that removes the listener. */
 export function installWorkspaceKeys(doc: Document, ctl: WorkspaceKeyTarget): () => void {

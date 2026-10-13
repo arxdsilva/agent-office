@@ -1,6 +1,8 @@
 import type { AgentEvent } from '@agent-office/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ActionPolicy, PolicyAction, PolicyDecision, RunnerStart } from '@agent-office/core'
 import { ScriptedAgentRunner } from './fake-runner.ts'
+import { CLAUDE_ENFORCEMENT } from './claude-sdk-runner.ts'
 
 const START = {
   cwd: '/tmp/shop',
@@ -13,9 +15,9 @@ const START = {
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-function started() {
+function started(more: Partial<RunnerStart> = {}) {
   const runner = new ScriptedAgentRunner({ stepMs: 10, slowMs: 5000 })
-  const s = runner.start(START)
+  const s = runner.start({ ...START, ...more })
   const events: Omit<AgentEvent, 'agentId'>[] = []
   const results: string[] = []
   const exits: unknown[] = []
@@ -115,5 +117,92 @@ describe('ScriptedAgentRunner (AGENT_OFFICE_FAKE_RUNNER)', () => {
     await s.close()
     expect(exits).toEqual([{}])
     s.push('ignored after close')
+  })
+})
+
+describe('ScriptedAgentRunner harness', () => {
+  const policy = (action: PolicyDecision['action']) => {
+    const calls: PolicyAction[] = []
+    const h: ActionPolicy = {
+      evaluate: (a) => {
+        calls.push(a)
+        return { action, ruleIds: ['rul_1'], reason: 'Shared contracts are frozen', basis: 'exact' }
+      },
+      native: {
+        deniedTools: [],
+        denyPaths: [],
+        askPaths: [],
+        denyCommands: [],
+        askCommands: [],
+        fsIsolation: 'off',
+      },
+      interceptAll: true,
+      unsupported: [],
+    }
+    return { h, calls }
+  }
+
+  it('declares the same enforcement as Claude', () => {
+    expect(new ScriptedAgentRunner().enforcement).toEqual(CLAUDE_ENFORCEMENT)
+    expect('decl' in new ScriptedAgentRunner()).toBe(false)
+  })
+
+  it('/perm-protected denied by the harness: tool event, "denied: <reason>", no permission call', async () => {
+    const { h, calls } = policy('deny')
+    const { s, events, results } = started({ harness: h })
+    const asked: unknown[] = []
+    s.onPermission(async (r) => {
+      asked.push(r)
+      return { behavior: 'allow' }
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    s.push('/perm-protected')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(calls).toEqual([
+      { tool: 'Edit', input: { file_path: 'packages/shared/src/protocol.ts' }, cwd: '/tmp/shop' },
+    ])
+    expect(asked).toEqual([])
+    expect(events.some((e) => e.status === 'tool' && e.tool === 'Edit')).toBe(true)
+    expect(results).toEqual(['denied: Shared contracts are frozen'])
+  })
+
+  it('/perm-protected with ask goes through the permission callback', async () => {
+    const { h } = policy('ask')
+    const { s, results } = started({ harness: h })
+    const asked: unknown[] = []
+    s.onPermission(async (r) => {
+      asked.push(r)
+      return { behavior: 'deny', message: 'no' }
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    s.push('/perm-protected')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(asked).toEqual([
+      { tool: 'Edit', input: { file_path: 'packages/shared/src/protocol.ts' }, cwd: '/tmp/shop' },
+    ])
+    expect(results).toEqual(['denied'])
+  })
+
+  it('/perm-protected allowed (or without a harness) replies "ok"', async () => {
+    for (const harness of [policy('allow').h, undefined]) {
+      const { s, results } = started(harness ? { harness } : {})
+      await vi.advanceTimersByTimeAsync(10)
+      s.push('/perm-protected')
+      await vi.advanceTimersByTimeAsync(30)
+      expect(results).toEqual(['ok'])
+    }
+  })
+
+  it('/subagent emits child start, tool and stop events, then "ok"', async () => {
+    const { s, results } = started()
+    const kids: { childId: string; event: { status?: string } }[] = []
+    s.onChild!((c) => kids.push(c))
+    await vi.advanceTimersByTimeAsync(10)
+    s.push('/subagent')
+    await vi.advanceTimersByTimeAsync(60)
+    expect(kids.map((k) => k.event.status)).toEqual(['thinking', 'tool', 'done'])
+    expect(new Set(kids.map((k) => k.childId)).size).toBe(1)
+    expect(kids[0]!.childId).toMatch(/^cc:/)
+    expect(results).toEqual(['ok'])
   })
 })

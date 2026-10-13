@@ -21,7 +21,7 @@ export class PortInUseError extends DomainError {
     super(`port ${port} is already in use`)
   }
 }
-export type SessionStartCode = 'auth' | 'runtime' | 'folder' | 'limit' | 'other'
+export type SessionStartCode = 'auth' | 'runtime' | 'folder' | 'limit' | 'harness' | 'other'
 /** A managed session could not start; `code` picks the user-facing message. */
 export class SessionStartError extends DomainError {
   constructor(

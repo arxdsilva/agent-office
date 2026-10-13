@@ -28,6 +28,14 @@ export type WorkspaceAction =
   | { type: 'import-history' }
   /** Rejects every auto-imported memory item (asks first). Palette + `#mem-remove-imported`. */
   | { type: 'remove-imported' }
+  /** Harness Builder (docs/harness.md): the dialog on the library, or on a project's rules. */
+  | { type: 'open-harnesses'; projectId?: string }
+  | { type: 'harness-edit'; harnessId: string }
+  /** The import flow for a project's rule files (read-only; creates a draft). */
+  | { type: 'harness-import'; projectId: string }
+  | { type: 'harness-attach'; projectId: string; harnessId: string }
+  /** Runs the agent's validation gates through the trusted runner. */
+  | { type: 'run-gates'; agentId: string }
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad'
 export interface ButtonVM {
@@ -128,7 +136,7 @@ export interface DashboardRowVM {
   }
 }
 export interface DashboardSectionVM {
-  id: 'active' | 'activity' | 'completed' | 'tasks' | 'knowledge'
+  id: 'active' | 'activity' | 'completed' | 'tasks' | 'knowledge' | 'harness'
   /** The question this section answers. */
   heading: string
   rows: DashboardRowVM[]
@@ -143,6 +151,8 @@ export interface DashboardMetrics {
   openTasks: number
 }
 export interface DashboardVM {
+  /** The Harness section (`#pd-harness`); absent until the dashboard is loaded. */
+  harness?: DashboardSectionVM
   projectId: string
   name: string
   color: string

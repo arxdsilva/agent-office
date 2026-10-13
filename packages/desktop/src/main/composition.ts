@@ -43,7 +43,9 @@ import {
   createAuth,
   FileRecordLog,
   FsHookRunner,
+  FsRuleSourceReader,
   GitRepoIdentity,
+  ProcessGateRunner,
   InMemoryAgentRepository,
   InMemoryCapabilityRepository,
   InMemoryEventBus,
@@ -586,6 +588,9 @@ export function compose(o: ComposeOptions) {
           },
           searchIndex: o.searchIndex ?? new TextIndex(),
           random: hexRandom,
+          // Harness Builder (docs/harness.md): rule-file import and the trusted gate runner.
+          ruleSources: new FsRuleSourceReader(),
+          gateRunner: new ProcessGateRunner(),
           ...(mcpLauncher ? { mcpLaunch: (token: string) => mcpLauncher.launch(token) } : {}),
         }
       : {}),

@@ -253,6 +253,7 @@ async function boot(): Promise<void> {
       openConnect: () => office?.openConnect(),
       setProjectLibrary: (vm) => scene.setProjectLibrary?.(vm),
       selectedAgentId: () => office?.selectedAgentId() ?? null,
+      setModalOpen: (open) => office?.setExternalModal(open),
     },
   })
   gateway.settings

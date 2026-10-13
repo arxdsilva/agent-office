@@ -15,6 +15,8 @@ import type {
 import type { AgentState } from '../domain/agent.ts'
 import type { Note } from '../domain/attention.ts'
 import type { TrayModel } from '../domain/tray.ts'
+import type { ActionPolicy, EnforcementDecl, GateRun, GateSpec } from '../domain/harness-types.ts'
+import type { CancelSignal } from './driving.ts'
 
 export interface Clock {
   now(): number
@@ -152,6 +154,8 @@ export type { HookStatus }
  */
 export interface AgentRunner {
   readonly decl?: RunnerDecl
+  /** Harness enforcement this runtime provides (docs/harness.md §3); runners without `decl` (Claude Code) declare it here. */
+  readonly enforcement?: EnforcementDecl
   start(o: RunnerStart): RunnerSession
 }
 
@@ -168,6 +172,8 @@ export interface RunnerDecl {
   defaultModeId?: string
   /** Shown before a session reports its own model list. */
   fallbackModels?: ModelOption[]
+  /** What this runtime can enforce of a harness (docs/harness.md §3). Absent: instruction-only. */
+  enforcement?: EnforcementDecl
 }
 
 export interface RunnerStart {
@@ -187,6 +193,11 @@ export interface RunnerStart {
   mcp?: { name: string; command: string; args: string[]; env: Record<string, string> }
   /** Experimental: the provider's own session id to resume natively (runners that support it). */
   resume?: string
+  /**
+   * The project's effective harness, compiled (docs/harness.md). Runners deliver `instructions`,
+   * apply `native` parts and raise every action they can to `evaluate` before it runs.
+   */
+  harness?: ActionPolicy
 }
 
 export type RunnerExit = { error?: 'auth' | 'runtime' | 'folder' | 'crash'; message?: string }
@@ -210,6 +221,14 @@ export interface RunnerSession {
   /** A tool call needs approval; the returned promise is the user's decision. */
   onPermission(fn: (r: RunnerPermission) => Promise<RunnerDecision>): void
   onExit(fn: (e: RunnerExit) => void): void
+  /** A subagent of this session started or changed (runtimes that expose them); `event` is mapped like `onEvent`. */
+  onChild?(
+    fn: (c: {
+      childId: string
+      kind?: string
+      event: Omit<AgentEvent, 'agentId' | 'parentId'>
+    }) => void,
+  ): () => void
 }
 
 export interface RunnerPermission {
@@ -220,6 +239,8 @@ export interface RunnerPermission {
   tool: string
   input: Record<string, unknown>
   cwd: string
+  /** The subagent asking, when the runtime tells them apart. */
+  agent?: { id: string; type?: string }
 }
 
 export type RunnerDecision = { behavior: 'allow' } | { behavior: 'deny'; message: string }
@@ -373,4 +394,43 @@ export interface SearchIndex {
 /** Cryptographically secure random tokens (MCP session tokens, ids). */
 export interface SecureRandom {
   token(bytes: number): string
+}
+
+// ── Harness Builder (docs/harness.md) ───────────────────────────────────────────────────────────
+
+/** One rule file found in a repository (repo-relative path; the adapter never executes anything). */
+export interface RuleSourceFile {
+  path: string
+  format:
+    | 'agents-md'
+    | 'claude-md'
+    | 'claude-rule'
+    | 'cursor-mdc'
+    | 'cursorrules'
+    | 'gemini-md'
+    | 'copilot-instructions'
+    | 'copilot-instruction-file'
+    | 'makefile'
+    | 'ci-workflow'
+  bytes: number
+  /** sha256 hex of the whole file. */
+  hash: string
+}
+
+/**
+ * Reads rule files of one repository, read-only and bounded (no symlinks, ≤ 256 KB per file,
+ * ≤ 64 KB parsed, ≤ 200 files). `repoPath` is an absolute directory known only to main.
+ */
+export interface RuleSourceReader {
+  detect(repoPath: string): Promise<RuleSourceFile[]>
+  /** The first 64 KB of a detected file and its current hash (drift detection re-reads it). */
+  read(repoPath: string, relPath: string): Promise<{ text: string; hash: string }>
+}
+
+/**
+ * The trusted validation runner: spawns `argv` with `shell: false` in `cwd`, a scrubbed env, a
+ * timeout that kills the process tree, and returns a redacted output tail. Never a shell string.
+ */
+export interface GateRunner {
+  run(spec: GateSpec, o: { cwd: string; signal?: CancelSignal }): Promise<GateRun>
 }

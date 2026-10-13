@@ -276,4 +276,119 @@ describe('ProjectsStore: cross-partition moves and auto-imported knowledge', () 
     await r.putMemory(own)
     expect(r.knowledgeOf('ses_cccccccccccc')).toBeUndefined()
   })
+
+  it('PS-harness: versions, snapshots, events and gate results persist and reload', async () => {
+    const { store, log } = make()
+    const changes: unknown[] = []
+    store.onChange((c) => changes.push(c))
+    const h = {
+      id: 'hrn_aaaaaaaaaa',
+      version: 1,
+      name: 'Std',
+      scope: 'project' as const,
+      status: 'draft' as const,
+      launchPolicy: 'advisory' as const,
+      gateTrigger: 'manual' as const,
+      fsIsolation: 'off' as const,
+      retryBudget: 2,
+      rules: [
+        {
+          id: 'rul_aaaaaa',
+          name: 'R',
+          text: 'RULE-SENTINEL',
+          category: 'coding' as const,
+          enforcement: 'instruction' as const,
+          severity: 'required' as const,
+        },
+      ],
+      gates: [
+        {
+          id: 'gat_aaaaaa',
+          name: 'G',
+          argv: ['make', 'ARGV-SENTINEL'],
+          timeoutMs: 1000,
+          required: true,
+        },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    await store.putHarness({ ...h, version: 2, status: 'draft' })
+    await store.putHarness({ ...h, status: 'published' })
+    await store.putHarness({ ...h, status: 'published', name: 'Std2' }) // same version rewritten
+    expect(store.harnessVersions(h.id).map((x) => [x.version, x.name])).toEqual([
+      [1, 'Std2'],
+      [2, 'Std'],
+    ])
+    expect(store.harness(h.id)?.version).toBe(2)
+    expect(store.allHarnesses().map((x) => x.id)).toEqual([h.id])
+    const S = 'ses_aaaaaaaaaaaa'
+    await store.putHarnessSnapshot({
+      id: 'hsn_1',
+      sessionId: S,
+      agentId: 'cc:1',
+      projectId: P,
+      provider: 'claude-code',
+      effective: {} as never,
+      report: {} as never,
+      createdAt: 1,
+    })
+    for (let i = 0; i < 505; i++)
+      await store.addHarnessEvent({
+        id: `hev_${i}`,
+        projectId: P,
+        sessionId: S,
+        agentId: 'cc:1',
+        ts: i,
+        kind: 'action-allowed',
+        ruleIds: [],
+        detail: { tool: 'Read', summary: 'a' },
+      })
+    const gr = {
+      id: 'gtr_1',
+      sessionId: S,
+      projectId: P,
+      gateId: 'gat_aaaaaa',
+      name: 'G',
+      required: true,
+      harnessVersion: `${h.id}@1`,
+      startedAt: 2,
+      run: { status: 'fail' as const, exitCode: 1, durationMs: 1, outputTail: '' },
+    }
+    await store.putGateResult(gr)
+    await store.putGateResult({ ...gr, run: { ...gr.run, status: 'pass', exitCode: 0 } })
+    expect(store.gateResultsOf(S)).toMatchObject([{ id: 'gtr_1', run: { status: 'pass' } }])
+    for (let i = 2; i < 105; i++) await store.putGateResult({ ...gr, id: `gtr_${i}` })
+    expect(store.harnessEventsOf(S)).toHaveLength(500)
+    expect(store.gateResultsOf(S)).toHaveLength(100)
+    store.setGateRunning(S, {
+      gateId: 'gat_aaaaaa',
+      name: 'G',
+      required: true,
+      harnessVersion: 'v',
+      startedAt: 3,
+    })
+    expect(store.runningGates(S)).toHaveLength(1)
+    store.setGateRunning(S, undefined, 'gat_aaaaaa')
+    expect(store.runningGates(S)).toEqual([])
+    expect(changes).toContainEqual({ type: 'harness', harnessId: h.id })
+    expect(changes).toContainEqual({ type: 'harness', agentId: 'cc:1', projectId: P })
+    await store.flush()
+
+    const r = make(log.reopen()).store
+    await r.load()
+    expect(r.harnessVersions(h.id).map((x) => [x.version, x.name])).toEqual([
+      [1, 'Std2'],
+      [2, 'Std'],
+    ])
+    expect(r.harnessSnapshot(S)?.id).toBe('hsn_1')
+    expect(r.harnessEventsOf(S)).toHaveLength(500)
+    expect(r.gateResultsOf(S)).toHaveLength(100)
+    expect(r.gateResultsOf(S).at(-1)?.id).toBe('gtr_104')
+    // Gate argv lives only in the harness record, never in events or activity.
+    const recs = [...log.storage.values()].flat()
+    for (const rec of recs.filter((x) => x.t === 'harness-event' || x.t === 'activity'))
+      expect(JSON.stringify(rec)).not.toContain('ARGV-SENTINEL')
+    expect(log.dump()).toContain('RULE-SENTINEL') // the fake stores plaintext; the real vault encrypts
+  })
 })

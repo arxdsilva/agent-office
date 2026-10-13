@@ -17,6 +17,14 @@ import {
   SeqIds,
 } from '../../test/fakes/index.ts'
 import type { ComposedMessage, StartSession } from '../ports/driving.ts'
+import type {
+  ActionPolicy,
+  EnforcementDecl,
+  PolicyAction,
+  PolicyDecision,
+  SessionHarnessHooks,
+} from '../domain/harness-types.ts'
+import type { RunnerDecision, RunnerPermission, RunnerStart } from '../ports/driven.ts'
 import { ActivityService } from './activity-service.ts'
 import { InboxService } from './inbox-service.ts'
 import {
@@ -738,5 +746,259 @@ describe('projects (docs/projects.md §5)', () => {
     const id = await t.svc.start(START)
     expect(t.located.at(-1)).toEqual([id, 'claude-code', { cwd: START.cwd }])
     expect(t.agents.get(id)?.projectId).toBeUndefined()
+  })
+})
+
+// ── harness hooks (docs/harness.md) ──
+
+const HDECL: EnforcementDecl = {
+  instructions: 'native',
+  toolDeny: 'hook',
+  pathDeny: 'hook',
+  commandDeny: 'hook',
+  fsIsolation: 'none',
+  subagents: 'inherited',
+  nonInterceptingModes: ['bypassPermissions', 'full-access'],
+  interceptingMode: 'default',
+}
+
+type ChildFn = Parameters<NonNullable<import('../ports/driven.ts').RunnerSession['onChild']>>[0]
+
+/** A runner that declares enforcement and exposes child events and raw permission requests. */
+class HarnessRunner extends FakeAgentRunner {
+  readonly enforcement: EnforcementDecl | undefined
+  childFns: ChildFn[] = []
+  permFns: ((r: RunnerPermission) => Promise<RunnerDecision>)[] = []
+  constructor(
+    enforcement: EnforcementDecl | undefined,
+    decl?: ConstructorParameters<typeof FakeAgentRunner>[0],
+  ) {
+    super(decl)
+    this.enforcement = enforcement
+  }
+  override start(o: RunnerStart) {
+    const s = super.start(o)
+    const orig = s.onPermission.bind(s)
+    s.onPermission = (fn) => {
+      this.permFns.push(fn)
+      orig(fn)
+    }
+    Object.assign(s, {
+      onChild: (fn: ChildFn) => {
+        this.childFns.push(fn)
+        return () => {}
+      },
+    })
+    return s
+  }
+}
+
+const POLICY: ActionPolicy = {
+  evaluate: () => ({ action: 'allow', ruleIds: [], reason: '', basis: 'exact' }),
+  native: {
+    deniedTools: [],
+    denyPaths: [],
+    askPaths: [],
+    denyCommands: [],
+    askCommands: [],
+    fsIsolation: 'off',
+  },
+  interceptAll: true,
+  unsupported: [],
+}
+
+function fakeHooks(
+  o: { policy?: ActionPolicy | undefined; refuse?: boolean; throws?: boolean } = {},
+) {
+  const calls: unknown[][] = []
+  let next: PolicyDecision = { action: 'allow', ruleIds: [], reason: '', basis: 'exact' }
+  const hooks: SessionHarnessHooks = {
+    prepare: async (x) => {
+      calls.push(['prepare', x])
+      if (o.refuse) throw new SessionStartError('harness')
+      if (o.throws) throw new Error('boom')
+      return 'policy' in o ? o.policy : POLICY
+    },
+    bind: (x) => void calls.push(['bind', x.agentId, x.projectId, x.policy === POLICY]),
+    evaluate: (id: string, a: PolicyAction) => {
+      calls.push(['evaluate', id, a.tool, a.agentRole, a.provider])
+      return next
+    },
+    turnEnded: (id, r) => void calls.push(['turnEnded', id, r]),
+    ended: (id) => void calls.push(['ended', id]),
+  }
+  return { hooks, calls, decide: (d: Partial<PolicyDecision>) => (next = { ...next, ...d }) }
+}
+
+function setupHarness(
+  h: ReturnType<typeof fakeHooks>,
+  o: { decl?: EnforcementDecl | undefined; settings?: Partial<Settings>; codex?: boolean } = {},
+) {
+  const t = setup(o.settings ?? {})
+  const runner = new HarnessRunner('decl' in o ? o.decl : HDECL)
+  const codex = new HarnessRunner(undefined, {
+    ...CODEX_DECL,
+    enforcement: { ...HDECL, nonInterceptingModes: ['full-access'], interceptingMode: 'ask' },
+  })
+  const svc = new ManagedSessionService({
+    runner,
+    runtimes: new Map([['codex', codex]]),
+    activity: t.activity,
+    agents: t.agents,
+    messages: t.messages,
+    inbox: t.inbox,
+    settings: { get: async () => t.settings },
+    bus: t.bus,
+    clock: t.clock,
+    scheduler: t.scheduler,
+    ids: new SeqIds(),
+    permId: (() => {
+      let n = 0
+      return () => `perm_${String(++n).padStart(10, '0')}`
+    })(),
+    projectExists: () => true,
+    harness: h.hooks,
+  })
+  return { ...t, svc, runner, codex }
+}
+
+const HSTART: StartSession = { ...START, mode: 'default', projectId: 'prj_aaaaaaaaaaaa' }
+
+describe('ManagedSessionService harness hooks', () => {
+  it('MS-H1 prepares with the runtime declaration, passes the policy, binds after registration', async () => {
+    const h = fakeHooks()
+    const t = setupHarness(h)
+    const id = await t.svc.start(HSTART)
+    expect(h.calls[0]).toEqual([
+      'prepare',
+      {
+        projectId: 'prj_aaaaaaaaaaaa',
+        provider: 'claude-code',
+        cwd: START.cwd,
+        mode: 'default',
+        enforcement: HDECL,
+      },
+    ])
+    expect(t.runner.last().options.harness).toBe(POLICY)
+    expect(h.calls[1]).toEqual(['bind', id, 'prj_aaaaaaaaaaaa', true])
+    // Codex: the declaration comes from RunnerDecl, mode ids are passed.
+    await t.svc.start({ ...HSTART, provider: 'codex' })
+    expect(h.calls[2]).toMatchObject([
+      'prepare',
+      { provider: 'codex', modeId: 'ask', enforcement: { interceptingMode: 'ask' } },
+    ])
+  })
+
+  it('MS-H2 no project or no policy: nothing is passed or bound', async () => {
+    const h = fakeHooks({ policy: undefined })
+    const t = setupHarness(h)
+    await t.svc.start(START)
+    expect(h.calls).toEqual([])
+    await t.svc.start(HSTART)
+    expect(t.runner.last().options.harness).toBeUndefined()
+    expect(h.calls.map((c) => c[0])).toEqual(['prepare'])
+  })
+
+  it('MS-H3 a strict refusal surfaces as code harness; unexpected errors fail closed', async () => {
+    const t = setupHarness(fakeHooks({ refuse: true }))
+    await expect(t.svc.start(HSTART)).rejects.toMatchObject({ code: 'harness' })
+    expect(t.runner.sessions).toHaveLength(0)
+    const u = setupHarness(fakeHooks({ throws: true }))
+    await expect(u.svc.start(HSTART)).rejects.toMatchObject({ code: 'harness' })
+  })
+
+  it('MS-H4 advisory: a non-intercepting mode is coerced to the intercepting one', async () => {
+    const t = setupHarness(fakeHooks(), { settings: { allowBypassPermissions: true } })
+    const id = await t.svc.start({ ...HSTART, mode: 'bypassPermissions' })
+    expect(t.runner.last().options).toMatchObject({ mode: 'default', allowBypass: false })
+    expect(t.agents.get(id)?.permissionMode).toBe('default')
+    const cx = await t.svc.start({ ...HSTART, provider: 'codex', modeId: 'full-access' })
+    expect(t.codex.last().options.modeId).toBe('ask')
+    expect(t.agents.get(cx)?.modeId).toBe('ask')
+    // Switching into a non-intercepting mode later is refused while a harness is bound.
+    await expect(t.svc.setMode(id, 'bypassPermissions')).rejects.toBeInstanceOf(NotAllowedError)
+    await expect(t.svc.setModeId(cx, 'full-access')).rejects.toBeInstanceOf(NotAllowedError)
+    await t.svc.setMode(id, 'plan')
+    expect(t.runner.last().mode).toBe('plan')
+  })
+
+  it('MS-H5 permissions: policy first; deny answers, ask cards carry the rule and never join the allow set', async () => {
+    const h = fakeHooks()
+    const t = setupHarness(h)
+    const id = await t.svc.start(HSTART)
+    const s = t.runner.last()
+    h.decide({ action: 'deny', ruleIds: ['rul_a'], reason: 'No rm — Never delete files' })
+    await expect(s.ask('Bash', { command: 'rm x' })).resolves.toEqual({
+      behavior: 'deny',
+      message: 'No rm — Never delete files',
+    })
+    expect(h.calls.at(-1)).toEqual(['evaluate', id, 'Bash', 'main', 'claude-code'])
+    h.decide({ action: 'ask', ruleIds: ['rul_b'], reason: 'Push — Ask before pushing' })
+    const p1 = s.ask('Bash', { command: 'git push' })
+    await tick()
+    expect(t.svc.pending(id)).toEqual([
+      expect.objectContaining({ tool: 'Bash', rule: { id: 'rul_b', name: 'Push' } }),
+    ])
+    t.svc.answer(id, t.svc.pending(id)[0]!.id, 'allow-session')
+    await expect(p1).resolves.toEqual({ behavior: 'allow' })
+    // Still asked the next time: a harness question is never remembered.
+    const p2 = s.ask('Bash', { command: 'git push' })
+    await tick()
+    expect(t.svc.pending(id)).toHaveLength(1)
+    t.svc.answer(id, t.svc.pending(id)[0]!.id, 'allow')
+    await p2
+    // Allowed by the harness: the normal flow (and its allow set) applies.
+    h.decide({ action: 'allow', ruleIds: [], reason: '' })
+    const p3 = s.ask('Read', { file_path: 'a' })
+    await tick()
+    t.svc.answer(id, t.svc.pending(id)[0]!.id, 'allow-session')
+    await p3
+    await expect(s.ask('Read', { file_path: 'b' })).resolves.toEqual({ behavior: 'allow' })
+    // A subagent's request carries its role.
+    await t.runner.permFns.at(-1)!({
+      tool: 'Read',
+      input: {},
+      cwd: START.cwd,
+      agent: { id: 'a1', type: 'Explore' },
+    })
+    expect(h.calls.at(-1)).toEqual(['evaluate', id, 'Read', 'Explore', 'claude-code'])
+  })
+
+  it('MS-H6 turns and ends reach the hooks; children are reported, owned and ended', async () => {
+    const h = fakeHooks()
+    const t = setupHarness(h)
+    const id = await t.svc.start(HSTART)
+    const s = t.runner.last()
+    t.runner.childFns.at(-1)!({
+      childId: 'cc:child-1',
+      kind: 'Explore',
+      event: { status: 'tool', tool: 'Grep', name: 'Explore' },
+    })
+    expect(t.agents.get('cc:child-1')).toMatchObject({
+      parentId: id,
+      provider: 'claude-code',
+      source: 'managed',
+      status: 'tool',
+    })
+    expect(t.svc.owns('cc:child-1')).toBe(true)
+    s.result('done')
+    expect(h.calls.at(-1)).toEqual(['turnEnded', id, { isError: false, interrupted: false }])
+    await t.svc.interrupt(id)
+    s.result('', true)
+    expect(h.calls.at(-1)).toEqual(['turnEnded', id, { isError: true, interrupted: true }])
+    await t.svc.stop(id)
+    expect(h.calls.at(-1)).toEqual(['ended', id])
+    expect(t.agents.get('cc:child-1')?.status).toBe('done')
+    expect(t.svc.owns('cc:child-1')).toBe(false)
+  })
+
+  it('MS-H7 runtimes without a declaration still get the policy (instruction-only coverage is decided by prepare)', async () => {
+    const h = fakeHooks()
+    const t = setupHarness(h, { decl: undefined })
+    await t.svc.start(HSTART)
+    expect(h.calls[0]).toEqual([
+      'prepare',
+      expect.not.objectContaining({ enforcement: expect.anything() }),
+    ])
   })
 })

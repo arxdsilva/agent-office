@@ -1,4 +1,11 @@
-import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type {
+  HookInput,
+  Options,
+  Query,
+  SDKMessage,
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk'
+import type { ActionPolicy, PolicyDecision } from '@agent-office/core'
 import { agentRunnerContract, MemoryLogger } from '@agent-office/core/testing'
 import type { AgentEvent } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
@@ -417,6 +424,219 @@ describe('ClaudeSdkRunner with the real core', () => {
     } finally {
       scheduler.dispose()
     }
+  })
+})
+
+describe('ClaudeSdkRunner harness', () => {
+  const SENTINEL = 'zz-tool-input-sentinel-zz'
+  const harness = (
+    action: PolicyDecision['action'] | 'throw',
+    more: Partial<ActionPolicy['native']> = {},
+  ): ActionPolicy => ({
+    evaluate: () => {
+      if (action === 'throw') throw new Error('x')
+      return { action, ruleIds: ['rul_1'], reason: 'Rule says no', basis: 'exact' }
+    },
+    instructions: 'Run make check before finishing.',
+    native: {
+      deniedTools: ['WebFetch'],
+      denyPaths: ['packages/shared'],
+      askPaths: [],
+      denyCommands: [],
+      askCommands: [],
+      fsIsolation: 'off',
+      ...more,
+    },
+    interceptAll: true,
+    unsupported: [],
+  })
+  const hook =
+    (
+      sdk: ReturnType<typeof sdkDouble>,
+      ev: 'PreToolUse' | 'PostToolUse' | 'SubagentStart' | 'SubagentStop',
+    ) =>
+    (input: Record<string, unknown>) =>
+      sdk.options().hooks![ev]![0]!.hooks[0]!(
+        {
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/work/shop-api',
+          hook_event_name: ev,
+          ...input,
+        } as unknown as HookInput,
+        'tu',
+        { signal: new AbortController().signal },
+      )
+
+  it('declares its enforcement without a decl', () => {
+    const { runner } = make()
+    expect('decl' in runner).toBe(false)
+    expect(runner.enforcement).toEqual({
+      instructions: 'native',
+      toolDeny: 'hook',
+      pathDeny: 'hook',
+      commandDeny: 'partial',
+      fsIsolation: 'sandbox',
+      subagents: 'inherited',
+      nonInterceptingModes: ['bypassPermissions'],
+      interceptingMode: 'default',
+    })
+  })
+
+  it('HRN-1 passes the compiled harness as SDK options; keeps MCP and the managed marker', async () => {
+    const { sdk, runner } = make()
+    const mcp = { name: 'agent-office', command: '/u/mcp.sh', args: [], env: {} }
+    runner.start({ ...START, mcp, harness: harness('allow', { fsIsolation: 'require' }) })
+    await tick()
+    const o = sdk.options()
+    expect(o.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: 'Run make check before finishing.',
+    })
+    expect(o.disallowedTools).toEqual(['WebFetch'])
+    expect(o.sandbox).toEqual({
+      enabled: true,
+      allowUnsandboxedCommands: false,
+      failIfUnavailable: true,
+      filesystem: { denyWrite: ['/work/shop-api/packages/shared'] },
+    })
+    expect(o.hooks!.PreToolUse![0]!.matcher).toBeUndefined()
+    expect(o).not.toHaveProperty('allowedTools')
+    expect(o.env).toMatchObject({ AGENT_OFFICE_MANAGED: '1' })
+    expect(o.mcpServers).toHaveProperty('agent-office')
+  })
+
+  it('HRN-2 without a harness: no systemPrompt, sandbox or disallowedTools', async () => {
+    const { sdk, runner } = make()
+    runner.start(START)
+    await tick()
+    const o = sdk.options()
+    expect(o).not.toHaveProperty('systemPrompt')
+    expect(o).not.toHaveProperty('sandbox')
+    expect(o).not.toHaveProperty('disallowedTools')
+    expect(o.hooks).toHaveProperty('SubagentStart')
+  })
+
+  it.each([
+    ['deny', 'default', 'deny'],
+    ['ask', 'default', 'ask'],
+    ['ask', 'bypassPermissions', 'deny'],
+    ['throw', 'default', 'deny'],
+  ] as const)('HRN-3 policy %s in mode %s → %s', async (action, mode, want) => {
+    const { sdk, runner } = make()
+    runner.start({
+      ...START,
+      mode,
+      allowBypass: mode === 'bypassPermissions',
+      harness: harness(action),
+    })
+    await tick()
+    const out = await hook(
+      sdk,
+      'PreToolUse',
+    )({ tool_name: 'Edit', tool_input: { file_path: 'a' }, tool_use_id: 'x' })
+    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: want } })
+  })
+
+  it('HRN-4 the bypass check follows setMode', async () => {
+    const { sdk, runner } = make()
+    const s = runner.start({ ...START, harness: harness('ask') })
+    sdk.init('sess-1')
+    await s.sessionId
+    await s.setMode('bypassPermissions')
+    const out = await hook(
+      sdk,
+      'PreToolUse',
+    )({ tool_name: 'Edit', tool_input: {}, tool_use_id: 'x' })
+    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } })
+  })
+
+  it('HRN-5 allow → {} (never allow)', async () => {
+    const { sdk, runner } = make()
+    runner.start({ ...START, harness: harness('allow') })
+    await tick()
+    expect(
+      await hook(sdk, 'PreToolUse')({ tool_name: 'Read', tool_input: {}, tool_use_id: 'x' }),
+    ).toEqual({})
+  })
+
+  it('SUB-1 subagents surface through onChild; permissions carry the agent; no input leaks', async () => {
+    const { sdk, runner } = make()
+    const s = runner.start({ ...START, harness: harness('allow') })
+    const kids: unknown[] = []
+    const events: unknown[] = []
+    s.onChild!((c) => kids.push(c))
+    s.onEvent((e) => events.push(e))
+    const perms: unknown[] = []
+    s.onPermission(async (r) => {
+      perms.push(r)
+      return { behavior: 'allow' }
+    })
+    sdk.init('sess-1')
+    await s.sessionId
+    await hook(sdk, 'SubagentStart')({ agent_id: 'ag7', agent_type: 'Explore' })
+    await hook(
+      sdk,
+      'PreToolUse',
+    )({
+      agent_id: 'ag7',
+      agent_type: 'Explore',
+      tool_name: 'Grep',
+      tool_input: { pattern: SENTINEL },
+      tool_use_id: 'x',
+    })
+    await sdk.options().canUseTool!('Grep', { pattern: SENTINEL }, {
+      signal: new AbortController().signal,
+      toolUseID: 'x',
+      agentID: 'ag7',
+    } as never)
+    await hook(
+      sdk,
+      'PostToolUse',
+    )({
+      agent_id: 'ag7',
+      agent_type: 'Explore',
+      tool_name: 'Grep',
+      tool_input: { pattern: SENTINEL },
+      tool_response: SENTINEL,
+      tool_use_id: 'x',
+    })
+    await hook(
+      sdk,
+      'SubagentStop',
+    )({
+      agent_id: 'ag7',
+      agent_type: 'Explore',
+      agent_transcript_path: '/t',
+      stop_hook_active: false,
+      last_assistant_message: SENTINEL,
+    })
+    expect(kids).toEqual([
+      {
+        childId: 'cc:ag7',
+        kind: 'Explore',
+        event: { status: 'thinking', name: 'Explore', kind: 'Explore' },
+      },
+      { childId: 'cc:ag7', kind: 'Explore', event: { status: 'tool', tool: 'Grep' } },
+      { childId: 'cc:ag7', kind: 'Explore', event: { status: 'thinking' } },
+      { childId: 'cc:ag7', kind: 'Explore', event: { status: 'done', ended: 'completed' } },
+    ])
+    expect(perms[0]).toMatchObject({ tool: 'Grep', agent: { id: 'ag7', type: 'Explore' } })
+    expect(JSON.stringify([kids, events])).not.toContain(SENTINEL)
+  })
+
+  it('SUB-2 main-thread permissions have no agent', async () => {
+    const { sdk, runner } = make()
+    const s = runner.start(START)
+    const perms: Record<string, unknown>[] = []
+    s.onPermission(async (r) => {
+      perms.push(r as never)
+      return { behavior: 'allow' }
+    })
+    await tick()
+    await sdk.ask('Bash', { command: 'ls' })
+    expect(perms[0]).not.toHaveProperty('agent')
   })
 })
 

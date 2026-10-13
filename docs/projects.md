@@ -193,7 +193,7 @@ Stable DOM ids (Playwright): shell `#sidebar` (`#sb-overview`, `#sb-office`, `#s
 `#mem-edit`), `#ws-context` (`#ci-available`, `#ci-retrieved`, `#ci-delivered`); dialogs `#palette`
 (`#pal-input`, `#pal-list`), `#np-dialog` (`#np-name`, `#np-repo-add`, `#np-create`), `#ho-dialog`
 (`#ho-objective`, `#ho-provider`, `#ho-preview`, `#ho-launch`); New Agent `#ns-project`,
-`#ns-context`; agent panel `#p-handoff`. Every existing id keeps working.
+`#ns-context`; agent panel `#p-handoff`. Harnesses: channels `hrn:*`, push `{type:'harness'}`, dialog `#harness`, agent panel `#p-tabs`/`#p-harness`, Minimal `.mm-harness` (docs/harness.md §7). Every existing id keeps working.
 
 Start view: `settings.startView` (`auto` = the Overview once a project exists, else the Office).
 Leaving the Office hides the stage and pauses rendering.

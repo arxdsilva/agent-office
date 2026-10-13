@@ -1,4 +1,5 @@
 // The fakes are held to the same contracts as the real adapters.
+import { describe, expect, it } from 'vitest'
 import { agentRunnerContract, managedRuntimeContract } from './contracts/agent-runner.ts'
 import { jsonConfigStoreContract, providerProbeContract } from './contracts/providers.ts'
 import { capabilityRepositoryContract } from './contracts/capabilities.ts'
@@ -8,7 +9,9 @@ import {
   FakeCapabilityRepository,
   FakeClaudeSettingsStore,
   FakeEventBus,
+  FakeGateRunner,
   FakeHookRunner,
+  FakeSignal,
   FakeJsonConfigStore,
   FakeMessageRepository,
   FakeProviderProbe,
@@ -152,3 +155,51 @@ historySourceContract('FakeHistorySource', async () => ({
   total: 3,
   secret: 'SENTINEL-SECRET-123',
 }))
+
+describe('FakeGateRunner', () => {
+  const spec = (id: string) => ({ id, argv: ['make', 'check'], timeoutMs: 1000 })
+
+  it('passes by default and records every call', async () => {
+    const g = new FakeGateRunner()
+    const r = await g.run(spec('gat_a'), { cwd: '/w' })
+    expect(r).toEqual({ status: 'pass', exitCode: 0, durationMs: 1, outputTail: '' })
+    expect(g.calls).toEqual([{ spec: spec('gat_a'), cwd: '/w' }])
+  })
+
+  it('returns scripted results by gate id, in order, then repeats the last', async () => {
+    const g = new FakeGateRunner().script(
+      'gat_a',
+      { status: 'fail', exitCode: 2, outputTail: 'boom' },
+      { status: 'pass' },
+    )
+    expect((await g.run(spec('gat_a'), { cwd: '/w' })).status).toBe('fail')
+    expect((await g.run(spec('gat_a'), { cwd: '/w' })).status).toBe('pass')
+    expect((await g.run(spec('gat_a'), { cwd: '/w' })).status).toBe('pass')
+    expect((await g.run(spec('gat_b'), { cwd: '/w' })).exitCode).toBe(0)
+  })
+
+  it('a held gate stays running until released, and an abort cancels it', async () => {
+    const g = new FakeGateRunner().hold('gat_a')
+    const sig = new FakeSignal()
+    let done: string | undefined
+    const p = g.run(spec('gat_a'), { cwd: '/w', signal: sig }).then((r) => (done = r.status))
+    await Promise.resolve()
+    expect(done).toBeUndefined()
+    expect(g.running()).toEqual(['gat_a'])
+    sig.abort()
+    await p
+    expect(done).toBe('cancelled')
+
+    const q = g.run(spec('gat_a'), { cwd: '/w' })
+    g.release('gat_a')
+    expect((await q).status).toBe('pass')
+  })
+
+  it('an already aborted signal is cancelled immediately', async () => {
+    const sig = new FakeSignal()
+    sig.abort()
+    expect((await new FakeGateRunner().run(spec('g'), { cwd: '/w', signal: sig })).status).toBe(
+      'cancelled',
+    )
+  })
+})

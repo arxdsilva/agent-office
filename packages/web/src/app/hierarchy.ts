@@ -1,5 +1,6 @@
 // Minimal mode's hierarchy builder (docs/minimal-mode.md). Pure: time comes in, nothing is stored.
-import { STATUS_COLORS, type Agent } from '@agent-office/shared'
+import { STATUS_COLORS, type Agent, type HarnessBadge } from '@agent-office/shared'
+import { harnessBadgeVM } from './harness-inspector-vm.ts'
 import type {
   AgentNodeVM,
   FinishedStore,
@@ -110,12 +111,14 @@ function nodeOf(
   children: AgentNodeVM[],
   finished: AgentNodeVM[],
   activeChildren: number,
+  badge?: HarnessBadge,
 ): AgentNodeVM {
   const { lifecycle, pill, color } = lifecycleOf(a, now, depth)
   const task =
     a.task ??
     (depth === 0 && a.topic && a.topic !== a.name && a.topic !== 'untitled' ? a.topic : null)
   const activity = activityOf(a)
+  const harness = badge ? harnessBadgeVM(badge) : undefined
   const hash = [
     a.name,
     a.model ?? '',
@@ -128,6 +131,9 @@ function nodeOf(
     a.endedAt ?? '',
     children.map((c) => c.id).join(','),
     finished.map((c) => c.id).join(','),
+    harness
+      ? `${harness.title}|${harness.text}|${harness.coverage}|${harness.verification}|${harness.completion}|${harness.denied}`
+      : '',
   ].join('\u0001')
   return {
     id: a.id,
@@ -147,6 +153,7 @@ function nodeOf(
     activeChildren,
     children,
     finished,
+    ...(harness && { harness }),
     hash,
   }
 }
@@ -158,6 +165,7 @@ export function buildHierarchy(
   opts: HierarchyOpts,
 ): ProjectNodeVM[] {
   const { now } = input
+  const badges = new Map((input.harness ?? []).map((b) => [b.agentId, b]))
   const byId = new Map<string, Agent>()
   for (const a of input.agents) byId.set(a.id, a)
   const sorted = [...byId.values()].sort(byStable)
@@ -204,7 +212,7 @@ export function buildHierarchy(
       else stored.set(p, [e.agent])
     }
 
-  const flat = (a: Agent, depth: number) => nodeOf(a, depth, now, [], [], 0)
+  const flat = (a: Agent, depth: number) => nodeOf(a, depth, now, [], [], 0, badges.get(a.id))
 
   const build = (a: Agent, depth: number): AgentNodeVM => {
     const children: AgentNodeVM[] = []
@@ -223,7 +231,7 @@ export function buildHierarchy(
           .sort(byNewest)
           .slice(0, MAX_FINISHED)
           .map((k) => flat(k, depth + 1))
-    return nodeOf(a, depth, now, children, fin, activeChildren)
+    return nodeOf(a, depth, now, children, fin, activeChildren, badges.get(a.id))
   }
 
   const countActive = (n: AgentNodeVM, live: Map<string, Agent>, acc: Count, root: boolean) => {

@@ -217,6 +217,29 @@
           <button id="p-close" class="icon-btn" type="button" aria-label="Close">✕</button>
         </div>
         <div id="p-session" class="session-bar" hidden></div>
+        <div id="p-tabs" class="tabstrip" role="tablist" hidden>
+          <button
+            id="p-tab-details"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-tab="details"
+          ></button>
+          <button
+            id="p-tab-harness"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-tab="harness"
+          ></button>
+        </div>
+        <section
+          id="p-harness"
+          class="harness-tab"
+          role="tabpanel"
+          aria-labelledby="p-tab-harness"
+          hidden
+        ></section>
         <dl id="p-meta"></dl>
         <section id="p-used" class="used" hidden></section>
         <div id="p-hint" class="hint-box" hidden></div>
@@ -494,6 +517,29 @@
     <dialog id="palette" class="card ws-dialog" aria-label="Command palette"></dialog>
     <dialog id="np-dialog" class="card ws-dialog" aria-labelledby="np-title"></dialog>
     <dialog id="ho-dialog" class="card ws-dialog" aria-labelledby="ho-title"></dialog>
+    <!-- region:harness Harness Builder (docs/harness.md): library, editor, import, coverage -->
+    <dialog id="harness" class="card ws-dialog harness-dialog" aria-labelledby="hb-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="hb-title"></h2>
+          <p id="hb-sub" class="muted"></p>
+        </div>
+        <button id="hb-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="harness-body">
+        <div id="hb-tabs" class="tabrail" role="tablist" aria-orientation="vertical"></div>
+        <div id="hb-panels" class="harness-panels"></div>
+      </div>
+      <p id="hb-error" class="error" aria-live="polite"></p>
+      <dialog id="hb-confirm" class="card confirm-dialog" aria-labelledby="hb-confirm-text">
+        <p id="hb-confirm-text"></p>
+        <div class="form-row end">
+          <button id="hb-confirm-cancel" class="btn" type="button"></button>
+          <button id="hb-confirm-ok" class="btn primary" type="button"></button>
+        </div>
+      </dialog>
+    </dialog>
+    <!-- endregion:harness -->
     <dialog
       id="mem-remove-confirm"
       class="card ws-dialog"

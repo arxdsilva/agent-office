@@ -62,6 +62,22 @@ export function paletteCommands(s: Pick<WorkspaceState, 'projects' | 'projectId'
         ]
       : []),
     {
+      id: 'harnesses',
+      label: P.cmd.harnesses,
+      keywords: 'harness rules standards policy gates compliance',
+      action: { type: 'open-harnesses', projectId: pid },
+    },
+    ...(pid
+      ? [
+          {
+            id: 'harness-import',
+            label: P.cmd.importRules,
+            keywords: 'harness import rules agents.md claude.md cursor standards',
+            action: { type: 'harness-import', projectId: pid } satisfies WorkspaceAction,
+          },
+        ]
+      : []),
+    {
       id: 'import-history',
       label: P.cmd.importHistory,
       keywords: 'import claude history sessions experimental',

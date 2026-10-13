@@ -57,6 +57,29 @@ function folderExists(cwd: string): boolean {
   }
 }
 
+/**
+ * Signals a child spawned with `detached: true` (POSIX: its own process group) and everything it
+ * started: the group on POSIX, `taskkill /T /F` on Windows. Never throws.
+ */
+export function signalProcessTree(
+  child: { pid?: number | undefined; kill(sig?: NodeJS.Signals): boolean },
+  sig: NodeJS.Signals,
+): void {
+  const pid = child.pid
+  if (pid === undefined) return
+  try {
+    if (process.platform === 'win32')
+      execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
+    else process.kill(-pid, sig)
+  } catch {
+    try {
+      child.kill(sig)
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 export function spawnRuntime(bin: string, args: string[], o: SpawnRuntimeOptions): RuntimeProcess {
   const windows = process.platform === 'win32'
   const grace = o.killGraceMs ?? KILL_GRACE_MS
@@ -110,20 +133,7 @@ export function spawnRuntime(bin: string, args: string[], o: SpawnRuntimeOptions
   child.stdin.on('error', () => {})
   child.stdout.on('error', () => {})
 
-  const signalTree = (sig: NodeJS.Signals) => {
-    const pid = child.pid
-    if (pid === undefined) return
-    try {
-      if (windows) execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
-      else process.kill(-pid, sig)
-    } catch {
-      try {
-        child.kill(sig)
-      } catch {
-        /* already gone */
-      }
-    }
-  }
+  const signalTree = (sig: NodeJS.Signals) => signalProcessTree(child, sig)
 
   let killing: Promise<void> | undefined
   const kill = (): Promise<void> => {

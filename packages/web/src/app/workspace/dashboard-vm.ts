@@ -2,10 +2,17 @@
 import type { ActivityKind, ActivityView, EvidenceLevel, TaskView } from '@agent-office/shared'
 import { ago } from '../format.ts'
 import type { WorkspaceState } from './state.ts'
-import type { ActivityFilter, DashboardRowVM, DashboardSectionVM, DashboardVM } from './types.ts'
+import type {
+  ActivityFilter,
+  DashboardRowVM,
+  DashboardSectionVM,
+  DashboardVM,
+  WorkspaceAction,
+} from './types.ts'
 import { WS_COPY } from './workspace-copy.ts'
 
 const D = WS_COPY.dashboard
+const H = WS_COPY.harness
 const taskForm = { placeholder: D.taskPlaceholder, addLabel: D.taskAdd }
 export const ACTIVITY_FILTERS: readonly ActivityFilter[] = [
   'all',
@@ -33,6 +40,13 @@ const GROUP: Record<ActivityKind, Exclude<ActivityFilter, 'all'>> = {
   'commit.detected': 'sessions',
   'permission.requested': 'problems',
   'agent.error': 'problems',
+  // Harnesses (docs/harness.md): provisional grouping until the dashboard gets its own filter.
+  'harness.attached': 'sessions',
+  'harness.published': 'sessions',
+  'harness.denied': 'problems',
+  'validation.started': 'sessions',
+  'validation.passed': 'sessions',
+  'validation.failed': 'problems',
 }
 
 export const activityMatches = (a: ActivityView, f: ActivityFilter): boolean =>
@@ -173,6 +187,7 @@ export function dashboardVM(s: WorkspaceState, projectId: string, now: number): 
   ): DashboardSectionVM => ({ id, heading, rows, empty })
 
   return {
+    harness: harnessSection(s, projectId, s.activity[projectId] ?? d.activity, now),
     projectId,
     name: p.name,
     color: p.color,
@@ -216,6 +231,67 @@ export function dashboardVM(s: WorkspaceState, projectId: string, now: number): 
     ),
     taskForm,
   }
+}
+
+const VALIDATION_WORD: Partial<Record<ActivityKind, string>> = {
+  'validation.passed': 'Passed',
+  'validation.failed': 'Failed',
+  'validation.started': 'Running',
+}
+
+/** The Harness section: attached harnesses, the last validation and today's blocked actions. */
+function harnessSection(
+  s: WorkspaceState,
+  projectId: string,
+  activity: ActivityView[],
+  now: number,
+): DashboardSectionVM {
+  const open: WorkspaceAction = { type: 'open-harnesses', projectId }
+  const attached = s.harness.list.filter((h) => h.projectIds.includes(projectId))
+  const rows: DashboardRowVM[] = attached.map((h) => ({
+    id: h.id,
+    title: h.name,
+    detail: `v${h.version} · ${H.library.rules(h.ruleCount)} · ${H.library.gates(h.gateCount)}`,
+    badge: H.status[h.status],
+    tone: h.status === 'published' ? 'good' : 'warn',
+    action: open,
+  }))
+  if (attached.length) {
+    const last = activity.filter((a) => a.kind in VALIDATION_WORD).sort((a, b) => b.ts - a.ts)[0]
+    rows.push(
+      last
+        ? {
+            id: 'validation',
+            title: H.dashboard.lastValidation(VALIDATION_WORD[last.kind] ?? '', ago(last.ts, now)),
+            detail: last.text,
+            tone:
+              last.kind === 'validation.failed'
+                ? 'bad'
+                : last.kind === 'validation.passed'
+                  ? 'good'
+                  : 'neutral',
+            action: open,
+          }
+        : {
+            id: 'validation',
+            title: H.dashboard.noValidation,
+            detail: '',
+            tone: 'neutral',
+            action: open,
+          },
+    )
+    const blocked = activity.filter(
+      (a) => a.kind === 'harness.denied' && dayLabel(a.ts, now) === 'today',
+    ).length
+    rows.push({
+      id: 'blocked',
+      title: blocked ? H.dashboard.blockedToday(blocked) : H.dashboard.noneBlocked,
+      detail: '',
+      tone: blocked ? 'warn' : 'neutral',
+      action: open,
+    })
+  }
+  return { id: 'harness', heading: H.dashboard.heading, rows, empty: H.dashboard.empty }
 }
 
 function dashboardActions(

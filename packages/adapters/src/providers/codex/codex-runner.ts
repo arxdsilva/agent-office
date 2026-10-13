@@ -33,6 +33,7 @@ import {
 } from './codex-map.ts'
 import {
   AccountReadResult,
+  type AskForApproval,
   AgentMessageDelta,
   CommandApprovalParams,
   type CodexDecision,
@@ -98,7 +99,24 @@ export const CODEX_DECL: RunnerDecl = {
   modes: CODEX_MODES,
   defaultModeId: CODEX_DEFAULT_MODE,
   fallbackModels: [],
+  // docs/harness.md §3: developer instructions; approvals only for what Codex escalates (the
+  // `untrusted` floor raises every non-known-safe command); `auto`/`full-access` do not ask.
+  enforcement: {
+    instructions: 'native',
+    toolDeny: 'approval',
+    pathDeny: 'partial',
+    commandDeny: 'partial',
+    fsIsolation: 'partial',
+    subagents: 'none',
+    nonInterceptingModes: ['auto', 'full-access'],
+    interceptingMode: 'ask',
+  },
 }
+
+const FULL_ACCESS_REFUSED = 'harness forbids full access'
+/** The approval floor while a harness intercepts actions: every non-known-safe command asks. */
+const HARNESS_APPROVAL: AskForApproval = 'untrusted'
+const MAX_INSTRUCTIONS = 16 * 1024
 
 export class CodexRunner implements AgentRunner {
   readonly decl: RunnerDecl = CODEX_DECL
@@ -106,6 +124,9 @@ export class CodexRunner implements AgentRunner {
   constructor(private o: CodexRunnerOptions = {}) {}
 
   start(s: RunnerStart): RunnerSession {
+    // Core coerces modes for a harness; this is the floor: never full access while it intercepts.
+    if (s.harness?.interceptAll && modePreset(s.modeId ?? '')?.sandbox === 'danger-full-access')
+      throw new Error(FULL_ACCESS_REFUSED)
     return new CodexSession(this.o, s)
   }
 }
@@ -183,12 +204,15 @@ class CodexSession implements RunnerSession {
       )
       if (acct.requiresOpenaiAuth && !acct.account) return this.fail('auth', 'account')
       const preset = modePreset(this.modeId)!
+      const instructions = this.s.harness?.instructions?.slice(0, MAX_INSTRUCTIONS)
       const thread = ThreadStartResult.parse(
         await this.peer.request(M.threadStart, {
           cwd: this.s.cwd,
           ...(this.s.model ? { model: this.s.model } : {}),
-          approvalPolicy: preset.approvalPolicy,
+          approvalPolicy: this.approvalFor(preset.approvalPolicy),
           sandbox: preset.sandbox,
+          // The harness instruction block (docs/harness.md §3); never `baseInstructions`.
+          ...(instructions ? { developerInstructions: instructions } : {}),
           // Experimental: agent-office's project MCP server as a config.toml override
           // (`[mcp_servers.<name>]`), only when the policy allows it (docs/projects.md §5).
           // Checked against codex-cli 0.162.1: it starts the server and lists its tools.
@@ -217,6 +241,11 @@ class CodexSession implements RunnerSession {
       if (err instanceof PeerClosedError || this.ended) return
       this.fail('runtime', err instanceof Error ? err.name : 'protocol')
     }
+  }
+
+  /** The approval policy to send: the `untrusted` floor while a harness intercepts. */
+  private approvalFor(p: AskForApproval): AskForApproval {
+    return this.s.harness?.interceptAll ? HARNESS_APPROVAL : p
   }
 
   private listen(): void {
@@ -300,7 +329,8 @@ class CodexSession implements RunnerSession {
     }
     if (this.pendingModel) params.model = this.pendingModel
     const preset = modePreset(this.pendingMode ?? this.modeId)!
-    if (this.pendingMode) params.approvalPolicy = preset.approvalPolicy
+    if (this.pendingMode || this.s.harness?.interceptAll)
+      params.approvalPolicy = this.approvalFor(preset.approvalPolicy)
     if (this.pendingMode || (this.firstTurn && this.s.extraDirs.length))
       params.sandboxPolicy = sandboxPolicy(preset.sandbox, this.s.extraDirs)
     if (this.pendingMode) this.modeId = this.pendingMode
@@ -340,6 +370,8 @@ class CodexSession implements RunnerSession {
       this.items.get(parsed.data.itemId),
       this.s.cwd,
     )
+    // The harness decides first: a deny never reaches the user (docs/harness.md §3).
+    if (this.harnessDenies(perm)) return { decision: 'decline' }
     return { decision: await this.ask(perm) }
   }
 
@@ -355,6 +387,22 @@ class CodexSession implements RunnerSession {
     if (!perm) return { action: 'decline' }
     const d = await this.ask(perm)
     return d === 'accept' ? { action: 'accept', content: {} } : { action: d }
+  }
+
+  private harnessDenies(perm: RunnerPermission): boolean {
+    const h = this.s.harness
+    if (!h) return false
+    try {
+      return (
+        h.evaluate({ tool: perm.tool, input: perm.input, cwd: perm.cwd, provider: 'codex' })
+          .action === 'deny'
+      )
+    } catch (err) {
+      this.o.log?.warn(
+        `codex: harness evaluate failed (${err instanceof Error ? err.name : 'error'})`,
+      )
+      return true
+    }
   }
 
   private async ask(perm: RunnerPermission): Promise<CodexDecision> {
@@ -438,6 +486,8 @@ class CodexSession implements RunnerSession {
   async setModeId(modeId: string): Promise<void> {
     const id = this.allowedMode(modeId)
     if (!id) throw new Error(`Mode not available: ${modeId}`)
+    if (this.s.harness?.interceptAll && modePreset(id)?.sandbox === 'danger-full-access')
+      throw new Error(FULL_ACCESS_REFUSED)
     this.pendingMode = id === this.modeId ? undefined : id
   }
 

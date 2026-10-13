@@ -92,6 +92,7 @@ export const SESSION_COPY = {
       runtime:
         "Claude Code isn't installed: install it from claude.com/code, run `claude` once, then try again.",
       folder: "That folder can't be opened.",
+      harness: (m: string) => `A strict harness blocks this runtime: ${m}`,
       generic: (m: string) => `Couldn't start: ${m}`,
     },
     fromConnect: 'Start a session from here →',

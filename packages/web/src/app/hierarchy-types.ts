@@ -1,12 +1,15 @@
 // Minimal mode's view models (docs/minimal-mode.md): the live agent hierarchy, built on every
 // change from the core's agents (`buildHierarchy`, app/hierarchy.ts). No tree is stored here.
-import type { Agent, AgentStatus } from '@agent-office/shared'
+import type { Agent, AgentStatus, HarnessBadge } from '@agent-office/shared'
+import type { HarnessBadgeVM } from './harness-inspector-vm.ts'
 
 /** What the controller hands a roster view: the core's agents plus project names. */
 export interface RosterInput {
   agents: Agent[]
   projects: { id: string; name: string; color: string }[]
   now: number
+  /** Per-agent harness state (docs/harness.md), from `projects.harness.badges()`. */
+  harness?: HarnessBadge[]
 }
 
 /** The lifecycle a node shows (the table in docs/minimal-mode.md). */
@@ -47,6 +50,8 @@ export interface AgentNodeVM {
   children: AgentNodeVM[]
   /** Recently finished direct children, newest first (bounded). */
   finished: AgentNodeVM[]
+  /** The harness pill (`.mm-harness`); absent when no harness applies to this agent. */
+  harness?: HarnessBadgeVM
   /** Visible fields joined: the view rebuilds a node only when this changes. */
   hash: string
 }

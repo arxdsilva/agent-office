@@ -107,7 +107,7 @@ describe('approvalToPermission', () => {
     expect(approvalToPermission('command', {}, undefined, '/w').input).toEqual({ command: '' })
   })
 
-  it('normalizes a file change to Edit with the first changed path', () => {
+  it('normalizes a file change to Edit with every changed path (file_path = the first)', () => {
     const item = {
       type: 'fileChange',
       id: 'f',
@@ -118,10 +118,16 @@ describe('approvalToPermission', () => {
     }
     expect(approvalToPermission('fileChange', {}, item, '/work/app')).toEqual({
       tool: 'Edit',
-      input: { file_path: '/work/app/src/a.ts' },
+      input: {
+        file_path: '/work/app/src/a.ts',
+        file_paths: ['/work/app/src/a.ts', '/work/app/b.ts'],
+      },
       cwd: '/work/app',
     })
-    expect(approvalToPermission('fileChange', {}, undefined, '/w').input).toEqual({ file_path: '' })
+    expect(approvalToPermission('fileChange', {}, undefined, '/w').input).toEqual({
+      file_path: '',
+      file_paths: [],
+    })
   })
 })
 

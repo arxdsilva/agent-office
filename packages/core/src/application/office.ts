@@ -9,6 +9,7 @@ import type {
   Clock,
   EventPublisher,
   EventSubscriber,
+  GateRunner,
   HookRunner,
   IdGenerator,
   LoginItem,
@@ -19,6 +20,7 @@ import type {
   RecordLog,
   HistorySources,
   RepoIdentity,
+  RuleSourceReader,
   RunnerStart,
   Scheduler,
   SearchIndex,
@@ -97,6 +99,11 @@ export interface OfficeDeps {
   random?: SecureRandom
   /** The project MCP bridge command for a session token (the adapter owns the wrapper). */
   mcpLaunch?: (token: string) => RunnerStart['mcp']
+  // ── Harness Builder (docs/harness.md); only with `vault` ──
+  /** Reads rule files of linked repositories for the harness import. */
+  ruleSources?: RuleSourceReader
+  /** The trusted validation-gate runner. */
+  gateRunner?: GateRunner
 }
 
 /** The project MCP server's capability (the Context Hub station). */
@@ -163,6 +170,13 @@ export function createOffice(d: OfficeDeps) {
         sessions: () => sessions,
         onRetrieval: (provider) => capabilities.declare(provider, [CONTEXT_HUB]),
         scheduler: d.scheduler,
+        ...(d.ruleSources ? { ruleSources: d.ruleSources } : {}),
+        ...(d.gateRunner ? { gateRunner: d.gateRunner } : {}),
+        ...(d.platform?.platform ? { platform: d.platform.platform } : {}),
+        enforcementOf: (p: ProviderId) => {
+          const r = runtimes.get(p)
+          return r?.enforcement ?? r?.decl?.enforcement
+        },
       })
     : undefined
   sessions = runtimes.size
@@ -178,6 +192,7 @@ export function createOffice(d: OfficeDeps) {
               projectExists: (id: string) => projects.store.projects.has(id),
               mcp: projects.mcp,
               observation: projects.observation,
+              harness: projects.policy,
               ...(d.mcpLaunch ? { mcpLaunch: d.mcpLaunch } : {}),
             }
           : {}),

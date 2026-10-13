@@ -318,6 +318,15 @@ export class MinimalView {
     pill.dataset.lifecycle = n.lifecycle
     if (!main) top.append(el('span', undefined, 'mm-dot'))
     top.append(pill)
+    if (n.harness) {
+      // Harness state (docs/harness.md): coverage and verification as words in the tooltip.
+      const h = el('span', n.harness.text, 'mm-harness')
+      h.dataset.verification = n.harness.verification
+      h.dataset.coverage = n.harness.coverage
+      h.dataset.completion = n.harness.completion
+      h.title = n.harness.title
+      top.append(h)
+    }
     const task = el('p', undefined, n.task === null ? 'mm-task mm-muted' : 'mm-task')
     task.textContent = main
       ? `${n.model ? `${n.model} · ` : ''}${n.task ?? 'Task not reported'}`

@@ -2,6 +2,14 @@
 import type {
   ActivityView,
   ContextInspection,
+  HarnessBadge,
+  HarnessDetail,
+  HarnessInspection,
+  HarnessSummary,
+  HarnessTemplateView,
+  EnforcementReportView,
+  ImportPreview,
+  ImportSourceView,
   GlobalOverview,
   HandoffView,
   ImportStatus,
@@ -15,6 +23,12 @@ import type {
   SessionSummary,
 } from '@agent-office/shared'
 import { MEMORY_ALL, type ProjectScope } from './state-types.ts'
+import {
+  defaultImportSelection,
+  type CandidateEdits,
+  type EditorTab,
+  type ImportSelection,
+} from './harness-vm.ts'
 import type { ActivityFilter, MemoryFilterKey, WorkspaceView } from './types.ts'
 
 export const ACTIVITY_CAP = 100
@@ -42,7 +56,62 @@ export interface NewProjectState {
   folders: { ref: string; label: string; hint: string }[]
 }
 
+export type HarnessDialogTab = 'library' | 'editor' | 'import' | 'coverage'
+export type HarnessConfirmKind = 'publish' | 'archive' | 'attach' | 'detach'
+/** The Harness Builder (docs/harness.md): fetched data plus the dialog's own view state. */
+export interface HarnessState {
+  open: boolean
+  tab: HarnessDialogTab
+  editorTab: EditorTab
+  /** The project the dialog works for (attach, import, coverage); null = none. */
+  projectId: string | null
+  list: HarnessSummary[]
+  listLoaded: boolean
+  detail: HarnessDetail | null
+  /** What each ready provider enforces for `projectId`. */
+  coverage: EnforcementReportView[]
+  sources: ImportSourceView[] | null
+  preview: ImportPreview | null
+  selection: ImportSelection
+  /** The reviewer's edits to candidates, by temp id. */
+  edits: CandidateEdits
+  templates: HarnessTemplateView[]
+  /** The dialog's own error line (`#hb-error`). */
+  error: string | null
+  importName: string
+  importAttach: boolean
+  confirm: { kind: HarnessConfirmKind; harnessId: string } | null
+  busy: boolean
+  badges: HarnessBadge[]
+  /** Latest inspection per agent (after Run validation or a push). */
+  inspections: Record<string, HarnessInspection>
+}
+
+export const initialHarness = (): HarnessState => ({
+  open: false,
+  tab: 'library',
+  editorTab: 'overview',
+  projectId: null,
+  list: [],
+  listLoaded: false,
+  detail: null,
+  coverage: [],
+  sources: null,
+  preview: null,
+  selection: { selected: [], gates: [] },
+  edits: {},
+  templates: [],
+  error: null,
+  importName: '',
+  importAttach: false,
+  confirm: null,
+  busy: false,
+  badges: [],
+  inspections: {},
+})
+
 export interface WorkspaceState {
+  harness: HarnessState
   view: WorkspaceView
   projectId: string | null
   projects: ProjectSummary[]
@@ -84,6 +153,7 @@ export interface WorkspaceState {
 }
 
 export const initialState = (): WorkspaceState => ({
+  harness: initialHarness(),
   view: 'office',
   projectId: null,
   projects: [],
@@ -138,6 +208,13 @@ export type WorkspaceEvent =
   | { type: 'remove-imported-confirm'; open: boolean }
   | { type: 'projects'; projects: ProjectSummary[] }
   | { type: 'providers'; providers: ProviderStatus[] }
+  | { type: 'harness-ui'; patch: Partial<HarnessState> }
+  | { type: 'harnesses'; list: HarnessSummary[] }
+  | { type: 'harness-detail'; detail: HarnessDetail | null }
+  | { type: 'import-sources'; sources: ImportSourceView[] | null }
+  | { type: 'import-preview'; preview: ImportPreview | null }
+  | { type: 'harness-inspection'; agentId: string; inspection: HarnessInspection }
+  | { type: 'harness-badges'; badges: HarnessBadge[] }
   | { type: 'session-titles'; sessions: { id: string; title: string; provider: string }[] }
   | { type: 'overview'; overview: GlobalOverview }
   | { type: 'dashboard'; dashboard: ProjectDashboard }
@@ -183,6 +260,13 @@ export function memoryInScope(m: MemoryView, scope: ProjectScope): boolean {
 
 function applyPush(s: WorkspaceState, m: ProjectMessage): WorkspaceState {
   switch (m.type) {
+    case 'harness': {
+      // Harness data is refetched by the controller (docs/harness.md); the push drops what it
+      // made stale so no view keeps showing an old inspection.
+      if (!m.agentId || !(m.agentId in s.harness.inspections)) return s
+      const { [m.agentId]: _stale, ...inspections } = s.harness.inspections
+      return { ...s, harness: { ...s.harness, inspections } }
+    }
     case 'projects':
       return { ...s, projects: m.projects, projectsLoaded: true }
     case 'session': {
@@ -280,6 +364,34 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
       }
     case 'providers':
       return { ...s, providers: e.providers }
+    case 'harness-ui':
+      return { ...s, harness: { ...s.harness, ...e.patch } }
+    case 'harnesses':
+      return { ...s, harness: { ...s.harness, list: e.list, listLoaded: true } }
+    case 'harness-detail':
+      return { ...s, harness: { ...s.harness, detail: e.detail } }
+    case 'import-sources':
+      return { ...s, harness: { ...s.harness, sources: e.sources } }
+    case 'import-preview':
+      return {
+        ...s,
+        harness: {
+          ...s.harness,
+          preview: e.preview,
+          selection: e.preview ? defaultImportSelection(e.preview) : { selected: [], gates: [] },
+          edits: {},
+        },
+      }
+    case 'harness-inspection':
+      return {
+        ...s,
+        harness: {
+          ...s.harness,
+          inspections: { ...s.harness.inspections, [e.agentId]: e.inspection },
+        },
+      }
+    case 'harness-badges':
+      return { ...s, harness: { ...s.harness, badges: e.badges } }
     case 'overview':
       return { ...s, overview: e.overview, vault: e.overview.vault, loading: false }
     case 'dashboard':

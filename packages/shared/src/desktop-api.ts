@@ -10,6 +10,7 @@ import {
 } from './protocol.ts'
 import { MemoryIdSchema, ProjectIdSchema, RepoRefSchema } from './projects.ts'
 import type * as P from './projects.ts'
+import type * as H from './harness.ts'
 import {
   ModeIdSchema,
   ProviderIdSchema,
@@ -256,7 +257,12 @@ export interface ModelOption {
 }
 export type StartResult =
   | { ok: true; agentId: string }
-  | { ok: false; error: string; code: 'auth' | 'runtime' | 'folder' | 'limit' | 'other' }
+  | {
+      ok: false
+      error: string
+      /** `harness`: a strict harness has a required rule this runtime cannot enforce (docs/harness.md). */
+      code: 'auth' | 'runtime' | 'folder' | 'limit' | 'harness' | 'other'
+    }
 export type SendResult = { ok: true; message: ChatMessage } | { ok: false; error: string }
 
 export type { HookStatus }
@@ -417,6 +423,35 @@ export interface AgentOfficeApi {
     /** Automatic import status for the Session Vault line. */
     importStatus(): Promise<P.ImportStatus>
     onPush(cb: (m: P.ProjectMessage) => void): () => void
+    /** Harness Builder (docs/harness.md): rule sets, import, coverage, inspection, gates. User actions only. */
+    harness: {
+      list(): Promise<H.HarnessSummary[]>
+      get(harnessId: string): Promise<H.HarnessDetail>
+      /** Every stored version, oldest first. */
+      versions(harnessId: string): Promise<H.HarnessDetail[]>
+      create(draft: H.HarnessDraft): Promise<H.HarnessDetail>
+      /** Edits the current draft; on a published harness it opens the next draft version. */
+      update(args: H.HarnessUpdateArgs): Promise<H.HarnessDetail>
+      publish(harnessId: string): Promise<H.HarnessDetail>
+      archive(harnessId: string): Promise<H.HarnessDetail>
+      /** Returns the project's attached harnesses. */
+      attach(projectId: string, harnessId: string): Promise<H.HarnessSummary[]>
+      detach(projectId: string, harnessId: string): Promise<H.HarnessSummary[]>
+      templates(): Promise<H.HarnessTemplateView[]>
+      createFromTemplate(templateId: string): Promise<H.HarnessDetail>
+      /** Scans the project's repositories for rule files (read-only; nothing is executed). */
+      importDetect(projectId: string): Promise<H.ImportSourceView[]>
+      importPreview(args: H.ImportPreviewArgs): Promise<H.ImportPreview>
+      /** Creates a draft harness from reviewed candidates; never publishes, never writes repo files. */
+      importCommit(args: H.ImportCommitArgs): Promise<H.HarnessDetail>
+      /** What a new session of `provider` on this project would get (New Session dialog). */
+      coverage(projectId: string, provider: ProviderId): Promise<H.HarnessPreview>
+      inspect(agentId: string): Promise<H.HarnessInspection>
+      /** Runs the session's gates through the trusted runner (explicit user action). */
+      runGates(args: H.RunGatesArgs): Promise<H.GateResultView[]>
+      cancelGates(agentId: string): Promise<void>
+      badges(): Promise<H.HarnessBadge[]>
+    }
   }
   /** Provider integrations: status, enable/disable, models, observation hooks. */
   providers: {

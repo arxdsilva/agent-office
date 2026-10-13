@@ -1,6 +1,9 @@
 // Wires the projects layer (docs/projects.md) around one vault-backed store.
 import type { ProviderId } from '@agent-office/shared'
+import { formatOf as defaultFormatOf, parseRuleFile } from '../domain/harness-import.ts'
+import type { EnforcementDecl } from '../domain/harness-types.ts'
 import type {
+  GateRunner,
   AgentRepository,
   Clock,
   EventPublisher,
@@ -9,6 +12,7 @@ import type {
   Logger,
   RecordLog,
   RepoIdentity,
+  RuleSourceReader,
   Scheduler,
   SearchIndex,
   SecureRandom,
@@ -18,6 +22,14 @@ import type { ManagedSessions } from '../ports/driving.ts'
 import { ActivityLog } from './activity-log.ts'
 import { ContextEngineService } from './context-engine.ts'
 import { GlobalSearchService } from './global-search.ts'
+import {
+  HarnessImportService,
+  type FormatOf,
+  type ParseRuleFile,
+} from './harness-import-service.ts'
+import { HarnessPolicyService } from './harness-policy-service.ts'
+import { HarnessService } from './harness-service.ts'
+import { HarnessValidationService } from './harness-validation-service.ts'
 import { HandoffManager } from './handoff-service.ts'
 import { KnowledgeImportService } from './knowledge-import-service.ts'
 import { McpMemoryAccessService } from './mcp-memory-access.ts'
@@ -50,6 +62,18 @@ export interface ProjectsDeps {
   onRetrieval?: (provider: string) => void
   /** Timers for the automatic knowledge import (every 10 minutes while on). */
   scheduler?: Scheduler
+  // ── Harness Builder (docs/harness.md) ──
+  /** Reads rule files of linked repositories (import); without it import is unavailable. */
+  ruleSources?: RuleSourceReader
+  /** The trusted gate runner; without it validation is unavailable. */
+  gateRunner?: GateRunner
+  /** Main's `process.platform`; gates limited to other platforms are skipped. */
+  platform?: string
+  /** What each managed runtime can enforce (runner declarations). */
+  enforcementOf?: (provider: ProviderId) => EnforcementDecl | undefined
+  /** Defaults to domain/harness-import.ts. */
+  parseRuleFile?: ParseRuleFile
+  formatOf?: FormatOf
 }
 
 export type Projects = ReturnType<typeof createProjects>
@@ -135,6 +159,38 @@ export function createProjects(d: ProjectsDeps) {
     bus: d.bus,
     clock: d.clock,
   })
+  const harness = new HarnessService({ store, activity, clock: d.clock })
+  const harnessImport = new HarnessImportService({
+    store,
+    harness,
+    repos: catalog,
+    clock: d.clock,
+    parse: d.parseRuleFile ?? parseRuleFile,
+    formatOf: d.formatOf ?? defaultFormatOf,
+    ...(d.ruleSources ? { reader: d.ruleSources } : {}),
+  })
+  const policy = new HarnessPolicyService({
+    store,
+    activity,
+    clock: d.clock,
+    ...(d.enforcementOf ? { enforcementOf: d.enforcementOf } : {}),
+    ...(d.platform ? { platform: d.platform } : {}),
+  })
+  const validation = new HarnessValidationService({
+    store,
+    activity,
+    clock: d.clock,
+    policy,
+    repos: catalog,
+    log: d.log,
+    ...(d.gateRunner ? { runner: d.gateRunner } : {}),
+    ...(d.sessions ? { sessions: d.sessions } : {}),
+    ...(d.platform ? { platform: d.platform } : {}),
+  })
+  policy.connect({
+    turnEnded: (id, r) => validation.turnEnded(id, r),
+    ended: (id) => validation.ended(id),
+  })
   let loaded: Promise<void> | undefined
 
   return {
@@ -158,6 +214,14 @@ export function createProjects(d: ProjectsDeps) {
     search,
     /** Implements McpMemoryAccess (+ mint/bind/revoke for managed sessions). */
     mcp,
+    /** Harness Builder (docs/harness.md): HarnessManagement. User actions only. */
+    harness,
+    /** HarnessImport: rule files → reviewed draft harness. */
+    harnessImport,
+    /** HarnessPolicyEngine + SessionHarnessHooks (ManagedSessionService's `harness` dep). */
+    policy,
+    /** HarnessValidation: gates through the trusted runner. */
+    validation,
     /** Rebuilds state from the vault, refreshes workspace keys, backfills live agents. Idempotent. */
     load(): Promise<void> {
       loaded ??= (async () => {
