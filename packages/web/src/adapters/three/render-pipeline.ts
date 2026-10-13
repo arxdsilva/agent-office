@@ -8,7 +8,6 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import type { Pass } from 'three/addons/postprocessing/Pass.js'
 import type { Effective } from '../../app/graphics-types.ts'
 import { patchWallMaterial } from './wall-cutaway.ts'
 
@@ -18,14 +17,14 @@ export const BLOOM = { threshold: 1.15, strength: 0.35, radius: 0.5 }
 const GTAO_SAMPLES = { half: 8, full: 12, ultra: 24 } as const
 
 /**
- * A scene flavor's pipeline (plan §5.4). Every field is optional: the defaults are Classic 3D's
- * chain exactly. Night City passes its bloom levels, exposure and a colour-grade pass.
+ * A scene flavor's pipeline. Every field is optional: the defaults are Classic 3D's chain exactly.
+ * Horizon passes a weak, tight bloom (only its light lines bloom) and its daylight exposure.
  */
 export interface PipelineConfig {
   bloom?: { threshold: number; strength: number; radius: number }
-  /** Passes run on the linear HDR image after bloom, before tone mapping (e.g. a colour grade). */
-  grade?: Pass[]
   exposure?: number
+  /** Tone mapping (Classic: AgX). */
+  toneMapping?: THREE.ToneMapping
 }
 
 export interface FrameStats {
@@ -50,8 +49,6 @@ export class RenderPipeline {
   readonly stats: FrameStats = { fps: 0, drawCalls: 0, triangles: 0 }
   private frames = 0
   private frameTime = 0
-  /** The flavor's grade passes (disposed with the pipeline). */
-  private extra: Pass[] = []
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -59,7 +56,7 @@ export class RenderPipeline {
     private camera: THREE.PerspectiveCamera,
     config: PipelineConfig = {},
   ) {
-    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMapping = config.toneMapping ?? THREE.AgXToneMapping
     renderer.toneMappingExposure = config.exposure ?? 1
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.info.autoReset = false
@@ -82,19 +79,11 @@ export class RenderPipeline {
       bloom.radius,
       bloom.threshold,
     )
-    const grade = config.grade ?? []
-    this.extra = grade
-    for (const p of [this.renderPass, this.gtao, this.bloom, ...grade, this.output, this.smaa])
+    for (const p of [this.renderPass, this.gtao, this.bloom, this.output, this.smaa])
       this.composer.addPass(p)
   }
 
   /** Passes, real-time shadows and resolution from the effective graphics (live). */
-  /** Bloom strength and radius at runtime (Night City's emissive restraint); threshold unchanged. */
-  setBloom(strength: number, radius: number): void {
-    this.bloom.strength = strength
-    this.bloom.radius = radius
-  }
-
   setGraphics(e: Effective): void {
     this.gtaoScale = e.gtao === 'half' ? 0.5 : 1
     this.gtao.enabled = e.gtao !== 'off'
@@ -116,6 +105,21 @@ export class RenderPipeline {
     this.cap = e.pixelRatioCap
     this.scale = e.resolutionScale
     this.resize(this.size.x, this.size.y)
+  }
+
+  /** Diagnostics (debug hook): tone mapping, exposure and bloom levels live. */
+  setLook(l: {
+    toneMapping?: THREE.ToneMapping
+    exposure?: number
+    bloom?: { threshold: number; strength: number; radius: number }
+  }): void {
+    if (l.toneMapping !== undefined) this.renderer.toneMapping = l.toneMapping
+    if (l.exposure !== undefined) this.renderer.toneMappingExposure = l.exposure
+    if (l.bloom) {
+      this.bloom.threshold = l.bloom.threshold
+      this.bloom.strength = l.bloom.strength
+      this.bloom.radius = l.bloom.radius
+    }
   }
 
   /** Diagnostics (debug hook): toggle one pass on top of the preset. */
@@ -178,6 +182,5 @@ export class RenderPipeline {
     this.composer.dispose()
     this.gtao.dispose()
     this.bloom.dispose()
-    for (const p of this.extra) p.dispose()
   }
 }

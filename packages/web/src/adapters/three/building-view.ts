@@ -198,7 +198,12 @@ function ownMaterials(o: THREE.Object3D): StdMat[] {
  * One-time preparation of a parsed module (shared by all its clones): lightmaps on `baked` meshes,
  * cheap glass instead of transmission, colliders invisible.
  */
-function prepareModule(gltf: GLTF, lightmap: THREE.Texture | null, lm: Lightmap | undefined): void {
+function prepareModule(
+  gltf: GLTF,
+  lightmap: THREE.Texture | null,
+  lm: Lightmap | undefined,
+  scale = 1,
+): void {
   if (gltf.userData.prepared) return
   gltf.userData.prepared = true
   const bakedMats = new Set<StdMat>()
@@ -247,33 +252,19 @@ function prepareModule(gltf: GLTF, lightmap: THREE.Texture | null, lm: Lightmap 
       if (!m.userData.cutaway && !m.userData.wallOnly && !swap.has(m))
         (patchWallOnly(m), (m.needsUpdate = true))
   })
-  for (const m of new Set(swap.values())) bakeMaterial(m, lightmap!, lm?.intensity ?? 1)
+  for (const m of new Set(swap.values())) bakeMaterial(m, lightmap!, (lm?.intensity ?? 1) * scale)
 }
 
 /**
  * A lightmapped material (contract §6): the atlas through UV1, no punctual lights and no IBL
- * diffuse (BAKED_LIGHTS/BAKED_MAPS), specular reflections only. `cutaway` (Classic 3D, the default)
- * adds the orbit-view cutaway and wall-fade patch; a scene flavor without them (Night City) passes
- * false and gets the lighting patch alone.
+ * diffuse (BAKED_LIGHTS/BAKED_MAPS), specular reflections only, plus the orbit-view cutaway and
+ * wall-fade patch.
  */
-export function bakeMaterial(
-  m: StdMat,
-  lightmap: THREE.Texture,
-  intensity: number,
-  o: { cutaway?: boolean } = {},
-): void {
+export function bakeMaterial(m: StdMat, lightmap: THREE.Texture, intensity: number): void {
   m.lightMap = lightmap
   m.lightMapIntensity = intensity
   m.envMapIntensity = BAKED_SPECULAR
-  if (o.cutaway ?? true) patchBaked(m)
-  else {
-    m.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <lights_fragment_begin>', BAKED_LIGHTS)
-        .replace('#include <lights_fragment_maps>', BAKED_MAPS)
-    }
-    m.customProgramCacheKey = () => 'ao-baked-plain'
-  }
+  patchBaked(m)
   m.needsUpdate = true
 }
 
@@ -400,10 +391,26 @@ export class BuildingView {
   /** Fires when a module finished loading (colliders and surfaces changed). */
   onChange: () => void = () => {}
 
+  private emissiveMax: number
+  private lightmapScale: number
+
+  /** An emissive intensity within the flavor's ceiling. */
+  private em(v: number): number {
+    return Math.min(v, this.emissiveMax)
+  }
+
   constructor(
     private store: AssetStore,
     private manifest: Manifest,
+    /**
+     * A scene flavor's levels. `emissiveMax`: ceiling on emissive intensity (Horizon 1.5, "neon
+     * only where it has a purpose"). `lightmapScale`: multiplies the manifest's lightmap
+     * intensity. Classic: neither, so every value is exactly as before.
+     */
+    flavor: { emissiveMax?: number; lightmapScale?: number } = {},
   ) {
+    this.emissiveMax = flavor.emissiveMax ?? Infinity
+    this.lightmapScale = flavor.lightmapScale ?? 1
     this.wallCanvas.width = 1536
     this.wallCanvas.height = 512
     this.wallTexture.colorSpace = THREE.SRGBColorSpace
@@ -449,8 +456,15 @@ export class BuildingView {
       lm ? this.store.lightmap(lm, tier).catch(() => null) : Promise.resolve(null),
     ])
     const first = !gltf.userData.prepared
-    prepareModule(gltf, tex, lm)
+    prepareModule(gltf, tex, lm, this.lightmapScale)
     if (first) {
+      // The flavor's ceiling on the module's own emissives (light lines, fixtures, signs).
+      if (this.emissiveMax < Infinity)
+        gltf.scene.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh)
+            for (const m of matsOf(o as THREE.Mesh))
+              if (m.emissiveIntensity > this.emissiveMax) m.emissiveIntensity = this.emissiveMax
+        })
       gltf.userData.lightmapFile = tex && lm ? lightmapFile(lm, tier) : undefined
       this.prepared.set(file, { gltf, ...(lm ? { lm } : {}) })
       // The tier changed while this module loaded: bring it up to date.
@@ -668,7 +682,7 @@ export class BuildingView {
     for (const [key, s] of this.screens)
       if (key.startsWith(`${inst.placement.id}|`)) this.paintScreen(key, s)
     for (const [ref, mats] of inst.leds)
-      paintLed(mats, this.leds.has(`${inst.placement.id}|${ref}`))
+      paintLed(mats, this.leds.has(`${inst.placement.id}|${ref}`), this.emissiveMax)
     for (const c of inst.ceilings) c.visible = this.ceilingsVisible
     this.collidersCache = null
     this.pickList = null
@@ -717,7 +731,7 @@ export class BuildingView {
               m.map = this.wallTexture
               m.emissiveMap = this.wallTexture
               m.emissive.set(0xffffff)
-              m.emissiveIntensity = 1.6
+              m.emissiveIntensity = this.em(1.6)
               m.color.set(0x000000)
               m.needsUpdate = true
             }
@@ -878,7 +892,7 @@ export class BuildingView {
   private paintScreen(key: string, s: ScreenState): void {
     const [placement, ref] = splitKey(key)
     const mats = this.instances.get(placement)?.screens.get(ref)
-    if (mats) paintScreen(mats, s)
+    if (mats) paintScreen(mats, s, this.emissiveMax)
   }
 
   /** Booth LED rings that should glow (`<placementId>|<ref>`). */
@@ -887,7 +901,7 @@ export class BuildingView {
       if (this.leds.has(key) === on.has(key)) continue
       const [placement, ref] = splitKey(key)
       const mats = this.instances.get(placement)?.leds.get(ref)
-      if (mats) paintLed(mats, on.has(key))
+      if (mats) paintLed(mats, on.has(key), this.emissiveMax)
     }
     this.leds = on
   }
@@ -999,12 +1013,12 @@ export class BuildingView {
       if (!core || !inst.group.visible) continue
       for (const m of core) {
         m.emissive.set(CONTEXT_COLOR)
-        m.emissiveIntensity = 0.5 + this.contextLevel * 2.2
+        m.emissiveIntensity = this.em(0.5 + this.contextLevel * 2.2)
       }
       for (let i = 0; i < 6; i++)
         for (const m of inst.screens.get(`context:${i}`) ?? []) {
           m.emissive.set(CONTEXT_COLOR)
-          m.emissiveIntensity = 0.35 + this.contextLevel * 1.4
+          m.emissiveIntensity = this.em(0.35 + this.contextLevel * 1.4)
         }
     }
   }
@@ -1122,7 +1136,7 @@ export class BuildingView {
         const want = slot?.glow ?? 0
         sf.glow += (want - sf.glow) * ease
         const filled = slot ? 1 : empty
-        for (const m of sf.mats) m.emissiveIntensity = (base + sf.glow * boost) * filled
+        for (const m of sf.mats) m.emissiveIntensity = this.em((base + sf.glow * boost) * filled)
       }
     }
     apply('station', s?.stations, 0.85, 0.45)
@@ -1137,7 +1151,7 @@ export class BuildingView {
       const pulse = slot?.glow ? 0.75 + 0.25 * Math.sin(this.arcadeT * 6) : 0
       for (const m of mats) {
         m.emissive.set(slot ? slot.color : '#1a1f26')
-        m.emissiveIntensity = slot ? 0.5 + 2.6 * pulse : 0.3
+        m.emissiveIntensity = this.em(slot ? 0.5 + 2.6 * pulse : 0.3)
       }
     }
     const core = inst.screens.get('adapters-core')
@@ -1145,7 +1159,9 @@ export class BuildingView {
       const n = s?.activeAdapters ?? 0
       for (const m of core) {
         m.emissive.set(accentOrBlue(n))
-        m.emissiveIntensity = 0.4 + Math.min(n, 4) * 0.35 * (0.8 + 0.2 * Math.sin(this.arcadeT * 4))
+        m.emissiveIntensity = this.em(
+          0.4 + Math.min(n, 4) * 0.35 * (0.8 + 0.2 * Math.sin(this.arcadeT * 4)),
+        )
       }
     }
   }
@@ -1304,19 +1320,19 @@ const splitKey = (key: string): [string, string] => {
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
 
-function paintScreen(mats: StdMat[], s: ScreenState): void {
+function paintScreen(mats: StdMat[], s: ScreenState, max = Infinity): void {
   for (const m of mats) {
     m.color.set(0x05070a)
     m.emissive.set(s.color)
-    m.emissiveIntensity = s.intensity
+    m.emissiveIntensity = Math.min(s.intensity, max)
     m.userData.instanceOwned = true
   }
 }
 
-function paintLed(mats: StdMat[], on: boolean): void {
+function paintLed(mats: StdMat[], on: boolean, max = Infinity): void {
   for (const m of mats) {
     m.emissive.set(on ? STATUS_COLORS.waiting : '#1a1f26')
-    m.emissiveIntensity = on ? 3 : 0.4
+    m.emissiveIntensity = Math.min(on ? 3 : 0.4, max)
     m.userData.instanceOwned = true
   }
 }

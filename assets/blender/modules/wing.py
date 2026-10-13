@@ -140,7 +140,8 @@ def _baffles(g, P, felt, waves=False):
 def _kitchen(g, A, P, t, rng):
     accent = t['accent']
     with g.at(0.9, -8.85):
-        F.kitchen(g, P, rng, length=4.4, accent=accent, kelvin=t['accent_kelvin'], island=False)
+        F.kitchen(g, P, rng, length=4.4, accent=accent, kelvin=t['accent_kelvin'], island=False,
+                  stool_color=t.get('chair_dark', '#2b2b2b'))
     # standing-height island (bar) – spots stand on its street-facing side
     cx, cz = 3.1, -6.45
     g.furn('island', 2.64, 1.05, x=cx, z=cz + 0.025)
@@ -414,7 +415,7 @@ def _adapters(g, A, P, t, rng):
     """Adapters room, z ∈ [−9, 0]: stations 0–3 on the window wall (facing the door), 4–7 on the door wall,
     a server-rack core in the middle with glowing cable channels to every kiosk."""
     glow = P['glow_accent']
-    g.box_b(P['paint'], ROOM_X0, ROOM_X1, 0, 0.006, -8.85, -0.08, bevel=0, color='#2a2d33')
+    g.box_b(P['paint'], ROOM_X0, ROOM_X1, 0, 0.006, -8.85, -0.08, bevel=0, color=t.get('tech_floor', '#2a2d33'))
     core = (26.85, -4.45)
     kiosks = []
     for row, (kx, yaw, sx_spot, ax) in enumerate(((29.25, -math.pi / 2, 28.65, 28.05), (24.45, math.pi / 2, 25.05, 25.65))):
@@ -444,8 +445,9 @@ def _adapters(g, A, P, t, rng):
     for k in range(6):
         x = 24.55 + k * 0.88
         c = t['felt'][2] if k % 3 else t['felt'][0]
-        g.box_b(P['felt'], x - 0.4, x + 0.4, 0.6, 3.0, -8.85, -8.8, bevel=0.01, segs=2, color='#30333a' if k % 2 else c)
-        g.box_b(P['felt'], x - 0.4, x + 0.4, 2.65, 3.25, -0.13, -0.08, bevel=0.01, segs=2, color='#30333a')
+        dark = t.get('tech_felt', '#30333a')
+        g.box_b(P['felt'], x - 0.4, x + 0.4, 0.6, 3.0, -8.85, -8.8, bevel=0.01, segs=2, color=dark if k % 2 else c)
+        g.box_b(P['felt'], x - 0.4, x + 0.4, 2.65, 3.25, -0.13, -0.08, bevel=0.01, segs=2, color=dark)
     # light: cool ceiling slots + a halo ring over the core
     with g.in_group('ceiling'):
         g.torus(P['light'], 1.25, 0.03, (core[0], H - 0.35, core[1]), segs=48, rsegs=6)
@@ -476,7 +478,7 @@ def _adapters(g, A, P, t, rng):
 def _library(g, A, P, t, rng):
     """Library, z ∈ [0, 9]: shelf A (books 0–11) on the partition, shelf B (12–23) on the end wall, six
     rule boards on the door wall, an 8-notebook display under the window, a reading table for four."""
-    g.box_b(P['wood_dark'], ROOM_X0, ROOM_X1, 0, 0.006, 0.08, 8.85, bevel=0)
+    g.box_b(P[t.get('library_wood', 'wood_dark')], ROOM_X0, ROOM_X1, 0, 0.006, 0.08, 8.85, bevel=0)
     d, w, sh = 0.42, 5.0, 3.5
     feat_x = (1.3, 1.45, 1.6, 3.4, 3.55, 3.7)
     with g.at(24.55, 0.08 + d):
@@ -624,7 +626,15 @@ def _decor(g, A, P, name, t, rng):
                         bevel=0.008, segs=2, color=t['felt'][(k + j) % 3])
     if name == 'terracotta':
         for x in (2.0, 4.6):
-            F.pot_plant(g, P, (x, 0, 8.45), 0.2, 0.42, 'bush', rng, pot_color='#C26A48')
+            F.pot_plant(g, P, (x, 0, 8.45), 0.2, 0.42, 'bush', rng, pot_color=t.get('planter', '#C26A48'))
+    if d.get('cove_lights'):
+        # contract §14 (Horizon): soft cove lines 5 cm under the ceiling along the open office's long walls
+        # and the street wall (meeting rooms, Adapters and Library keep their own lighting)
+        y0, y1 = H - 0.07, H - 0.05
+        line = P['line']
+        g.box_b(line, 0.3, MEET_X0 - 0.1, y0, y1, -8.83, -8.81, bevel=0)
+        g.box_b(line, 0.3, MEET_X0 - 0.1, y0, y1, 8.81, 8.83, bevel=0)
+        g.box_b(line, 0.24, 0.26, y0, y1, -8.7, 8.7, bevel=0)
 
 
 def _rooms(g):

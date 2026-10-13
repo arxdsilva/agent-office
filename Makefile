@@ -15,7 +15,7 @@ XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb
 # render on software GL there (TESTING.md: E2E runs on software GL in CI), or the office never loads.
 SOFTWARE_GL := $(if $(XVFB),AGENT_OFFICE_FORCE_SOFTWARE_GL=1,)
 
-.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-projects screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check perf-special special-assets special-assets-draft special-assets-test screenshots-special
+.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-projects screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check perf-horizon horizon-assets horizon-assets-draft horizon-assets-test screenshots-horizon
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -74,20 +74,20 @@ screenshots-macos: ## macOS only: capture the real tray menu and a native notifi
 perf: ## Measure FPS per preset with 150 mock agents (needs make build)
 	$(ELECTRON_ENV) node scripts/perf.mjs
 
-perf-special: ## Night City: FPS per preset, load and switch time, GPU memory (needs make build special-assets)
-	$(ELECTRON_ENV) node scripts/perf.mjs --mode special
+perf-horizon: ## Horizon: FPS per preset, load and switch time, GPU memory (needs make build horizon-assets)
+	$(ELECTRON_ENV) node scripts/perf.mjs --mode horizon
 
-special-assets: ## Build the Night City asset set with Blender (final bake) → packages/web/public/special3d
-	node assets/special3d/build.mjs --quality final
+horizon-assets: ## Build the Horizon asset set (the Classic office in the Horizon palettes; final bake) → packages/web/public/horizon
+	node assets/build.mjs --set horizon --quality final
 
-special-assets-draft: ## Fast Night City asset build for iteration
-	node assets/special3d/build.mjs --quality draft
+horizon-assets-draft: ## Fast Horizon asset build for iteration
+	node assets/build.mjs --set horizon --quality draft
 
-special-assets-test: ## Blender-side tests of the Night City set (naming, budgets, no logos, wall ids)
-	node assets/special3d/build.mjs --test
+horizon-assets-test: ## Blender-side tests of the Horizon set
+	node assets/build.mjs --set horizon --test
 
-screenshots-special: ## Night City README stills from synthetic fixtures → docs/screenshots/special-3d (needs make build)
-	$(ELECTRON_ENV) node scripts/capture/special.mjs
+screenshots-horizon: ## Horizon README stills from synthetic fixtures → docs/screenshots/horizon (needs make build)
+	$(ELECTRON_ENV) node scripts/capture/horizon.mjs
 
 verify-providers: ## Verify managed sessions against the real, logged-in provider CLIs (uses your accounts; ONLY=opencode,goose)
 	pnpm exec tsx scripts/verify-providers.ts $(if $(ONLY),--only $(ONLY),)

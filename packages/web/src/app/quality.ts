@@ -213,7 +213,10 @@ export function effectiveGraphics(i: EffectiveInput): Effective {
     gtao: fx.gtao,
     lod: [ch.lod[0], ch.lod[1]],
     maxAnimated: ch.maxAnimated,
-    labels: { mode: auto(a, 'labels') ?? p.labels.mode, nearbyM: p.labels.nearbyM },
+    labels: {
+      mode: auto(a, 'labels') ?? i.labelsDefault ?? p.labels.mode,
+      nearbyM: p.labels.nearbyM,
+    },
     links: auto(a, 'links') ?? p.links,
     detailCullM: bd.detailCullM,
     lightmapTier: bd.lightmapTier,

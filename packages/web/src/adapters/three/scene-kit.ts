@@ -1,6 +1,5 @@
-// Shared pieces of the WebGL scenes (Classic 3D `ThreeScene`, Night City `SpecialScene`; plan §5.4
-// scene flavors): the preset shim, the paced render loop, listener teardown, GPU memory accounting
-// and hardware info. Each scene composes these instead of keeping its own copy.
+// Shared pieces of the WebGL scene (`ThreeScene`, Classic and Horizon flavors): the preset shim,
+// the paced render loop, listener teardown, GPU memory accounting and hardware info.
 import { GraphicsAdvancedSchema } from '@agent-office/shared'
 import * as THREE from 'three'
 import { createPacer } from '../../app/frame-pacer.ts'

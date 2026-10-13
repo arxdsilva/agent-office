@@ -1,5 +1,5 @@
-// The semantic interaction registry, shared by every view mode (docs/special-3d/interaction-contract
-// .md): a hit on a world object (E within reach, or a click on its proxy) maps to one existing
+// The semantic interaction registry, shared by every view mode (world objects → desktop
+// commands): a hit on a world object (E within reach, or a click on its proxy) maps to one existing
 // command. Pure: no business logic here, only which existing action the object stands for.
 import { INTERACTION_KINDS, type InteractionHit, type InteractionKind } from './office-types.ts'
 import type { InteractTarget } from './pixel/types.ts'

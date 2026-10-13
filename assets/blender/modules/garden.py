@@ -63,7 +63,8 @@ def build(g, A, P, name, t, rng):
             (3.0, 8.5, 4.6, 7.6), (10.5, 18.5, 4.6, 7.6), (20.5, 27.5, 4.6, 7.6)]
     for (x0, x1, z0, z1) in beds:
         with g.at((x0 + x1) / 2, (z0 + z1) / 2):
-            F.planter(g, P, x1 - x0, z1 - z0, 0.45, rng, kind='mixed', color='#3a3a3a', density=0.65, rim='wood')
+            F.planter(g, P, x1 - x0, z1 - z0, 0.45, rng, kind='mixed', color=t.get('planter', '#3a3a3a'), density=0.65,
+                      rim='wood')
         for k in range(2):
             F.tree(g, P, (rng.uniform(x0 + 0.8, x1 - 0.8), 0.43, rng.uniform(z0 + 0.6, z1 - 0.6)),
                    rng.uniform(2.4, 3.0), rng, crown=0.95, leaf_size=0.28, n=60)

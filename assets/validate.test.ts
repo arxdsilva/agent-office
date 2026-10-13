@@ -51,15 +51,7 @@ import {
   type PlanJson,
   type Vec2,
 } from './validate.ts'
-import {
-  checkSpecialAnchorCounts,
-  checkSpecialManifest,
-  checkSpecialRoles,
-  checkSpecialSetNav,
-  SPECIAL_BUDGETS,
-  SPECIAL_TOTAL_MAX_BYTES,
-  type SpecialManifest,
-} from './validate.ts'
+import { checkSameSpace } from './validate.ts'
 
 const REAL_ASSETS = resolve(import.meta.dirname, '../packages/web/public/assets')
 const PNG_1PX = Buffer.from(
@@ -1163,254 +1155,98 @@ describe('real assets: wall side and thickness (contract §11)', () => {
   })
 })
 
-// ── Night City: the 'special' profile (contract §14) ───────────────────────────────────────────────
-const REAL_SPECIAL = resolve(import.meta.dirname, '../packages/web/public/special3d')
-const KINDS = ['hq-atrium', 'command', 'skyline'] as const
+// ── Horizon: the 'horizon' profile (contract §14) ──────────────────────────────────────────────────
+const REAL_HORIZON = resolve(import.meta.dirname, '../packages/web/public/horizon')
 
-function specialAnchors(kind: (typeof KINDS)[number]): Record<string, AnchorJson> {
-  const at = (i: number, extra: Partial<AnchorJson> = {}): AnchorJson => ({
-    x: i * 0.7,
-    y: 0,
-    z: 2,
-    heading: 0,
-    pose: 'stand',
-    approach: { x: i * 0.7, z: 1.4 },
-    ...extra,
-  })
-  const ids: [string, Partial<AnchorJson>][] =
-    kind === 'hq-atrium'
-      ? [
-          ['player:spawn', {}],
-          ['interact:project-directory:0', {}],
-        ]
-      : kind === 'command'
-        ? [
-            ...range(6).flatMap((d) =>
-              range(6).flatMap((p) =>
-                range(4).map((s): [string, Partial<AnchorJson>] => [
-                  `ws:${d}:${p}:${s}`,
-                  { pose: 'sit', screen: `ws:${d}:${p}:${s}` },
-                ]),
-              ),
-            ),
-            ...['A', 'B'].flatMap((r) => range(6).map((s): [string, Partial<AnchorJson>] => [`meet:${r}:${s}`, { pose: 'sit' }])),
-            ...range(4).map((n): [string, Partial<AnchorJson>] => [`booth:${n}`, { led: `booth:${n}` }]),
-            ['interact:command-display:0', {}],
-            ...range(6).map((n): [string, Partial<AnchorJson>] => [`interact:provider-terminal:${n}`, {}]),
-          ]
-        : []
-  return Object.fromEntries(ids.map(([id, extra], i) => [id, at(i, extra)]))
+/** A Horizon dir next to a Classic one (`<root>/assets`, `<root>/horizon`), from the same fixture. */
+async function writeHorizonPair(root: string) {
+  const classic = join(root, 'assets')
+  const horizon = join(root, 'horizon')
+  await mkdir(classic)
+  await mkdir(horizon)
+  await writeFixture(classic)
+  const m = await writeFixture(horizon)
+  await writeFile(join(horizon, 'manifest.json'), JSON.stringify({ ...m, set: 'horizon' }))
+  return { classic, horizon, manifest: { ...m, set: 'horizon' as const } }
 }
 
-function specialNav(kind: (typeof KINDS)[number], anchors: Record<string, AnchorJson>): NavJson {
-  if (kind === 'skyline') return { nodes: {}, edges: [] }
-  const c = kind === 'hq-atrium' ? { x: 20, z: -9 } : { x: 0, z: 0 }
-  const nodes: NavJson['nodes'] = { c0: { ...c, width: 1.2 } }
-  const edges: NavJson['edges'] = []
-  for (const [id, a] of Object.entries(anchors)) {
-    nodes[`ap:${id}`] = { ...a.approach, width: 0.5 }
-    edges.push(['c0', `ap:${id}`])
-  }
-  return { nodes, edges }
-}
-
-const SPECIAL_ROLE_NODES: Record<(typeof KINDS)[number], [string, string][]> = {
-  'hq-atrium': [
-    ['holo', 'display'],
-    ['holo', 'project-directory'],
-    ['rain-glass', 'pane'],
-    ...range(4).flatMap((i): [string, string][] => [
-      ['elevatorDoor', `${i}:L`],
-      ['elevatorDoor', `${i}:R`],
-    ]),
-  ],
-  command: [
-    ['holo', 'command-display'],
-    ['rain-glass', 'pane'],
-  ],
-  skyline: [
-    ...range(8).map((i): [string, string] => ['ad', `ad:${i}`]),
-    ['traffic', 'lane-0'],
-    ['neon', 'neon:0'],
-  ],
-}
-
-function specialManifest(): SpecialManifest {
-  const modules: SpecialManifest['modules'] = {}
-  for (const kind of KINDS) {
-    const anchors = specialAnchors(kind)
-    modules[kind] = {
-      file: `${kind}.glb`,
-      lightmap: { file: `${kind}.lightmap.full.png`, intensity: 3, variants: tiersFor(kind) },
-      bounds: { minX: -40, maxX: 40, minZ: -30, maxZ: 10 },
-      placement: kind === 'command' ? { x: 20, z: -9, yaw: 0 } : { x: 0, z: 0, yaw: 0 },
-      anchors,
-      nav: specialNav(kind, anchors),
-    }
-  }
-  return {
-    version: 1,
-    set: 'special',
-    blender: '5.2.2',
-    units: 'm',
-    hash: 'abc',
-    hdri: 'hdri/night.hdr',
-    modules,
-    character: { file: 'character-cyber.glb', meta: 'character-cyber.json' },
-  }
-}
-
-async function writeSpecialFixture(dir: string) {
-  const io = await createIO()
-  const m = specialManifest()
-  await mkdir(join(dir, 'hdri'), { recursive: true })
-  await writeFile(join(dir, 'manifest.json'), JSON.stringify(m))
-  await writeFile(join(dir, m.hdri), '#?RADIANCE\n')
-  for (const kind of KINDS) {
-    const mod = m.modules[kind]!
-    const doc = moduleDoc('atrium', mod.anchors, { bytes: PNG_1PX })
-    const panel = doc.getRoot().listMeshes()[0]!
-    const scene = doc.getRoot().getDefaultScene()!
-    for (const [role, ref] of SPECIAL_ROLE_NODES[kind])
-      scene.addChild(doc.createNode(`${role}-${ref}`).setMesh(panel).setExtras({ role, ref }))
-    await writeFile(join(dir, mod.file), await io.writeBinary(doc))
-    await writeTiers(dir, kind)
-  }
-  const ch = characterDoc()
-  const body = ch.getRoot().listMeshes().find((x) => x.getName() === 'body')!
-  body.addPrimitive(body.listPrimitives()[0]!.clone().setMaterial(ch.createMaterial('accent')))
-  await writeFile(join(dir, m.character.file), await io.writeBinary(ch))
-  await writeFile(join(dir, m.character.meta), JSON.stringify(characterMeta()))
-  return m
-}
-
-describe('asset validator: Night City profile (contract §14)', () => {
-  it('accepts the §14 anchor forms only in the special set', () => {
-    const a: AnchorJson = { x: 0, y: 0, z: 0, heading: 0, pose: 'sit', approach: { x: 0, z: -0.6 } }
-    for (const id of ['ws:0:5:3', 'booth:2', 'meet:A:4', 'interact:project-directory:0', 'player:spawn']) {
-      expect(checkAnchor('m', id, a, 'special')).toEqual([])
-      expect(checkAnchor('m', id, a)).toHaveLength(1)
-    }
-    expect(checkAnchor('m', 'seat:desk:1:0', a, 'special')).toEqual([])
-    expect(checkAnchor('m', 'interact:teleporter:0', a, 'special')[0]).toMatch(/contract §14/)
-    expect(checkAnchor('m', 'ws:0:0:7', a, 'special')).toHaveLength(1)
-  })
-
-  it('checks the manifest shape: set, the R1 modules, known kinds, placement, baked rooms', () => {
-    expect(checkSpecialManifest(specialManifest())).toEqual([])
-    const m = specialManifest() as any
-    m.set = 'classic'
-    delete m.modules.skyline
-    m.modules.casino = m.modules.command
-    m.modules.command.placement = { x: 1 }
-    delete m.modules['hq-atrium'].lightmap
-    expect(checkSpecialManifest(m)).toEqual([
-      'manifest.set: expected "special", got "classic"',
-      'manifest.modules.casino: unknown Night City module kind',
-      'manifest.modules.skyline: missing',
-      'manifest.modules.command.placement: must be { x, z, yaw }',
-      'manifest.modules.hq-atrium.lightmap: the hq-atrium must be baked',
+describe('asset validator: Horizon profile (contract §14)', () => {
+  it('needs set "horizon" in a Horizon manifest and no other set in a Classic one', () => {
+    const m = fixtureManifest()
+    expect(checkManifest(m)).toEqual([])
+    expect(checkManifest(m, 'horizon')).toEqual(['manifest.set: expected "horizon", got undefined'])
+    expect(checkManifest({ ...m, set: 'horizon' }, 'horizon')).toEqual([])
+    expect(checkManifest({ ...m, set: 'horizon' })).toEqual([
+      'manifest.set: expected none or "classic", got "horizon"',
     ])
   })
 
-  it('requires the workstation, room and interaction anchors', () => {
-    const anchors = specialAnchors('command')
-    expect(checkSpecialAnchorCounts('command', anchors)).toEqual([])
-    delete anchors['ws:3:0:0']
-    delete anchors['interact:command-display:0']
-    expect(checkSpecialAnchorCounts('command', anchors)).toEqual([
-      'command: expected 144 "ws:*" anchors, found 143',
-      'command: expected 24 "ws:3:*" anchors, found 23',
-      'command: expected 1 "interact:command-display:*" anchors, found 0',
+  it('requires the Classic anchor ids in every module (the same space)', () => {
+    const classic = fixtureManifest()
+    const horizon = { ...clone(classic), set: 'horizon' as const }
+    expect(checkSameSpace(horizon, classic)).toEqual([])
+    const ids = Object.keys(horizon.modules.wing.anchors)
+    delete horizon.modules.wing.anchors[ids[0]!]
+    horizon.modules.atrium.anchors['spot:elevator:99'] = clone(Object.values(horizon.modules.atrium.anchors)[0]!)
+    expect(checkSameSpace(horizon, classic)).toEqual([
+      'horizon atrium: anchors differ from Classic (0 missing; 1 extra, e.g. spot:elevator:99)',
+      `horizon wing: anchors differ from Classic (1 missing, e.g. ${ids[0]}; 0 extra)`,
     ])
   })
 
-  it('requires the runtime roles per module and caps the ad planes', () => {
-    const stats = (pairs: [string, string][]) => {
-      const roles = new Map<string, string[]>()
-      for (const [r, f] of pairs) roles.set(r, [...(roles.get(r) ?? []), f])
-      return { roles } as any
-    }
-    expect(checkSpecialRoles('s.glb', 'skyline', stats(SPECIAL_ROLE_NODES.skyline))).toEqual([])
-    expect(checkSpecialRoles('a.glb', 'hq-atrium', stats([['holo', 'display']]))).toEqual([
-      'a.glb: no node with role "holo" and ref "project-directory"',
-      'a.glb: expected at least 8 node(s) with role "elevatorDoor", found 0',
-      'a.glb: expected at least 1 node(s) with role "rain-glass", found 0',
-    ])
-    const many = range(11).map((i): [string, string] => ['ad', `ad:${i}`])
-    expect(checkSpecialRoles('s.glb', 'skyline', stats([...many, ['traffic', 'l'], ['neon', 'n']]))).toEqual([
-      's.glb: at most 10 ad planes (contract §14), found 11',
-    ])
-  })
-
-  it('joins the placed atrium and Command Center through their connectors', () => {
-    const m = specialManifest()
-    expect(checkSpecialSetNav(m)).toEqual([])
-    m.modules.command!.placement = { x: 21, z: -9, yaw: 0 }
-    expect(checkSpecialSetNav(m)[0]).toMatch(/do not join into one graph/)
-  })
-
-  it('lets mezzanine edges (nav nodes with y) pass above lower walls', () => {
-    const mod = {
-      bounds: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
-      anchors: {},
-      nav: {
-        nodes: { a: { x: 0, z: -2, width: 1 }, b: { x: 0, z: 2, width: 1 } },
-        edges: [['a', 'b']] as [string, string][],
-      },
-      plan: {
-        rooms: [{ id: 'r', name: 'r', rect: [-10, -10, 10, 10] as [number, number, number, number] }],
-        walls: [{ a: [-5, 0] as [number, number], b: [5, 0] as [number, number], kind: 'glass' as const, id: 1, h: 2.4 }],
-        furniture: [],
-      },
-    }
-    expect(checkPlan('hq-atrium', mod)).toHaveLength(1)
-    mod.nav.nodes.a = { ...mod.nav.nodes.a, y: 6 } as any
-    mod.nav.nodes.b = { ...mod.nav.nodes.b, y: 6 } as any
-    expect(checkPlan('hq-atrium', mod)).toEqual([])
-  })
-
-  it('validates a whole special dir; each set totals only its own dir', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ao-special-'))
+  it('validates a whole Horizon dir against its Classic sibling; each set totals only its own dir', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ao-horizon-'))
     try {
-      const dir = join(root, 'special3d')
-      await mkdir(dir)
-      await writeSpecialFixture(dir)
-      const r = await validateAssets(dir, 'special')
+      const { classic, horizon, manifest } = await writeHorizonPair(root)
+      const r = await validateAssets(horizon, 'horizon')
       expect(r.problems).toEqual([])
-      expect(r.files.map((f) => f.file)).toEqual([...KINDS.map((k) => `${k}.glb`), 'character-cyber.glb'])
-      // the classic validator rejects it (no classic modules), and a classic dir's total ignores this sibling
-      expect((await validateAssets(dir)).problems.length).toBeGreaterThan(0)
-      const classic = join(root, 'assets')
-      await mkdir(classic)
-      await writeFixture(classic)
+      expect(r.files).toHaveLength(4 + THEMES.length + 1)
       const c = await validateAssets(classic)
       expect(c.problems).toEqual([])
-      expect(c.totalBytes).toBeLessThan(r.totalBytes + c.totalBytes)
-      expect(SPECIAL_TOTAL_MAX_BYTES).toBe(70 * MB)
-      // the special budgets apply: a character over 1.8 MB, a command module over 260k triangles
-      expect(checkBudget('character-cyber.glb', 1.9 * MB, SPECIAL_BUDGETS.character)).toHaveLength(1)
-      expect(checkBudget('command.glb', MB, SPECIAL_BUDGETS.command, 260_001)).toHaveLength(1)
+      expect(r.totalBytes).toBeLessThan(r.totalBytes + c.totalBytes)
+      // The Horizon dir is not a Classic one, and a Horizon set over 55 MB fails on its own.
+      expect((await validateAssets(horizon)).problems).toEqual([
+        'manifest.set: expected none or "classic", got "horizon"',
+      ])
+      expect(checkTotal(56 * MB, TOTAL_MAX_BYTES, 'Horizon set')).toEqual([
+        'Horizon set total 56.0 MB exceeds the 55 MB budget',
+      ])
+      // A moved seat id breaks the same-space rule.
+      const moved = clone(manifest)
+      const [id, a] = Object.entries(moved.modules.wing.anchors).find(([k]) => k.startsWith('seat:desk:'))!
+      delete moved.modules.wing.anchors[id]
+      moved.modules.wing.anchors[id.replace(/:\d+$/, ':9')] = a
+      await writeFile(join(horizon, 'manifest.json'), JSON.stringify(moved))
+      expect((await validateAssets(horizon, 'horizon')).problems.some((p) => p.startsWith('horizon wing: anchors differ'))).toBe(true)
+      // Without the Classic manifest the comparison cannot run, and says so.
+      await rm(join(classic, 'manifest.json'))
+      await writeFile(join(horizon, 'manifest.json'), JSON.stringify(manifest))
+      expect((await validateAssets(horizon, 'horizon')).problems).toEqual([
+        `${join(classic, 'manifest.json')}: missing or invalid; the Horizon anchors cannot be compared with Classic`,
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   }, 60_000)
 
   it('explains how to build the set when its manifest is missing', async () => {
-    const empty = await mkdtemp(join(tmpdir(), 'ao-special-empty-'))
+    const empty = await mkdtemp(join(tmpdir(), 'ao-horizon-empty-'))
     try {
-      expect((await validateAssets(empty, 'special')).problems[0]).toMatch(/make special-assets/)
+      expect((await validateAssets(empty, 'horizon')).problems[0]).toMatch(/make horizon-assets/)
     } finally {
       await rm(empty, { recursive: true, force: true })
     }
   })
 })
 
-describe('real Night City assets (packages/web/public/special3d)', () => {
-  it('match contract §14 when present: 0 validator errors, budgets, anchors, nav, roles, ≤ 70 MB', async () => {
-    if (!existsSync(join(REAL_SPECIAL, 'manifest.json'))) return // optional until make special-assets ran
-    const r = await validateAssets(REAL_SPECIAL, 'special')
+describe('real Horizon assets (packages/web/public/horizon)', () => {
+  it('match the contract when present: every Classic check, the Classic anchors, ≤ 55 MB', async () => {
+    if (!existsSync(join(REAL_HORIZON, 'manifest.json'))) return // optional until make horizon-assets ran
+    const r = await validateAssets(REAL_HORIZON, 'horizon')
     const sizes = r.files.map((f) => `${f.file}: ${(f.bytes / MB).toFixed(2)} MB, ${f.triangles ?? '?'} tris`)
-    expect(r.problems, `Night City problems:\n${r.problems.join('\n')}\n\nFiles:\n${sizes.join('\n')}`).toEqual([])
+    expect(r.problems, `Horizon problems:\n${r.problems.join('\n')}\n\nFiles:\n${sizes.join('\n')}`).toEqual([])
+    const m = JSON.parse(await readFile(join(REAL_HORIZON, 'manifest.json'), 'utf8')) as Manifest
+    expect(m.set).toBe('horizon')
+    expect(checkPlans(m), checkPlans(m).join('\n')).toEqual([])
   }, 180_000)
 })

@@ -12,7 +12,9 @@ import { viewsFor } from '../../app/views.ts'
 import { linksForMode, type RenderLink } from '../../app/links.ts'
 import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
-import type { AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/office-types.ts'
+import type { AABB, AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/office-types.ts'
+import { manifestUrlFor } from '../../app/horizon/flavor.ts'
+import type { AppearancePalette } from '../../app/motion.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
 import { frameAgents, frameSurfaces } from '../../app/framing.ts'
 import { projectSurfaces, type ProjectLibraryVM } from '../../app/project-library.ts'
@@ -27,7 +29,7 @@ import { CharacterSystem, loadCharacterAssets } from './characters.ts'
 import { isEmptyBox, ndcToClient, pointerToNdc } from './viewport.ts'
 import { Labels } from './labels.ts'
 import { LinkSystem } from './links.ts'
-import { RenderPipeline } from './render-pipeline.ts'
+import { RenderPipeline, type PipelineConfig } from './render-pipeline.ts'
 import {
   FrameLoop,
   hardwareInfo,
@@ -56,7 +58,6 @@ export interface SceneElements {
   links: HTMLElement
 }
 
-const ASSET_BASE = 'assets/'
 const SHADOW_EXTENT = 22
 const SUN_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize()
 const ELEVATOR_OPEN_DIST = 3.2
@@ -71,9 +72,56 @@ const debugEnabled = () => new URLSearchParams(location.search).get('debug') ===
 
 type Vec3T = [number, number, number]
 
+/** Lighting an environment uses whatever the UI theme (Horizon is always daylight). */
+export interface EnvironmentLight {
+  /** Hemisphere fill: sky and ground colours and strength; IBL strength. */
+  sky: number
+  ground: number
+  fill: number
+  environment: number
+  sun: { color: number; intensity: number; dir: Vec3T }
+}
+
+/**
+ * A flavor's world around the building (sky, skyline) and its light. Implemented in the flavor's
+ * own lazy chunk (horizon/adapters/environment.ts); the scene only calls it.
+ */
+export interface SceneEnvironment {
+  /** Pipeline levels (bloom, exposure), read at construction. */
+  readonly pipeline: PipelineConfig
+  readonly light: EnvironmentLight
+  /** Adds the sky and the skyline to the scene (once). */
+  attach(scene: THREE.Scene): void
+  /** The building's bounds changed (the skyline keeps its distance). */
+  place(bounds: AABB): void
+  dispose(): void
+}
+
+/**
+ * How the office is dressed. Classic: `assets/`, the UI theme's light, Classic outfits. Horizon
+ * (docs/horizon): the same office from `horizon/` with a daylight environment, light outfits and
+ * restrained emissives. Rooms, anchors, director, labels and controls are the same in every flavor.
+ */
+export interface SceneFlavor {
+  id: 'classic' | 'horizon'
+  /** Where the manifest, modules and character live (`assets/`, `horizon/`). */
+  assetBase: string
+  /** Absent: Classic (flat themed background, theme-driven fill). */
+  environment?: SceneEnvironment
+  appearance?: AppearancePalette
+  /** Ceiling on emissive intensity (Horizon 1.5); absent: none. */
+  emissiveMax?: number
+  /** Multiplies the baked lightmaps' intensity (Horizon keeps pale surfaces below clipping). */
+  lightmapScale?: number
+}
+
+export const CLASSIC_FLAVOR: SceneFlavor = { id: 'classic', assetBase: 'assets/' }
+
 export interface SceneOptions {
   /** Renderer `powerPreference`, read once at construction (changing it needs a reload). */
   powerPreference?: Effective['powerPreference']
+  /** The office's flavor (Classic by default). */
+  flavor?: SceneFlavor
 }
 
 /** Hemisphere fill multiplier when the environment map is off (Minimal): dynamic objects lose IBL. */
@@ -97,7 +145,9 @@ export class ThreeScene implements SceneView {
   private pipeline: RenderPipeline
   private labels: Labels
   private cam: CameraDirector
-  private store = new AssetStore(ASSET_BASE)
+  private store: AssetStore
+  private flavor: SceneFlavor
+  private sunDir = SUN_DIR.clone()
   private loading: LoadingScreen
   private building: BuildingView | null = null
   private characters: CharacterSystem | null = null
@@ -172,14 +222,18 @@ export class ThreeScene implements SceneView {
     private clock: SimClock = createSimClock(),
     opts: SceneOptions = {},
   ) {
+    this.flavor = opts.flavor ?? CLASSIC_FLAVOR
+    this.store = new AssetStore(this.flavor.assetBase)
     // Throws when WebGL can't start; the composition root shows the failure card (§2.4).
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       powerPreference: opts.powerPreference ?? 'high-performance',
     })
     this.renderer.shadowMap.type = THREE.PCFShadowMap
+    this.renderer.domElement.dataset.scene = this.flavor.id
     el.stage.append(this.renderer.domElement)
-    this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera)
+    const env = this.flavor.environment
+    this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera, env?.pipeline)
     this.loop = new FrameLoop(this.renderer, {
       limit: () => this.limit(),
       // Stage hidden (the user left the Office): nothing to draw.
@@ -193,8 +247,16 @@ export class ThreeScene implements SceneView {
       this.loading.progress(total ? loaded / total : 0)
 
     this.scene.background = this.background
+    if (env) {
+      const l = env.light
+      this.sunDir.set(...l.sun.dir).normalize()
+      this.sun.color.setHex(l.sun.color)
+      this.sun.intensity = l.sun.intensity
+      env.attach(this.scene)
+      this.setTheme('light')
+    }
     this.camera.position.set(30, 40, 50)
-    this.sun.position.copy(SUN_DIR).multiplyScalar(40)
+    this.sun.position.copy(this.sunDir).multiplyScalar(40)
     const s = this.sun.shadow
     s.camera.left = s.camera.bottom = -SHADOW_EXTENT
     s.camera.right = s.camera.top = SHADOW_EXTENT
@@ -262,6 +324,7 @@ export class ThreeScene implements SceneView {
     }
     this.wallTable.dispose()
     this.pipeline.dispose()
+    this.flavor.environment?.dispose()
     this.envMap?.dispose()
     this.envMap = null
     this.setDirectoryProxy(null)
@@ -331,9 +394,17 @@ export class ThreeScene implements SceneView {
   async load(manifestUrl: string): Promise<SceneAssets> {
     try {
       this.loading.progress(0.02, 'Loading the floor plan…')
-      const manifest = await this.store.manifest(manifestUrl)
+      // The controller asks for Classic's manifest; a flavor reads its own (`horizon/manifest.json`).
+      const url =
+        this.flavor.id === 'classic' ? manifestUrl : manifestUrlFor(manifestUrl, this.store.base)
+      const manifest = await this.store.manifest(url)
       this.manifest = manifest
-      this.building = new BuildingView(this.store, manifest)
+      this.building = new BuildingView(this.store, manifest, {
+        ...(this.flavor.emissiveMax !== undefined && { emissiveMax: this.flavor.emissiveMax }),
+        ...(this.flavor.lightmapScale !== undefined && {
+          lightmapScale: this.flavor.lightmapScale,
+        }),
+      })
       this.building.onChange = () => {
         this.updateSurfaces()
         this.updateBookmarks()
@@ -344,12 +415,14 @@ export class ThreeScene implements SceneView {
       const env = this.loadEnvironment(manifest)
       const [character, envMap] = await Promise.all([
         // Without the character the building still renders (tags stay hidden); say why once.
-        within(loadCharacterAssets(ASSET_BASE, this.store.gltf), 30_000, 'character.glb').catch(
-          (err: Error) => {
-            console.warn(`agent-office: character assets unavailable (${err.message})`)
-            return null
-          },
-        ),
+        within(
+          loadCharacterAssets(this.store.base, this.store.gltf),
+          30_000,
+          'character.glb',
+        ).catch((err: Error) => {
+          console.warn(`agent-office: character assets unavailable (${err.message})`)
+          return null
+        }),
         env,
         // Atrium first: it's where the camera starts. Street/cap come along; wings stream in later.
         this.building.preload(['atrium', 'street', 'cap', 'garden']),
@@ -360,6 +433,7 @@ export class ThreeScene implements SceneView {
         this.characters = new CharacterSystem(this.scene, character, {
           quality: this.gfx.preset,
           renderer: this.renderer,
+          ...(this.flavor.appearance && { appearance: this.flavor.appearance }),
         })
         this.applyCharacterDetail()
       }
@@ -386,6 +460,7 @@ export class ThreeScene implements SceneView {
     this.cam.setBounds(b)
     this.catcher.scale.set(b.maxX - b.minX + 4, b.maxZ - b.minZ + 4, 1)
     this.catcher.position.set((b.minX + b.maxX) / 2, 0.004, (b.minZ + b.maxZ) / 2)
+    this.flavor.environment?.place(b)
     this.updateBookmarks()
     this.renderSigns(layout)
     this.updateSurfaces()
@@ -759,9 +834,15 @@ export class ThreeScene implements SceneView {
     this.building.setStats({ agents: this.plans.size, working, waiting, meetings: rooms.size })
   }
 
-  /** Plan §2.6: background, hemisphere fill and environment strength per theme (in-place, live). */
+  /**
+   * Plan §2.6: background, hemisphere fill and environment strength per theme (in-place, live).
+   * A flavor's environment keeps its own light (Horizon is always daylight; panels still follow).
+   */
   setTheme(theme: 'light' | 'dark'): void {
-    const t = THEMES[theme] ?? THEMES.dark
+    const env = this.flavor.environment
+    const t = env
+      ? { ...env.light, background: THEMES.light.background }
+      : (THEMES[theme] ?? THEMES.dark)
     this.background.setHex(t.background)
     this.fill.color.setHex(t.sky)
     this.fill.groundColor.setHex(t.ground)
@@ -970,7 +1051,7 @@ export class ThreeScene implements SceneView {
       Math.round(this.focus.z / texel) * texel,
     )
     this.sun.target.position.copy(this.focus)
-    this.sun.position.copy(this.focus).addScaledVector(SUN_DIR, 40)
+    this.sun.position.copy(this.focus).addScaledVector(this.sunDir, 40)
     this.sun.target.updateMatrixWorld()
   }
 
@@ -1200,6 +1281,107 @@ export class ThreeScene implements SceneView {
     })
   }
 
+  /** Mean and standard deviation of sRGB luma over a 64 × 36 readback of a fresh frame. */
+  private readback(): { mean: number; sd: number } | null {
+    this.pipeline.render(0)
+    const c = document.createElement('canvas')
+    c.width = 64
+    c.height = 36
+    const g = c.getContext('2d', { willReadFrequently: true })
+    if (!g) return null
+    g.drawImage(this.renderer.domElement, 0, 0, 64, 36)
+    const d = g.getImageData(0, 0, 64, 36).data
+    const n = d.length / 4
+    let sum = 0
+    let sq = 0
+    for (let i = 0; i < d.length; i += 4) {
+      const y = (0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!) / 255
+      sum += y
+      sq += y * y
+    }
+    const mean = sum / n
+    return { mean, sd: Math.sqrt(Math.max(0, sq / n - mean * mean)) }
+  }
+
+  /**
+   * Horizon's checks (horizon.spec): `ready`, `calm` (no ad, holo, rain or traffic objects), `luma`
+   * (mean sRGB luminance of a 64 × 36 readback of a fresh frame) and `emissive` (the brightest
+   * visible emissive, intensity × channel).
+   */
+  private horizonDebug() {
+    return {
+      ready: () => !!this.layout && !!this.building,
+      calm: () => {
+        const loud: string[] = []
+        this.scene.traverse((o) => {
+          if (/^(ad|holo)[-:]|rain|traffic/i.test(o.name)) loud.push(o.name)
+        })
+        return loud
+      },
+      luma: () => this.readback()?.mean ?? null,
+      /** Standard deviation of the same readback's luma (flat, milky images score low). */
+      contrast: () => this.readback()?.sd ?? null,
+      /**
+       * Live tuning of the look (iteration only): tone mapping, exposure, IBL and fill strength,
+       * the sky's brightness and a lightmap multiplier on top of the flavor's.
+       */
+      tune: (t: {
+        toneMapping?: 'agx' | 'neutral' | 'aces'
+        exposure?: number
+        environment?: number
+        fill?: number
+        background?: number
+        lightmap?: number
+        sun?: number
+      }) => {
+        const tm = {
+          agx: THREE.AgXToneMapping,
+          neutral: THREE.NeutralToneMapping,
+          aces: THREE.ACESFilmicToneMapping,
+        }
+        this.pipeline.setLook({
+          ...(t.toneMapping && { toneMapping: tm[t.toneMapping] }),
+          ...(t.exposure !== undefined && { exposure: t.exposure }),
+        })
+        if (t.environment !== undefined) this.scene.environmentIntensity = t.environment
+        if (t.fill !== undefined) this.fillBase = t.fill
+        if (t.background !== undefined) this.scene.backgroundIntensity = t.background
+        if (t.sun !== undefined) this.sun.intensity = t.sun
+        if (t.lightmap !== undefined) {
+          const seen = new Set<THREE.Material>()
+          this.building?.group.traverse((o) => {
+            const m = o as THREE.Mesh
+            if (!m.isMesh) return
+            for (const mat of (Array.isArray(m.material)
+              ? m.material
+              : [m.material]) as THREE.MeshStandardMaterial[]) {
+              if (!mat.lightMap || seen.has(mat)) continue
+              seen.add(mat)
+              mat.userData.lmBase ??= mat.lightMapIntensity
+              mat.lightMapIntensity = (mat.userData.lmBase as number) * t.lightmap!
+            }
+          })
+        }
+        this.applyEnv()
+      },
+      emissive: () => {
+        let max = 0
+        let name = ''
+        this.scene.traverseVisible((o) => {
+          const m = o as THREE.Mesh
+          if (!m.isMesh) return
+          for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+            const e = mat as THREE.MeshStandardMaterial
+            if (!e.visible || !e.emissive || !(e.emissiveIntensity > 0)) continue
+            const v = e.emissiveIntensity * Math.max(e.emissive.r, e.emissive.g, e.emissive.b)
+            if (v > max) [max, name] = [v, `${m.name}:${e.name}`]
+          }
+        })
+        return { max: Math.round(max * 1000) / 1000, name }
+      },
+    }
+  }
+
   /** Dev/screenshot hook: camera bookmarks and frame stats. Only installed behind the debug flag. */
   private installDebug(): void {
     this.el.stats.hidden = false
@@ -1427,6 +1609,13 @@ export class ThreeScene implements SceneView {
       setWallMode: (m: WallMode) => this.setWallMode(m),
       /** The current scene background as a hex number (theme.spec). */
       sceneBackground: () => this.background.getHex(),
+      /** An agent's seat (its desk anchor), else the anchor it heads to: the same in every flavor. */
+      anchorOf: (id: string) => this.desks.get(id) ?? this.plans.get(id)?.intent.target ?? null,
+      /** Mean and standard deviation of luma of a fresh frame (Horizon's brightness/contrast bars). */
+      lookStats: () => this.readback(),
+      /** The flavor in force ('classic' | 'horizon'). */
+      flavor: () => this.flavor.id,
+      ...(this.flavor.id === 'horizon' && { horizon: this.horizonDebug() }),
       stats: () => ({
         ...this.pipeline.stats,
         // GPU memory estimate and drawing-buffer size (Settings → Graphics, make perf).

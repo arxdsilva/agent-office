@@ -4,7 +4,6 @@ Anchors are written to the manifest only (not as glTF nodes). Every anchor gets 
 dedicated nav node `ap:<anchorId>` exactly on it, linked to one or more hub nodes of the module graph.
 """
 import math
-import os
 import re
 
 ANCHOR_RE = re.compile(
@@ -16,27 +15,6 @@ ANCHOR_RE = re.compile(
     r'|kiosk:project-directory'
     r'|spot:pingpong:\d+:[AB])$')
 PORT_RE = re.compile(r'^port:(desk:[1-6]:[0-3]|station:[0-7]|book:\d+|board:[0-5]|notebook:[0-7]|archive:(\d|1[01]))$')
-
-
-def _interaction_kinds():
-    """The renderer's INTERACTION_KINDS (packages/web/src/app/office-types.ts), the one source of truth."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'packages', 'web', 'src',
-                        'app', 'office-types.ts')
-    src = open(path).read()
-    body = src[src.index('INTERACTION_KINDS = ['):]
-    return tuple(re.findall(r"'([a-z-]+)'", body[:body.index(']')]))
-
-
-INTERACTION_KINDS = _interaction_kinds()
-# Contract §14 (Night City, `set == 'special'` only, in addition to the classic grammar):
-# ws:<dept>:<pod>:<seat>, booth:<n>, meet:<room>:<seat>, interact:<kind>:<n>, player:spawn.
-SPECIAL_RE = re.compile(
-    r'^(ws:[0-9]:[0-9]:[0-3]'
-    r'|booth:\d+'
-    r'|meet:[A-Z]:\d+'
-    r'|interact:(' + '|'.join(re.escape(k) for k in INTERACTION_KINDS) + r'):\d+'
-    r'|player:spawn)$')
-SETS = ('classic', 'special')
 POSES = ('sit', 'stand', 'lounge')
 # Contract §4 / character.json: the anchor is where the character's root stands. The seat center is this
 # far behind the root (opposite the heading); `stand` spots are the root itself.
@@ -58,20 +36,10 @@ def norm_heading(h):
     return h
 
 
-def valid_id(aid, set_='classic'):
-    """Whether `aid` follows the anchor grammar of asset set `set_` (contract §4; §14 for 'special')."""
-    if set_ not in SETS:
-        raise ValueError(f'unknown asset set {set_!r}')
-    return bool(ANCHOR_RE.match(aid) or (set_ == 'special' and SPECIAL_RE.match(aid)))
-
-
 class Anchors:
-    def __init__(self, geo, prefix, asset_set='classic'):
-        if asset_set not in SETS:
-            raise ValueError(f'unknown asset set {asset_set!r}')
+    def __init__(self, geo, prefix):
         self.geo = geo
         self.prefix = prefix
-        self.asset_set = asset_set
         self.anchors = {}
         self.seat_centers = {}  # internal (tests): seat center of every seat anchor
         self.ports = {}
@@ -79,18 +47,12 @@ class Anchors:
         self.edges = set()
 
     # ----------------------------------------------------------------- nav
-    def node(self, nid, x, z, width=0.8, local=True, y=None):
-        """A nav node. `y` (Night City mezzanines, contract §14) is the walkable height above the module
-        floor; it is written only when given, so classic graphs are unchanged."""
+    def node(self, nid, x, z, width=0.8, local=True):
         if local:
             x, _, z = self.geo.world(x, 0, z)
         if nid in self.nodes:
             raise ValueError(f'duplicate nav node {nid}')
         self.nodes[nid] = {'x': _r(x), 'z': _r(z), 'width': round(width, 3)}
-        if y is not None and self.asset_set == 'special':
-            self.nodes[nid]['y'] = _r(y)
-        elif y is not None:
-            raise ValueError('nav node heights are a Night City (special set) feature')
         return nid
 
     def edge(self, a, b):
@@ -117,8 +79,8 @@ class Anchors:
 
     # ----------------------------------------------------------------- anchors
     def _add(self, aid, x, z, heading, pose, room, approach, hubs, extra):
-        if not valid_id(aid, self.asset_set):
-            raise ValueError(f'anchor id {aid} breaks the {self.asset_set} grammar')
+        if not ANCHOR_RE.match(aid):
+            raise ValueError(f'anchor id {aid} breaks the grammar')
         if aid in self.anchors:
             raise ValueError(f'duplicate anchor {aid}')
         if pose not in POSES:

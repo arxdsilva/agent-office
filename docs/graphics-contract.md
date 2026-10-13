@@ -211,24 +211,27 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 - The optimizer must keep `_WALLID` exact (integers stored as floats; no lossy filter on it); the
   validator checks it on atrium and wing baked meshes.
 
-## 14. Night City asset set (additive; the optional Special 3D mode)
+## 14. Horizon asset set (additive; the optional Horizon mode)
 
-- A separate set: `packages/web/public/special3d/` with its own `manifest.json`
-  (`{ version: 1, set: 'special', blender, units: 'm', hash, hdri, modules, character }`), built by
-  `assets/special3d/build.mjs` (`make special-assets`) from `assets/blender/special3d/`. The classic
-  pipeline never writes or deletes it, and its budget is separate from §9.
-- Module kinds: `hq-atrium`, `command`, `skyline` (R1); `vault`, `core`, `archive`, `handoff`,
-  `department` (R2). Same placement rules as §3 (translation + yaw, never mirrored).
-- Anchors (in addition to the classic grammar, accepted only in this set):
-  `ws:<dept>:<pod>:<seat>` (workstation seat), `booth:<n>` (secure comm booth), `meet:<room>:<seat>`,
-  `interact:<kind>:<n>` (a semantic interaction; `<kind>` is one of the renderer's
-  `INTERACTION_KINDS`), `player:spawn`.
-- Roles (in addition to §5): `holo` (projected display, driven by live counts), `ad` (exterior
-  advertisement screen; original procedural content), `traffic` (a spline in `extras.points`),
-  `rain-glass` (window glass with the rain shader), `neon` (emissive sign; flicker schedule in extras).
-- Character: `character-cyber.glb` + `.json`, the **same rig and the same 22 clips** as §8 (so the
-  director's plans and timings apply unchanged), new outfit meshes and an `accent` material slot.
-- Budgets: hq-atrium ≤ 16 MB / 300k tris, command ≤ 14 MB / 260k, skyline ≤ 6 MB / 120k,
-  character-cyber ≤ 1.8 MB / 9k tris, set total ≤ 70 MB; visible ≤ 700k tris and ≤ 450 draw calls
-  (High). No third-party logos, trademarks or game assets; the fictional brand is drawn from
-  primitives. Textures are CC0 (pinned in `polyhaven.json`, listed in `assets/LICENSES.md`).
+- **What:** the Classic modules of §1–§13 (atrium, street, wing, garden, cap, character), built by the
+  **same module scripts** with the Horizon palettes: `themes.HORIZON_HOUSE` for the shared spaces and
+  `themes.HORIZON[<theme id>]` for the wings. The theme ids are the Classic ones (`terracotta`,
+  `nordic`, `forest`, `ocean`, `neon`, `brass`), so a provider's wing is in the same place in both
+  modes, only recoloured. Anchors, nav graphs, floor plans, colliders and `_WALLID` are identical to
+  Classic by construction (the validator checks anchor-id equality).
+- **Where:** `packages/web/public/horizon/` with its own `manifest.json` (`set: 'horizon'`), built by
+  `node assets/build.mjs --set horizon` (`make horizon-assets`). Classic publishing never touches it,
+  and the Horizon build never touches `public/assets`.
+- **Optional decor flags** (theme dict `decor`, default off; Classic themes leave them off, so Classic
+  output is byte-identical): `cove_lights` (thin emissive lines under ceiling edges),
+  `wayfinding` (floor lines on Main Street and in the atrium), `elevator_glow` (emissive elevator
+  frames), `kiosk_ring` (a ring under the Project Directory kiosk). Emissive ≤ 1.5× white.
+- **Optional palette keys** (defaults are today's Classic values, so Classic output is unchanged):
+  `glass_dark`, `screen_base`, `led_color`, `light_strength`, `emit_max` (cap on emissive strength),
+  `flat`, `library_wood`, `light_scale` and `sky_scale` (bake lighting), and the colour keys `planter`,
+  `chair_dark`, `pendant`, `game_floor`, `arcade_body`, `mural_dark`, `tech_floor`, `tech_felt`,
+  `hub_floor`, `handoff_floor`. `themes.theme_for(set, kind, theme)` picks the dict.
+- **Character:** the Classic `character.glb`; Horizon outfits are a runtime tint palette.
+- **Budgets:** §9 per module; the set total is ≤ 55 MB, counted separately from Classic.
+- The earlier Night City additions (anchors `ws:`, `booth:`, `meet:`, `interact:`, `player:spawn`;
+  roles `holo`, `ad`, `traffic`, `rain-glass`, `neon`; `public/special3d`) are retired.

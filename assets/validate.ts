@@ -2,7 +2,7 @@
 // Pure checks (manifest shape, anchors, nav, character metadata, budgets) plus one IO orchestrator,
 // validateAssets(dir), that reads manifest.json and every file it references.
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { join, normalize } from 'node:path'
+import { dirname, join, normalize } from 'node:path'
 import {
   ImageUtils,
   Logger,
@@ -15,7 +15,6 @@ import { ALL_EXTENSIONS, type InstancedMesh } from '@gltf-transform/extensions'
 import validator from 'gltf-validator'
 import { MeshoptDecoder } from 'meshoptimizer'
 import { FURNITURE_KINDS, type ModulePlan } from '../packages/web/src/app/pixel/types.ts'
-import { INTERACTION_KINDS } from '../packages/web/src/app/office-types.ts'
 
 // ── Contract constants ──────────────────────────────────────────────────────────────────────────
 export const MB = 1024 * 1024
@@ -155,87 +154,13 @@ export const CONNECTORS: Record<ModuleKind, [number, number][]> = {
 }
 export const MERGE_EPS = 0.05
 
-// ── Night City (contract §14): the 'special' profile ─────────────────────────────────────────────
-/** Which asset set a directory holds: `public/assets` (classic) or `public/special3d` (Night City). */
-export type Profile = 'classic' | 'special'
-/** R1 kinds every special manifest has; R2 kinds are optional until their rooms ship. */
-export const SPECIAL_MODULES = ['hq-atrium', 'command', 'skyline'] as const
-export const SPECIAL_R2_MODULES = ['vault', 'core', 'archive', 'handoff', 'department'] as const
-export type SpecialKind = (typeof SPECIAL_MODULES)[number] | (typeof SPECIAL_R2_MODULES)[number]
-const SPECIAL_KINDS: readonly string[] = [...SPECIAL_MODULES, ...SPECIAL_R2_MODULES]
-/** Contract §14: the Night City set's own total (separate from the classic 55 MB). */
-export const SPECIAL_TOTAL_MAX_BYTES = 70 * MB
-export const SPECIAL_BUDGETS: Record<SpecialKind | 'character', Budget> = {
-  'hq-atrium': { maxBytes: 16 * MB, maxTriangles: 300_000 },
-  command: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  skyline: { maxBytes: 6 * MB, maxTriangles: 120_000 },
-  vault: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  core: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  archive: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  handoff: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  department: { maxBytes: 14 * MB, maxTriangles: 260_000 },
-  character: { maxBytes: 1.8 * MB },
-}
-export const SPECIAL_CHARACTER_BASE_MAX_TRIANGLES = 9_000
-/** Contract §14 roles, in addition to §5. */
-export const SPECIAL_ROLES = [...ROLES, 'holo', 'ad', 'traffic', 'rain-glass', 'neon']
-/** The cyber character: same rig and clips (§8), its own material slots and outfit toggles. */
-export const SPECIAL_CHARACTER_MATERIALS = ['skin', 'shirt', 'pants', 'hair', 'accent']
-export const SPECIAL_ACCESSORIES = [
-  ...['A', 'B', 'C', 'D', 'E', 'F'].map((v) => `hair${v}`),
-  'techJacket',
-  'utilityVest',
-  'longCoat',
-  'visor',
-  'arGlasses',
-  'headset',
-  'wristDisplay',
-  'collarLight',
-]
-/** Contract §14 anchor forms (accepted only in the special set, besides the classic grammar). */
-const SPECIAL_ANCHOR_ID = new RegExp(
-  `^(ws:\\d:\\d:[0-3]|booth:\\d+|meet:[A-Z]:\\d+|interact:(${INTERACTION_KINDS.join('|')}):\\d+|player:spawn)$`,
-)
-export const SPECIAL_REQUIRED_ANCHORS: Partial<Record<SpecialKind, [prefix: string, count: number][]>> = {
-  'hq-atrium': [
-    ['player:spawn', 1],
-    ['interact:project-directory:', 1],
-  ],
-  command: [
-    ['ws:', 144],
-    ...[0, 1, 2, 3, 4, 5].map((d): [string, number] => [`ws:${d}:`, 24]),
-    ['meet:A:', 6],
-    ['meet:B:', 6],
-    ['booth:', 4],
-    ['interact:command-display:', 1],
-    ['interact:provider-terminal:', 6],
-  ],
-}
-/** Nodes with these refs must exist per module (role → refs or a minimum count). */
-export const SPECIAL_REQUIRED_ROLES: Partial<Record<SpecialKind, [role: string, refs: string[] | number][]>> = {
-  'hq-atrium': [
-    ['holo', ['display', 'project-directory']],
-    ['elevatorDoor', 8],
-    ['rain-glass', 1],
-  ],
-  command: [
-    ['holo', ['command-display']],
-    ['led', ['booth:0', 'booth:1', 'booth:2', 'booth:3']],
-    ['rain-glass', 1],
-  ],
-  skyline: [
-    ['ad', 6],
-    ['traffic', 1],
-    ['neon', 1],
-  ],
-}
-/** Connector nodes (module-local) that join the special modules; the skyline has no nav. */
-export const SPECIAL_CONNECTORS: Partial<Record<SpecialKind, [number, number][]>> = {
-  'hq-atrium': [[20, -9]],
-  command: [[0, 0]],
-}
-/** Modules whose baked meshes must carry wall ids (contract §13–§14). */
-export const SPECIAL_WALL_ID_MODULES: readonly string[] = ['hq-atrium', 'command']
+// ── Asset sets ────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Which asset set a directory holds: `public/assets` (classic) or `public/horizon` (Horizon, contract §14:
+ * the same modules in the Horizon palettes, with `set: 'horizon'`). Both sets pass every check; each
+ * counts its own 55 MB total.
+ */
+export type Profile = 'classic' | 'horizon'
 
 // ── Manifest types (validated loosely, then trusted) ────────────────────────────────────────────
 export interface Vec2 {
@@ -254,8 +179,7 @@ export interface AnchorJson {
   led?: string
 }
 export interface NavJson {
-  /** `y` (optional, contract §14): a Night City mezzanine node's height above the module floor. */
-  nodes: Record<string, { x: number; z: number; width: number; y?: number }>
+  nodes: Record<string, { x: number; z: number; width: number }>
   edges: [string, string][]
 }
 export type LightmapVariants = Record<LightmapTier, string>
@@ -287,6 +211,8 @@ export interface WingJson extends Omit<ModuleJson, 'file' | 'lightmap'> {
 }
 export interface Manifest {
   version: 1
+  /** Contract §14: 'horizon' for the Horizon set; absent in the Classic one. */
+  set?: 'classic' | 'horizon'
   blender: string
   units: 'm'
   hash: string
@@ -347,15 +273,10 @@ function checkBounds(path: string, v: unknown, out: string[]) {
     out.push(`${path}: bounds are empty`)
 }
 
-export function checkAnchor(path: string, id: string, a: unknown, profile: Profile = 'classic'): string[] {
+export function checkAnchor(path: string, id: string, a: unknown): string[] {
   const out: string[] = []
   const at = `${path}["${id}"]`
-  if (!ANCHOR_ID.test(id) && !(profile === 'special' && SPECIAL_ANCHOR_ID.test(id)))
-    out.push(
-      profile === 'special'
-        ? `${at}: id must match the classic grammar or ws:<dept>:<pod>:<seat>, booth:<n>, meet:<room>:<seat>, interact:<kind>:<n>, player:spawn (contract §14)`
-        : `${at}: id must match <seat|spot|port|console>:<group>:<index>[:<sub>] or kiosk:<name>`,
-    )
+  if (!ANCHOR_ID.test(id)) out.push(`${at}: id must match <seat|spot|port|console>:<group>:<index>[:<sub>] or kiosk:<name>`)
   if (!isObj(a)) return [...out, `${at}: must be an object`]
   // Ports are 3D link attach points (contract §4): only a position, y may be off the floor.
   if (id.startsWith('port:')) {
@@ -384,7 +305,7 @@ function checkNavShape(path: string, v: unknown, out: string[]) {
   })
 }
 
-function checkModuleShape(path: string, v: unknown, out: string[], needsFile: boolean, profile: Profile = 'classic') {
+function checkModuleShape(path: string, v: unknown, out: string[], needsFile: boolean) {
   if (!isObj(v)) return void out.push(`${path}: missing`)
   if (needsFile && !isSafeRef(v.file, /\.glb$/i))
     out.push(`${path}.file: must be a relative .glb path`)
@@ -393,15 +314,20 @@ function checkModuleShape(path: string, v: unknown, out: string[], needsFile: bo
   if (!isObj(v.anchors)) out.push(`${path}.anchors: must be an object`)
   else
     for (const [id, a] of Object.entries(v.anchors))
-      out.push(...checkAnchor(`${path}.anchors`, id, a, profile))
+      out.push(...checkAnchor(`${path}.anchors`, id, a))
   checkNavShape(`${path}.nav`, v.nav, out)
 }
 
 /** Structural validation of manifest.json (contract §7). Errors name the offending path. */
-export function checkManifest(m: unknown): string[] {
+export function checkManifest(m: unknown, profile: Profile = 'classic'): string[] {
   const out: string[] = []
   if (!isObj(m)) return ['manifest: must be a JSON object']
   if (m.version !== 1) out.push(`manifest.version: expected 1, got ${JSON.stringify(m.version)}`)
+  // Contract §14: a Horizon manifest says so; a Classic one has no `set` (or 'classic').
+  if (profile === 'horizon' && m.set !== 'horizon')
+    out.push(`manifest.set: expected "horizon", got ${JSON.stringify(m.set)}`)
+  if (profile === 'classic' && m.set !== undefined && m.set !== 'classic')
+    out.push(`manifest.set: expected none or "classic", got ${JSON.stringify(m.set)}`)
   if (m.units !== 'm') out.push('manifest.units: must be "m"')
   if (!isStr(m.blender) || !/^5\.2(\.|$)/.test(m.blender))
     out.push('manifest.blender: must be a Blender 5.2.x version')
@@ -528,12 +454,7 @@ export function onGraph(p: Vec2, nav: NavJson): boolean {
 }
 
 /** Per-module nav: edges reference nodes, one connected graph, every approach on it, connectors. */
-export function checkNav(
-  kind: ModuleKind | SpecialKind,
-  nav: NavJson,
-  anchors: Record<string, AnchorJson>,
-  connectors: [number, number][] = CONNECTORS[kind as ModuleKind] ?? [],
-) {
+export function checkNav(kind: ModuleKind, nav: NavJson, anchors: Record<string, AnchorJson>) {
   const out: string[] = []
   const ids = Object.keys(nav.nodes)
   nav.edges.forEach(([a, b], i) => {
@@ -551,7 +472,7 @@ export function checkNav(
       out.push(
         `${kind}.anchors["${id}"].approach: (${a.approach.x}, ${a.approach.z}) is not on the nav graph`,
       )
-  for (const [x, z] of connectors)
+  for (const [x, z] of CONNECTORS[kind])
     if (!Object.values(nav.nodes).some((n) => dist(n, { x, z }) <= MERGE_EPS))
       out.push(`${kind}.nav: missing connector node at local (${x}, ${z})`)
   return out
@@ -676,7 +597,7 @@ function crossing(p: Vec2, q: Vec2, a: Vec2, b: Vec2): { s: number; at: Vec2 } |
  * edge that crosses a wall going through one of its openings.
  */
 export function checkPlan(
-  kind: ModuleKind | SpecialKind,
+  kind: ModuleKind,
   mod: Pick<ModuleJson, 'bounds' | 'anchors' | 'nav' | 'plan'>,
 ): string[] {
   const at = `${kind}.plan`
@@ -718,8 +639,6 @@ export function checkPlan(
     const q = mod.nav.nodes[eb]
     if (!p || !q) return // reported by checkNav
     for (const [k, w] of plan.walls.entries()) {
-      // a Night City mezzanine edge (contract §14: nodes with y) passes above walls lower than both ends
-      if (w.h !== undefined && Math.min(p.y ?? 0, q.y ?? 0) >= w.h) continue
       const c = crossing(p, q, { x: w.a[0], z: w.a[1] }, { x: w.b[0], z: w.b[1] })
       if (!c) continue
       if ((w.openings ?? []).some(([t0, t1]) => c.s >= t0 - 0.01 && c.s <= t1 + 0.01)) continue
@@ -912,7 +831,7 @@ export const WALL_ID_MODULES: readonly ModuleKind[] = ['atrium', 'wing']
  */
 export function checkModuleGlb(
   file: string,
-  kind: ModuleKind | SpecialKind,
+  kind: ModuleKind,
   s: GlbStats,
   anchors: Record<string, AnchorJson>,
   walls?: number,
@@ -921,7 +840,7 @@ export function checkModuleGlb(
   for (const r of s.unknownRoles) out.push(`${file}: unknown extras.role on node ${r}`)
   for (const n of s.bakedWithoutUv1)
     out.push(`${file}: baked node "${n}" has no TEXCOORD_1 (lightmap UV)`)
-  if ((WALL_ID_MODULES as readonly string[]).includes(kind) || SPECIAL_WALL_ID_MODULES.includes(kind)) {
+  if (WALL_ID_MODULES.includes(kind)) {
     for (const n of s.bakedWithoutWallId)
       out.push(`${file}: baked node "${n}" has no _WALLID attribute (contract §13)`)
     for (const { node, value } of s.wallIdNotInteger)
@@ -944,34 +863,27 @@ export function checkModuleGlb(
   return out
 }
 
-export function checkCharacterGlb(
-  file: string,
-  s: GlbStats,
-  meta?: CharacterMeta,
-  profile: Profile = 'classic',
-): string[] {
+export function checkCharacterGlb(file: string, s: GlbStats, meta?: CharacterMeta): string[] {
   const out: string[] = []
-  const special = profile === 'special'
-  const materials = special ? SPECIAL_CHARACTER_MATERIALS : CHARACTER_MATERIALS
-  const accessories = special ? SPECIAL_ACCESSORIES : ACCESSORIES
-  const maxBase = special ? SPECIAL_CHARACTER_BASE_MAX_TRIANGLES : CHARACTER_BASE_MAX_TRIANGLES
   for (const c of CLIPS)
     if (!s.animations.includes(c)) out.push(`${file}: missing animation clip "${c}"`)
   if (meta)
     for (const c of Object.keys(meta.clips))
       if (!s.animations.includes(c))
         out.push(`${file}: character.json lists clip "${c}" that the glb lacks`)
-  for (const m of materials)
+  for (const m of CHARACTER_MATERIALS)
     if (!s.materials.includes(m)) out.push(`${file}: missing material "${m}"`)
   for (const b of BONES) if (!s.joints.includes(b)) out.push(`${file}: missing bone "${b}"`)
   for (const a of s.accessories)
-    if (!accessories.includes(a)) out.push(`${file}: unknown extras.accessory "${a}"`)
+    if (!ACCESSORIES.includes(a)) out.push(`${file}: unknown extras.accessory "${a}"`)
   for (const p of s.props) {
     if (!PROPS.includes(p.prop)) out.push(`${file}: unknown extras.prop "${p.prop}"`)
     if (p.parent !== 'prop.R') out.push(`${file}: prop "${p.prop}" must be parented to bone prop.R`)
   }
-  if (s.baseTriangles > maxBase)
-    out.push(`${file}: base body has ${s.baseTriangles} triangles (budget ${maxBase}, accessories hidden)`)
+  if (s.baseTriangles > CHARACTER_BASE_MAX_TRIANGLES)
+    out.push(
+      `${file}: base body has ${s.baseTriangles} triangles (budget ${CHARACTER_BASE_MAX_TRIANGLES}, accessories hidden)`,
+    )
   return out
 }
 
@@ -1183,10 +1095,15 @@ export async function createIO(): Promise<NodeIO> {
 /**
  * Validate an assets dir against the contract. Never throws for asset problems: everything wrong is listed
  * in `problems`, so CI prints the full picture at once. `profile` picks the set: 'classic'
- * (packages/web/public/assets, contract §1–§13) or 'special' (packages/web/public/special3d, §14). Each total
- * covers only its own dir.
+ * (packages/web/public/assets, contract §1–§13) or 'horizon' (packages/web/public/horizon, §14). Both run
+ * every check and each total covers only its own dir; a Horizon set must also have exactly the anchors of
+ * the Classic set in `classicDir` (default: the sibling `assets` dir), so both are the same space.
  */
-export async function validateAssets(dir: string, profile: Profile = 'classic'): Promise<AssetReport> {
+export async function validateAssets(
+  dir: string,
+  profile: Profile = 'classic',
+  { classicDir = join(dirname(dir), 'assets') }: { classicDir?: string } = {},
+): Promise<AssetReport> {
   const report: AssetReport = {
     problems: [],
     files: [],
@@ -1200,8 +1117,8 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
     manifestText = await readFile(join(dir, 'manifest.json'), 'utf8')
   } catch {
     p.push(
-      profile === 'special'
-        ? `${join(dir, 'manifest.json')} is missing. Build the Night City set with \`make special-assets\` (Blender 5.2), or fetch it with \`git lfs pull\`.`
+      profile === 'horizon'
+        ? `${join(dir, 'manifest.json')} is missing. Build the Horizon set with \`make horizon-assets\` (Blender 5.2), or fetch it with \`git lfs pull\`.`
         : `${join(dir, 'manifest.json')} is missing. Build the assets with \`make assets\` (Blender 5.2), or fetch them with \`git lfs pull\`.`,
     )
     return report
@@ -1213,7 +1130,7 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
     p.push(`manifest.json: invalid JSON (${(e as Error).message})`)
     return report
   }
-  p.push(...(profile === 'special' ? checkSpecialManifest(raw) : checkManifest(raw)))
+  p.push(...checkManifest(raw, profile))
   if (p.length) return report
   const io = await createIO()
 
@@ -1233,7 +1150,6 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
     }
   }
 
-  const roles = profile === 'special' ? SPECIAL_ROLES : ROLES
   const glb = async (ref: string, budget: Budget): Promise<GlbStats | null> => {
     const bytes = await load(ref)
     if (!bytes) return null
@@ -1248,7 +1164,7 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
     let doc: Document
     try {
       doc = await io.readBinary(bytes)
-      stats = glbStats(doc, roles)
+      stats = glbStats(doc)
     } catch (e) {
       p.push(`${ref}: could not be read (${(e as Error).message})`)
       return null
@@ -1299,31 +1215,7 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
       }
     }
     const cs = await glb(c.file, budget)
-    if (cs) p.push(...checkCharacterGlb(c.file, cs, meta, profile))
-  }
-
-  if (profile === 'special') {
-    const m = raw as SpecialManifest
-    for (const [kind, mod] of Object.entries(m.modules) as [SpecialKind, SpecialModuleJson][]) {
-      const nav = Object.keys(mod.nav.nodes).length > 0 || SPECIAL_CONNECTORS[kind] !== undefined
-      p.push(...checkSpecialAnchorCounts(kind, mod.anchors))
-      if (nav) p.push(...checkNav(kind, mod.nav, mod.anchors, SPECIAL_CONNECTORS[kind] ?? []))
-      const s = await glb(mod.file, SPECIAL_BUDGETS[kind])
-      if (s) {
-        p.push(...checkModuleGlb(mod.file, kind, s, mod.anchors, mod.plan?.walls.length))
-        p.push(...checkSpecialRoles(mod.file, kind, s))
-      }
-      if (mod.lightmap) await lightmap(mod.lightmap)
-      if (mod.plan !== undefined) p.push(...checkPlan(kind, mod))
-    }
-    p.push(...checkSpecialSetNav(m))
-    await load(m.hdri)
-    await character(m.character, SPECIAL_BUDGETS.character)
-    const gpu = estimateVram(gpuTextures)
-    report.vram = { textures: gpu.bytes, uniqueTextures: gpu.unique, lightmaps: lightmapBytes }
-    report.totalBytes = await dirSize(dir)
-    p.push(...checkTotal(report.totalBytes, SPECIAL_TOTAL_MAX_BYTES, 'Night City set'))
-    return report
+    if (cs) p.push(...checkCharacterGlb(c.file, cs, meta))
   }
 
   const m = raw as Manifest
@@ -1360,110 +1252,36 @@ export async function validateAssets(dir: string, profile: Profile = 'classic'):
   report.vram = { textures: gpu.bytes, uniqueTextures: gpu.unique, lightmaps: lightmapBytes }
   p.push(...checkVram(gpu.bytes, lightmapBytes))
   report.totalBytes = await dirSize(dir)
-  p.push(...checkTotal(report.totalBytes))
+  p.push(...checkTotal(report.totalBytes, TOTAL_MAX_BYTES, profile === 'horizon' ? 'Horizon set' : 'assets'))
+  if (profile === 'horizon') {
+    let classic: unknown
+    try {
+      classic = JSON.parse(await readFile(join(classicDir, 'manifest.json'), 'utf8'))
+    } catch {
+      p.push(`${join(classicDir, 'manifest.json')}: missing or invalid; the Horizon anchors cannot be compared with Classic`)
+      return report
+    }
+    p.push(...checkSameSpace(m, classic as Manifest))
+  }
   return report
 }
 
-// ── Night City (contract §14) ────────────────────────────────────────────────────────────────────
-export interface SpecialModuleJson extends ModuleJson {
-  /** World placement (contract §1: translation + yaw). */
-  placement?: { x: number; z: number; yaw: number }
-}
-export interface SpecialManifest {
-  version: 1
-  set: 'special'
-  blender: string
-  units: 'm'
-  hash: string
-  hdri: string
-  modules: Partial<Record<SpecialKind, SpecialModuleJson>>
-  character: { file: string; meta: string }
-}
-
-/** Structural validation of a Night City manifest.json (contract §14). */
-export function checkSpecialManifest(m: unknown): string[] {
+/**
+ * Contract §14: the Horizon set is the Classic office, so every module has exactly the Classic anchor ids
+ * (seats, spots, ports, consoles, the kiosk). Positions come from the same builder; ids are what the
+ * renderer and the director key on.
+ */
+export function checkSameSpace(horizon: Manifest, classic: Manifest): string[] {
   const out: string[] = []
-  if (!isObj(m)) return ['manifest: must be a JSON object']
-  if (m.version !== 1) out.push(`manifest.version: expected 1, got ${JSON.stringify(m.version)}`)
-  if (m.set !== 'special') out.push(`manifest.set: expected "special", got ${JSON.stringify(m.set)}`)
-  if (m.units !== 'm') out.push('manifest.units: must be "m"')
-  if (!isStr(m.blender) || !/^5\.2(\.|$)/.test(m.blender))
-    out.push('manifest.blender: must be a Blender 5.2.x version')
-  if (!isStr(m.hash)) out.push('manifest.hash: missing build-input hash')
-  if (!isSafeRef(m.hdri, /\.hdr$/i)) out.push('manifest.hdri: must be a relative .hdr path')
-  if (!isObj(m.modules)) return [...out, 'manifest.modules: missing']
-  for (const k of Object.keys(m.modules))
-    if (!SPECIAL_KINDS.includes(k)) out.push(`manifest.modules.${k}: unknown Night City module kind`)
-  for (const k of SPECIAL_MODULES)
-    if (m.modules[k] === undefined) out.push(`manifest.modules.${k}: missing`)
-  for (const [k, v] of Object.entries(m.modules)) {
-    if (!SPECIAL_KINDS.includes(k)) continue
-    checkModuleShape(`manifest.modules.${k}`, v, out, true, 'special')
-    if (isObj(v) && v.placement !== undefined) {
-      const pl = v.placement
-      if (!isObj(pl) || !isNum(pl.x) || !isNum(pl.z) || !isNum(pl.yaw))
-        out.push(`manifest.modules.${k}.placement: must be { x, z, yaw }`)
-    }
-  }
-  for (const k of ['hq-atrium', 'command'])
-    if (isObj(m.modules[k]) && (m.modules[k] as Record<string, unknown>).lightmap === undefined)
-      out.push(`manifest.modules.${k}.lightmap: the ${k} must be baked`)
-  if (!isObj(m.character)) out.push('manifest.character: missing')
-  else {
-    if (!isSafeRef(m.character.file, /\.glb$/i))
-      out.push('manifest.character.file: must be a relative .glb path')
-    if (!isSafeRef(m.character.meta, /\.json$/i))
-      out.push('manifest.character.meta: must be a relative .json path')
-  }
-  return out
-}
-
-export function checkSpecialAnchorCounts(kind: SpecialKind, anchors: Record<string, unknown>): string[] {
-  const ids = Object.keys(anchors)
-  return (SPECIAL_REQUIRED_ANCHORS[kind] ?? []).flatMap(([prefix, count]) => {
-    const got = ids.filter((id) => id.startsWith(prefix)).length
-    return got === count ? [] : [`${kind}: expected ${count} "${prefix}*" anchors, found ${got}`]
-  })
-}
-
-/** Contract §14: the runtime-driven nodes each module must have. */
-export function checkSpecialRoles(file: string, kind: SpecialKind, s: GlbStats): string[] {
-  const out: string[] = []
-  for (const [role, want] of SPECIAL_REQUIRED_ROLES[kind] ?? []) {
-    const got = s.roles.get(role) ?? []
-    if (typeof want === 'number') {
-      if (got.length < want) out.push(`${file}: expected at least ${want} node(s) with role "${role}", found ${got.length}`)
-    } else for (const ref of want) if (!got.includes(ref)) out.push(`${file}: no node with role "${role}" and ref "${ref}"`)
-  }
-  if (kind === 'skyline' && (s.roles.get('ad')?.length ?? 0) > 10)
-    out.push(`${file}: at most 10 ad planes (contract §14), found ${s.roles.get('ad')!.length}`)
-  return out
-}
-
-/** The placed Night City modules with nav (atrium ↔ Command Center) join into one graph (§3 merge rule). */
-export function checkSpecialSetNav(m: SpecialManifest): string[] {
-  const world: { id: string; pos: Vec2; y: number }[] = []
-  const edges: [string, string][] = []
-  for (const [kind, mod] of Object.entries(m.modules) as [string, SpecialModuleJson][]) {
-    if (!Object.keys(mod.nav.nodes).length) continue
-    const pl = mod.placement ?? { x: 0, z: 0, yaw: 0 }
-    for (const [id, n] of Object.entries(mod.nav.nodes))
-      world.push({ id: `${kind}/${id}`, pos: place(n, pl, pl.yaw), y: n.y ?? 0 })
-    for (const [a, b] of mod.nav.edges) edges.push([`${kind}/${a}`, `${kind}/${b}`])
-  }
-  for (let i = 0; i < world.length; i++)
-    for (let j = i + 1; j < world.length; j++)
-      if (
-        world[i]!.id.split('/')[0] !== world[j]!.id.split('/')[0] &&
-        dist(world[i]!.pos, world[j]!.pos) <= MERGE_EPS &&
-        Math.abs(world[i]!.y - world[j]!.y) < 0.5
+  for (const kind of [...SINGLE_MODULES, 'wing'] as const) {
+    const h = Object.keys(horizon.modules[kind]?.anchors ?? {})
+    const c = new Set(Object.keys(classic.modules?.[kind]?.anchors ?? {}))
+    const extra = h.filter((id) => !c.has(id))
+    const missing = [...c].filter((id) => !h.includes(id))
+    if (extra.length || missing.length)
+      out.push(
+        `horizon ${kind}: anchors differ from Classic (${missing.length} missing${missing.length ? `, e.g. ${missing[0]}` : ''}; ${extra.length} extra${extra.length ? `, e.g. ${extra[0]}` : ''})`,
       )
-        edges.push([world[i]!.id, world[j]!.id])
-  const comps = components(
-    world.map((w) => w.id),
-    edges,
-  )
-  return comps.length > 1
-    ? [`Night City nav: the placed modules do not join into one graph (${comps.length} parts; e.g. "${comps[1]![0]}" is cut off)`]
-    : []
+  }
+  return out
 }

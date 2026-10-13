@@ -2101,22 +2101,38 @@ describe('controller: 2D RPG mode (C-mode)', () => {
     expect(t.pixelHud.minimap).toBeNull()
   })
 
-  // C-mode-NC: Night City uses the dialogue box too, so switching 2D → Night City keeps it open.
-  it('keeps the dialogue open from 2D into Night City; 3D closes it', async () => {
+  // C-mode-H: Horizon is the Classic office with a light flavor, so it behaves exactly like 3D:
+  // switching from 2D closes the dialogue box and hides the 2D HUD.
+  it('closes the dialogue from 2D into Horizon, exactly like 3D', async () => {
     const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
     t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
-    const open = t.dialogue.vm
-    expect(open).not.toBeNull()
+    expect(t.dialogue.vm).not.toBeNull()
     t.handlers.settingsChange!({ viewMode: 'special' })
     await t.flush()
     await t.flush()
     expect(t.viewModes).toEqual(['special'])
     expect(t.pixelHud.shown.at(-1)).toBe(false)
-    expect(t.dialogue.isOpen()).toBe(true)
+    expect(t.dialogue.isOpen()).toBe(false)
+    expect(t.pixelHud.minimap).toBeNull()
+  })
+
+  // C-mode-H-labels: Horizon's calm default (nearby name tags) applies while labels is Auto; an
+  // explicit Advanced choice wins; going back to 3D restores the preset's labels.
+  it('defaults name tags to nearby in Horizon unless Advanced labels is set', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, graphicsQuality: 'high' })
+    expect(t.scene.graphics.at(-1)?.labels.mode).toBe('all')
+    t.handlers.settingsChange!({ viewMode: 'special' })
+    await t.flush()
+    expect(t.scene.graphics.at(-1)?.labels.mode).toBe('nearby')
     t.handlers.settingsChange!({ viewMode: '3d' })
     await t.flush()
+    expect(t.scene.graphics.at(-1)?.labels.mode).toBe('all')
+    t.handlers.settingsChange!({
+      viewMode: 'special',
+      graphicsAdvanced: { ...DEFAULT_SETTINGS.graphicsAdvanced, labels: 'selected' },
+    })
     await t.flush()
-    expect(t.dialogue.isOpen()).toBe(false)
+    expect(t.scene.graphics.at(-1)?.labels.mode).toBe('selected')
   })
 
   it('starts in 2D without switching (main already built the 2D scene)', async () => {
@@ -2448,7 +2464,7 @@ describe('controller: 2D movement in every view and the minimap (C-move, C-map)'
     ])
   })
 
-  // C-int-1: Night City's semantic world objects run the same commands as the desktop UI.
+  // C-int-1: semantic world objects (any scene that reports them) run the desktop UI's commands.
   it('routes semantic interactions to the workspace, the agent panel and Connect', async () => {
     const ws = workspaceBridge()
     const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {

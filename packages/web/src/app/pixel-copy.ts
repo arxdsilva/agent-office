@@ -1,5 +1,5 @@
 // Every user-facing string of the optional 2D RPG mode (plan §10.4).
-import { MODE_NAME } from './special/copy.ts'
+import { MODE_NAME } from './horizon/copy.ts'
 export const PIXEL_COPY = {
   mode: { label: 'View', office3d: '3D Office', rpg2d: '2D RPG', special: MODE_NAME },
   prompt: { talk: 'E: Talk', open: 'E: Open', read: 'E: Read' },

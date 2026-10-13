@@ -1,0 +1,33 @@
+/* Horizon (docs/horizon): the Classic office with a light flavor, so the Classic HUD and panels
+   apply as they are. Only its two cards live here: the first-visit intro and the failure card. */
+#horizon-intro,
+#horizon-failure {
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 20px 22px;
+  color: var(--text);
+}
+#horizon-failure {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+#horizon-intro::backdrop {
+  background: rgba(20, 28, 36, 0.25);
+}
+#horizon-intro h2,
+#horizon-failure h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.hz-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.hz-diag {
+  margin: 12px 0 0;
+  font-size: 12px;
+}

@@ -1,5 +1,6 @@
-// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG | Night City`
-// segmented switch (plan §9; Night City is the optional, lazy-loaded Special 3D mode). A radiogroup with roving focus; arrow keys move and pick.
+// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG | Horizon` segmented
+// switch (plan §9; Horizon is the optional, lazy-loaded light flavor of the 3D office). A
+// radiogroup with roving focus; arrow keys move and pick.
 import { PIXEL_COPY } from '../../app/pixel-copy.ts'
 import type { ViewMode } from '../../app/pixel/types.ts'
 import type { ModeToggleView } from '../../ports.ts'

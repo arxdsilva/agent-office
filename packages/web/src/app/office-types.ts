@@ -269,7 +269,7 @@ export interface Link {
 }
 
 /**
- * Semantic interactions (docs/special-3d/interaction-contract.md): world objects in every mode map
+ * Semantic interactions (docs/horizon/rendering.md): world objects in every mode map
  * to the same application commands. Renderers only report what was picked; the controller decides.
  */
 export const INTERACTION_KINDS = [

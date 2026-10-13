@@ -48,14 +48,17 @@ export const GraphicsAdvancedSchema = z.object({
   building: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 })
 export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
-/** '3d' Classic, 'pixel' 2D RPG, 'special' Night City (optional, lazy-loaded; docs/special-3d). */
+/** '3d' Classic, 'pixel' 2D RPG, 'special' Horizon (optional, lazy-loaded; docs/horizon). */
 export const VIEW_MODES = ['3d', 'pixel', 'special'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
 /** Sims-style wall visibility in the 3D modes (graphics contract §13). */
 export const WALL_MODES = ['up', 'cutaway', 'down'] as const
 export type WallMode = (typeof WALL_MODES)[number]
 const Volume = (d: number) => z.number().min(0).max(1).default(d)
-/** Night City (Special 3D) preferences; ignored by the other modes. */
+/**
+ * Horizon (the 'special' view mode) preferences. Horizon uses `introSeen` and `reducedMotion`;
+ * `camera`, `audio`, `atmosphere` and `rain` are unused (kept for compatibility: settings are additive).
+ */
 export const SpecialSettingsSchema = z.object({
   camera: z.enum(['third', 'first', 'overview']).default('third'),
   audio: z

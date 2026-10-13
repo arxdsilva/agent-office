@@ -50,8 +50,8 @@ export default defineConfig({
         'packages/web/src/adapters/dom/**',
         // Canvas2D drawing for the optional 2D RPG mode; its logic is pure in app/pixel/** (covered).
         'packages/web/src/adapters/pixel/**',
-        // Night City's three.js shells (covered by Playwright); its logic lives in app/special/**.
-        'packages/web/src/special-3d/adapters/**',
+        // Horizon's three.js shells (covered by Playwright); its logic lives in app/horizon/**.
+        'packages/web/src/horizon/adapters/**',
         'scripts/arch.mjs',
         'scripts/codex-schema-check.mjs',
         // Drives the real, logged-in provider CLIs (make verify-providers); can't run in CI.

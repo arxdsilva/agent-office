@@ -8,8 +8,7 @@ assets/previews/** filter=lfs diff=lfs merge=lfs -text
 docs/screenshots/** filter=lfs diff=lfs merge=lfs -text
 packages/web/public/assets/**/*.webp filter=lfs diff=lfs merge=lfs -text
 assets/pixel/previews/** filter=lfs diff=lfs merge=lfs -text
-packages/web/public/special3d/**/*.glb filter=lfs diff=lfs merge=lfs -text
-packages/web/public/special3d/**/*.png filter=lfs diff=lfs merge=lfs -text
-packages/web/public/special3d/**/*.webp filter=lfs diff=lfs merge=lfs -text
-packages/web/public/special3d/**/*.hdr filter=lfs diff=lfs merge=lfs -text
-assets/special3d/out/** filter=lfs diff=lfs merge=lfs -text
+packages/web/public/horizon/**/*.glb filter=lfs diff=lfs merge=lfs -text
+packages/web/public/horizon/**/*.png filter=lfs diff=lfs merge=lfs -text
+packages/web/public/horizon/**/*.webp filter=lfs diff=lfs merge=lfs -text
+packages/web/public/horizon/**/*.hdr filter=lfs diff=lfs merge=lfs -text

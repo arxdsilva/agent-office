@@ -19,6 +19,7 @@ import {
   separationPush,
   tickDue,
   type Appearance,
+  type AppearancePalette,
   type CharacterQuality,
   type ClipMeta,
   type ClipTable,
@@ -107,23 +108,11 @@ function partsOf(root: THREE.Object3D): Parts {
   return p
 }
 
-/** Outer layers of a character set's outfits (shown at every distance). */
-const OUTER = new Set(['techJacket', 'utilityVest', 'longCoat'])
-
-/**
- * Accessories shown per look; everything else stays hidden (contract §8). `extra` (optional, a
- * character set's outfit, contract §14) decides the accessories it names.
- */
-function dress(
-  parts: Parts,
-  look: Appearance | undefined,
-  far: boolean,
-  extra?: Readonly<Record<string, boolean>>,
-) {
+/** Accessories shown per look; everything else stays hidden (contract §8). */
+function dress(parts: Parts, look: Appearance | undefined, far: boolean) {
   for (const [name, o] of parts.accessories) {
     let on = false
-    if (extra && name in extra) on = extra[name]! && (OUTER.has(name) || !far)
-    else if (!look) on = name === 'hairA'
+    if (!look) on = name === 'hairA'
     else if (name.startsWith('hair')) on = name === look.hairStyle
     else if (name === 'glasses') on = look.glasses && !far
     else if (name === 'headset') on = look.headset && !far
@@ -181,8 +170,6 @@ export const DIM_OPACITY = 0.3
 
 interface Agent {
   id: string
-  /** The set's outfit for this agent (character-cyber), if any. */
-  outfit: CharacterLook | undefined
   holder: THREE.Group
   model: THREE.Object3D
   parts: Parts
@@ -208,16 +195,10 @@ interface Agent {
   shirt: THREE.Color
 }
 
-/** A character set's per-agent outfit (Night City): accessories it names and an `accent` tint. */
-export interface CharacterLook {
-  accent?: number
-  accessories?: Record<string, boolean>
-}
-
 export interface CharacterSystemOptions {
   quality?: GraphicsQuality
-  /** Optional, additive: per-agent outfit for sets with extra accessories (character-cyber). */
-  look?: (id: string) => CharacterLook | undefined
+  /** The clothes palette (a scene flavor's, e.g. Horizon's light outfits); Classic by default. */
+  appearance?: AppearancePalette
   /** Needed only to bake impostors at load; without it, over-budget agents fall back to LOD1 at 10 Hz. */
   renderer?: THREE.WebGLRenderer
 }
@@ -259,14 +240,14 @@ export class CharacterSystem {
   private mask = new Uint8Array(64)
   private readonly scratch: number[] = []
 
-  private readonly lookOf: ((id: string) => CharacterLook | undefined) | undefined
+  private readonly palette: AppearancePalette | undefined
 
   constructor(
     private readonly scene: THREE.Scene,
     assets: CharacterAssets,
     opts: CharacterSystemOptions = {},
   ) {
-    this.lookOf = opts.look
+    this.palette = opts.appearance
     this.root.name = 'characters'
     scene.add(this.root)
     this.meta = assets.meta
@@ -340,7 +321,7 @@ export class CharacterSystem {
     const id = plan.agent.id
     let a = this.agents.get(id)
     if (!a) a = this.create(id, plan.teamOf)
-    else if (paletteKey(appearanceOf(id, plan.teamOf)) !== a.lookKey) this.retint(a, plan.teamOf)
+    else if (paletteKey(this.lookFor(id, plan.teamOf)) !== a.lookKey) this.retint(a, plan.teamOf)
     a.activity = plan.intent.activity
     if (plan.steps) a.mover.run(plan.steps)
   }
@@ -499,10 +480,9 @@ export class CharacterSystem {
     for (const o of parts.lod1) o.visible = false
     const baseMats = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
     for (const mesh of parts.meshes) baseMats.set(mesh, mesh.material)
-    const look = appearanceOf(id, teamOf)
+    const look = this.lookFor(id, teamOf)
     const a: Agent = {
       id,
-      outfit: this.lookOf?.(id),
       holder,
       model,
       parts,
@@ -526,7 +506,7 @@ export class CharacterSystem {
       shirt: new THREE.Color(look.shirt),
     }
     this.tint(a)
-    dress(parts, look, false, a.outfit?.accessories)
+    dress(parts, look, false)
     this.applyShadows(a)
     this.agents.set(id, a)
     this.targets = undefined
@@ -539,26 +519,12 @@ export class CharacterSystem {
       const one = (m: THREE.Material) => {
         if (m instanceof SlotMaterial) {
           // Merged body: one shared material per palette.
-          const accent = a.outfit?.accent
-          const key = accent === undefined ? `body:${a.lookKey}` : `body:${a.lookKey}:${accent}`
-          const t = this.tints.acquireKeyed(key, () => {
+          const t = this.tints.acquireKeyed(`body:${a.lookKey}`, () => {
             const mat = m.clone()
             paintSlots(mat, this.bodyLayout, (slot) =>
-              isTintSlot(slot) ? slotColor(look, slot) : slot === 'accent' ? accent : undefined,
+              isTintSlot(slot) ? slotColor(look, slot) : undefined,
             )
             return mat
-          })
-          a.tinted.push(t)
-          return t
-        }
-        const accent = a.outfit?.accent
-        if (m.name === 'accent' && accent !== undefined) {
-          // The outfit's accent (emissive trims): base and emissive colour per agent.
-          const t = this.tints.acquireKeyed(`accent:${m.uuid}:${accent}`, () => {
-            const c = m.clone() as THREE.MeshStandardMaterial
-            c.color?.setHex(accent)
-            if (c.emissive && c.emissive.getHex() !== 0) c.emissive.setHex(accent)
-            return c
           })
           a.tinted.push(t)
           return t
@@ -574,15 +540,20 @@ export class CharacterSystem {
     }
   }
 
+  /** The agent's look in this system's palette (Classic unless a flavor gave one). */
+  private lookFor(id: string, teamOf: string | undefined): Appearance {
+    return appearanceOf(id, teamOf, this.palette)
+  }
+
   private retint(a: Agent, teamOf: string | undefined) {
     a.fade.end()
     for (const m of a.tinted) this.tints.release(m)
     a.tinted = []
-    a.look = appearanceOf(a.id, teamOf)
+    a.look = this.lookFor(a.id, teamOf)
     a.lookKey = paletteKey(a.look)
     a.shirt.setHex(a.look.shirt)
     this.tint(a)
-    dress(a.parts, a.look, a.far, a.outfit?.accessories)
+    dress(a.parts, a.look, a.far)
   }
 
   private applyShadows(a: Agent) {
@@ -597,7 +568,7 @@ export class CharacterSystem {
     a.far = far
     for (const o of a.parts.base) o.visible = !far
     for (const o of a.parts.lod1) o.visible = far
-    dress(a.parts, a.look, far, a.outfit?.accessories)
+    dress(a.parts, a.look, far)
   }
 
   private setImpostor(a: Agent, on: boolean) {

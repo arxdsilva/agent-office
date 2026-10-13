@@ -41,7 +41,7 @@ def build(g, A, P, name, t, rng):
         for (z0, z1) in ((1.2, 7.0), (11.0, 16.8)):
             zc, L = (z0 + z1) / 2, z1 - z0
             with g.at(s * 2.45, zc, math.pi / 2):
-                F.planter(g, P, L, 0.9, 0.5, rng, kind='mixed', color='#2f2f2f', density=2.6)
+                F.planter(g, P, L, 0.9, 0.5, rng, kind='mixed', color=t.get('planter', '#2f2f2f'), density=2.6)
             # small tree in each planter
             F.tree(g, P, (s * 2.5, 0.48, zc + rng.uniform(-1.2, 1.2)), 2.3, rng, crown=0.75, leaf_size=0.2)
             # bench on the inner face
@@ -51,6 +51,9 @@ def build(g, A, P, name, t, rng):
             g.box_b(P['metal'], s * 1.77 - 0.17, s * 1.77 + 0.17, 0.0, 0.42, z1 - 0.56, z1 - 0.5, bevel=0.003)
             g.collider(min(s * 1.55, s * 2.9), max(s * 1.55, s * 2.9), z0, z1, 0, 0.6)
             g.light('point', (s * 2.45, 0.7, zc), radius=0.3, power=12, kelvin=3000)
+
+    if t['decor'].get('wayfinding'):  # contract §14 (Horizon): a centre light line down the boardwalk
+        g.box_b(P['line'], -0.015, 0.015, 0.012, 0.015, 0.4, 17.6, bevel=0)
 
     g.room('street', 'Main Street', -3, 0, 3, 18, floor='wood')
     # nav: spine + connectors (contract §3)

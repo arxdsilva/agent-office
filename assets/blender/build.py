@@ -2,11 +2,13 @@
 
   Blender -b --factory-startup --python assets/blender/build.py -- --out <workdir> --quality draft|final
           [--modules atrium,street,garden,cap,wing:terracotta,…|all] [--previews <dir>] [--no-bake] [--plan-only]
+          [--set classic|horizon]
 
 For every module: build geometry → objects → lights → (bake lightmap) → export <slug>.glb and
 <slug>.lightmap.png, plus <slug>.json (its manifest fragment) and <slug>.stats.json.
 With --previews it renders Eevee stills instead of baking/exporting. With --plan-only it only runs the
 module builder and writes <slug>.plan.json ({"plan": …}, contract §11): no objects, bake or export.
+--set horizon builds the same modules with the Horizon palettes (themes.HORIZON / HORIZON_HOUSE, contract §14).
 """
 import argparse
 import importlib
@@ -44,6 +46,7 @@ def parse(argv):
     p.add_argument('--previews', default=None)
     p.add_argument('--no-bake', action='store_true')
     p.add_argument('--plan-only', action='store_true')
+    p.add_argument('--set', dest='asset_set', default='classic', choices=['classic', 'horizon'])
     a = p.parse_args(argv)
     a.modules = ALL if a.modules == 'all' else [m.strip() for m in a.modules.split(',') if m.strip()]
     for m in a.modules:
@@ -56,13 +59,13 @@ def slug(spec):
     return spec.replace(':', '-')
 
 
-def make(spec):
+def make(spec, asset_set='classic'):
     """Build a module into a fresh scene. Returns (kind, theme_name, theme, geo, anchors, info, objs)."""
     scene.reset_scene()
     materials.reset()
     textures.reset()
     kind, _, theme_name = spec.partition(':')
-    theme = themes.THEMES[theme_name] if kind == 'wing' else themes.HOUSE
+    theme = themes.theme_for(asset_set, kind, theme_name)
     P = themes.palette(theme)
     g = geometry.Geo()
     A = anchors.Anchors(g, PREFIX[kind])
@@ -81,15 +84,17 @@ def make(spec):
         for v in batch.bm.verts:
             v.co.x = min(max(v.co.x, b['minX'] + inset), b['maxX'] - inset)
             v.co.y = min(max(v.co.y, -(b['maxZ'] - inset)), -(b['minZ'] + inset))
+    _scale_lights(g, theme)
     col = scene.new_collection(slug(spec))
     objs = export.create_objects(g, col, slug(spec))
     lcol = scene.new_collection('lights')
     lighting.add_lights(g.lights, lcol)
-    lighting.setup_world(**info.get('sky', {}))
+    lighting.setup_world(**_scale_sky(info.get('sky', {}), theme))
     objs['context'] = []
     if hasattr(mod, 'context'):
         cg = geometry.Geo()
         mod.context(cg, P)
+        _scale_lights(cg, theme)
         ccol = scene.new_collection('bake-context')
         c = export.create_objects(cg, ccol, 'context')
         objs['context'] = c['static'] + c['ceiling'] + c['glass'] + c['roofglass']
@@ -98,9 +103,28 @@ def make(spec):
     return kind, theme_name, theme, g, A, info, objs, P
 
 
-def build_one(spec, quality, out, bake=True):
+def _scale_lights(g, theme):
+    """Optional `light_scale` (Horizon): brighter lamps. Classic themes have none, so nothing changes."""
+    k = theme.get('light_scale')
+    if k is not None:
+        for _, _, p in g.lights:
+            p['power'] = p['power'] * k
+
+
+def _scale_sky(sky, theme):
+    """Optional `sky_scale` (Horizon): a brighter daylight sky and sun (setup_world's defaults when unset)."""
+    k = theme.get('sky_scale')
+    if k is None:
+        return sky
+    sky = dict(sky)
+    sky['sun_strength'] = sky.get('sun_strength', 3.0) * k
+    sky['sky_strength'] = sky.get('sky_strength', 0.35) * k
+    return sky
+
+
+def build_one(spec, quality, out, bake=True, asset_set='classic'):
     t0 = time.time()
-    kind, theme_name, theme, g, A, info, objs, P = make(spec)
+    kind, theme_name, theme, g, A, info, objs, P = make(spec, asset_set)
     name = slug(spec)
     glb = f'{name}.glb'
     png = f'{name}.lightmap.png'
@@ -143,14 +167,14 @@ def build_one(spec, quality, out, bake=True):
     print(f'[asset] {spec}: {stats["triangles"]} tris, {stats["draw_calls"]} draws, {stats["seconds"]} s', flush=True)
 
 
-def plan_one(spec, out):
+def plan_one(spec, out, asset_set='classic'):
     """Run the module builder only and write its floor plan (contract §11)."""
     t0 = time.time()
     scene.reset_scene()
     materials.reset()
     textures.reset()
     kind, _, theme_name = spec.partition(':')
-    theme = themes.THEMES[theme_name] if kind == 'wing' else themes.HOUSE
+    theme = themes.theme_for(asset_set, kind, theme_name)
     P = themes.palette(theme)
     g = geometry.Geo()
     A = anchors.Anchors(g, PREFIX[kind])
@@ -163,8 +187,8 @@ def plan_one(spec, out):
           f'in {time.time() - t0:.1f} s', flush=True)
 
 
-def previews_one(spec, quality, out):
-    kind, theme_name, theme, g, A, info, objs, P = make(spec)
+def previews_one(spec, quality, out, asset_set='classic'):
+    kind, theme_name, theme, g, A, info, objs, P = make(spec, asset_set)
     export.tag_unbaked(objs)
     for o in objs['collider']:
         o.hide_render = True
@@ -176,13 +200,13 @@ def main():
     for spec in a.modules:
         if a.previews:
             os.makedirs(a.previews, exist_ok=True)
-            previews_one(spec, a.quality, a.previews)
+            previews_one(spec, a.quality, a.previews, a.asset_set)
         elif a.plan_only:
             os.makedirs(a.out, exist_ok=True)
-            plan_one(spec, a.out)
+            plan_one(spec, a.out, a.asset_set)
         else:
             os.makedirs(a.out, exist_ok=True)
-            build_one(spec, a.quality, a.out, bake=not a.no_bake)
+            build_one(spec, a.quality, a.out, bake=not a.no_bake, asset_set=a.asset_set)
 
 
 if __name__ == '__main__':

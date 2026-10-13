@@ -233,6 +233,19 @@ describe('effectiveGraphics', () => {
     expect(min.labels).toEqual({ mode: 'nearby', nearbyM: 15 })
   })
 
+  // Q-eff-flavor: a view's calm default (Horizon: nearby tags) applies only while labels is Auto.
+  it('Q-eff-flavor: labelsDefault replaces the preset label mode only when labels is Auto', () => {
+    expect(effectiveGraphics(input({ labelsDefault: 'nearby' })).labels).toEqual({
+      mode: 'nearby',
+      nearbyM: 30,
+    })
+    expect(
+      effectiveGraphics(input({ labelsDefault: 'nearby', advanced: adv({ labels: 'all' }) })).labels
+        .mode,
+    ).toBe('all')
+    expect(effectiveGraphics(input({})).labels.mode).toBe('all')
+  })
+
   it('Q-eff-2: each advanced override wins over the preset', () => {
     const e = effectiveGraphics(
       input({

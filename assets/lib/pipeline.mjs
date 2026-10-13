@@ -1,5 +1,5 @@
-// Shared asset-pipeline helpers (docs/graphics-contract.md §6, §6b, §13), used by the classic build
-// (assets/build.mjs) and the Night City build (assets/special3d/build.mjs, contract §14).
+// Shared asset-pipeline helpers (docs/graphics-contract.md §6, §6b, §13), used by assets/build.mjs for both
+// asset sets: Classic (public/assets) and Horizon (public/horizon, contract §14).
 //
 // Everything here is moved verbatim from assets/build.mjs; the only additions are parameters with the old
 // values as defaults (the Blender version, the pins file, the cache dir), so the classic build behaves

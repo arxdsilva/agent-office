@@ -2,6 +2,9 @@
 // Asset pipeline orchestrator (see docs/graphics-contract.md).
 //
 //   node assets/build.mjs --quality final|draft   headless Blender build → gltf-transform → public/assets
+//   node assets/build.mjs --set horizon [--quality …]   the same modules in the Horizon palettes (contract §14)
+//                                                 → public/horizon only (the character is copied from Classic);
+//                                                 --set horizon also works with --test, --previews and --verify
 //   node assets/build.mjs --test                  Blender-side asset tests (+ the character's, when present)
 //   node assets/build.mjs --previews              Eevee stills of every module → assets/previews/
 //   node assets/build.mjs --verify                re-check the published assets (validator, budgets, anchors, VRAM)
@@ -14,7 +17,7 @@
 //                                                 and lightmaps untouched
 //
 // Options: --modules atrium,street,garden,cap,wing:terracotta,…  (default: all)   --jobs N (parallel Blender
-// processes; default 3 for draft, 1 for final and previews)   --skip-character
+// processes; default 3 for draft, 1 for final and previews)   --skip-character   --set classic|horizon
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,6 +48,20 @@ import {
 } from './lib/pipeline.mjs';
 
 const PUBLIC = path.join(ROOT, 'packages', 'web', 'public', 'assets');
+/** Contract §14: the Horizon set (the Classic modules in the Horizon palettes) has its own public dir. */
+const HORIZON_PUBLIC = path.join(ROOT, 'packages', 'web', 'public', 'horizon');
+/** Horizon previews kept for review, by name → source shot (its Classic pair is assets/previews/<source>.png). */
+const HORIZON_PREVIEWS = {
+  atrium: 'atrium-entrance',
+  hub: 'atrium-hub',
+  street: 'street-view',
+  'wing-terracotta': 'wing-terracotta-interior',
+  'wing-nordic': 'wing-nordic-interior',
+  'meeting-room': 'wing-terracotta-meeting',
+  kitchen: 'wing-terracotta-kitchen',
+  library: 'wing-terracotta-library',
+};
+const HORIZON_PREVIEW_MODULES = ['atrium', 'street', 'wing:terracotta', 'wing:nordic'];
 const OUT = path.join(ASSETS, 'out');
 /** Raw Blender exports of the last final build (full-quality JPEG textures, 8-bit PNG lightmaps). */
 const RAW = path.join(CACHE, 'work-final');
@@ -63,7 +80,7 @@ const BUDGETS = {
 
 // ---------------------------------------------------------------------------------------------- args
 function parseArgs(argv) {
-  const a = { quality: 'final', modules: ALL_MODULES, jobs: 0, mode: 'build', skipCharacter: false, visual: false };
+  const a = { quality: 'final', modules: null, jobs: 0, mode: 'build', skipCharacter: false, visual: false, set: 'classic' };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--quality') a.quality = argv[++i];
@@ -77,9 +94,13 @@ function parseArgs(argv) {
     else if (k === '--plan-only') a.mode = 'plan';
     else if (k === '--visual') a.visual = true;
     else if (k === '--skip-character') a.skipCharacter = true;
+    else if (k === '--set') a.set = argv[++i];
     else throw new Error(`unknown argument ${k}`);
   }
   if (!['final', 'draft'].includes(a.quality)) throw new Error(`--quality must be final|draft`);
+  if (!['classic', 'horizon'].includes(a.set)) throw new Error(`--set must be classic|horizon`);
+  if (a.set === 'horizon' && ['repack', 'plan', 'pin'].includes(a.mode)) throw new Error(`--set horizon supports build, --test, --previews and --verify only`);
+  a.modules ??= a.set === 'horizon' && a.mode === 'previews' ? HORIZON_PREVIEW_MODULES : ALL_MODULES;
   // GPU memory (unified, shared with any open Blender): final bakes and Cycles previews run one at a time.
   if (!a.jobs) a.jobs = a.mode === 'plan' ? 4 : a.quality === 'final' || a.mode === 'previews' ? 1 : 3;
   for (const m of a.modules) if (!ALL_MODULES.includes(m)) throw new Error(`unknown module ${m}`);
@@ -87,18 +108,24 @@ function parseArgs(argv) {
 }
 
 // ---------------------------------------------------------------------------------------------- hash
-function inputHash(quality, pins) {
+function inputHash(quality, pins, set = 'classic') {
   const h = createHash('sha256');
   h.update(`quality=${quality}\n`);
-  // The Night City scripts (blender/special3d, contract §14) are not inputs of the classic set.
-  const special = path.join(BLENDER_DIR, 'special3d') + path.sep;
-  for (const f of walk(BLENDER_DIR).filter((f) => !f.startsWith(special)).sort()) {
+  if (set !== 'classic') h.update(`set=${set}\n`);
+  for (const f of walk(BLENDER_DIR).sort()) {
     h.update(`${path.relative(ASSETS, f).split(path.sep).join('/')}\0${sha256(fs.readFileSync(f))}\n`);
   }
   for (const [file, sum] of Object.entries(pins.sha256).sort(([a], [b]) => a.localeCompare(b))) h.update(`${file}\0${sum}\n`);
   h.update(`build.mjs\0${sha256(fs.readFileSync(fileURLToPath(import.meta.url)))}\n`);
   h.update(`lib/pipeline.mjs\0${sha256(fs.readFileSync(path.join(ASSETS, 'lib', 'pipeline.mjs')))}\n`);
   return h.digest('hex');
+}
+
+/** Replace `dir` with exactly the stage (the Horizon set: public/horizon only; its PNG sources stay in the cache). */
+function publishTo(stage, dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  fs.cpSync(stage, dir, { recursive: true });
 }
 
 /** Publish a staged build: public/assets gets exactly the stage; assets/out|draft also keeps the PNG lightmap sources. */
@@ -113,7 +140,7 @@ function publish(stage, pngStage, outDir) {
 }
 
 // -------------------------------------------------------------------------------------------- verify
-async function verify(tools, dir) {
+async function verify(tools, dir, profile = 'classic') {
   const validator = (await import('gltf-validator')).default;
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const problems = [];
@@ -143,12 +170,12 @@ async function verify(tools, dir) {
     if (b?.tris && info.tris > b.tris) problems.push(`${f.file}: ${info.tris} triangles > ${b.tris}`);
     if (b?.draws && info.draws > b.draws) problems.push(`${f.file}: ${info.draws} draw calls > ${b.draws}`);
   }
-  if (total > BUDGETS.total) problems.push(`public assets total ${total} bytes > ${BUDGETS.total}`);
+  if (total > BUDGETS.total) problems.push(`${profile === 'horizon' ? 'Horizon set' : 'public assets'} total ${total} bytes > ${BUDGETS.total}`);
   console.table(rows);
   console.log(`[asset] total ${(total / 1e6).toFixed(2)} MB (${(total / 2 ** 20).toFixed(1)} MiB)`);
   // The CI validator (assets/validate.ts): texture hashes, lightmap tiers, VRAM estimate (AV-1..4).
   const { validateAssets } = await import('./validate.ts');
-  const report = await validateAssets(dir);
+  const report = await validateAssets(dir, profile);
   const MiB = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
   const lm = report.vram.lightmaps;
   console.log(`[asset] GPU texture estimate (RGBA8 × 4/3): glb textures ${MiB(report.vram.textures)} in ${report.vram.uniqueTextures} unique; + lightmaps full ${MiB(report.vram.textures + lm.full)}, half ${MiB(report.vram.textures + lm.half)}, quarter ${MiB(report.vram.textures + lm.quarter)}`);
@@ -243,18 +270,20 @@ async function visual(tools) {
 
 async function build(args) {
   const t0 = Date.now();
+  const horizon = args.set === 'horizon';
   const blender = await findBlender();
   const { pins, hdri } = await ensureSources();
-  const hash = inputHash(args.quality, pins);
+  const hash = inputHash(args.quality, pins, args.set);
   const outDir = args.quality === 'final' ? path.join(ASSETS, 'out') : path.join(ASSETS, 'draft');
-  const work = path.join(CACHE, `work-${args.quality}`);
+  const work = path.join(CACHE, horizon ? `work-horizon-${args.quality}` : `work-${args.quality}`);
   const logs = path.join(work, 'logs');
   fs.mkdirSync(logs, { recursive: true });
-  console.log(`[asset] Blender ${blender.version}, quality ${args.quality}, ${args.modules.length} module(s), hash ${hash.slice(0, 12)}`);
+  console.log(`[asset] Blender ${blender.version}, set ${args.set}, quality ${args.quality}, ${args.modules.length} module(s), hash ${hash.slice(0, 12)}`);
+  const setArgs = horizon ? ['--set', 'horizon'] : [];
 
   await pool(args.modules, args.jobs, async (m) => {
     const t = Date.now();
-    await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--out', work, '--quality', args.quality, '--modules', m]), {
+    await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--out', work, '--quality', args.quality, '--modules', m, ...setArgs]), {
       logFile: path.join(logs, `${moduleSlug(m)}.log`),
     });
     console.log(`[asset] ${m} done in ${((Date.now() - t) / 1000).toFixed(0)} s`);
@@ -262,7 +291,12 @@ async function build(args) {
 
   let character = null;
   const charScript = path.join(BLENDER_DIR, 'modules', 'character.py');
-  if (!args.skipCharacter && fs.existsSync(charScript)) {
+  // Contract §14: Horizon uses the Classic character (its outfits are a runtime tint), copied, not rebaked.
+  const classicChar = ['character.glb', 'character.json'].map((f) => path.join(PUBLIC, f));
+  if (horizon && !args.skipCharacter) {
+    if (!classicChar.every((f) => fs.existsSync(f))) throw new Error('the Horizon set copies the Classic character: build public/assets first (make assets)');
+    character = 'classic';
+  } else if (!args.skipCharacter && fs.existsSync(charScript)) {
     try {
       const t = Date.now();
       await run(blender.bin, blenderArgs(charScript, ['--out', work, '--quality', args.quality]), { logFile: path.join(logs, 'character.log') });
@@ -278,7 +312,9 @@ async function build(args) {
   // Merge module fragments (a partial --modules build reuses earlier fragments from the same work dir).
   const modules = mergeFragments(work, ALL_MODULES, THEMES);
 
-  const manifest = { version: 1, blender: blender.version, units: 'm', hash, hdri: 'hdri/office.hdr', modules };
+  const manifest = horizon
+    ? { version: 1, set: 'horizon', blender: blender.version, units: 'm', hash, hdri: 'hdri/office.hdr', modules }
+    : { version: 1, blender: blender.version, units: 'm', hash, hdri: 'hdri/office.hdr', modules };
   if (character) manifest.character = { file: 'character.glb', meta: 'character.json' };
 
   // Optimize into a staging dir, then publish to public/assets and assets/out|draft.
@@ -296,13 +332,23 @@ async function build(args) {
     lm.variants = await lightmapTiers(tools, path.join(work, lm.file), stage, base);
     lm.file = lm.variants.full;
   }
-  if (character) {
+  if (character === 'classic') {
+    // The published Classic files are already optimized: copy them byte for byte.
+    fs.copyFileSync(classicChar[0], path.join(stage, 'character.glb'));
+    fs.copyFileSync(classicChar[1], path.join(stage, 'character.json'));
+  } else if (character) {
     await optimizeGlb(tools, path.join(work, 'character.glb'), path.join(stage, 'character.glb'), { skinned: true });
     fs.copyFileSync(path.join(work, 'character.json'), path.join(stage, 'character.json'));
   }
   fs.copyFileSync(hdri, path.join(stage, 'hdri', 'office.hdr'));
   fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
+  if (horizon) {
+    publishTo(stage, HORIZON_PUBLIC);
+    console.log(`[asset] published ${walk(stage).length} files to ${path.relative(ROOT, HORIZON_PUBLIC)} in ${((Date.now() - t0) / 1000).toFixed(0)} s (PNG lightmap sources: ${path.relative(ROOT, pngStage)})`);
+    await verify(tools, HORIZON_PUBLIC, 'horizon');
+    return;
+  }
   publish(stage, pngStage, outDir);
   console.log(`[asset] published ${walk(stage).length} files to ${path.relative(ROOT, PUBLIC)} and ${path.relative(ROOT, outDir)} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   await verify(tools, PUBLIC);
@@ -427,12 +473,16 @@ async function planOnly(args) {
   console.log(`[asset] plan-only done in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 }
 
-async function test() {
+async function test(args) {
   const blender = await findBlender();
   await ensureSources();
-  const work = path.join(CACHE, 'work-test');
+  const horizon = args.set === 'horizon';
+  const work = path.join(CACHE, horizon ? 'work-horizon-test' : 'work-test');
   fs.mkdirSync(work, { recursive: true });
-  await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'tests', 'test_modules.py'), []), { logFile: path.join(work, 'test_modules.log') });
+  await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'tests', 'test_modules.py'), horizon ? ['--set', 'horizon'] : []), {
+    logFile: path.join(work, 'test_modules.log'),
+  });
+  if (horizon) return void console.log('[asset] Horizon tests ok (the character is the Classic one)');
   const charTest = path.join(BLENDER_DIR, 'tests', 'test_character.py');
   if (fs.existsSync(charTest)) await run(blender.bin, blenderArgs(charTest, []), { logFile: path.join(work, 'test_character.log') });
   else console.warn('[asset] WARN tests/test_character.py not found; skipped');
@@ -442,29 +492,40 @@ async function test() {
 async function previews(args) {
   const blender = await findBlender();
   await ensureSources();
-  const out = path.join(ASSETS, 'previews');
-  const logs = path.join(CACHE, 'work-previews');
+  const horizon = args.set === 'horizon';
+  // Horizon: every shot renders into the cache; only the comparison shots (HORIZON_PREVIEWS) are kept.
+  const logs = path.join(CACHE, horizon ? 'work-horizon-previews' : 'work-previews');
+  const out = horizon ? path.join(logs, 'shots') : path.join(ASSETS, 'previews');
   fs.mkdirSync(out, { recursive: true });
   fs.mkdirSync(logs, { recursive: true });
   await pool(args.modules, args.jobs, async (m) => {
-    await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--previews', out, '--quality', args.quality, '--modules', m]), {
+    await run(blender.bin, blenderArgs(path.join(BLENDER_DIR, 'build.py'), ['--previews', out, '--quality', args.quality, '--modules', m, ...(horizon ? ['--set', 'horizon'] : [])]), {
       logFile: path.join(logs, `${moduleSlug(m)}.log`),
     });
   });
+  if (horizon) {
+    const keep = path.join(ASSETS, 'previews', 'horizon');
+    fs.mkdirSync(keep, { recursive: true });
+    for (const [name, src] of Object.entries(HORIZON_PREVIEWS))
+      if (fs.existsSync(path.join(out, `${src}.png`))) fs.copyFileSync(path.join(out, `${src}.png`), path.join(keep, `${name}.png`));
+    console.log(`[asset] Horizon previews in ${path.relative(ROOT, keep)} (Classic pairs: assets/previews/<source shot>.png)`);
+    return;
+  }
   console.log(`[asset] previews in ${path.relative(ROOT, out)}`);
 }
 
 const args = parseArgs(process.argv.slice(2));
 try {
   if (args.mode === 'build') await build(args);
-  else if (args.mode === 'test') await test();
+  else if (args.mode === 'test') await test(args);
   else if (args.mode === 'previews') await previews(args);
   else if (args.mode === 'pin') await ensureSources({ pin: true });
   else if (args.mode === 'repack') await repack();
   else if (args.mode === 'plan') await planOnly(args);
   else if (args.mode === 'verify') {
-    await verify(await gltfTools(), PUBLIC);
-    if (args.visual) await visual(await gltfTools());
+    if (args.set === 'horizon') await verify(await gltfTools(), HORIZON_PUBLIC, 'horizon');
+    else await verify(await gltfTools(), PUBLIC);
+    if (args.visual && args.set === 'classic') await visual(await gltfTools());
   }
 } catch (e) {
   console.error(`[asset] ERROR ${e.message}`);

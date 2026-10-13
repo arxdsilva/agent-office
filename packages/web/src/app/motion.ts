@@ -252,30 +252,58 @@ export interface Appearance {
   badge?: number
 }
 const SKINS = [0xf6d5c3, 0xeac0a0, 0xd8a47f, 0xb57d5a, 0x8d5a3b, 0x5f3a24]
-const SHIRTS = [
-  0x3b6ea5, 0xc8553d, 0x5b8c5a, 0xe0a339, 0x7a5ca8, 0x2f9e9a, 0xd96c8a, 0x404a59, 0xf2efe9,
-  0x8b3a3a, 0x4f7cc9, 0x9aa64b,
-]
-const PANTS = [0x2c3440, 0x3a3a3a, 0x5c4a3a, 0x6b7a8f, 0xbfae8e, 0x22252b]
 const HAIRS = [0x1f1a17, 0x3b2a1e, 0x6b4a2b, 0xa8763e, 0xd9c08c, 0x8a8a8a, 0x9c3b2a]
 const STYLES: HairStyle[] = ['hairA', 'hairB', 'hairC', 'hairD']
 
+/** The clothes a view dresses its people in (skin, hair and accessories are the person's own). */
+export interface AppearancePalette {
+  shirts: readonly number[]
+  pants: readonly number[]
+}
+
+export const CLASSIC_APPEARANCE: AppearancePalette = {
+  shirts: [
+    0x3b6ea5, 0xc8553d, 0x5b8c5a, 0xe0a339, 0x7a5ca8, 0x2f9e9a, 0xd96c8a, 0x404a59, 0xf2efe9,
+    0x8b3a3a, 0x4f7cc9, 0x9aa64b,
+  ],
+  pants: [0x2c3440, 0x3a3a3a, 0x5c4a3a, 0x6b7a8f, 0xbfae8e, 0x22252b],
+}
+
+/**
+ * Horizon (docs/horizon/art-direction.md): whites, pale greys and the six wing accents (peach, sky,
+ * sage, mint, lilac, sand-gold) as light tints; trousers in light greys and sand.
+ */
+export const HORIZON_APPEARANCE: AppearancePalette = {
+  shirts: [
+    0xf7f7f4, 0xeceff1, 0xdde3e8, 0xcfd7de, 0xf5c4ad, 0xa9d4f2, 0xbcd5b4, 0x9fe0d0, 0xc9bdf3,
+    0xe8cf94, 0xfaf3ea, 0xe4e9f2,
+  ],
+  pants: [0xc8cdd2, 0xb9c2ca, 0xd8cfc0, 0xcdc2ad, 0xe3e0da, 0xbfc6cc],
+}
+
 const pick = <T>(xs: readonly T[], h: number): T => xs[h % xs.length]!
 
-/** Seeded look for an agent id (and its parent's id, for the team badge). */
-export function appearanceOf(id: string, teamOf?: string): Appearance {
+/**
+ * Seeded look for an agent id (and its parent's id, for the team badge). `palette` picks the
+ * clothes (Classic by default); the same id keeps its skin, hair and accessories in every palette.
+ */
+export function appearanceOf(
+  id: string,
+  teamOf?: string,
+  palette: AppearancePalette = CLASSIC_APPEARANCE,
+): Appearance {
   const a = hash32(id)
   const b = hash32(`${id}#look`)
   const look: Appearance = {
     skin: pick(SKINS, a),
-    shirt: pick(SHIRTS, a >>> 8),
-    pants: pick(PANTS, a >>> 16),
+    shirt: pick(palette.shirts, a >>> 8),
+    pants: pick(palette.pants, a >>> 16),
     hair: pick(HAIRS, a >>> 24),
     hairStyle: pick(STYLES, b),
     glasses: (b >>> 8) % 100 < 30,
     headset: (b >>> 16) % 100 < 15,
   }
-  if (teamOf) look.badge = appearanceOf(teamOf).shirt
+  if (teamOf) look.badge = appearanceOf(teamOf, undefined, palette).shirt
   return look
 }
 

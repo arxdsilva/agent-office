@@ -416,7 +416,7 @@ describe('SceneHost: 2D zoom and run (HS-7)', () => {
     expect(made[1]!.calls.find((c) => c.name === 'zoomBy')?.args).toEqual([-1])
   })
 
-  // HS-11: semantic interactions (Night City terminals, kiosks) reach the controller after a switch.
+  // HS-11: semantic interactions (terminals, kiosks) reach the controller after a switch.
   it('HS-11 re-attaches onPickInteraction to every new scene', async () => {
     const { host, made } = setup()
     const hits: unknown[] = []

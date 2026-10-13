@@ -2,7 +2,7 @@
 @import './styles/session.css';
 @import './styles/library.css';
 @import './styles/workspace.css';
-@import './styles/special.css';
+@import './styles/horizon.css';
 
 :root {
   --bg: #eef0f3;

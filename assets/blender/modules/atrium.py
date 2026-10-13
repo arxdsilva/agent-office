@@ -26,6 +26,7 @@ def build(g, A, P, name, t, rng):
     _plaza(g, A, P, t, rng)
     _murals(g, A, P, t, rng)
     _project_spaces(g, A, P, t, rng)
+    _light_lines(g, P, t)
     _nav(g, A)
     _rooms(g)
     return dict(
@@ -67,7 +68,7 @@ def _shell(g, A, P, t, rng):
     with g.at(-32.85, -5.2, math.pi / 2):
         F.living_wall(g, P, 17.0, 5.6, rng, y0=0.7, density=0.55)
     with g.at(-32.4, -13.7, math.pi / 2):
-        F.planter(g, P, 17.0, 0.8, 0.55, rng, kind='fern', color='#2f2f2f', density=0.7)
+        F.planter(g, P, 17.0, 0.8, 0.55, rng, kind='fern', color=t.get('planter', '#2f2f2f'), density=0.7)
     g.collider(-32.85, -31.95, -22.3, -5.1, 0, 3)
 
 
@@ -131,7 +132,7 @@ def _elevators_reception(g, A, P, t, rng):
             h = math.atan2(-math.cos(ar), -math.sin(ar))
             A.spot(f'spot:reception:{k}', x, z, h, room='reception', approach=-0.6, hubs=[])
         with g.at(0, -0.75):
-            F.task_chair(g, P, color='#2b2b2b')
+            F.task_chair(g, P, color=t.get('chair_dark', '#2b2b2b'))
     g.collider(-20.7, -16.3, -10.0, -8.35, 0, 1.1)
     # backdrop: timber slat screen + planter behind reception
     w_screen = g.plan_wall((-22.7, -13.3), (-14.3, -13.3), side=1, thick=0.12, h=3.46)  # timber slat screen
@@ -141,7 +142,7 @@ def _elevators_reception(g, A, P, t, rng):
             g.box(P['wood'], (0.06, 3.4, 0.12), (x, 1.7, 0), bevel=0.004)
         g.box_b(P['metal'], -4.3, 4.3, 3.4, 3.46, -0.1, 0.1, bevel=0.003)
     with g.at(-18.5, -13.85):
-        F.planter(g, P, 8.4, 0.7, 0.45, rng, kind='snake', color='#2b2b2b', density=1.0)
+        F.planter(g, P, 8.4, 0.7, 0.45, rng, kind='snake', color=t.get('planter', '#2b2b2b'), density=1.0)
     g.collider(-22.75, -14.25, -14.25, -13.2, 0, 3.4)
     for x in (-23.3, -13.7):
         F.pot_plant(g, P, (x, 0, -6.2), 0.3, 0.55, 'tree', rng, pot_color=t['pot'])
@@ -213,14 +214,14 @@ def _cafe(g, A, P, t, rng):
                     A.seat(f'seat:cafe:{idx}', sx, sz, phi + math.pi, pose='sit', room='cafe', approach=-0.6, hubs=[])
                     idx += 1
             g.collider(cx - 0.45, cx + 0.45, cz - 0.45, cz + 0.45, 0, 0.75)
-            F.dome_pendant(g, P, (cx, H, cz), drop=4.6, color='#1e1e1e', kelvin=2700, power=40, r=0.26)
+            F.dome_pendant(g, P, (cx, H, cz), drop=4.6, color=t.get('pendant', '#1e1e1e'), kelvin=2700, power=40, r=0.26)
     # cafe floor: timber inlay under the seating
     g.box_b(P['wood'], 3.0, 17.0, 0.0, 0.01, -13.6, -3.6, bevel=0.002)
 
 
 # ============================================================================== game area
 def _game(g, A, P, t, rng):
-    g.box_b(P['paint'], 23.8, 32.7, 0.0, 0.012, -21.5, -4.0, bevel=0.002, color='#2f4b6e')
+    g.box_b(P['paint'], 23.8, 32.7, 0.0, 0.012, -21.5, -4.0, bevel=0.002, color=t.get('game_floor', '#2f4b6e'))
     g.box_b(P['paint'], 23.8, 32.7, 0.012, 0.014, -12.85, -12.65, bevel=0, color='#f4f1ea')
     for ti, cz in enumerate((-8.5, -15.5)):
         with g.at(27.5, cz, math.pi / 2):
@@ -231,7 +232,7 @@ def _game(g, A, P, t, rng):
         g.light('panel', (27.5, H - 0.35, cz), size=(1.2, 3.0), power=160, kelvin=5000)
     for k, z in enumerate((-19.6, -20.5)):
         with g.at(32.4, z, -math.pi / 2):
-            F.arcade(g, P, f'arcade:{k}', body='#1b1b2f', accent=t['accent'] if k == 0 else '#7F5AF0')
+            F.arcade(g, P, f'arcade:{k}', body=t.get('arcade_body', '#1b1b2f'), accent=t['accent'] if k == 0 else '#7F5AF0')
     g.collider(32.0, 32.85, -20.9, -19.2, 0, 1.9)
     for z in (-17.8, -18.8):
         with g.at(31.8, z):
@@ -242,11 +243,12 @@ def _game(g, A, P, t, rng):
 
 # ============================================================================== central plaza
 def _murals(g, A, P, t, rng):
-    cols = t['felt'] + [t['fabric'][2], '#2f2f2f']
+    dark = t.get('mural_dark', '#2f2f2f')
+    cols = t['felt'] + [t['fabric'][2], dark]
     with g.at(-4.0, -0.16, math.pi, y=1.2):  # back wall between the elevator core and the street portal
         F.mural(g, P, 8.0, 4.6, rng, cols)
     with g.at(32.84, -17.5, -math.pi / 2, y=1.6):  # game-area wall
-        F.mural(g, P, 11.0, 4.2, rng, [t['felt'][1], t['felt'][2], '#E07A5F', '#81B29A', '#2f2f2f'])
+        F.mural(g, P, 11.0, 4.2, rng, [t['felt'][1], t['felt'][2], '#E07A5F', '#81B29A', dark])
     # game-area bleachers against the back wall
     with g.at(32.4, -2.85, math.pi):
         F.bleachers(g, P, 7.6, steps=3, rise=0.42, run=0.9, rng=rng)
@@ -265,10 +267,43 @@ def _plaza(g, A, P, t, rng):
 # ============================================================================== project spaces
 def _project_spaces(g, A, P, t, rng):
     """Project Hub (waiting-lounge side), Handoff Station and the Session Archive (plaza); contract §4/§5."""
-    S.materials(P)
+    S.materials(P, t)
     S.project_hub(g, A, P, t, H)
-    S.handoff(g, A, P, H)
+    S.handoff(g, A, P, H, t)
     S.archive(g, A, P, rng)
+
+
+# ============================================================================== Horizon light lines
+def _light_lines(g, P, t):
+    """Optional decor (contract §14, Horizon): cove lines under the slat ceiling along the solid walls,
+    wayfinding lines in the floor (street portal → elevators, plaza → Project Directory kiosk) and glowing
+    elevator frames. Pure geometry on existing helpers: no anchors, nav, plan, colliders or RNG."""
+    d = t['decor']
+    line = P.get('line')
+    if d.get('cove_lights'):
+        y0, y1 = H - 0.35, H - 0.33  # just under the timber slats (H − 0.28)
+        g.box_b(line, -32.8, -23.75, y0, y1, -0.18, -0.16, bevel=0)  # back wall, west of the elevator core
+        g.box_b(line, -13.25, 32.8, y0, y1, -0.18, -0.16, bevel=0)  # back wall, east of it
+        for x0, x1 in ((-32.84, -32.82), (32.82, 32.84)):  # side walls
+            g.box_b(line, x0, x1, y0, y1, -23.7, -0.2, bevel=0)
+    if d.get('wayfinding'):
+        w, y = 0.03, 0.004
+        g.box_b(line, -w / 2, w / 2, 0.0, y, -4.9, -0.8, bevel=0)  # portal → plaza
+        g.box_b(line, -17.2, 0.0 + w / 2, 0.0, y, -4.9 - w / 2, -4.9 + w / 2, bevel=0)  # plaza → elevator lobby
+        g.box_b(line, -11.0 - w / 2, -11.0 + w / 2, 0.0, y, -10.0, -4.9, bevel=0)  # lobby → west hub
+        # west hub → the kiosk steps (a diagonal strip)
+        (ax, az), (bx, bz) = (-11.0, -10.0), (-12.5, -13.9)
+        L = math.hypot(bx - ax, bz - az)
+        g.box(line, (w, y, L), ((ax + bx) / 2, y / 2, (az + bz) / 2), yaw=math.atan2(bx - ax, bz - az), bevel=0)
+    if d.get('elevator_glow'):
+        # inner frame of each elevator portal (elevator_bank geometry: n=3, pitch 3.2, door 1.1 × 2.4)
+        with g.at(-18.5, -3.25, math.pi):
+            for i in range(3):
+                x = (i - 1) * 3.2
+                for s in (-1, 1):
+                    xe = x + s * 0.55
+                    g.box_b(line, min(xe, xe + s * 0.025), max(xe, xe + s * 0.025), 0.0, 2.4, 0.02, 0.03, bevel=0)
+                g.box_b(line, x - 0.575, x + 0.575, 2.4, 2.425, 0.02, 0.03, bevel=0)
 
 
 # ============================================================================== navigation

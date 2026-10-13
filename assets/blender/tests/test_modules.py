@@ -1,10 +1,13 @@
 """Blender-side asset tests (run by `node assets/build.mjs --test`):
 
   Blender -b --factory-startup --python assets/blender/tests/test_modules.py [-- --modules wing:terracotta,atrium]
+                                                                            [--set classic|horizon]
 
 Builds every module (no bake) and checks: anchor/port naming grammar and required counts, the root rule
 for seats, desk/table clearance, runtime-node roles and refs, nav connectivity, approach points on nav
 nodes, nav edges clear of colliders, no text objects, applied transforms and triangle budgets.
+With `--set horizon` it checks the Horizon set (contract §14) the same way, and also that every module has
+exactly the Classic anchors and nav graph (the same space).
 """
 import math
 import os
@@ -82,9 +85,12 @@ def seg_hits_box(a, b, box, shrink=0.06):
     return True
 
 
+ASSET_SET = argv[argv.index('--set') + 1] if '--set' in argv else 'classic'
+
+
 def test(spec):
     kind = spec.partition(':')[0]
-    _, _, theme, g, A, info, objs, P = build.make(spec)
+    _, _, theme, g, A, info, objs, P = build.make(spec, ASSET_SET)
     m = A.manifest()
     anchors, nodes, edges = m['anchors'], m['nav']['nodes'], m['nav']['edges']
     tag = spec
@@ -283,6 +289,9 @@ def main():
     wing_nav = None
     for spec in specs:
         m = test(spec)
+        if ASSET_SET != 'classic':  # the same space: anchors and nav equal the Classic build of the module
+            _, _, _, _, A0, _, _, _ = build.make(spec, 'classic')
+            check(A0.manifest() == m, f'{spec}: {ASSET_SET} anchors/nav differ from Classic')
         if spec.startswith('wing:'):
             if wing_nav is None:
                 wing_nav = m

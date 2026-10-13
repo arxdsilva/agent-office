@@ -24,10 +24,13 @@ HANDOFF = (-6.0, -7.4)
 ARCHIVE_X0, ARCHIVE_FRONT_Z, ARCHIVE_BAYS, ARCHIVE_BAY_W, ARCHIVE_H = -10.6, -22.55, 12, 0.85, 3.5
 
 
-def materials(P):
-    """Emissive accents that bake into the lightmap (cyan context glow, warm handoff glow)."""
-    P['hubglow'] = M.pbr('hub-glow', base='#9fe8f0', emission='#66d9e8', strength=2.2, bake_emit=True).name
-    P['hubwarm'] = M.pbr('hub-warm', base='#f6d7a0', emission='#f2b45a', strength=1.8, bake_emit=True).name
+def materials(P, t=None):
+    """Emissive accents that bake into the lightmap (cyan context glow, warm handoff glow); a theme's
+    optional `emit_max` caps their strength (Horizon)."""
+    cap = (t or {}).get('emit_max')
+    k = (lambda s: s) if cap is None else (lambda s: min(s, cap))
+    P['hubglow'] = M.pbr('hub-glow', base='#9fe8f0', emission='#66d9e8', strength=k(2.2), bake_emit=True).name
+    P['hubwarm'] = M.pbr('hub-warm', base='#f6d7a0', emission='#f2b45a', strength=k(1.8), bake_emit=True).name
 
 
 def console_pose(i):
@@ -42,16 +45,18 @@ def console_pose(i):
 
 # ============================================================================== Project Hub
 def project_hub(g, A, P, t, H):
-    _context_core(g, P, H)
+    _context_core(g, P, H, t.get('hub_floor', '#1d2a33'))
     for i in range(6):
         _console(g, A, P, i)
     _kiosk(g, A, P)
+    if t['decor'].get('kiosk_ring'):  # contract §14 (Horizon): a soft ring of light under the kiosk
+        g.torus(P['line'], 1.45, 0.012, (KIOSK[0], 0.012, KIOSK[1] + 0.02), segs=64, rsegs=4)
 
 
-def _context_core(g, P, H):
+def _context_core(g, P, H, floor='#1d2a33'):
     cx, cz = CORE
     # floor inlay: dark disc with two glowing rings
-    g.cyl(P['paint'], 3.25, 0.012, (cx, 0, cz), segs=64, color='#1d2a33')
+    g.cyl(P['paint'], 3.25, 0.012, (cx, 0, cz), segs=64, color=floor)
     g.torus(P['hubglow'], 3.05, 0.014, (cx, 0.018, cz), segs=72, rsegs=4)
     g.torus(P['hubglow'], 1.55, 0.014, (cx, 0.018, cz), segs=56, rsegs=4)
     # plinth, collars
@@ -120,14 +125,15 @@ def _kiosk(g, A, P):
 
 
 # ============================================================================== Handoff Station
-def handoff(g, A, P, H):
+def handoff(g, A, P, H, t=None):
     hx, hz = HANDOFF
+    floor = (t or {}).get('handoff_floor', '#2b3440')
     g.furn('rug', 3.7, 3.7, x=hx, z=hz)
-    g.cyl(P['paint'], 1.85, 0.012, (hx, 0, hz), segs=56, color='#2b3440')
+    g.cyl(P['paint'], 1.85, 0.012, (hx, 0, hz), segs=56, color=floor)
     g.torus(P['hubwarm'], 1.77, 0.014, (hx, 0.018, hz), segs=64, rsegs=4)
     for sgn in (-1, 1):  # docking pads under each person, with a chevron toward the middle
         g.torus(P['hubwarm'], 0.34, 0.012, (hx + sgn * 1.5, 0.018, hz), segs=28, rsegs=4)
-        g.cyl(P['paint'], 0.36, 0.012, (hx + sgn * 1.5, 0.0, hz), segs=24, color='#2b3440')
+        g.cyl(P['paint'], 0.36, 0.012, (hx + sgn * 1.5, 0.0, hz), segs=24, color=floor)
         for k in range(3):
             g.box(P['hubwarm'], (0.07, 0.008, 0.28), (hx + sgn * (0.72 - k * 0.14), 0.018, hz), bevel=0)
     # the pedestal that carries the handoff "package"

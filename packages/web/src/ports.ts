@@ -135,7 +135,7 @@ export interface SceneView {
   onPickFixture?(fn: (f: { kind: 'project-directory' }) => void): void
   /** Sims-style wall visibility (3D modes; graphics contract §13). Cached and replayed by the host. */
   setWallMode?(m: WallMode): void
-  /** E or a click on a semantic world object (docs/special-3d/interaction-contract.md). */
+  /** E or a click on a semantic world object (docs/horizon/rendering.md). */
   onPickInteraction?(fn: (hit: InteractionHit) => void): void
   /**
    * The selected project's Library: notebooks, shelves and boards show collection names and

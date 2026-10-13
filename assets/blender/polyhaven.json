@@ -91,46 +91,6 @@
         "diff",
         "nor_gl"
       ]
-    },
-    "granite_tile": {
-      "res": "1k",
-      "maps": [
-        "diff",
-        "nor_gl",
-        "arm"
-      ]
-    },
-    "hangar_concrete_floor": {
-      "res": "1k",
-      "maps": [
-        "diff",
-        "nor_gl",
-        "arm"
-      ]
-    },
-    "metal_plate": {
-      "res": "1k",
-      "maps": [
-        "diff",
-        "nor_gl",
-        "arm"
-      ]
-    },
-    "concrete_panels": {
-      "res": "1k",
-      "maps": [
-        "diff",
-        "nor_gl",
-        "arm"
-      ]
-    },
-    "marble_01": {
-      "res": "1k",
-      "maps": [
-        "diff",
-        "nor_gl",
-        "arm"
-      ]
     }
   },
   "hdri": {
@@ -139,19 +99,10 @@
   },
   "sha256": {
     "hdri/unfinished_office_1k.hdr": "49066c90ac8f4a64ce9a0480f061cdf6be79802be8946dae196a9a5d1e454ae4",
-    "textures/concrete_panels_arm_1k.jpg": "84f2a0dbf99628526338dee313f4eedf6ecb534e95537c9d9a7cda0085b241c5",
-    "textures/concrete_panels_diff_1k.jpg": "f7f9d5102b2daa199b42cae7d67d0b7a2977d98d80f45c302f93454224ebd140",
-    "textures/concrete_panels_nor_gl_1k.jpg": "c971054512ff5e5b7c98db866d6018160161071a730bdfee11cada2d3d5fbcb5",
     "textures/concrete_wall_008_diff_1k.jpg": "a203166d280d3cfc6a91bbc9ffdae406eb9555b4a4f658cd92619063eb17c147",
     "textures/concrete_wall_008_nor_gl_1k.jpg": "83cd3fa2c7cbf4c81402386065daf8fa6f72e1f1f77e02ccb1eedb28496909ae",
     "textures/cotton_jersey_diff_1k.jpg": "0f1b790e4087223275aaa6fdffdd46a556a26d2af72cd811acf72ba9c21ec1f6",
     "textures/cotton_jersey_nor_gl_1k.jpg": "9b79709806511b62567fb007ff61009c3b194bb0d0821fbaee3faf1b2bff0318",
-    "textures/granite_tile_arm_1k.jpg": "3262e58c2f3bd9fff8e374c9aa52ef88c28a4115b550934faa90433dba67470a",
-    "textures/granite_tile_diff_1k.jpg": "9df48b66055588708d446e69f37ea6146b8d5d3df54cd1ff088ec688acdca95c",
-    "textures/granite_tile_nor_gl_1k.jpg": "bb9a122e0a1171c52458fc9ac82f588f4e100f1f7b461cc15028bed1c63fe961",
-    "textures/hangar_concrete_floor_arm_1k.jpg": "1ab24eea5a341ee35e19e766600b75bf06ddd03f2dc4d76633795c5a6b10a660",
-    "textures/hangar_concrete_floor_diff_1k.jpg": "8c365cc65bc3026045c4e3ecba9642cbe0bee1cf705edafe4a8fed5b78c08a4d",
-    "textures/hangar_concrete_floor_nor_gl_1k.jpg": "b1fc3146e62c5d5cd7859eb0d8174480e1ea87c80c92ba4364229547d1f8dda7",
     "textures/herringbone_parquet_diff_1k.jpg": "d6c66492a6c4cfd4e8ed18c9cdd4e0303f3de4e04613d2adca8bc2b8f2dd2350",
     "textures/herringbone_parquet_nor_gl_1k.jpg": "af6a822100fd6369bb75e43bb764f4a71ca41f521538ac796e92e681e3ad38f5",
     "textures/laminate_floor_02_diff_1k.jpg": "c112a8fb107d8600a2974af2f9fa9b595c491a33a59982e22706e9650990bf8f",
@@ -160,12 +111,6 @@
     "textures/leather_white_nor_gl_1k.jpg": "51bdac4b76da70dc54c288cffea4ecaf837ebb6ed9264664bf5c9a1fc79aa074",
     "textures/long_white_tiles_diff_1k.jpg": "0aa70e14117e9b1fbf726868675f6afa8fd62a2691f7ba3964f47796df06cd9c",
     "textures/long_white_tiles_nor_gl_1k.jpg": "a488ee3a2dbb81f334e191b51a43567f4ee6bb8adce5fd3ed85d5a6958fddfc1",
-    "textures/marble_01_arm_1k.jpg": "84b1516c27b4393230e77e0aa525186b4a8a415169661a4385f02dcb10c14104",
-    "textures/marble_01_diff_1k.jpg": "b10dabea976d68baa976a0d4e8dac58789df8d26a1b50697f320106f1b00a229",
-    "textures/marble_01_nor_gl_1k.jpg": "77c2a9b549a6a408659f8197be91945aeb0abc33e697f1dd2ce24ee8dc7c2bc0",
-    "textures/metal_plate_arm_1k.jpg": "fc4708b6700a2cc387654b693091dd0ac0cd1797ae803d75c894e62554fbef07",
-    "textures/metal_plate_diff_1k.jpg": "c6b6739eac2c75ccc898e753d7833df24eafbdb9aa92fb6eabfb92abd1a680a5",
-    "textures/metal_plate_nor_gl_1k.jpg": "994f851a84d52b51e97906021a1b7070ee6eac9a789fef041132268de47d8e6b",
     "textures/oak_veneer_01_diff_1k.jpg": "c14681f72f59f17bff568cae7a837641443b607b899f0c279cd64a5638f877a7",
     "textures/oak_veneer_01_nor_gl_1k.jpg": "1297acf7b4476d5ccd83cc8b27be96aa6110f7a9c3a40be0bd767bf81b17db01",
     "textures/poly_wool_herringbone_diff_1k.jpg": "fd889a46f617efd331e522e36b8ad2548e16e1cb018c001872f17537d7666af5",

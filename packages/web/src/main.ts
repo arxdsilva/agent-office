@@ -26,7 +26,7 @@ import { PRESETS } from './app/quality.ts'
 import { createSimClock, type SimClock } from './app/sim-clock.ts'
 import { createController } from './controller.ts'
 import { createWorkspaceViews, installWorkspaceKeys } from './adapters/dom/workspace-views.ts'
-import { showSpecialFailure } from './special-3d/failure.ts'
+import { showHorizonFailure } from './horizon/failure.ts'
 import { createWorkspaceController, type WorkspaceController } from './workspace-controller.ts'
 import type { AgentPlan } from './app/office-types.ts'
 import type { OfficeGateway, SceneView } from './ports.ts'
@@ -106,16 +106,17 @@ function createScene(clock: SimClock, powerPreference: PowerPreference | undefin
 }
 
 /**
- * Builds Night City (plan §5.4): its code is a separate, lazy-loaded chunk, so the other modes
- * never download it. Throws when it can't start (no WebGL 2, `?forceSpecialFail=1`).
+ * Builds Horizon (the 'special' mode: the Classic office with a light flavor). Its code is a
+ * separate, lazy-loaded chunk, so the other modes never download it. Throws when it can't start
+ * (no WebGL, `?forceSpecialFail=1`).
  */
-async function createSpecial(
+async function createHorizon(
   gateway: OfficeGateway,
   clock: SimClock,
   powerPreference: PowerPreference | undefined,
 ): Promise<SceneView> {
-  const { createSpecialScene } = await import('./special-3d/index.ts')
-  return createSpecialScene(clock, {
+  const { createHorizonScene } = await import('./horizon/index.ts')
+  return createHorizonScene(clock, {
     settings: { get: () => gateway.settings.get(), set: (p) => gateway.settings.set(p) },
     ...(powerPreference && { powerPreference }),
   })
@@ -145,7 +146,7 @@ async function boot(): Promise<void> {
       case 'pixel':
         return createPixelScene(clock)
       case 'special':
-        throw new Error('Night City loads asynchronously')
+        throw new Error('Horizon loads asynchronously')
       case '3d':
         return createScene(clock, startup.powerPreference)
     }
@@ -156,9 +157,9 @@ async function boot(): Promise<void> {
     factoryAsync: async (mode: ViewMode): Promise<SceneView> => {
       if (mode !== 'special') return factory(mode)
       try {
-        return await createSpecial(gateway, clock, startup.powerPreference)
+        return await createHorizon(gateway, clock, startup.powerPreference)
       } catch (e) {
-        showSpecialFailure(e, pickMode)
+        showHorizonFailure(e, pickMode)
         throw e
       }
     },
@@ -167,7 +168,7 @@ async function boot(): Promise<void> {
   try {
     scene = await SceneHost.initAsync({ ...hostDeps, mode: startup.viewMode })
   } catch (e) {
-    // Night City could not start: its failure card is up; Classic 3D runs meanwhile.
+    // Horizon could not start: its failure card is up; Classic 3D runs meanwhile.
     if (startup.viewMode !== 'special') {
       showGfxFailure(gateway, e)
       return
