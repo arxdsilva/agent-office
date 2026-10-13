@@ -269,18 +269,6 @@ export const CLASSIC_APPEARANCE: AppearancePalette = {
   pants: [0x2c3440, 0x3a3a3a, 0x5c4a3a, 0x6b7a8f, 0xbfae8e, 0x22252b],
 }
 
-/**
- * Horizon (docs/horizon/art-direction.md): whites, pale greys and the six wing accents (peach, sky,
- * sage, mint, lilac, sand-gold) as light tints; trousers in light greys and sand.
- */
-export const HORIZON_APPEARANCE: AppearancePalette = {
-  shirts: [
-    0xf7f7f4, 0xeceff1, 0xdde3e8, 0xcfd7de, 0xf5c4ad, 0xa9d4f2, 0xbcd5b4, 0x9fe0d0, 0xc9bdf3,
-    0xe8cf94, 0xfaf3ea, 0xe4e9f2,
-  ],
-  pants: [0xc8cdd2, 0xb9c2ca, 0xd8cfc0, 0xcdc2ad, 0xe3e0da, 0xbfc6cc],
-}
-
 const pick = <T>(xs: readonly T[], h: number): T => xs[h % xs.length]!
 
 /**

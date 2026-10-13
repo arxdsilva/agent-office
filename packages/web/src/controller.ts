@@ -67,7 +67,6 @@ import type { Manifest } from './app/manifest.ts'
 import { libraryKind } from './app/library.ts'
 import { dialogueVM, projectDialogue } from './app/pixel/dialogue-vm.ts'
 import { interactionAction } from './app/interactions.ts'
-import { labelsDefaultFor } from './app/horizon/flavor.ts'
 import { directoryVM } from './app/pixel/directory-vm.ts'
 import { pixelHudVM } from './app/pixel/hud-vm.ts'
 import { minimapLabels, minimapVM } from './app/pixel/minimap.ts'
@@ -329,8 +328,6 @@ export function createController(d: ControllerDeps) {
       dpr: d.devicePixelRatio?.() ?? d.hardware?.()?.dpr ?? 1,
       power: { focused, hidden: hidden || !windowVisible || !officeVisible, onBattery },
       saver: { blur: s.powerSaverBlur, hidden: s.powerSaverHidden, battery: s.batteryPreset },
-      // Horizon's calm default (nearby name tags) while the user's Advanced labels is Auto.
-      ...(labelsDefaultFor(viewMode) && { labelsDefault: labelsDefaultFor(viewMode) }),
     })
     const key = JSON.stringify(e)
     if (!force && key === effectiveKey) return
@@ -392,15 +389,13 @@ export function createController(d: ControllerDeps) {
     d.modeToggle?.render(mode)
     d.pixelHud?.show(mode === 'pixel')
     if (mode !== 'pixel') {
-      // Classic 3D and Horizon (the Classic office with a light flavor) have no dialogue box.
+      // Classic 3D has no dialogue box.
       closeDialogue()
       d.pixelHud?.renderMinimap(null)
       d.pixelHud?.renderDirectory(null)
     }
     if (!first) d.onViewMode?.(mode)
     if (mode === 'pixel') renderPixel()
-    // The view's label default (Horizon: nearby) may change the effective graphics.
-    applyGraphics()
   }
 
   const graphicsFacts = () => ({

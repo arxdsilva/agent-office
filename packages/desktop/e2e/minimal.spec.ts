@@ -159,3 +159,28 @@ test('Minimal mode shows the live hierarchy: tasks, activity, finished, orphans,
   expect(errors).toEqual([])
   await app.close()
 })
+
+test('A saved retired "special" view mode opens in Classic 3D with a three-mode toggle', async () => {
+  // A profile saved while a retired view mode was active.
+  const profile = newProfile()
+  mkdirSync(profile.userData, { recursive: true })
+  writeFileSync(
+    join(profile.userData, 'settings.json'),
+    JSON.stringify({ graphicsQuality: 'low', viewMode: 'special' }),
+  )
+  const { app, win, errors } = await launch(profile)
+
+  // The unknown mode reads as 3D: the toggle marks it checked and the WebGL canvas exists.
+  await expect(win.locator('#mode-toggle [data-mode="3d"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+    { timeout: 60_000 },
+  )
+  await expect(win.locator('#stage canvas')).toHaveCount(1)
+
+  // The toggle offers exactly 3D Office, 2D RPG and Minimal.
+  await expect(win.locator('#mode-toggle button')).toHaveCount(3)
+
+  expect(errors).toEqual([])
+  await app.close()
+})

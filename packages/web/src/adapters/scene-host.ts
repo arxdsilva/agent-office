@@ -29,7 +29,7 @@ export interface SceneHostDeps {
   /** The mode of the first scene (created at once). */
   mode: ViewMode
   /**
-   * Optional (plan §5.4): creates a scene asynchronously (a lazy-loaded mode such as Horizon).
+   * Optional (plan §5.4): creates a scene asynchronously (a lazy-loaded mode).
    * When given, `switchTo` and `initAsync` use it instead of `factory`.
    */
   factoryAsync?: (mode: ViewMode) => Promise<SceneView>

@@ -1,4 +1,4 @@
-// Shared pieces of the WebGL scene (`ThreeScene`, Classic and Horizon flavors): the preset shim,
+// Shared pieces of the WebGL scene (`ThreeScene`, scene flavors): the preset shim,
 // the paced render loop, listener teardown, GPU memory accounting and hardware info.
 import { GraphicsAdvancedSchema } from '@agent-office/shared'
 import * as THREE from 'three'

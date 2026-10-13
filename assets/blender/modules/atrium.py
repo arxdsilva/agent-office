@@ -26,7 +26,6 @@ def build(g, A, P, name, t, rng):
     _plaza(g, A, P, t, rng)
     _murals(g, A, P, t, rng)
     _project_spaces(g, A, P, t, rng)
-    _light_lines(g, P, t)
     _nav(g, A)
     _rooms(g)
     return dict(
@@ -271,39 +270,6 @@ def _project_spaces(g, A, P, t, rng):
     S.project_hub(g, A, P, t, H)
     S.handoff(g, A, P, H, t)
     S.archive(g, A, P, rng)
-
-
-# ============================================================================== Horizon light lines
-def _light_lines(g, P, t):
-    """Optional decor (contract §14, Horizon): cove lines under the slat ceiling along the solid walls,
-    wayfinding lines in the floor (street portal → elevators, plaza → Project Directory kiosk) and glowing
-    elevator frames. Pure geometry on existing helpers: no anchors, nav, plan, colliders or RNG."""
-    d = t['decor']
-    line = P.get('line')
-    if d.get('cove_lights'):
-        y0, y1 = H - 0.35, H - 0.33  # just under the timber slats (H − 0.28)
-        g.box_b(line, -32.8, -23.75, y0, y1, -0.18, -0.16, bevel=0)  # back wall, west of the elevator core
-        g.box_b(line, -13.25, 32.8, y0, y1, -0.18, -0.16, bevel=0)  # back wall, east of it
-        for x0, x1 in ((-32.84, -32.82), (32.82, 32.84)):  # side walls
-            g.box_b(line, x0, x1, y0, y1, -23.7, -0.2, bevel=0)
-    if d.get('wayfinding'):
-        w, y = 0.03, 0.004
-        g.box_b(line, -w / 2, w / 2, 0.0, y, -4.9, -0.8, bevel=0)  # portal → plaza
-        g.box_b(line, -17.2, 0.0 + w / 2, 0.0, y, -4.9 - w / 2, -4.9 + w / 2, bevel=0)  # plaza → elevator lobby
-        g.box_b(line, -11.0 - w / 2, -11.0 + w / 2, 0.0, y, -10.0, -4.9, bevel=0)  # lobby → west hub
-        # west hub → the kiosk steps (a diagonal strip)
-        (ax, az), (bx, bz) = (-11.0, -10.0), (-12.5, -13.9)
-        L = math.hypot(bx - ax, bz - az)
-        g.box(line, (w, y, L), ((ax + bx) / 2, y / 2, (az + bz) / 2), yaw=math.atan2(bx - ax, bz - az), bevel=0)
-    if d.get('elevator_glow'):
-        # inner frame of each elevator portal (elevator_bank geometry: n=3, pitch 3.2, door 1.1 × 2.4)
-        with g.at(-18.5, -3.25, math.pi):
-            for i in range(3):
-                x = (i - 1) * 3.2
-                for s in (-1, 1):
-                    xe = x + s * 0.55
-                    g.box_b(line, min(xe, xe + s * 0.025), max(xe, xe + s * 0.025), 0.0, 2.4, 0.02, 0.03, bevel=0)
-                g.box_b(line, x - 0.575, x + 0.575, 2.4, 2.425, 0.02, 0.03, bevel=0)
 
 
 # ============================================================================== navigation

@@ -197,7 +197,7 @@ interface Agent {
 
 export interface CharacterSystemOptions {
   quality?: GraphicsQuality
-  /** The clothes palette (a scene flavor's, e.g. Horizon's light outfits); Classic by default. */
+  /** The clothes palette (a scene flavor's); Classic by default. */
   appearance?: AppearancePalette
   /** Needed only to bake impostors at load; without it, over-budget agents fall back to LOD1 at 10 Hz. */
   renderer?: THREE.WebGLRenderer

@@ -18,7 +18,7 @@ const GTAO_SAMPLES = { half: 8, full: 12, ultra: 24 } as const
 
 /**
  * A scene flavor's pipeline. Every field is optional: the defaults are Classic 3D's chain exactly.
- * Horizon passes a weak, tight bloom (only its light lines bloom) and its daylight exposure.
+ * A flavor may pass its own bloom and exposure.
  */
 export interface PipelineConfig {
   bloom?: { threshold: number; strength: number; radius: number }

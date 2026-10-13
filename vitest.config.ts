@@ -52,8 +52,6 @@ export default defineConfig({
         'packages/web/src/adapters/pixel/**',
         // Minimal mode's DOM view (covered by Playwright); its logic is pure in app/hierarchy.ts.
         'packages/web/src/adapters/minimal/**',
-        // Horizon's three.js shells (covered by Playwright); its logic lives in app/horizon/**.
-        'packages/web/src/horizon/adapters/**',
         'scripts/arch.mjs',
         'scripts/codex-schema-check.mjs',
         // Drives the real, logged-in provider CLIs (make verify-providers); can't run in CI.

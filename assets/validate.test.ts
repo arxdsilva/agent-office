@@ -51,7 +51,6 @@ import {
   type PlanJson,
   type Vec2,
 } from './validate.ts'
-import { checkSameSpace } from './validate.ts'
 
 const REAL_ASSETS = resolve(import.meta.dirname, '../packages/web/public/assets')
 const PNG_1PX = Buffer.from(
@@ -1155,98 +1154,13 @@ describe('real assets: wall side and thickness (contract §11)', () => {
   })
 })
 
-// ── Horizon: the 'horizon' profile (contract §14) ──────────────────────────────────────────────────
-const REAL_HORIZON = resolve(import.meta.dirname, '../packages/web/public/horizon')
-
-/** A Horizon dir next to a Classic one (`<root>/assets`, `<root>/horizon`), from the same fixture. */
-async function writeHorizonPair(root: string) {
-  const classic = join(root, 'assets')
-  const horizon = join(root, 'horizon')
-  await mkdir(classic)
-  await mkdir(horizon)
-  await writeFixture(classic)
-  const m = await writeFixture(horizon)
-  await writeFile(join(horizon, 'manifest.json'), JSON.stringify({ ...m, set: 'horizon' }))
-  return { classic, horizon, manifest: { ...m, set: 'horizon' as const } }
-}
-
-describe('asset validator: Horizon profile (contract §14)', () => {
-  it('needs set "horizon" in a Horizon manifest and no other set in a Classic one', () => {
-    const m = fixtureManifest()
-    expect(checkManifest(m)).toEqual([])
-    expect(checkManifest(m, 'horizon')).toEqual(['manifest.set: expected "horizon", got undefined'])
-    expect(checkManifest({ ...m, set: 'horizon' }, 'horizon')).toEqual([])
-    expect(checkManifest({ ...m, set: 'horizon' })).toEqual([
-      'manifest.set: expected none or "classic", got "horizon"',
-    ])
-  })
-
-  it('requires the Classic anchor ids in every module (the same space)', () => {
-    const classic = fixtureManifest()
-    const horizon = { ...clone(classic), set: 'horizon' as const }
-    expect(checkSameSpace(horizon, classic)).toEqual([])
-    const ids = Object.keys(horizon.modules.wing.anchors)
-    delete horizon.modules.wing.anchors[ids[0]!]
-    horizon.modules.atrium.anchors['spot:elevator:99'] = clone(Object.values(horizon.modules.atrium.anchors)[0]!)
-    expect(checkSameSpace(horizon, classic)).toEqual([
-      'horizon atrium: anchors differ from Classic (0 missing; 1 extra, e.g. spot:elevator:99)',
-      `horizon wing: anchors differ from Classic (1 missing, e.g. ${ids[0]}; 0 extra)`,
-    ])
-  })
-
-  it('validates a whole Horizon dir against its Classic sibling; each set totals only its own dir', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ao-horizon-'))
+describe('asset validator: missing manifest', () => {
+  it('explains how to build the assets when the manifest is missing', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'ao-assets-empty-'))
     try {
-      const { classic, horizon, manifest } = await writeHorizonPair(root)
-      const r = await validateAssets(horizon, 'horizon')
-      expect(r.problems).toEqual([])
-      expect(r.files).toHaveLength(4 + THEMES.length + 1)
-      const c = await validateAssets(classic)
-      expect(c.problems).toEqual([])
-      expect(r.totalBytes).toBeLessThan(r.totalBytes + c.totalBytes)
-      // The Horizon dir is not a Classic one, and a Horizon set over 55 MB fails on its own.
-      expect((await validateAssets(horizon)).problems).toEqual([
-        'manifest.set: expected none or "classic", got "horizon"',
-      ])
-      expect(checkTotal(56 * MB, TOTAL_MAX_BYTES, 'Horizon set')).toEqual([
-        'Horizon set total 56.0 MB exceeds the 55 MB budget',
-      ])
-      // A moved seat id breaks the same-space rule.
-      const moved = clone(manifest)
-      const [id, a] = Object.entries(moved.modules.wing.anchors).find(([k]) => k.startsWith('seat:desk:'))!
-      delete moved.modules.wing.anchors[id]
-      moved.modules.wing.anchors[id.replace(/:\d+$/, ':9')] = a
-      await writeFile(join(horizon, 'manifest.json'), JSON.stringify(moved))
-      expect((await validateAssets(horizon, 'horizon')).problems.some((p) => p.startsWith('horizon wing: anchors differ'))).toBe(true)
-      // Without the Classic manifest the comparison cannot run, and says so.
-      await rm(join(classic, 'manifest.json'))
-      await writeFile(join(horizon, 'manifest.json'), JSON.stringify(manifest))
-      expect((await validateAssets(horizon, 'horizon')).problems).toEqual([
-        `${join(classic, 'manifest.json')}: missing or invalid; the Horizon anchors cannot be compared with Classic`,
-      ])
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  }, 60_000)
-
-  it('explains how to build the set when its manifest is missing', async () => {
-    const empty = await mkdtemp(join(tmpdir(), 'ao-horizon-empty-'))
-    try {
-      expect((await validateAssets(empty, 'horizon')).problems[0]).toMatch(/make horizon-assets/)
+      expect((await validateAssets(empty)).problems[0]).toMatch(/make assets/)
     } finally {
       await rm(empty, { recursive: true, force: true })
     }
   })
-})
-
-describe('real Horizon assets (packages/web/public/horizon)', () => {
-  it('match the contract when present: every Classic check, the Classic anchors, ≤ 55 MB', async () => {
-    if (!existsSync(join(REAL_HORIZON, 'manifest.json'))) return // optional until make horizon-assets ran
-    const r = await validateAssets(REAL_HORIZON, 'horizon')
-    const sizes = r.files.map((f) => `${f.file}: ${(f.bytes / MB).toFixed(2)} MB, ${f.triangles ?? '?'} tris`)
-    expect(r.problems, `Horizon problems:\n${r.problems.join('\n')}\n\nFiles:\n${sizes.join('\n')}`).toEqual([])
-    const m = JSON.parse(await readFile(join(REAL_HORIZON, 'manifest.json'), 'utf8')) as Manifest
-    expect(m.set).toBe('horizon')
-    expect(checkPlans(m), checkPlans(m).join('\n')).toEqual([])
-  }, 180_000)
 })

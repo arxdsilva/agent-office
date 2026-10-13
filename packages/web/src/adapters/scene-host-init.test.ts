@@ -44,15 +44,15 @@ describe('SceneHost.initAsync (HS-10)', () => {
       return s
     })
     const host = await SceneHost.initAsync({
-      mode: 'special',
+      mode: 'minimal',
       factory,
       factoryAsync,
       resync: () => new Map(),
     })
-    expect(host.mode).toBe('special')
-    expect(factoryAsync).toHaveBeenCalledWith('special')
+    expect(host.mode).toBe('minimal')
+    expect(factoryAsync).toHaveBeenCalledWith('minimal')
     expect(factory).not.toHaveBeenCalled()
-    expect((host.active as ReturnType<typeof fake>).mode).toBe('special')
+    expect((host.active as ReturnType<typeof fake>).mode).toBe('minimal')
     await host.load('m.json')
     expect(made[0]!.load).toHaveBeenCalledWith('m.json')
   })
@@ -68,7 +68,7 @@ describe('SceneHost.initAsync (HS-10)', () => {
     const boom = new Error('no WebGL')
     await expect(
       SceneHost.initAsync({
-        mode: 'special',
+        mode: 'minimal',
         factory: () => {
           throw boom
         },
@@ -90,10 +90,10 @@ describe('SceneHost.initAsync (HS-10)', () => {
     })
     const old = host.active as ReturnType<typeof fake>
     await host.load('m.json')
-    await host.switchTo('special')
-    expect(factoryAsync).toHaveBeenLastCalledWith('special')
+    await host.switchTo('minimal')
+    expect(factoryAsync).toHaveBeenLastCalledWith('minimal')
     expect(old.dispose).toHaveBeenCalled()
-    expect(host.mode).toBe('special')
+    expect(host.mode).toBe('minimal')
     expect((host.active as ReturnType<typeof fake>).load).toHaveBeenCalledWith('m.json')
   })
 
@@ -102,13 +102,13 @@ describe('SceneHost.initAsync (HS-10)', () => {
       mode: '3d',
       factory: (m) => fake(m),
       factoryAsync: async (m) => {
-        if (m === 'special') throw new Error('chunk failed')
+        if (m === 'minimal') throw new Error('chunk failed')
         return fake(m)
       },
       resync: () => new Map(),
     })
     const old = host.active
-    await expect(host.switchTo('special')).rejects.toThrow('chunk failed')
+    await expect(host.switchTo('minimal')).rejects.toThrow('chunk failed')
     expect(host.active).toBe(old)
     expect(host.mode).toBe('3d')
   })

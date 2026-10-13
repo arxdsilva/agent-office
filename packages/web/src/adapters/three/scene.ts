@@ -13,7 +13,6 @@ import { linksForMode, type RenderLink } from '../../app/links.ts'
 import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
 import type { AABB, AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/office-types.ts'
-import { manifestUrlFor } from '../../app/horizon/flavor.ts'
 import type { AppearancePalette } from '../../app/motion.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
 import { frameAgents, frameSurfaces } from '../../app/framing.ts'
@@ -72,7 +71,12 @@ const debugEnabled = () => new URLSearchParams(location.search).get('debug') ===
 
 type Vec3T = [number, number, number]
 
-/** Lighting an environment uses whatever the UI theme (Horizon is always daylight). */
+/** The flavor's manifest: `${assetBase}manifest.json` (the controller always asks for Classic's). */
+function manifestUrlFor(url: string, assetBase: string): string {
+  return `${assetBase}${url.replace(/[?#].*$/, '').replace(/^.*\//, '')}`
+}
+
+/** Lighting an environment uses whatever the UI theme . */
 export interface EnvironmentLight {
   /** Hemisphere fill: sky and ground colours and strength; IBL strength. */
   sky: number
@@ -84,7 +88,7 @@ export interface EnvironmentLight {
 
 /**
  * A flavor's world around the building (sky, skyline) and its light. Implemented in the flavor's
- * own lazy chunk (horizon/adapters/environment.ts); the scene only calls it.
+ * own lazy chunk (a lazy chunk); the scene only calls it.
  */
 export interface SceneEnvironment {
   /** Pipeline levels (bloom, exposure), read at construction. */
@@ -98,20 +102,19 @@ export interface SceneEnvironment {
 }
 
 /**
- * How the office is dressed. Classic: `assets/`, the UI theme's light, Classic outfits. Horizon
- * (docs/horizon): the same office from `horizon/` with a daylight environment, light outfits and
- * restrained emissives. Rooms, anchors, director, labels and controls are the same in every flavor.
+ * How the office is dressed. Classic: `assets/`, the UI theme's light, Classic outfits. A flavor
+ * may move the assets, add an environment, outfits and restrained emissives. Rooms, anchors, director, labels and controls are the same in every flavor.
  */
 export interface SceneFlavor {
-  id: 'classic' | 'horizon'
-  /** Where the manifest, modules and character live (`assets/`, `horizon/`). */
+  id: 'classic'
+  /** Where the manifest, modules and character live (`assets/`). */
   assetBase: string
   /** Absent: Classic (flat themed background, theme-driven fill). */
   environment?: SceneEnvironment
   appearance?: AppearancePalette
-  /** Ceiling on emissive intensity (Horizon 1.5); absent: none. */
+  /** Ceiling on emissive intensity ; absent: none. */
   emissiveMax?: number
-  /** Multiplies the baked lightmaps' intensity (Horizon keeps pale surfaces below clipping). */
+  /** Multiplies the baked lightmaps' intensity. */
   lightmapScale?: number
 }
 
@@ -394,7 +397,7 @@ export class ThreeScene implements SceneView {
   async load(manifestUrl: string): Promise<SceneAssets> {
     try {
       this.loading.progress(0.02, 'Loading the floor plan…')
-      // The controller asks for Classic's manifest; a flavor reads its own (`horizon/manifest.json`).
+      // The controller asks for Classic's manifest; a flavor reads its own.
       const url =
         this.flavor.id === 'classic' ? manifestUrl : manifestUrlFor(manifestUrl, this.store.base)
       const manifest = await this.store.manifest(url)
@@ -836,7 +839,7 @@ export class ThreeScene implements SceneView {
 
   /**
    * Plan §2.6: background, hemisphere fill and environment strength per theme (in-place, live).
-   * A flavor's environment keeps its own light (Horizon is always daylight; panels still follow).
+   * A flavor's environment keeps its own light (panels still follow).
    */
   setTheme(theme: 'light' | 'dark'): void {
     const env = this.flavor.environment
@@ -1303,85 +1306,6 @@ export class ThreeScene implements SceneView {
     return { mean, sd: Math.sqrt(Math.max(0, sq / n - mean * mean)) }
   }
 
-  /**
-   * Horizon's checks (horizon.spec): `ready`, `calm` (no ad, holo, rain or traffic objects), `luma`
-   * (mean sRGB luminance of a 64 × 36 readback of a fresh frame) and `emissive` (the brightest
-   * visible emissive, intensity × channel).
-   */
-  private horizonDebug() {
-    return {
-      ready: () => !!this.layout && !!this.building,
-      calm: () => {
-        const loud: string[] = []
-        this.scene.traverse((o) => {
-          if (/^(ad|holo)[-:]|rain|traffic/i.test(o.name)) loud.push(o.name)
-        })
-        return loud
-      },
-      luma: () => this.readback()?.mean ?? null,
-      /** Standard deviation of the same readback's luma (flat, milky images score low). */
-      contrast: () => this.readback()?.sd ?? null,
-      /**
-       * Live tuning of the look (iteration only): tone mapping, exposure, IBL and fill strength,
-       * the sky's brightness and a lightmap multiplier on top of the flavor's.
-       */
-      tune: (t: {
-        toneMapping?: 'agx' | 'neutral' | 'aces'
-        exposure?: number
-        environment?: number
-        fill?: number
-        background?: number
-        lightmap?: number
-        sun?: number
-      }) => {
-        const tm = {
-          agx: THREE.AgXToneMapping,
-          neutral: THREE.NeutralToneMapping,
-          aces: THREE.ACESFilmicToneMapping,
-        }
-        this.pipeline.setLook({
-          ...(t.toneMapping && { toneMapping: tm[t.toneMapping] }),
-          ...(t.exposure !== undefined && { exposure: t.exposure }),
-        })
-        if (t.environment !== undefined) this.scene.environmentIntensity = t.environment
-        if (t.fill !== undefined) this.fillBase = t.fill
-        if (t.background !== undefined) this.scene.backgroundIntensity = t.background
-        if (t.sun !== undefined) this.sun.intensity = t.sun
-        if (t.lightmap !== undefined) {
-          const seen = new Set<THREE.Material>()
-          this.building?.group.traverse((o) => {
-            const m = o as THREE.Mesh
-            if (!m.isMesh) return
-            for (const mat of (Array.isArray(m.material)
-              ? m.material
-              : [m.material]) as THREE.MeshStandardMaterial[]) {
-              if (!mat.lightMap || seen.has(mat)) continue
-              seen.add(mat)
-              mat.userData.lmBase ??= mat.lightMapIntensity
-              mat.lightMapIntensity = (mat.userData.lmBase as number) * t.lightmap!
-            }
-          })
-        }
-        this.applyEnv()
-      },
-      emissive: () => {
-        let max = 0
-        let name = ''
-        this.scene.traverseVisible((o) => {
-          const m = o as THREE.Mesh
-          if (!m.isMesh) return
-          for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
-            const e = mat as THREE.MeshStandardMaterial
-            if (!e.visible || !e.emissive || !(e.emissiveIntensity > 0)) continue
-            const v = e.emissiveIntensity * Math.max(e.emissive.r, e.emissive.g, e.emissive.b)
-            if (v > max) [max, name] = [v, `${m.name}:${e.name}`]
-          }
-        })
-        return { max: Math.round(max * 1000) / 1000, name }
-      },
-    }
-  }
-
   /** Dev/screenshot hook: camera bookmarks and frame stats. Only installed behind the debug flag. */
   private installDebug(): void {
     this.el.stats.hidden = false
@@ -1611,11 +1535,10 @@ export class ThreeScene implements SceneView {
       sceneBackground: () => this.background.getHex(),
       /** An agent's seat (its desk anchor), else the anchor it heads to: the same in every flavor. */
       anchorOf: (id: string) => this.desks.get(id) ?? this.plans.get(id)?.intent.target ?? null,
-      /** Mean and standard deviation of luma of a fresh frame (Horizon's brightness/contrast bars). */
+      /** Mean and standard deviation of luma of a fresh frame . */
       lookStats: () => this.readback(),
-      /** The flavor in force ('classic' | 'horizon'). */
+      /** The flavor in force ('classic'). */
       flavor: () => this.flavor.id,
-      ...(this.flavor.id === 'horizon' && { horizon: this.horizonDebug() }),
       stats: () => ({
         ...this.pipeline.stats,
         // GPU memory estimate and drawing-buffer size (Settings → Graphics, make perf).

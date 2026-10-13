@@ -49,18 +49,18 @@ export const GraphicsAdvancedSchema = z.object({
 })
 export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
 /**
- * '3d' Classic, 'pixel' 2D RPG, 'special' Horizon (optional, lazy-loaded; docs/horizon),
- * 'minimal' the static agent hierarchy (docs/minimal-mode.md).
+ * '3d' Classic, 'pixel' 2D RPG, 'minimal' the static agent hierarchy (docs/minimal-mode.md).
+ * 'special' (Horizon) was removed: a saved one is read as '3d' (`SettingsSchema.viewMode`).
  */
-export const VIEW_MODES = ['3d', 'pixel', 'special', 'minimal'] as const
+export const VIEW_MODES = ['3d', 'pixel', 'minimal'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
 /** Sims-style wall visibility in the 3D modes (graphics contract §13). */
 export const WALL_MODES = ['up', 'cutaway', 'down'] as const
 export type WallMode = (typeof WALL_MODES)[number]
 const Volume = (d: number) => z.number().min(0).max(1).default(d)
 /**
- * Horizon (the 'special' view mode) preferences. Horizon uses `introSeen` and `reducedMotion`;
- * `camera`, `audio`, `atmosphere` and `rain` are unused (kept for compatibility: settings are additive).
+ * Preferences of the removed 'special' view mode (Night City, then Horizon). Unused; kept so saved
+ * settings stay valid (settings are additive).
  */
 export const SpecialSettingsSchema = z.object({
   camera: z.enum(['third', 'first', 'overview']).default('third'),
@@ -135,8 +135,8 @@ export const SettingsSchema = z.object({
   batteryPreset: z.enum(BATTERY_PRESETS).default('off'),
   /** Off = software rendering (needs a restart). */
   hardwareAcceleration: z.boolean().default(true),
-  /** Optional extra view: '3d' (the office, default) or 'pixel' (the 2D RPG mode). Applied live. */
-  viewMode: z.enum(VIEW_MODES).default('3d'),
+  /** '3d' (the office, default), 'pixel' (2D RPG) or 'minimal'. Applied live. A saved 'special' (the removed Horizon) reads as '3d'. */
+  viewMode: z.preprocess((v) => (v === 'special' ? '3d' : v), z.enum(VIEW_MODES)).default('3d'),
   /** What the window opens on: 'auto' = the Overview once a project exists, else the Office. */
   startView: z.enum(['auto', 'overview', 'office']).default('auto'),
   /** Shell layout preferences (applied live). */
@@ -168,6 +168,8 @@ export const SettingsPatchSchema: z.ZodType<SettingsPatch> = z
         .map(([k, v]) => [k, v instanceof z.ZodDefault ? v.removeDefault() : v]),
     ) as unknown as typeof SettingsSchema.shape,
   )
+  // A patch picks a current mode only (the 'special' → '3d' mapping is for saved settings).
+  .extend({ viewMode: z.enum(VIEW_MODES) })
   .partial()
   .strict() as unknown as z.ZodType<SettingsPatch>
 export interface SettingsResult {

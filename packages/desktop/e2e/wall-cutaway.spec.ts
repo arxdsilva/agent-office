@@ -38,11 +38,7 @@ type W = { __aoDebug: Debug }
 function lowQualityProfile() {
   const profile = newProfile()
   mkdirSync(profile.userData, { recursive: true })
-  // Horizon's first-visit intro is a modal: mark it seen so step 8 can hover.
-  writeFileSync(
-    join(profile.userData, 'settings.json'),
-    JSON.stringify({ graphicsQuality: 'low', special: { introSeen: true } }),
-  )
+  writeFileSync(join(profile.userData, 'settings.json'), JSON.stringify({ graphicsQuality: 'low' }))
   return profile
 }
 
@@ -64,7 +60,7 @@ const alphaOf = async (win: Page, id: number) => (await walls(win)).alpha[id] ??
 
 /**
  * Hovering a solid wall in a wing view fades it within the poll; moving away brings it back.
- * Shared by Classic 3D (step 1) and Horizon (step 8): the same scene, the same walls.
+ * Used by Classic 3D (step 1).
  */
 async function hoverFades(win: Page, boxes: Box[], name: string): Promise<void> {
   // A wing view: walls are large on screen. Pick a solid wall whose middle is on screen.
@@ -332,31 +328,6 @@ test('walls fade on hover and in Cutaway, stay in Up, lower in Down; picking and
     const btn = win.locator('#wall-mode-btn')
     if (await btn.count()) await btn.dispatchEvent('click')
     await win.waitForTimeout(500)
-  })
-
-  await test.step('8: Horizon (the same office, light flavor): hovering a wall fades it too', async () => {
-    await win.locator('#mode-toggle [data-mode="special"]').click()
-    await expect
-      .poll(
-        () =>
-          win.evaluate(
-            () =>
-              (
-                window as unknown as { __aoDebug?: { horizon?: { ready(): boolean } } }
-              ).__aoDebug?.horizon?.ready() === true,
-          ),
-        { timeout: 60_000 },
-      )
-      .toBe(true)
-    // The same walls as Classic once every module has streamed in.
-    await expect.poll(async () => (await walls(win)).total, { timeout: 60_000 }).toBe(boxes.length)
-    // Step 7's click in 2D changed the wall setting: back to Cutaway, as in step 1.
-    await dbg(win, (d) => d.setWallMode('cutaway'))
-    // Nobody selected: the camera stays on the wing view instead of following Ada.
-    await win.mouse.click(2, 60)
-    await win.keyboard.press('Escape')
-    await expect(win.locator('#panel')).toBeHidden()
-    await hoverFades(win, await dbg(win, (d) => d.wallBoxes()), 'horizon-hover')
   })
 
   expect(errors).toEqual([])

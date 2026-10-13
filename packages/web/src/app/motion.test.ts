@@ -18,7 +18,6 @@ import {
   animTier,
   appearanceOf,
   CLASSIC_APPEARANCE,
-  HORIZON_APPEARANCE,
   createMotion,
   impostorCell,
   impostorMask,
@@ -317,43 +316,11 @@ describe('appearance', () => {
 })
 
 describe('appearance palettes', () => {
-  // sRGB luma on 0–1 channels (the art direction's "light" bar for Horizon shirts).
-  const luma = (hex: number) =>
-    (0.2126 * ((hex >> 16) & 255) + 0.7152 * ((hex >> 8) & 255) + 0.0722 * (hex & 255)) / 255
   const ids = Array.from({ length: 200 }, (_, i) => `agent-${i}`)
 
   it('defaults to the Classic palette (unchanged looks)', () => {
     for (const id of ids.slice(0, 20))
       expect(appearanceOf(id, undefined, CLASSIC_APPEARANCE)).toEqual(appearanceOf(id))
-  })
-
-  it('Horizon: deterministic, light shirts (luma ≥ 0.6) and light trousers', () => {
-    for (const id of ids) {
-      const a = appearanceOf(id, undefined, HORIZON_APPEARANCE)
-      expect(a).toEqual(appearanceOf(id, undefined, HORIZON_APPEARANCE))
-      expect(luma(a.shirt)).toBeGreaterThanOrEqual(0.6)
-      expect(luma(a.pants)).toBeGreaterThanOrEqual(0.55)
-    }
-    const shirts = new Set(ids.map((id) => appearanceOf(id, undefined, HORIZON_APPEARANCE).shirt))
-    expect(shirts.size).toBeGreaterThanOrEqual(8)
-  })
-
-  it('Horizon keeps the person (skin, hair, style) and only changes the clothes', () => {
-    for (const id of ids.slice(0, 30)) {
-      const c = appearanceOf(id)
-      const h = appearanceOf(id, undefined, HORIZON_APPEARANCE)
-      expect({ skin: h.skin, hair: h.hair, hairStyle: h.hairStyle, glasses: h.glasses }).toEqual({
-        skin: c.skin,
-        hair: c.hair,
-        hairStyle: c.hairStyle,
-        glasses: c.glasses,
-      })
-    }
-  })
-
-  it("Horizon badges use the parent's Horizon shirt", () => {
-    const kid = appearanceOf('kid', 'parent', HORIZON_APPEARANCE)
-    expect(kid.badge).toBe(appearanceOf('parent', undefined, HORIZON_APPEARANCE).shirt)
   })
 })
 

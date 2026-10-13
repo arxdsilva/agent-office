@@ -50,12 +50,11 @@ def exists(name):
 
 def pbr(name, base='#cccccc', rough=0.5, metal=0.0, tex=None, tile=2.0, normal=1.0, vcol=False,
         emission=None, strength=0.0, alpha=None, double_sided=False, spec=0.5, rough_tex=False,
-        coat=0.0, bake_emit=False, albedo=True):
+        coat=0.0, bake_emit=False):
     """Create (once) a Principled material.
 
     base:     hex/linear color; with `tex` it multiplies the albedo map (exported as baseColorFactor).
     tex:      Poly Haven id; uses diff, nor_gl and (when `rough_tex`) the ARM map's roughness channel.
-    albedo:   False keeps only the map's relief (normal, roughness): the colour is `base` alone.
     vcol:     multiply base color by the 'Col' color attribute (exported as COLOR_0).
     emission: hex color; `strength` is exported through KHR_materials_emissive_strength.
     alpha:    < 1 makes a blended, double-sided material (glass).
@@ -75,45 +74,30 @@ def pbr(name, base='#cccccc', rough=0.5, metal=0.0, tex=None, tile=2.0, normal=1
     x = -300
     if tex:
         maps = textures.polyhaven(tex)
-        if albedo:
-            img = nt.nodes.new('ShaderNodeTexImage')
-            img.image = maps['diff']
-            img.location = (x - 500, 300)
-            mix = nt.nodes.new('ShaderNodeMix')
-            mix.data_type = 'RGBA'
-            mix.blend_type = 'MULTIPLY'
-            mix.inputs['Factor'].default_value = 1.0
-            mix.inputs['B'].default_value = rgba(base)
-            mix.location = (x - 200, 300)
-            nt.links.new(img.outputs['Color'], mix.inputs['A'])
-            if vcol:
-                va = nt.nodes.new('ShaderNodeVertexColor')
-                va.layer_name = 'Col'
-                va.location = (x - 500, 600)
-                mix2 = nt.nodes.new('ShaderNodeMix')
-                mix2.data_type = 'RGBA'
-                mix2.blend_type = 'MULTIPLY'
-                mix2.inputs['Factor'].default_value = 1.0
-                mix2.location = (x - 100, 450)
-                nt.links.new(mix.outputs['Result'], mix2.inputs['A'])
-                nt.links.new(va.outputs['Color'], mix2.inputs['B'])
-                nt.links.new(mix2.outputs['Result'], color_socket)
-            else:
-                nt.links.new(mix.outputs['Result'], color_socket)
-        elif vcol:  # the map's relief only: `base` × the 'Col' attribute, with its normal map (Horizon)
+        img = nt.nodes.new('ShaderNodeTexImage')
+        img.image = maps['diff']
+        img.location = (x - 500, 300)
+        mix = nt.nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        mix.inputs['B'].default_value = rgba(base)
+        mix.location = (x - 200, 300)
+        nt.links.new(img.outputs['Color'], mix.inputs['A'])
+        if vcol:
             va = nt.nodes.new('ShaderNodeVertexColor')
             va.layer_name = 'Col'
-            va.location = (x - 500, 300)
-            mix = nt.nodes.new('ShaderNodeMix')
-            mix.data_type = 'RGBA'
-            mix.blend_type = 'MULTIPLY'
-            mix.inputs['Factor'].default_value = 1.0
-            mix.inputs['B'].default_value = rgba(base)
-            mix.location = (x - 200, 300)
-            nt.links.new(va.outputs['Color'], mix.inputs['A'])
+            va.location = (x - 500, 600)
+            mix2 = nt.nodes.new('ShaderNodeMix')
+            mix2.data_type = 'RGBA'
+            mix2.blend_type = 'MULTIPLY'
+            mix2.inputs['Factor'].default_value = 1.0
+            mix2.location = (x - 100, 450)
+            nt.links.new(mix.outputs['Result'], mix2.inputs['A'])
+            nt.links.new(va.outputs['Color'], mix2.inputs['B'])
+            nt.links.new(mix2.outputs['Result'], color_socket)
+        else:
             nt.links.new(mix.outputs['Result'], color_socket)
-        else:  # the map's relief only: a flat `base` colour with its normal map (Horizon floors)
-            color_socket.default_value = rgba(base)
         if maps['nor_gl'] is not None and normal > 0:
             n_img = nt.nodes.new('ShaderNodeTexImage')
             n_img.image = maps['nor_gl']

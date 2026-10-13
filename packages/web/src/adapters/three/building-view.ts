@@ -403,7 +403,7 @@ export class BuildingView {
     private store: AssetStore,
     private manifest: Manifest,
     /**
-     * A scene flavor's levels. `emissiveMax`: ceiling on emissive intensity (Horizon 1.5, "neon
+     * A scene flavor's levels. `emissiveMax`: ceiling on emissive intensity ("neon
      * only where it has a purpose"). `lightmapScale`: multiplies the manifest's lightmap
      * intensity. Classic: neither, so every value is exactly as before.
      */

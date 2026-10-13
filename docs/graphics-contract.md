@@ -211,27 +211,11 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 - The optimizer must keep `_WALLID` exact (integers stored as floats; no lossy filter on it); the
   validator checks it on atrium and wing baked meshes.
 
-## 14. Horizon asset set (additive; the optional Horizon mode)
+## 14. Retired: second asset sets
 
-- **What:** the Classic modules of §1–§13 (atrium, street, wing, garden, cap, character), built by the
-  **same module scripts** with the Horizon palettes: `themes.HORIZON_HOUSE` for the shared spaces and
-  `themes.HORIZON[<theme id>]` for the wings. The theme ids are the Classic ones (`terracotta`,
-  `nordic`, `forest`, `ocean`, `neon`, `brass`), so a provider's wing is in the same place in both
-  modes, only recoloured. Anchors, nav graphs, floor plans, colliders and `_WALLID` are identical to
-  Classic by construction (the validator checks anchor-id equality).
-- **Where:** `packages/web/public/horizon/` with its own `manifest.json` (`set: 'horizon'`), built by
-  `node assets/build.mjs --set horizon` (`make horizon-assets`). Classic publishing never touches it,
-  and the Horizon build never touches `public/assets`.
-- **Optional decor flags** (theme dict `decor`, default off; Classic themes leave them off, so Classic
-  output is byte-identical): `cove_lights` (thin emissive lines under ceiling edges),
-  `wayfinding` (floor lines on Main Street and in the atrium), `elevator_glow` (emissive elevator
-  frames), `kiosk_ring` (a ring under the Project Directory kiosk). Emissive ≤ 1.5× white.
-- **Optional palette keys** (defaults are today's Classic values, so Classic output is unchanged):
-  `glass_dark`, `screen_base`, `led_color`, `light_strength`, `emit_max` (cap on emissive strength),
-  `flat`, `library_wood`, `light_scale` and `sky_scale` (bake lighting), and the colour keys `planter`,
-  `chair_dark`, `pendant`, `game_floor`, `arcade_body`, `mural_dark`, `tech_floor`, `tech_felt`,
-  `hub_floor`, `handoff_floor`. `themes.theme_for(set, kind, theme)` picks the dict.
-- **Character:** the Classic `character.glb`; Horizon outfits are a runtime tint palette.
-- **Budgets:** §9 per module; the set total is ≤ 55 MB, counted separately from Classic.
+- The Horizon asset set (`packages/web/public/horizon/`, `manifest.set: 'horizon'`, `--set horizon`)
+  was removed together with the Horizon view mode. There is one asset set, `public/assets`; a
+  manifest has no `set` field.
 - The earlier Night City additions (anchors `ws:`, `booth:`, `meet:`, `interact:`, `player:spawn`;
-  roles `holo`, `ad`, `traffic`, `rain-glass`, `neon`; `public/special3d`) are retired.
+  roles `holo`, `ad`, `traffic`, `rain-glass`, `neon`; `public/special3d`) are retired too.
+- The section number stays: the contract is additive.

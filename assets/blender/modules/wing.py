@@ -478,7 +478,7 @@ def _adapters(g, A, P, t, rng):
 def _library(g, A, P, t, rng):
     """Library, z ∈ [0, 9]: shelf A (books 0–11) on the partition, shelf B (12–23) on the end wall, six
     rule boards on the door wall, an 8-notebook display under the window, a reading table for four."""
-    g.box_b(P[t.get('library_wood', 'wood_dark')], ROOM_X0, ROOM_X1, 0, 0.006, 0.08, 8.85, bevel=0)
+    g.box_b(P['wood_dark'], ROOM_X0, ROOM_X1, 0, 0.006, 0.08, 8.85, bevel=0)
     d, w, sh = 0.42, 5.0, 3.5
     feat_x = (1.3, 1.45, 1.6, 3.4, 3.55, 3.7)
     with g.at(24.55, 0.08 + d):
@@ -627,14 +627,6 @@ def _decor(g, A, P, name, t, rng):
     if name == 'terracotta':
         for x in (2.0, 4.6):
             F.pot_plant(g, P, (x, 0, 8.45), 0.2, 0.42, 'bush', rng, pot_color=t.get('planter', '#C26A48'))
-    if d.get('cove_lights'):
-        # contract §14 (Horizon): soft cove lines 5 cm under the ceiling along the open office's long walls
-        # and the street wall (meeting rooms, Adapters and Library keep their own lighting)
-        y0, y1 = H - 0.07, H - 0.05
-        line = P['line']
-        g.box_b(line, 0.3, MEET_X0 - 0.1, y0, y1, -8.83, -8.81, bevel=0)
-        g.box_b(line, 0.3, MEET_X0 - 0.1, y0, y1, 8.81, 8.83, bevel=0)
-        g.box_b(line, 0.24, 0.26, y0, y1, -8.7, 8.7, bevel=0)
 
 
 def _rooms(g):

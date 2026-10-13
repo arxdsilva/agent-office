@@ -15,10 +15,8 @@ const HELP = `Usage: node scripts/perf.mjs [options]
   --settle <n>       seconds to wait after adding agents (default 8)
   --view <id>        camera bookmark while sampling (default overview)
   --low-end          CPU rendering (SwiftShader via AGENT_OFFICE_FORCE_SOFTWARE_GL=1), DPR 1
-  --mode <3d|pixel|horizon>  view mode (default 3d; pixel = the 2D RPG mode, sampled at the
-                     claude-code wing; horizon = the Classic office with the Horizon flavor: the
-                     same matrix and bars as 3d, plus GPU MB and the Horizon → 3D → Horizon
-                     switch time)
+  --mode <3d|pixel>  view mode (default 3d; pixel = the 2D RPG mode, sampled at the
+                     claude-code wing)
   --zoom-out         2D only: sample at the most zoomed-out level (the most on screen)
   -h, --help         this text
 
@@ -44,7 +42,6 @@ if (args.help) {
   console.log(HELP)
   process.exit(0)
 }
-const horizon = args.mode === 'horizon' || args.mode === 'special'
 const plan = perfPlan(args)
 
 /** One preset: a fresh app (graphicsQuality written to its profile), so startup is measured too. */
@@ -52,18 +49,13 @@ async function measure(preset) {
   const started = Date.now()
   const { win, port, token, close } = await launchApp({
     quality: preset,
-    viewMode: args.mode === 'pixel' ? 'pixel' : horizon ? 'special' : undefined,
+    viewMode: args.mode === 'pixel' ? 'pixel' : undefined,
     env: plan.env,
     args: plan.args,
   })
   // launchApp resolves once the renderer has a layout (window.__aoDebug.ready()).
   const firstFrameMs = Date.now() - started
   try {
-    if (horizon) {
-      // A fresh profile: Horizon's first-visit intro is up (modal); dismiss it.
-      const intro = win.locator('#horizon-intro [data-action="continue"]')
-      await intro.click({ timeout: 10_000 }).catch(() => {})
-    }
     const res = await fetch(`http://127.0.0.1:${port}/api/mock?n=${plan.agents}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token()}` },
@@ -105,7 +97,6 @@ async function measure(preset) {
 
     const summary = summarize(sample.frames, sample.rendered)
     const s = sample.stats
-    const extra = horizon ? await horizonExtras(win, s) : {}
     console.log(
       `${preset.padEnd(8)}: ${s.total ?? '?'} agents (${s.animated ?? '?'} animated, ` +
         `${s.impostors ?? '?'} impostors), ${summary.frames} frames over ${plan.seconds} s`,
@@ -118,7 +109,6 @@ async function measure(preset) {
       textureMB: typeof s.textureMB === 'number' ? s.textureMB : undefined,
       firstFrameMs,
       ...(typeof sample.heap === 'number' ? { heapMB: sample.heap / 2 ** 20 } : {}),
-      ...extra,
       ...verdict(preset, summary, plan.lowEnd),
     }
   } finally {
@@ -126,25 +116,8 @@ async function measure(preset) {
   }
 }
 
-/** Horizon only: GPU MB, and the time to switch Horizon → Classic 3D → Horizon (until ready). */
-async function horizonExtras(win, stats) {
-  const gpuMB = stats.textureMB + stats.geometryMB
-  await win.locator('#mode-toggle [data-mode="3d"]').click()
-  await win.waitForFunction(
-    () => window.__aoDebug?.flavor?.() === 'classic' && window.__aoDebug.ready(),
-    null,
-    { timeout: 90_000 },
-  )
-  const t0 = Date.now()
-  await win.locator('#mode-toggle [data-mode="special"]').click()
-  await win.waitForFunction(() => window.__aoDebug?.horizon?.ready() === true, null, {
-    timeout: 90_000,
-  })
-  return { gpuMB, switchMs: Date.now() - t0 }
-}
-
 console.log(
-  `perf${horizon ? ' (Horizon)' : ''}: ${plan.presets.join(', ')} · ${plan.agents} agents · ${plan.seconds} s` +
+  `perf: ${plan.presets.join(', ')} · ${plan.agents} agents · ${plan.seconds} s` +
     (plan.lowEnd ? ' · software GL (SwiftShader), DPR 1' : ''),
 )
 const rows = []
@@ -164,12 +137,4 @@ for (const preset of plan.presets) {
   }
 }
 console.log(`\n${formatTable(rows)}`)
-if (horizon) {
-  const f = (n, d = 0) => (typeof n === 'number' ? n.toFixed(d) : 'n/a')
-  console.log('\nHorizon   GPU MB  switch s')
-  for (const r of rows)
-    console.log(
-      `${r.preset.padEnd(9)} ${f(r.gpuMB).padStart(6)} ${f(r.switchMs / 1000, 1).padStart(9)}`,
-    )
-}
 if (rows.some((r) => r.pass === false)) process.exitCode = 1

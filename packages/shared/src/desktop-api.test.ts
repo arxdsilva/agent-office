@@ -190,6 +190,13 @@ describe('view mode (2D RPG plan §10.1)', () => {
     expect(SettingsPatchSchema.safeParse({ viewMode: '2d' }).success).toBe(false)
     expect(SettingsSchema.parse({ graphicsQuality: 'low' }).viewMode).toBe('3d')
   })
+
+  // Horizon ('special') was removed: a saved choice opens Classic 3D; nobody can pick it anymore.
+  it('reads a saved Horizon choice as Classic 3D and rejects it in a patch', () => {
+    expect(SettingsSchema.parse({ viewMode: 'special' }).viewMode).toBe('3d')
+    expect(SettingsPatchSchema.safeParse({ viewMode: 'special' }).success).toBe(false)
+    expect(SettingsPatchSchema.safeParse({ viewMode: 'minimal' }).success).toBe(true)
+  })
 })
 
 // Multi-provider contract (plan "multi-provider platform" §1): additive, old payloads still valid.

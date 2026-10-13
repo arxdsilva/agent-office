@@ -27,7 +27,6 @@ import { PRESETS } from './app/quality.ts'
 import { createSimClock, type SimClock } from './app/sim-clock.ts'
 import { createController } from './controller.ts'
 import { createWorkspaceViews, installWorkspaceKeys } from './adapters/dom/workspace-views.ts'
-import { showHorizonFailure } from './horizon/failure.ts'
 import { createWorkspaceController, type WorkspaceController } from './workspace-controller.ts'
 import type { AgentPlan } from './app/office-types.ts'
 import type { OfficeGateway, SceneView } from './ports.ts'
@@ -55,8 +54,7 @@ async function startupSettings(
 ): Promise<{ powerPreference: PowerPreference | undefined; viewMode: ViewMode }> {
   try {
     const { graphicsQuality, viewMode } = await gateway.settings.get()
-    const mode: ViewMode =
-      viewMode === 'pixel' || viewMode === 'special' || viewMode === 'minimal' ? viewMode : '3d'
+    const mode: ViewMode = viewMode === 'pixel' || viewMode === 'minimal' ? viewMode : '3d'
     if (graphicsQuality === 'auto') return { powerPreference: undefined, viewMode: mode }
     const spec = PRESETS[graphicsQuality] as { powerPreference?: PowerPreference } | undefined
     return { powerPreference: spec?.powerPreference, viewMode: mode }
@@ -107,23 +105,6 @@ function createScene(clock: SimClock, powerPreference: PowerPreference | undefin
   return new Scene(elements, clock, powerPreference ? { powerPreference } : {})
 }
 
-/**
- * Builds Horizon (the 'special' mode: the Classic office with a light flavor). Its code is a
- * separate, lazy-loaded chunk, so the other modes never download it. Throws when it can't start
- * (no WebGL, `?forceSpecialFail=1`).
- */
-async function createHorizon(
-  gateway: OfficeGateway,
-  clock: SimClock,
-  powerPreference: PowerPreference | undefined,
-): Promise<SceneView> {
-  const { createHorizonScene } = await import('./horizon/index.ts')
-  return createHorizonScene(clock, {
-    settings: { get: () => gateway.settings.get(), set: (p) => gateway.settings.set(p) },
-    ...(powerPreference && { powerPreference }),
-  })
-}
-
 /** Last snippet language (per viewer); storage may be unavailable. */
 function storedSnippetLang(): SnippetLang | undefined {
   try {
@@ -149,40 +130,19 @@ async function boot(): Promise<void> {
         return createPixelScene(clock)
       case 'minimal':
         return createMinimalScene(byId('stage'), byId('loading'))
-      case 'special':
-        throw new Error('Horizon loads asynchronously')
       case '3d':
         return createScene(clock, startup.powerPreference)
     }
   }
-  const pickMode = (mode: ViewMode) => void gateway.settings.set({ viewMode: mode }).catch(() => {})
   const hostDeps = {
     factory,
-    factoryAsync: async (mode: ViewMode): Promise<SceneView> => {
-      if (mode !== 'special') return factory(mode)
-      try {
-        return await createHorizon(gateway, clock, startup.powerPreference)
-      } catch (e) {
-        showHorizonFailure(e, pickMode)
-        throw e
-      }
-    },
     resync: () => resync?.() ?? new Map(),
   }
   try {
     scene = await SceneHost.initAsync({ ...hostDeps, mode: startup.viewMode })
   } catch (e) {
-    // Horizon could not start: its failure card is up; Classic 3D runs meanwhile.
-    if (startup.viewMode !== 'special') {
-      showGfxFailure(gateway, e)
-      return
-    }
-    try {
-      scene = await SceneHost.initAsync({ ...hostDeps, mode: '3d' })
-    } catch (e2) {
-      showGfxFailure(gateway, e2)
-      return
-    }
+    showGfxFailure(gateway, e)
+    return
   }
   document.body.dataset.mode = scene.mode
   const settings = new DomSettings({ removeImported: () => gateway.projects.removeImported() })

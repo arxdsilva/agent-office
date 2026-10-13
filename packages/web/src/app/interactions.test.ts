@@ -1,4 +1,4 @@
-// The semantic interaction registry (docs/horizon/rendering.md): one hit kind → one
+// The semantic interaction registry (docs/architecture/scene-adapters.md): one hit kind → one
 // existing command (workspace action, dialogue, or panel), the same in every view mode.
 import { describe, expect, it } from 'vitest'
 import { INTERACTION_KINDS, type InteractionHit } from './office-types.ts'

@@ -52,9 +52,6 @@ def build(g, A, P, name, t, rng):
             g.collider(min(s * 1.55, s * 2.9), max(s * 1.55, s * 2.9), z0, z1, 0, 0.6)
             g.light('point', (s * 2.45, 0.7, zc), radius=0.3, power=12, kelvin=3000)
 
-    if t['decor'].get('wayfinding'):  # contract §14 (Horizon): a centre light line down the boardwalk
-        g.box_b(P['line'], -0.015, 0.015, 0.012, 0.015, 0.4, 17.6, bevel=0)
-
     g.room('street', 'Main Street', -3, 0, 3, 18, floor='wood')
     # nav: spine + connectors (contract §3)
     A.node('s:0', 0, 0, 1.6)

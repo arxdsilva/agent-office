@@ -415,6 +415,8 @@ Low (left) and Ultra (right), same view:
 
 **Minimal** (the mode switch, top right) is a calm, static view of who is working on what: one card per project, its main agents, and their subagents nested underneath. Each agent shows its **assigned task** and what it is **doing right now** as separate lines, with provider, model and status. Finished subagents move to a short **Recently finished** list under their parent. There's no 3D, no camera and no render loop: the page changes only when an agent does. Click any agent to open its chat panel. Details: [docs/minimal-mode.md](docs/minimal-mode.md).
 
+The mode switch has three views: **3D Office**, **2D RPG** and **Minimal**. The earlier Horizon view was removed; if you had it selected, the app opens in 3D Office.
+
 ## 2D RPG mode (optional)
 
 Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same live office** as a GBA-style, top-down pixel-art world. It's an extra view, not a replacement: the 3D office stays the default, and switching doesn't restart agents or lose chats, sessions or permissions.

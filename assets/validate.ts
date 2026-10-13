@@ -2,7 +2,7 @@
 // Pure checks (manifest shape, anchors, nav, character metadata, budgets) plus one IO orchestrator,
 // validateAssets(dir), that reads manifest.json and every file it references.
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { dirname, join, normalize } from 'node:path'
+import { join, normalize } from 'node:path'
 import {
   ImageUtils,
   Logger,
@@ -154,14 +154,6 @@ export const CONNECTORS: Record<ModuleKind, [number, number][]> = {
 }
 export const MERGE_EPS = 0.05
 
-// ── Asset sets ────────────────────────────────────────────────────────────────────────────────────
-/**
- * Which asset set a directory holds: `public/assets` (classic) or `public/horizon` (Horizon, contract §14:
- * the same modules in the Horizon palettes, with `set: 'horizon'`). Both sets pass every check; each
- * counts its own 55 MB total.
- */
-export type Profile = 'classic' | 'horizon'
-
 // ── Manifest types (validated loosely, then trusted) ────────────────────────────────────────────
 export interface Vec2 {
   x: number
@@ -211,8 +203,6 @@ export interface WingJson extends Omit<ModuleJson, 'file' | 'lightmap'> {
 }
 export interface Manifest {
   version: 1
-  /** Contract §14: 'horizon' for the Horizon set; absent in the Classic one. */
-  set?: 'classic' | 'horizon'
   blender: string
   units: 'm'
   hash: string
@@ -319,15 +309,10 @@ function checkModuleShape(path: string, v: unknown, out: string[], needsFile: bo
 }
 
 /** Structural validation of manifest.json (contract §7). Errors name the offending path. */
-export function checkManifest(m: unknown, profile: Profile = 'classic'): string[] {
+export function checkManifest(m: unknown): string[] {
   const out: string[] = []
   if (!isObj(m)) return ['manifest: must be a JSON object']
   if (m.version !== 1) out.push(`manifest.version: expected 1, got ${JSON.stringify(m.version)}`)
-  // Contract §14: a Horizon manifest says so; a Classic one has no `set` (or 'classic').
-  if (profile === 'horizon' && m.set !== 'horizon')
-    out.push(`manifest.set: expected "horizon", got ${JSON.stringify(m.set)}`)
-  if (profile === 'classic' && m.set !== undefined && m.set !== 'classic')
-    out.push(`manifest.set: expected none or "classic", got ${JSON.stringify(m.set)}`)
   if (m.units !== 'm') out.push('manifest.units: must be "m"')
   if (!isStr(m.blender) || !/^5\.2(\.|$)/.test(m.blender))
     out.push('manifest.blender: must be a Blender 5.2.x version')
@@ -1094,16 +1079,9 @@ export async function createIO(): Promise<NodeIO> {
 
 /**
  * Validate an assets dir against the contract. Never throws for asset problems: everything wrong is listed
- * in `problems`, so CI prints the full picture at once. `profile` picks the set: 'classic'
- * (packages/web/public/assets, contract §1–§13) or 'horizon' (packages/web/public/horizon, §14). Both run
- * every check and each total covers only its own dir; a Horizon set must also have exactly the anchors of
- * the Classic set in `classicDir` (default: the sibling `assets` dir), so both are the same space.
+ * in `problems`, so CI prints the full picture at once.
  */
-export async function validateAssets(
-  dir: string,
-  profile: Profile = 'classic',
-  { classicDir = join(dirname(dir), 'assets') }: { classicDir?: string } = {},
-): Promise<AssetReport> {
+export async function validateAssets(dir: string): Promise<AssetReport> {
   const report: AssetReport = {
     problems: [],
     files: [],
@@ -1117,9 +1095,7 @@ export async function validateAssets(
     manifestText = await readFile(join(dir, 'manifest.json'), 'utf8')
   } catch {
     p.push(
-      profile === 'horizon'
-        ? `${join(dir, 'manifest.json')} is missing. Build the Horizon set with \`make horizon-assets\` (Blender 5.2), or fetch it with \`git lfs pull\`.`
-        : `${join(dir, 'manifest.json')} is missing. Build the assets with \`make assets\` (Blender 5.2), or fetch them with \`git lfs pull\`.`,
+      `${join(dir, 'manifest.json')} is missing. Build the assets with \`make assets\` (Blender 5.2), or fetch them with \`git lfs pull\`.`,
     )
     return report
   }
@@ -1130,7 +1106,7 @@ export async function validateAssets(
     p.push(`manifest.json: invalid JSON (${(e as Error).message})`)
     return report
   }
-  p.push(...checkManifest(raw, profile))
+  p.push(...checkManifest(raw))
   if (p.length) return report
   const io = await createIO()
 
@@ -1252,36 +1228,6 @@ export async function validateAssets(
   report.vram = { textures: gpu.bytes, uniqueTextures: gpu.unique, lightmaps: lightmapBytes }
   p.push(...checkVram(gpu.bytes, lightmapBytes))
   report.totalBytes = await dirSize(dir)
-  p.push(...checkTotal(report.totalBytes, TOTAL_MAX_BYTES, profile === 'horizon' ? 'Horizon set' : 'assets'))
-  if (profile === 'horizon') {
-    let classic: unknown
-    try {
-      classic = JSON.parse(await readFile(join(classicDir, 'manifest.json'), 'utf8'))
-    } catch {
-      p.push(`${join(classicDir, 'manifest.json')}: missing or invalid; the Horizon anchors cannot be compared with Classic`)
-      return report
-    }
-    p.push(...checkSameSpace(m, classic as Manifest))
-  }
+  p.push(...checkTotal(report.totalBytes, TOTAL_MAX_BYTES, 'assets'))
   return report
-}
-
-/**
- * Contract §14: the Horizon set is the Classic office, so every module has exactly the Classic anchor ids
- * (seats, spots, ports, consoles, the kiosk). Positions come from the same builder; ids are what the
- * renderer and the director key on.
- */
-export function checkSameSpace(horizon: Manifest, classic: Manifest): string[] {
-  const out: string[] = []
-  for (const kind of [...SINGLE_MODULES, 'wing'] as const) {
-    const h = Object.keys(horizon.modules[kind]?.anchors ?? {})
-    const c = new Set(Object.keys(classic.modules?.[kind]?.anchors ?? {}))
-    const extra = h.filter((id) => !c.has(id))
-    const missing = [...c].filter((id) => !h.includes(id))
-    if (extra.length || missing.length)
-      out.push(
-        `horizon ${kind}: anchors differ from Classic (${missing.length} missing${missing.length ? `, e.g. ${missing[0]}` : ''}; ${extra.length} extra${extra.length ? `, e.g. ${extra[0]}` : ''})`,
-      )
-  }
-  return out
 }

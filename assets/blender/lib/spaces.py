@@ -25,12 +25,9 @@ ARCHIVE_X0, ARCHIVE_FRONT_Z, ARCHIVE_BAYS, ARCHIVE_BAY_W, ARCHIVE_H = -10.6, -22
 
 
 def materials(P, t=None):
-    """Emissive accents that bake into the lightmap (cyan context glow, warm handoff glow); a theme's
-    optional `emit_max` caps their strength (Horizon)."""
-    cap = (t or {}).get('emit_max')
-    k = (lambda s: s) if cap is None else (lambda s: min(s, cap))
-    P['hubglow'] = M.pbr('hub-glow', base='#9fe8f0', emission='#66d9e8', strength=k(2.2), bake_emit=True).name
-    P['hubwarm'] = M.pbr('hub-warm', base='#f6d7a0', emission='#f2b45a', strength=k(1.8), bake_emit=True).name
+    """Emissive accents that bake into the lightmap (cyan context glow, warm handoff glow)."""
+    P['hubglow'] = M.pbr('hub-glow', base='#9fe8f0', emission='#66d9e8', strength=2.2, bake_emit=True).name
+    P['hubwarm'] = M.pbr('hub-warm', base='#f6d7a0', emission='#f2b45a', strength=1.8, bake_emit=True).name
 
 
 def console_pose(i):
@@ -49,8 +46,6 @@ def project_hub(g, A, P, t, H):
     for i in range(6):
         _console(g, A, P, i)
     _kiosk(g, A, P)
-    if t['decor'].get('kiosk_ring'):  # contract §14 (Horizon): a soft ring of light under the kiosk
-        g.torus(P['line'], 1.45, 0.012, (KIOSK[0], 0.012, KIOSK[1] + 0.02), segs=64, rsegs=4)
 
 
 def _context_core(g, P, H, floor='#1d2a33'):

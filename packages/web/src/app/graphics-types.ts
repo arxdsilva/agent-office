@@ -56,7 +56,7 @@ export interface EffectiveInput {
   dpr: number
   power: PowerInput
   saver: SaverInput
-  /** Optional: the view's calm default for name tags (Horizon: nearby), used while labels is Auto. */
+  /** Optional: the view's calm default for name tags, used while labels is Auto. */
   labelsDefault?: LabelMode
 }
 
