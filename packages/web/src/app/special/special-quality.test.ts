@@ -20,6 +20,19 @@ const settings = (patch: Partial<ReturnType<typeof SpecialSettingsSchema.parse>>
 })
 
 describe('specialFeatures', () => {
+  // The lobby neon was exported at 6× white and bloomed into glare: it is scaled down at runtime
+  // so strips read as crisp lines with a soft glow (≤ 2× white), on every preset.
+  it('keeps neon and glow strips restrained, with a tight bloom', () => {
+    for (const p of ['low', 'medium', 'high', 'ultra'] as const) {
+      const f = specialFeatures(eff(p), settings())
+      expect(6 * f.emissive.neon).toBeLessThanOrEqual(2)
+      expect(2 * f.emissive.glow).toBeLessThanOrEqual(1.4)
+      expect(f.emissive.bloomStrength).toBeLessThanOrEqual(0.2)
+      expect(f.emissive.bloomRadius).toBeLessThanOrEqual(0.2)
+      expect(f.emissive.floorReflection).toBeLessThanOrEqual(0.6)
+    }
+  })
+
   it('Low: baked only, no bloom, fog, rain or traffic, half resolution, 30 fps cap', () => {
     const f = specialFeatures(eff('low'), settings())
     expect(f).toMatchObject({

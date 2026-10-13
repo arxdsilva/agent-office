@@ -89,6 +89,12 @@ export class RenderPipeline {
   }
 
   /** Passes, real-time shadows and resolution from the effective graphics (live). */
+  /** Bloom strength and radius at runtime (Night City's emissive restraint); threshold unchanged. */
+  setBloom(strength: number, radius: number): void {
+    this.bloom.strength = strength
+    this.bloom.radius = radius
+  }
+
   setGraphics(e: Effective): void {
     this.gtaoScale = e.gtao === 'half' ? 0.5 : 1
     this.gtao.enabled = e.gtao !== 'off'

@@ -63,6 +63,8 @@ export class SpecialWorldView {
   readonly traffic: THREE.Vector3[][] = []
   readonly shafts: ShaftSpec[] = []
   readonly neon: { text: string; color: string; pos: THREE.Vector3; yaw: number }[] = []
+  /** Exported neon (`nc-neon-*`, 6× white) and glow strips (`nc-glow-*`, 2×) with their base intensity. */
+  private emissives: { mat: THREE.MeshStandardMaterial; base: number; kind: 'neon' | 'glow' }[] = []
   private instScreens: {
     mesh: THREE.InstancedMesh
     index: Map<string, number>
@@ -220,6 +222,7 @@ export class SpecialWorldView {
       })
       m.material = Array.isArray(m.material) ? next : next[0]!
       const std = next[0] as THREE.MeshStandardMaterial
+      for (const mat of next as THREE.MeshStandardMaterial[]) this.trackEmissive(mat)
       if (std.emissive && std.emissive.getHex() !== 0 && std.emissiveIntensity >= 1) markBloom(m)
       if (baked)
         mv.floors.push(
@@ -337,5 +340,22 @@ export class SpecialWorldView {
     for (const s of [...this.meshScreens.values(), ...this.meshLeds.values()]) s.mat.dispose()
     for (const m of this.baked.values()) m.dispose()
     for (const s of this.instScreens) (s.mesh.material as THREE.Material).dispose()
+  }
+
+  private trackEmissive(mat: THREE.MeshStandardMaterial): void {
+    const kind = /^nc-neon-/.test(mat.name) ? 'neon' : /^nc-glow-/.test(mat.name) ? 'glow' : null
+    if (!kind || this.emissives.some((e) => e.mat === mat)) return
+    this.emissives.push({ mat, base: mat.emissiveIntensity, kind })
+  }
+
+  /** Emissive restraint (special-quality `emissive`): idempotent, always from the exported base. */
+  setEmissive(e: { neon: number; glow: number; floorReflection: number }): void {
+    for (const x of this.emissives) x.mat.emissiveIntensity = x.base * e[x.kind]
+    for (const mv of this.modules) for (const f of mv.floors) f.envMapIntensity = e.floorReflection
+  }
+
+  /** The brightest neon strip after the restraint (debug hook). */
+  maxNeonIntensity(): number {
+    return this.emissives.reduce((m, x) => Math.max(m, x.mat.emissiveIntensity), 0)
   }
 }

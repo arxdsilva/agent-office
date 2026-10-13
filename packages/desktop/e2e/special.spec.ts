@@ -98,6 +98,17 @@ test('Night City: switch, intro, agents at workstations and booths, panel, modes
     await expect.poll(() => ready(win), { timeout: 60_000 }).toBe(true)
     await expect(win.locator('#special-hud')).toBeVisible()
     await expect(win.locator('#walk')).toBeHidden()
+    // Neon is an accent, not glare: the brightest strip stays within 2× white once restrained.
+    await expect
+      .poll(() =>
+        win.evaluate(
+          () =>
+            (
+              window as unknown as { __aoDebug: { special: { emissive(): { maxNeon: number } } } }
+            ).__aoDebug.special.emissive().maxNeon,
+        ),
+      )
+      .toBeLessThanOrEqual(2)
     // One WebGL canvas: the classic scene was disposed.
     await expect(win.locator('#stage canvas')).toHaveCount(1)
     await expect(win.locator('#stage canvas')).toHaveAttribute('data-scene', 'special')
@@ -179,7 +190,10 @@ test('Night City: switch, intro, agents at workstations and booths, panel, modes
 
   await test.step('10: ten switches back and forth: GPU memory back to baseline (±5%)', async () => {
     const base = await gpu(win)
-    for (let i = 0; i < 10; i++) {
+    // Ten round trips on a real GPU; three under software GL (headless Linux CI renders a few
+    // frames per second, and each scene build takes much longer there).
+    const rounds = process.env.AGENT_OFFICE_FORCE_SOFTWARE_GL === '1' ? 3 : 10
+    for (let i = 0; i < rounds; i++) {
       await toggle('3d').click()
       await expect(win.locator('body')).toHaveAttribute('data-mode', '3d')
       await classic3d(win)

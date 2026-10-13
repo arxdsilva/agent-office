@@ -148,6 +148,20 @@ test('walls fade on hover and in Cutaway, stay in Up, lower in Down; picking and
 
   await test.step('2: Cutaway fades the wall between the camera and the selected agent', async () => {
     await dbg(win, (d) => d.setWallMode('cutaway'))
+    // The focus flight onto Ada must land first, or it overrides the view below (software GL on CI
+    // takes several seconds to finish it).
+    await expect
+      .poll(
+        () =>
+          win.evaluate(
+            () =>
+              (
+                window as unknown as { __aoDebug: { orbit(): { flying: boolean } } }
+              ).__aoDebug.orbit().flying,
+          ),
+        { timeout: 20_000 },
+      )
+      .toBe(false)
     await dbg(win, look, { cam, ada })
     await expect.poll(() => alphaOf(win, wid), { timeout: 3000 }).toBeLessThanOrEqual(0.1)
     expect((await walls(win)).mode).toBe('cutaway')

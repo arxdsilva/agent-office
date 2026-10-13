@@ -34,7 +34,28 @@ export interface SpecialFeatures {
   /** One PMREM cube per room, rendered once after load (wet floors reflect it). */
   probes: boolean
   dynamicLights: number
+  /**
+   * Emissive restraint: the exported neon (6× white) and glow strips (2×) are scaled at runtime so
+   * they read as crisp accent lines with a soft, tight bloom instead of glare.
+   */
+  emissive: {
+    neon: number
+    glow: number
+    bloomStrength: number
+    bloomRadius: number
+    /** Probe reflection strength on the wet floors (1 = the full room cube: a mirror-like sheen). */
+    floorReflection: number
+  }
 }
+
+/** Same on every preset (Low has no bloom; the strips still must not glare). */
+export const EMISSIVE = {
+  neon: 0.3,
+  glow: 0.6,
+  bloomStrength: 0.16,
+  bloomRadius: 0.18,
+  floorReflection: 0.55,
+} as const
 
 interface LevelSpec {
   bloom: boolean
@@ -183,6 +204,7 @@ export function specialFeatures(
     animatedBands: motion ? spec.animatedBands : 0,
     windowFlicker: motion && spec.animatedBands > 0,
     neonFlicker: motion,
+    emissive: { ...EMISSIVE },
     adRotation: motion,
     probes: spec.probes,
     dynamicLights: Math.min(MAX_DYNAMIC_LIGHTS, spec.dynamicLights),

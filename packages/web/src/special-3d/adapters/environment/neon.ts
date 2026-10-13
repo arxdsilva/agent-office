@@ -16,6 +16,8 @@ export class NeonSigns {
   readonly group = new THREE.Group()
   private signs: Sign[] = []
   private geometry = new THREE.PlaneGeometry(1, 1)
+  /** Emissive restraint (special-quality `emissive.glow`): signs glow softly instead of glaring. */
+  private scale = 1
 
   constructor(scene: THREE.Scene) {
     this.group.name = 'neon'
@@ -72,9 +74,13 @@ export class NeonSigns {
     this.signs.push({ mat, base: mat.color.clone(), seed: this.signs.length * 17 + 3 })
   }
 
+  setScale(k: number): void {
+    this.scale = k
+  }
+
   update(t: number, flicker: boolean): void {
     for (const s of this.signs)
-      s.mat.color.copy(s.base).multiplyScalar(flickerAt(s.seed, t, flicker))
+      s.mat.color.copy(s.base).multiplyScalar(this.scale * flickerAt(s.seed, t, flicker))
   }
 
   dispose(): void {

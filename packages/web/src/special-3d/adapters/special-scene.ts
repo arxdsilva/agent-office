@@ -404,6 +404,11 @@ export class SpecialScene implements SceneView {
     this.neon = new NeonSigns(this.scene)
     for (const n of world.neon) this.neon.addText(n.text, n.color, n.pos, n.yaw)
     for (const m of world.neonMeshes) this.neon.adopt(m)
+    // Graphics may have been applied before the world existed: restrain the emissives now too.
+    if (this.features) {
+      world.setEmissive(this.features.emissive)
+      this.neon.setScale(this.features.emissive.glow)
+    }
     for (const m of world.holo) this.holo.attach(m, viewer)
     for (const m of world.rainGlass) m.material = this.rainGlassMat
     for (const m of world.modules) this.probes.add(m.kind, m.probe, m.floors)
@@ -516,6 +521,10 @@ export class SpecialScene implements SceneView {
     this.gfx = e
     const f = (this.features = specialFeatures(e, this.special))
     this.pipeline.setGraphics({ ...f.gfx, bloom: f.bloom })
+    // Emissive restraint: neon strips, signs and wet floors stay accents, not glare.
+    this.pipeline.setBloom(f.emissive.bloomStrength, f.emissive.bloomRadius)
+    this.world?.setEmissive(f.emissive)
+    this.neon?.setScale(f.emissive.glow)
     this.lighting.apply({ perRoom: f.dynamicLights, shadowMap: f.gfx.shadowMap })
     this.atmosphere.apply({ fog: f.fog, density: f.fogDensity, shafts: f.shafts })
     this.rain?.setDrops(f.rainDrops)
@@ -1091,6 +1100,11 @@ export class SpecialScene implements SceneView {
         return !!hit
       },
       gpu: () => scene.stats(),
+      /** Emissive restraint in force and the brightest neon strip after it (special.spec). */
+      emissive: () => ({
+        ...scene.features.emissive,
+        maxNeon: scene.world?.maxNeonIntensity() ?? 0,
+      }),
       camera: (m?: SpecialCamera) => {
         if (m)
           scene.rig.setMode(
