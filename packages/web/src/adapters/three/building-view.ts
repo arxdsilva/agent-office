@@ -11,6 +11,7 @@ import type { Lightmap, Manifest } from '../../app/manifest.ts'
 import type { AABB, BuildingLayout, ModulePlacement, Vec3 } from '../../app/office-types.ts'
 import type { ProviderSurfaces, SurfaceSlot } from '../../app/capability-vm.ts'
 import { DETAIL_DISTANCE, moduleCulling } from '../../app/culling.ts'
+import { contextHubActive, contextPulse } from '../../app/stations.ts'
 import { lightmapFile, type AssetStore, type TieredLightmap } from './assets.ts'
 import {
   accentOrBlue,
@@ -68,6 +69,8 @@ const BAKED_MAPS = THREE.ShaderChunk.lights_fragment_maps.replace(
 /** Environment reflections on baked surfaces (specular only). */
 export const BAKED_SPECULAR = 0.55
 const DIM_FACTOR = 0.35
+/** The Context Hub's glow colour (shared with the 2D hub). */
+const CONTEXT_COLOR = '#66d9e8'
 const DOOR_TRAVEL = 0.55
 const DOOR_SPEED = 1 / 0.9
 const MODULE_HEIGHT = 7.5
@@ -330,6 +333,8 @@ export class BuildingView {
   private projScreen = new THREE.Matrix4()
   private tmp = new THREE.Vector3()
   private arcadeT = 0
+  private contextT = 0
+  private contextLevel = 0.3
   private collidersCache: WorldBox[] | null = null
   /** Prepared modules by file, with the lightmap they use now (for tier swaps). */
   private prepared = new Map<string, { gltf: GLTF; lm?: TieredLightmap }>()
@@ -889,6 +894,29 @@ export class BuildingView {
     return this.pickList
   }
 
+  /**
+   * The atrium's Context Hub (core `context-core`, consoles `context:0..5`): a steady glow, brighter
+   * in a pulse while the project MCP station is in use (a real retrieval), on the Adapters rooms' signal.
+   */
+  private pulseContextHub(dt: number): void {
+    this.contextT += dt
+    const target = contextPulse(this.contextT, contextHubActive(this.surfaces.values()))
+    this.contextLevel += (target - this.contextLevel) * Math.min(1, dt / 0.12)
+    for (const inst of this.instances.values()) {
+      const core = inst.screens.get('context-core')
+      if (!core || !inst.group.visible) continue
+      for (const m of core) {
+        m.emissive.set(CONTEXT_COLOR)
+        m.emissiveIntensity = 0.5 + this.contextLevel * 2.2
+      }
+      for (let i = 0; i < 6; i++)
+        for (const m of inst.screens.get(`context:${i}`) ?? []) {
+          m.emissive.set(CONTEXT_COLOR)
+          m.emissiveIntensity = 0.35 + this.contextLevel * 1.4
+        }
+    }
+  }
+
   /** Redraws changed surfaces (≤ 4 Hz) and eases glows every frame. */
   private updateSurfaces(dt: number): void {
     this.surfaceTime += dt
@@ -1113,6 +1141,7 @@ export class BuildingView {
       }
     this.drawWall()
     this.updateSurfaces(dt)
+    this.pulseContextHub(dt)
   }
 
   private drawWall(): void {

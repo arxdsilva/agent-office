@@ -347,6 +347,13 @@ export interface AgentOfficeApi {
     /** Starts the target provider's managed session with the reviewed bundle. */
     launchHandoff(handoffId: string): Promise<StartResult>
     search(args: z.input<typeof P.SearchArgsSchema>): Promise<P.SearchHit[]>
+    tasks(projectId: string): Promise<P.TaskView[]>
+    createTask(args: z.input<typeof P.TaskCreateArgsSchema>): Promise<P.TaskView>
+    updateTask(args: z.input<typeof P.TaskUpdateArgsSchema>): Promise<P.TaskView>
+    /** Experimental. Explicit user action; reads ~/.claude/projects metadata, copies nothing. */
+    importHistory(args?: z.input<typeof P.ImportHistoryArgsSchema>): Promise<P.ImportResult>
+    /** Experimental: resumes a Claude session natively as a managed session. */
+    resumeSession(sessionId: string): Promise<StartResult>
     onPush(cb: (m: P.ProjectMessage) => void): () => void
   }
   /** Provider integrations: status, enable/disable, models, observation hooks. */

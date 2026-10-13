@@ -14,7 +14,7 @@ export class DomDialogue implements DialogueView {
   private status = byId('dlg-status')
   private lines = byId('dlg-lines')
   private actions = byId('dlg-actions')
-  private actionFn: (a: DialogueAction) => void = () => {}
+  private actionFn: (a: DialogueAction, o?: { projectId?: string }) => void = () => {}
   private closeFn: () => void = () => {}
 
   constructor() {
@@ -34,7 +34,7 @@ export class DomDialogue implements DialogueView {
     })
   }
 
-  onAction(fn: (a: DialogueAction) => void): void {
+  onAction(fn: (a: DialogueAction, o?: { projectId?: string }) => void): void {
     this.actionFn = fn
   }
   onClose(fn: () => void): void {
@@ -81,7 +81,10 @@ export class DomDialogue implements DialogueView {
         const b = el('button', a.label, 'dlg-action')
         b.type = 'button'
         b.dataset.action = a.id
-        b.addEventListener('click', () => this.actionFn(a.id))
+        if (a.projectId) b.dataset.projectId = a.projectId
+        b.addEventListener('click', () =>
+          this.actionFn(a.id, a.projectId ? { projectId: a.projectId } : undefined),
+        )
         return b
       }),
     )

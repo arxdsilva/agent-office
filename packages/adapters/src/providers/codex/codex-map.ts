@@ -121,6 +121,34 @@ export function approvalToPermission(
   return { tool: 'Edit', input: { file_path }, cwd }
 }
 
+const MCP_TOOL = /^[A-Za-z0-9_.-]{1,64}$/
+const RUN_TOOL = /to run tool "([^"]{1,64})"/
+
+/**
+ * A Codex MCP tool approval (`mcpServer/elicitation/request` with
+ * `_meta.codex_approval_kind: "mcp_tool_call"`) from agent-office's own project server → the
+ * core's permission shape, as `mcp__<server>__<tool>` like Claude's MCP tools. The tool arguments
+ * never leave the adapter. Anything else (another server, a form or URL elicitation) → undefined.
+ */
+export function elicitationToPermission(
+  params: Record<string, unknown>,
+  ourServer: string | undefined,
+  cwd: string,
+): RunnerPermission | undefined {
+  if (!ourServer || params.serverName !== ourServer) return undefined
+  if (params.mode !== undefined && params.mode !== 'form') return undefined
+  const meta = params._meta
+  if (!meta || typeof meta !== 'object') return undefined
+  const m = meta as Record<string, unknown>
+  if (m.codex_approval_kind !== 'mcp_tool_call') return undefined
+  const title = typeof m.tool_title === 'string' ? m.tool_title : undefined
+  const fromMessage =
+    typeof params.message === 'string' ? RUN_TOOL.exec(params.message)?.[1] : undefined
+  const tool = title ?? fromMessage
+  if (!tool || !MCP_TOOL.test(tool)) return undefined
+  return { tool: `mcp__${ourServer}__${tool}`, input: {}, cwd }
+}
+
 /** Never `acceptForSession`: "allow for this session" is agent-office's own allow-set. */
 export function decisionToCodex(d: RunnerDecision | 'cancel'): CodexDecision {
   if (d === 'cancel') return 'cancel'

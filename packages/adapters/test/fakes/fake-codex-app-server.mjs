@@ -6,9 +6,15 @@
 //   /fail   → failed          /crash → exit 1          /long → a 5000-char reply
 //   /file   fileChange + item/fileChange/requestApproval
 //   /ask    item/tool/requestUserInput (expects an error reply)
+//   /mcp <query>  asks to approve the tool first (mcpServer/elicitation/request, as codex-cli 0.162.1
+//                 does), then calls search_memory on the MCP server from thread/start
+//                 config.mcp_servers and replies `mcp: <titles>` | `mcp: none` | `mcp: unavailable`;
+//                 a declined approval replies `mcp: declined` (no server configured → no approval)
+//   /elicit-other the same approval elicitation from a server we did not configure
 // Env: FAKE_CODEX_AUTH=none (needs login) · FAKE_CODEX_THREAD (thread id) · FAKE_CODEX_HANG=1
 // (never answers) · FAKE_LOG (append every received message, as JSON lines).
 import { appendFileSync } from 'node:fs'
+import { probeMcp } from './mcp-probe.mjs'
 
 const argv = process.argv.slice(2)
 if (argv.includes('--version')) {
@@ -80,6 +86,37 @@ async function runTurn(turn, prompt, cwd) {
   if (prompt.includes('/crash')) {
     process.stderr.write('thread main panicked\n', () => process.exit(1))
     return
+  }
+  if (prompt.includes('/mcp') || prompt.includes('/elicit-other')) {
+    const query = prompt.slice(prompt.indexOf('/mcp') + 4).trim()
+    const server = prompt.includes('/elicit-other') ? 'other-server' : (mcpName ?? 'agent-office')
+    // codex-cli 0.162.1 asks before an MCP tool call: an elicitation whose _meta marks it as a tool
+    // approval and offers persistent choices (which agent-office must never pick). No configured
+    // server → no tool, no approval.
+    const r = await (!mcpServer && !prompt.includes('/elicit-other')
+      ? Promise.resolve({ result: { action: 'accept' } })
+      : ask('mcpServer/elicitation/request', {
+          threadId,
+          turnId: turn.id,
+          serverName: server,
+          mode: 'form',
+          message: `Allow the ${server} MCP server to run tool "search_memory"?`,
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: {
+            codex_approval_kind: 'mcp_tool_call',
+            persist: ['session', 'always'],
+            tool_params: { query: 'SENTINEL_QUERY' },
+          },
+        }))
+    if (mcpServer || prompt.includes('/elicit-other'))
+      log({ elicitReply: r.error ? r.error.code : r.result })
+    if (r.result?.action === 'cancel') return completeTurn(turn, 'interrupted')
+    if (r.result?.action !== 'accept') {
+      agentReply(turn, ['mcp: declined'])
+      return completeTurn(turn, 'completed')
+    }
+    agentReply(turn, [await probeMcp(mcpServer, query)])
+    return completeTurn(turn, 'completed')
   }
   if (prompt.includes('/fail')) return completeTurn(turn, 'failed', { error: { message: 'boom' } })
   if (prompt.includes('/slow')) {
@@ -187,6 +224,8 @@ async function runTurn(turn, prompt, cwd) {
 }
 
 let cwd = process.cwd()
+let mcpServer // the first config.mcp_servers entry from thread/start, if any
+let mcpName // its name (the config key)
 function handle(m) {
   log(m)
   if (env.FAKE_CODEX_HANG) return
@@ -256,6 +295,7 @@ function handle(m) {
       })
     case 'thread/start': {
       cwd = m.params?.cwd ?? cwd
+      ;[mcpName, mcpServer] = Object.entries(m.params?.config?.mcp_servers ?? {})[0] ?? []
       const thread = {
         id: threadId,
         cwd,

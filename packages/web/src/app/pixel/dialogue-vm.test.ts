@@ -4,7 +4,15 @@ import { cap } from '../__fixtures__/capabilities.ts'
 import type { AgentPlan } from '../office-types.ts'
 import { PIXEL_COPY } from '../pixel-copy.ts'
 import { emptyState, type OfficeState } from '../state.ts'
-import { dialogueVM, officeCounts, type DialogueContext } from './dialogue-vm.ts'
+import { projectLibraryVM, projectRefId } from '../project-library.ts'
+import type { ProjectDirectoryVM } from '../workspace/types.ts'
+import {
+  dialogueVM,
+  officeCounts,
+  projectDialogue,
+  projectDirectoryDialogue,
+  type DialogueContext,
+} from './dialogue-vm.ts'
 
 const agent = (id: string, status: AgentStatus = 'tool', over: Partial<Agent> = {}): Agent => ({
   id,
@@ -151,5 +159,100 @@ describe('dialogueVM (DLG)', () => {
     expect(vm.status).toMatchObject({ status: 'error', color: STATUS_COLORS.error })
     expect(vm.status!.label).toContain('✖')
     expect(dialogueVM({ kind: 'agent', id: 'nobody' }, ctx([]))).toBeNull()
+  })
+
+  // PD-1..4: the reception desk builds the project directory dialogue from the VM.
+  describe('project directory', () => {
+    const btn = (id: string, label: string) => ({ id, label, enabled: true })
+    const entry = (projectId: string, name: string, agents: number) => ({
+      projectId,
+      name,
+      color: '#fff',
+      selected: false,
+      counts: { agents, sessions: 3, memories: 2, pending: 1, tasks: 0 },
+      countsLabel: `${agents} active, 3 sessions`,
+      actions: [
+        btn('dashboard', 'Dashboard'),
+        btn('memory', 'Memory'),
+        btn('sessions', 'Sessions'),
+        btn('context', 'Context'),
+        { ...btn('start', 'Start agent'), enabled: false },
+      ],
+    })
+    const dir: ProjectDirectoryVM = {
+      heading: 'Project directory',
+      entries: [entry('prj_a', 'Alpha', 2), entry('prj_b', 'Beta', 0)],
+      empty: 'No projects yet.',
+      createProject: btn('create-project', 'New project'),
+    }
+
+    it('lists each project with its active count, then All Projects', () => {
+      const c = { ...ctx([]), projectDirectory: dir }
+      const vm = dialogueVM({ kind: 'object', object: 'project-directory' }, c)!
+      expect(vm.title).toBe('PROJECT DIRECTORY')
+      expect(vm.lines).toEqual(['Which project would you like to explore?'])
+      expect(vm.actions).toEqual([
+        { id: 'project-select', label: 'Alpha · 2 active', projectId: 'prj_a' },
+        { id: 'project-select', label: 'Beta · 0 active', projectId: 'prj_b' },
+        { id: 'project-all', label: 'All Projects' },
+      ])
+    })
+
+    it('says so when there are no projects or no directory', () => {
+      expect(projectDirectoryDialogue({ ...dir, entries: [] }).lines).toEqual(['No projects yet.'])
+      expect(projectDirectoryDialogue(undefined).actions).toEqual([])
+    })
+
+    it('offers the project panels with the project id, skipping disabled buttons', () => {
+      const vm = projectDialogue(dir.entries[0]!)
+      expect(vm.title).toBe('Alpha')
+      expect(vm.lines).toEqual(['2 active, 3 sessions'])
+      expect(vm.actions.map((a) => a.id)).toEqual([
+        'project-dashboard',
+        'project-memory',
+        'project-sessions',
+        'context',
+      ])
+      expect(vm.actions.every((a) => a.projectId === 'prj_a')).toBe(true)
+    })
+  })
+
+  // PD-5: a project library surface opens its collection (name and count), then the project panel.
+  it('describes project library surfaces and routes them to memory or sessions', () => {
+    const lib = projectLibraryVM(
+      { id: 'prj_a', name: 'Alpha', color: '#fff' },
+      { byKind: { decision: 4 }, pending: 0, handoffs: 0, acceptedDecisions: 1 },
+      [{ lastSeenAt: 5 }],
+      5,
+    )
+    const c = { ...ctx([]), projectLibrary: lib }
+    const note = dialogueVM(
+      {
+        kind: 'capability',
+        ref: { provider: 'p', id: projectRefId('prj_a', 'collection', 'decisions') },
+      },
+      c,
+    )!
+    expect(note).toMatchObject({ title: 'Decisions · 4', subtitle: 'Alpha' })
+    expect(note.actions).toEqual([
+      { id: 'project-memory', label: 'Open memory', projectId: 'prj_a' },
+    ])
+    const book = dialogueVM(
+      { kind: 'capability', ref: { provider: 'p', id: projectRefId('prj_a', 'archive', 0) } },
+      c,
+    )!
+    expect(book.actions[0]).toMatchObject({ id: 'project-sessions', projectId: 'prj_a' })
+    expect(
+      dialogueVM(
+        { kind: 'capability', ref: { provider: 'p', id: projectRefId('prj_a', 'archive', 7) } },
+        c,
+      ),
+    ).toBeNull()
+    expect(
+      dialogueVM(
+        { kind: 'capability', ref: { provider: 'p', id: projectRefId('prj_a', 'archive', 0) } },
+        ctx([]),
+      ),
+    ).toBeNull()
   })
 })

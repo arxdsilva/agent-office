@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
@@ -103,5 +104,23 @@ export class MemoryTranscriptFiles implements TranscriptFiles {
   async *lines(path: string): AsyncIterable<string> {
     if (this.broken.has(path)) throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
     yield* (this.files.get(path)?.content ?? '').split('\n')
+  }
+}
+
+/**
+ * Opaque `tr_` refs for transcript files, owned by the adapter. The absolute path never leaves it:
+ * the ref is a stable hash of the path and only `resolve` maps it back.
+ */
+export class TranscriptRefs {
+  private paths = new Map<string, string>()
+
+  register(path: string): string {
+    const ref = `tr_${createHash('sha256').update(path).digest('hex').slice(0, 24)}`
+    this.paths.set(ref, path)
+    return ref
+  }
+
+  resolve(ref: string): string | undefined {
+    return this.paths.get(ref)
   }
 }

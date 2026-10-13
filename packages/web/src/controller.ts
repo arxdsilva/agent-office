@@ -65,7 +65,7 @@ import {
 import { CHROME_ID, type Draft, type NewSessionForm } from './app/session-types.ts'
 import type { Manifest } from './app/manifest.ts'
 import { libraryKind } from './app/library.ts'
-import { dialogueVM } from './app/pixel/dialogue-vm.ts'
+import { dialogueVM, projectDialogue } from './app/pixel/dialogue-vm.ts'
 import { directoryVM } from './app/pixel/directory-vm.ts'
 import { pixelHudVM } from './app/pixel/hud-vm.ts'
 import { minimapLabels, minimapVM } from './app/pixel/minimap.ts'
@@ -83,6 +83,7 @@ import {
 
 type MinimapLabels = NonNullable<MinimapVM['labels']>
 import { PIXEL_COPY } from './app/pixel-copy.ts'
+import type { ProjectDirectoryVM, WorkspaceAction } from './app/workspace/types.ts'
 import type {
   BannerView,
   CapabilityPanelView,
@@ -104,7 +105,21 @@ import type {
   ViewBarView,
 } from './ports.ts'
 
+/**
+ * The projects-first workspace as the office sees it (docs/projects.md §10): the reception's Project
+ * Directory and project actions run the workspace controller's shared commands.
+ */
+export interface WorkspaceBridge {
+  projectDirectory(): ProjectDirectoryVM
+  selectProject(projectId: string | null): void | Promise<void>
+  perform(action: WorkspaceAction): void | Promise<void>
+  /** The 3D reception: a project picker (the palette, filtered to projects). */
+  openProjectPicker(): void
+}
+
 export interface ControllerDeps {
+  /** Optional: the projects-first workspace (absent in older shells and most tests). */
+  workspace?: WorkspaceBridge
   gateway: OfficeGateway
   scene: SceneView
   panel: PanelView
@@ -233,6 +248,8 @@ export function createController(d: ControllerDeps) {
   let hidden = d.doc?.hidden ?? false
   /** Main's view of the window (hidden/minimized → false); page visibility alone isn't reliable. */
   let windowVisible = true
+  /** False while the workspace shows a non-Office view (stage hidden: no rendering, no input). */
+  let officeVisible = true
   let onBattery = false
   let losses: number[] = []
   let recovering = false
@@ -297,7 +314,8 @@ export function createController(d: ControllerDeps) {
   /** 2D: minimap labels, recomputed when the layout or manifest changes. */
   let mapLabels: { key: string; manifest: Manifest; labels: MinimapLabels } | undefined
   let dirQuery = ''
-  let dialogueAt: { target: InteractTarget; vm: DialogueVM } | null = null
+  /** `projectId`: the directory's follow-up dialogue for the picked project. */
+  let dialogueAt: { target: InteractTarget; vm: DialogueVM; projectId?: string } | null = null
   let suspended = false
 
   /** Recomputes the effective graphics and forwards actual changes (or all, with `force`). */
@@ -307,7 +325,7 @@ export function createController(d: ControllerDeps) {
       preset: s.graphicsQuality === 'auto' ? governor.preset : s.graphicsQuality,
       advanced: s.graphicsAdvanced,
       dpr: d.devicePixelRatio?.() ?? d.hardware?.()?.dpr ?? 1,
-      power: { focused, hidden: hidden || !windowVisible, onBattery },
+      power: { focused, hidden: hidden || !windowVisible || !officeVisible, onBattery },
       saver: { blur: s.powerSaverBlur, hidden: s.powerSaverHidden, battery: s.batteryPreset },
     })
     const key = JSON.stringify(e)
@@ -639,15 +657,24 @@ export function createController(d: ControllerDeps) {
    * walking; typing in a field never moves the player (PixelInput ignores those keys).
    */
   function updateSuspension() {
-    if (!pixelDeps) return
+    if (!pixelDeps && officeVisible) return
     const on =
-      dialogueAt !== null || d.settings.isOpen() || d.connect.isOpen() || d.newSession.isOpen()
+      !officeVisible ||
+      dialogueAt !== null ||
+      d.settings.isOpen() ||
+      d.connect.isOpen() ||
+      d.newSession.isOpen()
     if (on === suspended) return
     suspended = on
     d.scene.setInputSuspended?.(on)
   }
 
-  const dialogueContext = () => ({ state, plans, activityOf })
+  const dialogueContext = () => ({
+    state,
+    plans,
+    activityOf,
+    ...(d.workspace && { projectDirectory: d.workspace.projectDirectory() }),
+  })
 
   /** E (or a click) on something in 2D: the dialogue box. */
   function openDialogue(target: InteractTarget) {
@@ -666,10 +693,17 @@ export function createController(d: ControllerDeps) {
     updateSuspension()
   }
 
+  /** The picked project's own dialogue (null once it is gone from the directory). */
+  function projectDialogueFor(projectId: string): DialogueVM | null {
+    const entry = d.workspace?.projectDirectory().entries.find((e) => e.projectId === projectId)
+    return entry ? projectDialogue(entry) : null
+  }
+
   /** Keeps an open dialogue current; one whose agent left closes with a toast. */
   function refreshDialogue() {
     if (!dialogueAt || !d.dialogue) return
-    const vm = dialogueVM(dialogueAt.target, dialogueContext())
+    const pid = dialogueAt.projectId
+    const vm = pid ? projectDialogueFor(pid) : dialogueVM(dialogueAt.target, dialogueContext())
     if (vm) {
       dialogueAt.vm = vm
       return d.dialogue.render(vm)
@@ -680,12 +714,43 @@ export function createController(d: ControllerDeps) {
     if (wasAgent) d.toast.show(PIXEL_COPY.dialogue.left(name))
   }
 
-  function onDialogueAction(a: DialogueAction) {
+  function onDialogueAction(a: DialogueAction, o?: { projectId?: string }) {
     const at = dialogueAt
     if (!at) return
     const { agentId, parentId, ref } = at.vm
     closeDialogue()
+    const ws = d.workspace
+    const projectId = o?.projectId
     switch (a) {
+      case 'project-select': {
+        if (!ws || !projectId || !d.dialogue) return
+        void Promise.resolve(ws.selectProject(projectId)).then(() => {
+          const vm = projectDialogueFor(projectId)
+          if (!vm || !d.dialogue || dialogueAt) return
+          dialogueAt = { target: at.target, vm, projectId }
+          d.dialogue.open(vm)
+          updateSuspension()
+        })
+        return
+      }
+      case 'project-all':
+        if (ws) void ws.selectProject(null)
+        return
+      case 'project-dashboard':
+        if (ws && projectId) void ws.perform({ type: 'open-project', projectId })
+        return
+      case 'project-memory':
+        if (ws) void ws.perform({ type: 'open-memory', ...(projectId && { projectId }) })
+        return
+      case 'project-sessions':
+        if (ws) void ws.perform({ type: 'open-sessions', ...(projectId && { projectId }) })
+        return
+      case 'context':
+        if (ws) void ws.perform({ type: 'inspect-context', ...(projectId && { projectId }) })
+        return
+      case 'start-agent':
+        if (ws) void ws.perform({ type: 'start-agent', ...(projectId && { projectId }) })
+        return
       case 'talk':
       case 'details':
       case 'review':
@@ -1070,6 +1135,11 @@ export function createController(d: ControllerDeps) {
         ...(nsError && { error: nsError }),
         caps: state.capabilities.get(form.provider) ?? [],
         ...(connInfo?.providers && { providers: connInfo.providers }),
+        ...(d.workspace && {
+          projects: d.workspace
+            .projectDirectory()
+            .entries.map((e) => ({ id: e.projectId, name: e.name })),
+        }),
       },
     )
   /** A provider's models for the dialog, fetched once; the list stays empty when it fails. */
@@ -1157,6 +1227,7 @@ export function createController(d: ControllerDeps) {
   d.newSession.onChange((patch) => {
     const switched = patch.provider !== undefined && patch.provider !== form.provider
     form = { ...form, ...patch }
+    if (patch.projectId === '') delete form.projectId
     if (switched) {
       // Models, modes and Chrome belong to the provider: start from its defaults.
       lastProvider = form.provider
@@ -1180,6 +1251,7 @@ export function createController(d: ControllerDeps) {
       ...(other && { provider: form.provider }),
       ...(other && modeId && { modeId }),
       folder: form.folder.ref,
+      ...(form.projectId && { projectId: form.projectId }),
       ...(name && { name }),
       ...(form.model && { model: form.model }),
       mode: form.mode,
@@ -1364,6 +1436,8 @@ export function createController(d: ControllerDeps) {
       showZoom()
     })
     d.dialogue?.onAction(onDialogueAction)
+    // The 3D reception's Project Directory (2D uses the reception-desk interact → dialogue).
+    d.scene.onPickFixture?.(() => d.workspace?.openProjectPicker())
     d.dialogue?.onClose(() => {
       dialogueAt = null
       updateSuspension()
@@ -1396,6 +1470,28 @@ export function createController(d: ControllerDeps) {
   }
 
   return {
+    /** New Agent prefilled from the workspace (project first; provider and objective optional). */
+    openNewSessionFor(prefill: { projectId?: string; provider?: ProviderId; objective?: string }) {
+      void openNewSession(prefill.provider).then(() => {
+        if (prefill.objective) form.text = prefill.objective
+        if (prefill.projectId) form.projectId = prefill.projectId
+        renderNewSession()
+      })
+    },
+    openConnect() {
+      void openConnect()
+    },
+    /** The agent selected in the Office (the Context Inspector defaults to it). */
+    selectedAgentId(): string | null {
+      return selected
+    },
+    /** The workspace hides the Office stage for other views: pause rendering and input there. */
+    setOfficeVisible(on: boolean) {
+      if (on === officeVisible) return
+      officeVisible = on
+      applyGraphics()
+      updateSuspension()
+    },
     /** The last plans with each agent's remaining steps now (the scene host replays them). */
     resync() {
       return director?.resync(d.clock.now()) ?? new Map<string, AgentPlan>()

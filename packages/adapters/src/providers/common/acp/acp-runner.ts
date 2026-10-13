@@ -232,7 +232,17 @@ class AcpSession implements RunnerSession {
     const extra = obj(caps?.sessionCapabilities)?.additionalDirectories
     const params = {
       cwd: this.s.cwd,
-      mcpServers: [],
+      // agent-office's project MCP server (docs/projects.md §5), only when the policy allows it.
+      mcpServers: this.s.mcp
+        ? [
+            {
+              name: this.s.mcp.name,
+              command: this.s.mcp.command,
+              args: [...this.s.mcp.args],
+              env: Object.entries(this.s.mcp.env).map(([name, value]) => ({ name, value })),
+            },
+          ]
+        : [],
       ...(extra && this.s.extraDirs.length ? { additionalDirectories: [...this.s.extraDirs] } : {}),
     }
     try {

@@ -56,6 +56,47 @@ export function parseAnchorId(id: AnchorId): { placement: string; local: string 
     : { placement: id.slice(0, i), local: id.slice(i + 1) }
 }
 
+/** How far in front of the kiosk's visitor spot (anchor `kiosk:project-directory`) the kiosk stands, m. */
+export const KIOSK_DISTANCE = 1.1
+
+/** Where the Project Directory is: the pick proxy centre and its label height. */
+export interface DirectoryFixture {
+  x: number
+  z: number
+  /** Height of the proxy box centre (m). */
+  proxyY: number
+  labelY: number
+  /** True when it comes from the kiosk anchor, false for the reception fallback. */
+  kiosk: boolean
+}
+
+/**
+ * The Project Directory fixture: the atrium's `kiosk:project-directory` anchor when the assets have
+ * it (the kiosk stands in front of the visitor spot), else the centre of the reception spots (older
+ * assets), else nothing.
+ */
+export function directoryFixture(anchors: Iterable<WorldAnchor>): DirectoryFixture | null {
+  const all = [...anchors]
+  const kiosk = all.find((a) => a.local === 'kiosk:project-directory')
+  if (kiosk)
+    return {
+      x: kiosk.pos.x + KIOSK_DISTANCE * Math.sin(kiosk.heading),
+      z: kiosk.pos.z + KIOSK_DISTANCE * Math.cos(kiosk.heading),
+      proxyY: 1.3,
+      labelY: 3.1,
+      kiosk: true,
+    }
+  const spots = all.filter((a) => /^spot:reception:\d+$/.test(a.local))
+  if (!spots.length) return null
+  return {
+    x: spots.reduce((t, a) => t + a.pos.x, 0) / spots.length,
+    z: spots.reduce((t, a) => t + a.pos.z, 0) / spots.length,
+    proxyY: 0.9,
+    labelY: 2.4,
+    kiosk: false,
+  }
+}
+
 const snap = (v: number) => (Math.abs(v) < 1e-12 ? 0 : v)
 
 /** Module-local point → world (translation + yaw, contract §1). */

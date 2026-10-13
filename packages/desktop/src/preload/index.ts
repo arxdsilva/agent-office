@@ -64,6 +64,11 @@ const api: AgentOfficeApi = {
     updateHandoff: (args) => ipcRenderer.invoke(IPC.prjHandoffUpdate, args),
     launchHandoff: (handoffId) => ipcRenderer.invoke(IPC.prjHandoffLaunch, { handoffId }),
     search: (args) => ipcRenderer.invoke(IPC.prjSearch, args),
+    tasks: (projectId) => ipcRenderer.invoke(IPC.prjTasks, projectId),
+    createTask: (args) => ipcRenderer.invoke(IPC.prjTaskCreate, args),
+    updateTask: (args) => ipcRenderer.invoke(IPC.prjTaskUpdate, args),
+    importHistory: (args) => ipcRenderer.invoke(IPC.prjImportHistory, args ?? {}),
+    resumeSession: (sessionId) => ipcRenderer.invoke(IPC.prjResume, sessionId),
     onPush: (cb) => listen(IPC.prjPush, cb),
   },
   providers: {

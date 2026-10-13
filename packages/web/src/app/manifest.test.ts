@@ -109,6 +109,29 @@ describe('parseManifest', () => {
     expect(failure(g).path).toBe('modules.garden.anchors')
   })
 
+  // Project spaces (graphics contract §4, additive): optional, so older manifests still parse.
+  it('accepts the project-space anchors and ports on the atrium', () => {
+    const j = json()
+    const base = j.modules.atrium.anchors['spot:reception:0']
+    j.modules.atrium.anchors['kiosk:project-directory'] = { ...base }
+    for (const i of [0, 1, 2, 3, 4, 5])
+      j.modules.atrium.anchors[`console:context:${i}`] = { ...base }
+    for (const i of [0, 1]) j.modules.atrium.anchors[`spot:handoff:${i}`] = { ...base }
+    for (const i of [0, 11]) j.modules.atrium.anchors[`port:archive:${i}`] = { x: 1, y: 1.2, z: 2 }
+    const m = parseManifest(j)
+    expect(m.modules.atrium.anchors['kiosk:project-directory']).toBeDefined()
+    expect(m.modules.atrium.anchors['console:context:5']!.pose).toBe(base.pose)
+    expect(m.modules.atrium.anchors['spot:handoff:1']).toBeDefined()
+    expect(m.modules.atrium.ports['port:archive:11']).toEqual({ x: 1, y: 1.2, z: 2 })
+    expect(Object.keys(m.modules.atrium.anchors)).not.toContain('port:archive:0')
+  })
+
+  it('still parses an atrium without the project-space anchors', () => {
+    expect(
+      Object.keys(parseManifest(json()).modules.atrium.anchors).some((k) => k.startsWith('kiosk:')),
+    ).toBe(false)
+  })
+
   it('rejects malformed anchor ids and fields', () => {
     const j = json()
     j.modules.wing.anchors['desk 1'] = j.modules.wing.anchors['seat:desk:1:0']

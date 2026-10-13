@@ -10,6 +10,7 @@
 import math
 
 from lib import furniture as F
+from lib import spaces as S
 from lib.geometry import curtain_wall, wall
 
 H = 7.2
@@ -24,6 +25,7 @@ def build(g, A, P, name, t, rng):
     _game(g, A, P, t, rng)
     _plaza(g, A, P, t, rng)
     _murals(g, A, P, t, rng)
+    _project_spaces(g, A, P, t, rng)
     _nav(g, A)
     _rooms(g)
     return dict(
@@ -35,6 +37,10 @@ def build(g, A, P, name, t, rng):
             ('lobby', (-8.0, 1.7, -14.0), (-19.0, 1.8, -4.0), 18, False),
             ('cafe', (6.0, 1.7, -17.5), (10.0, 2.6, -1.0), 18, False),
             ('game', (21.0, 1.8, -21.5), (28.0, 0.9, -9.0), 18, False),
+            ('hub', (-8.6, 2.2, -13.6), (-15.0, 1.7, -20.6), 22, False),
+            ('kiosk', (-14.0, 1.7, -9.6), (-12.6, 1.6, -15.6), 24, False),
+            ('handoff', (-6.0, 2.0, -2.6), (-6.0, 0.8, -7.4), 24, False),
+            ('archive', (-5.4, 1.7, -15.5), (-5.4, 1.9, -22.8), 24, False),
         ],
     )
 
@@ -256,6 +262,15 @@ def _plaza(g, A, P, t, rng):
         F.ring_pendant(g, P, (x, 5.2, -9.5), R=1.3, kelvin=3000, power=300, y_ceiling=H)
 
 
+# ============================================================================== project spaces
+def _project_spaces(g, A, P, t, rng):
+    """Project Hub (waiting-lounge side), Handoff Station and the Session Archive (plaza); contract §4/§5."""
+    S.materials(P)
+    S.project_hub(g, A, P, t, H)
+    S.handoff(g, A, P, H)
+    S.archive(g, A, P, rng)
+
+
 # ============================================================================== navigation
 def _nav(g, A):
     n = A.node
@@ -268,8 +283,15 @@ def _nav(g, A):
     n('a:west', -11.0, -10.0, 1.2)
     n('a:center', -1.5, -11.0, 1.4)
     n('a:south', -3.2, -21.0, 1.2)
-    n('a:lounge', -11.8, -16.5, 1.0)
-    A.chain('a:street', 'a:portal', 'a:hub', 'a:lobby_e', 'a:lobby_c', 'a:lobby_w')
+    n('a:lounge', -10.2, -16.6, 1.0)
+    # plaza corridor nodes (the handoff spots hang off them) and the Project Hub ring
+    n('a:pl1', -8.0, -5.4, 1.2)
+    n('a:pl2', -4.0, -5.3, 1.2)
+    n('a:hw', -17.4, -17.6, 1.0)
+    n('a:hn', -14.6, -16.6, 1.4)
+    n('a:he', -11.9, -18.2, 1.0)
+    A.chain('a:street', 'a:portal', 'a:hub', 'a:pl2', 'a:pl1', 'a:lobby_e', 'a:lobby_c', 'a:lobby_w')
+    A.chain('a:hw', 'a:hn', 'a:he', 'a:lounge')
     A.chain('a:hub', 'a:center', 'a:west', 'a:lobby_e')
     A.chain('a:center', 'a:south', 'a:lounge', 'a:west')
     # cafe grid
@@ -296,6 +318,8 @@ def _nav(g, A):
     A.edge('a:c23', 'a:g2')
     # anchors → hubs
     for aid, a in A.anchors.items():
+        if aid.startswith('port:'):
+            continue
         ap = f'ap:{aid}'
         ax, az = a['approach']['x'], a['approach']['z']
         if aid.startswith('spot:elevator') or aid.startswith('spot:reception'):
@@ -305,6 +329,13 @@ def _nav(g, A):
                 A.edge(ap, hub)
         elif aid.startswith('spot:pingpong'):
             A.edge(ap, _nearest(A, ax, az, ('a:g1', 'a:g2', 'a:g3')))
+        elif aid.startswith('console:'):
+            for hub in _nearest_k(A, ax, az, ('a:hw', 'a:hn', 'a:he'), 2):
+                A.edge(ap, hub)
+        elif aid == 'kiosk:project-directory':
+            A.edge(ap, 'a:west')
+        elif aid.startswith('spot:handoff'):
+            A.edge(ap, _nearest(A, ax, az, ('a:pl1', 'a:pl2')))
 
 
 def _rooms(g):
@@ -312,8 +343,11 @@ def _rooms(g):
     r = g.room
     r('elevator', 'Elevators', -33, -4.8, -11, 0, floor='tile')
     r('reception', 'Reception', -33, -13.4, -11, -4.8, floor='tile')
-    r('waiting', 'Waiting lounge', -33, -24, -11, -13.4, floor='tile')
-    r('plaza', 'Plaza', -11, -24, 3, 0, floor='tile')
+    r('waiting', 'Waiting lounge', -33, -24, -18.2, -13.4, floor='tile')
+    r('hub', 'Project Hub', -18.2, -24, -11, -13.4, floor='tile')
+    r('archive', 'Session Archive', -11, -24, 0, -21, floor='wood')
+    r('plaza-s', 'Plaza', 0, -24, 3, -21, floor='tile')
+    r('plaza', 'Plaza', -11, -21, 3, 0, floor='tile')
     r('cafe', 'Cafe', 3, -14, 23.5, 0, floor='wood')
     r('court', 'Courtyard', 3, -24, 23.5, -14, floor='tile')
     r('pingpong-0', 'Game area', 23.5, -12.75, 33, 0, floor='concrete')

@@ -1,7 +1,7 @@
 import { basename, dirname, join } from 'node:path'
 import type { Clock, Logger, ReportActivity, Scheduler } from '@agent-office/core'
 import { lineToEvent, newParseContext } from './line-mapper.ts'
-import type { TranscriptFiles } from './transcript-files.ts'
+import { TranscriptRefs, type TranscriptFiles } from './transcript-files.ts'
 
 const TAIL_BYTES = 64 * 1024
 /** Marks a tail that started mid-file: its first (cut) line must be dropped. */
@@ -21,6 +21,13 @@ export interface ClaudeCodeTailerOptions {
   claudeHome?: string
   /** Called once per session cwd the first time it appears (capability discovery). */
   onNewCwd?: (cwd: string) => void
+  /** Registry for `tr_` refs of located sessions; the tailer makes its own when omitted. */
+  refs?: TranscriptRefs
+  /**
+   * Fired once per top-level session when its cwd is first known. `cwd` is for main only (never put
+   * it in an event); `transcriptRef` is an opaque `tr_` key registered in `refs`.
+   */
+  onSessionLocated?: (sessionId: string, cwd: string, transcriptRef: string) => void
   /** Session ids whose transcripts belong to someone else (managed sessions report through their runner). */
   skip?: (sessionId: string) => boolean
   /** Called after a polling pass when `stats()` changed (Connect panel). */
@@ -48,11 +55,14 @@ export class ClaudeCodeTailer {
   private tails = new Map<string, Tail>()
   private warned = new Set<string>()
   private announced = new Set<string>()
+  private located = new Set<string>()
+  readonly refs: TranscriptRefs
   private running = false
   private cancel: (() => void) | undefined
   private current: TailerStats = { projectsDirFound: false, activeSessions: 0 }
 
   constructor(private o: ClaudeCodeTailerOptions) {
+    this.refs = o.refs ?? new TranscriptRefs()
     this.ctx = newParseContext({ claudeHome: o.claudeHome ?? dirname(o.dir), projectsDir: o.dir })
   }
 
@@ -83,8 +93,8 @@ export class ClaudeCodeTailer {
     try {
       const active = await this.activeFiles()
       await this.updateStats(active.filter((f) => f.topLevel).length)
-      for (const { path, sessionId } of active)
-        if (!this.o.skip?.(sessionId)) await this.readFile(path)
+      for (const { path, sessionId, topLevel } of active)
+        if (!this.o.skip?.(sessionId)) await this.readFile(path, topLevel ? sessionId : undefined)
     } finally {
       this.running = false
     }
@@ -127,7 +137,7 @@ export class ClaudeCodeTailer {
     return active
   }
 
-  private async readFile(file: string): Promise<void> {
+  private async readFile(file: string, locateAs?: string): Promise<void> {
     try {
       const s = await this.o.files.stat(file)
       if (!s) return
@@ -148,7 +158,10 @@ export class ClaudeCodeTailer {
       lines[0] = (skipFirst ? '' : tail.partial) + lines[0]
       const rest = lines.pop() ?? ''
       this.tails.set(file, { offset: s.size, partial: rest })
-      for (const line of lines.slice(skipFirst ? 1 : 0)) this.handle(line)
+      for (const line of lines.slice(skipFirst ? 1 : 0)) {
+        this.handle(line)
+        if (locateAs) this.locate(locateAs, file, line)
+      }
     } catch (err) {
       if (!this.warned.has(file)) {
         this.warned.add(file)
@@ -179,6 +192,19 @@ export class ClaudeCodeTailer {
     for await (const line of this.o.files.lines(file)) {
       if (line.includes('-title"')) lineToEvent(line, this.ctx)
     }
+  }
+
+  private locate(sessionId: string, file: string, line: string): void {
+    if (!this.o.onSessionLocated || this.located.has(sessionId) || !line.includes('"cwd"')) return
+    let cwd: unknown
+    try {
+      cwd = (JSON.parse(line) as { cwd?: unknown }).cwd
+    } catch {
+      return
+    }
+    if (typeof cwd !== 'string' || !cwd) return
+    this.located.add(sessionId)
+    this.o.onSessionLocated(sessionId, cwd, this.refs.register(file))
   }
 
   private handle(line: string): void {

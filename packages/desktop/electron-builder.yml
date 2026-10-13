@@ -18,6 +18,8 @@ extraResources:
     to: hooks/agent-office-hook.mjs
   - from: ../../hooks/agent-office-observe.mjs
     to: hooks/agent-office-observe.mjs
+  - from: ../../hooks/agent-office-mcp.mjs
+    to: hooks/agent-office-mcp.mjs
   - from: build
     to: icons
     filter: ['tray*.png']

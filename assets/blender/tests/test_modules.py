@@ -28,7 +28,8 @@ NEEDS = {
     'wing': {'seat:desk': 24, 'seat:meeting:A': 6, 'seat:meeting:B': 6, 'spot:booth': 4, 'spot:kitchen': 6,
              'seat:lounge': 8, 'spot:station': 8, 'seat:reading': 4, 'spot:shelf': 2, 'port:desk': 24,
              'port:station': 8, 'port:book': 24, 'port:board': 6, 'port:notebook': 8},
-    'atrium': {'spot:reception': 4, 'spot:elevator': 6, 'seat:cafe': 24, 'spot:pingpong': 4},
+    'atrium': {'spot:reception': 4, 'spot:elevator': 6, 'seat:cafe': 24, 'spot:pingpong': 4,
+               'kiosk': 1, 'console:context': 6, 'spot:handoff': 2, 'port:archive': 12},
     'garden': {'spot:garden': 6},
     'street': {}, 'cap': {},
 }
@@ -37,7 +38,8 @@ ROLE_REFS = {
              ('station', r'\d'): 8, ('led', r'booth:\d'): 4, ('led', r'station:\d'): 8, ('book', r'\d+'): 24,
              ('board', r'\d'): 6, ('notebook', r'\d'): 8, ('sign', 'wing'): 1, ('sign', 'adapters'): 1,
              ('sign', 'library'): 1},
-    'atrium': {('screen', 'ledwall'): 1, ('screen', r'arcade:\d'): 2, ('elevatorDoor', r'\d:[LR]'): 6},
+    'atrium': {('screen', 'ledwall'): 1, ('screen', r'arcade:\d'): 2, ('elevatorDoor', r'\d:[LR]'): 6,
+               ('screen', r'context:\d'): 6, ('screen', 'context-core'): 1},
 }
 CONNECTORS = {
     'atrium': [(0, 0)], 'street': [(0, 0), (3, 9), (-3, 9), (0, 18)], 'wing': [(0, 0)], 'garden': [(0, 0)],
@@ -94,7 +96,7 @@ def test(spec):
         else:
             check(AN.ANCHOR_RE.match(aid) is not None, f'{tag}: bad anchor id {aid}')
             check(a['y'] == 0, f'{tag}: {aid} y != 0')
-            want = 'stand' if aid.startswith('spot:') else ('lounge' if aid.startswith('seat:lounge') else 'sit')
+            want = 'stand' if aid.startswith(('spot:', 'kiosk:', 'console:')) else ('lounge' if aid.startswith('seat:lounge') else 'sit')
             check(a['pose'] == want, f'{tag}: {aid} pose {a["pose"]} != {want}')
     for prefix, n in NEEDS[kind].items():
         got = len([k for k in anchors if k.startswith(prefix + ':')])

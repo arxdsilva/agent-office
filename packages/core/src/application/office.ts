@@ -1,4 +1,5 @@
-import type { ProviderId } from '@agent-office/shared'
+import { PROVIDER_IDS, type ProviderId, type Settings } from '@agent-office/shared'
+import { mcpDecl } from '../domain/capabilities.ts'
 import type { SweepPolicy } from '../domain/agent.ts'
 import type {
   AgentRepository,
@@ -15,7 +16,14 @@ import type {
   MessageRepository,
   Notifier,
   PlatformInfo,
+  RecordLog,
+  HistorySource,
+  RepoIdentity,
+  RunnerStart,
   Scheduler,
+  SearchIndex,
+  SecureRandom,
+  TranscriptReader,
   SettingsRepository,
   TrayView,
   Updater,
@@ -30,6 +38,7 @@ import { InboxService } from './inbox-service.ts'
 import { ComposeService, ManagedSessionService } from './managed-session-service.ts'
 import { OfficeQueryService } from './office-query.ts'
 import { ProviderHookService, type ProviderHookTargets } from './provider-hook-service.ts'
+import { createProjects, type Projects } from './projects.ts'
 import { ProviderService, type ProviderBinding } from './provider-service.ts'
 import { SettingsService } from './settings-service.ts'
 import { UpdateService } from './update-service.ts'
@@ -77,6 +86,26 @@ export interface OfficeDeps {
   /** Provider statuses changed (refresh, enable): push ConnectionInfo. */
   onProvidersChange?: () => void
   log?: Logger
+  // ── projects-first workspace (docs/projects.md); `projects` exists only with `vault` ──
+  vault?: RecordLog
+  repoIdentity?: RepoIdentity
+  transcripts?: TranscriptReader
+  /** Experimental: lists past provider sessions for the history import. */
+  history?: HistorySource
+  searchIndex?: SearchIndex
+  /** Ids and MCP tokens; without it no MCP token is ever minted. */
+  random?: SecureRandom
+  /** The project MCP bridge command for a session token (the adapter owns the wrapper). */
+  mcpLaunch?: (token: string) => RunnerStart['mcp']
+}
+
+/** The project MCP server's capability (the Context Hub station). */
+const CONTEXT_HUB = mcpDecl('agent-office-memory')
+
+function enabledProviders(s: Settings): ProviderId[] {
+  return PROVIDER_IDS.filter(
+    (id) => s.providers?.[id]?.enabled ?? (id === 'claude-code' ? s.claudeAdapter : false),
+  )
 }
 
 const SILENT: Logger = { info() {}, warn() {} }
@@ -118,6 +147,23 @@ export function createOffice(d: OfficeDeps) {
   const settings = new SettingsService({ repo: d.settingsRepo, loginItem: d.loginItem })
   const runtimes = new Map(d.runtimes ?? [])
   if (d.runner && !runtimes.has('claude-code')) runtimes.set('claude-code', d.runner)
+  const projects: Projects | undefined = d.vault
+    ? createProjects({
+        vault: d.vault,
+        agents: d.agents,
+        bus: d.bus,
+        clock: d.clock,
+        log: d.log ?? SILENT,
+        ...(d.repoIdentity ? { repoIdentity: d.repoIdentity } : {}),
+        ...(d.transcripts ? { transcripts: d.transcripts } : {}),
+        ...(d.history ? { history: d.history } : {}),
+        ...(d.searchIndex ? { searchIndex: d.searchIndex } : {}),
+        ...(d.random ? { random: d.random } : {}),
+        enabledProviders: async () => enabledProviders(await settings.get()),
+        sessions: () => sessions,
+        onRetrieval: (provider) => capabilities.declare(provider, [CONTEXT_HUB]),
+      })
+    : undefined
   sessions = runtimes.size
     ? new ManagedSessionService({
         ...d,
@@ -126,6 +172,14 @@ export function createOffice(d: OfficeDeps) {
         inbox,
         settings,
         ...(d.rateLimitPerSec ? { rateLimitPerSec: d.rateLimitPerSec } : {}),
+        ...(projects
+          ? {
+              projectExists: (id: string) => projects.store.projects.has(id),
+              mcp: projects.mcp,
+              observation: projects.observation,
+              ...(d.mcpLaunch ? { mcpLaunch: d.mcpLaunch } : {}),
+            }
+          : {}),
       })
     : undefined
   const providerHooks = d.providerHookTargets
@@ -172,5 +226,10 @@ export function createOffice(d: OfficeDeps) {
       ...(sessions ? { sessions } : {}),
     }),
     updates: new UpdateService({ ...d, enabled: d.autoUpdate ?? true }),
+    /**
+     * Projects, sessions, memory, context, handoffs, search and MCP access (only with `vault`).
+     * Call `load()` once at startup before serving IPC or MCP.
+     */
+    projects,
   }
 }

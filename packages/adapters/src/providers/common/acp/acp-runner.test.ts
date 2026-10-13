@@ -190,6 +190,33 @@ describe('AcpRunner (fake agent process)', () => {
     })
   })
 
+  // MCP: RunnerStart.mcp becomes one stdio entry in session/new, env as [{name, value}].
+  it('ACP-MCP passes RunnerStart.mcp in session/new mcpServers', async () => {
+    const f = real()
+    const mcp = {
+      name: 'agent-office',
+      command: '/u/mcp/agent-office-mcp.sh',
+      args: [],
+      env: { AGENT_OFFICE_MCP_URL: 'http://127.0.0.1:1/mcp', AGENT_OFFICE_MCP_TOKEN: 'mcp_t' },
+    }
+    const { s } = f.start({ mcp })
+    await s.sessionId
+    expect(f.call('session/new')!.params).toEqual({
+      cwd: dir,
+      mcpServers: [
+        {
+          name: 'agent-office',
+          command: '/u/mcp/agent-office-mcp.sh',
+          args: [],
+          env: [
+            { name: 'AGENT_OFFICE_MCP_URL', value: 'http://127.0.0.1:1/mcp' },
+            { name: 'AGENT_OFFICE_MCP_TOKEN', value: 'mcp_t' },
+          ],
+        },
+      ],
+    })
+  })
+
   // ACP-2: another protocol version → disconnect with a runtime error.
   it('ACP-2 disconnects on a protocol mismatch', async () => {
     const f = real({ FAKE_ACP_VERSION: '2' })

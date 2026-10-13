@@ -1,8 +1,15 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadEnv } from '@agent-office/adapters'
+import { loadEnv, MemoryRecordLog } from '@agent-office/adapters'
 import {
   FakeAgentRunner,
   FakeWindow,
@@ -24,7 +31,12 @@ import {
 } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRunner, ProviderProbe, RunnerDecl, StartSession } from '@agent-office/core'
-import { compose, type ComposeOptions, type Shell } from './composition.ts'
+import {
+  compose,
+  VAULT_MEMORY_ONLY_BANNER,
+  type ComposeOptions,
+  type Shell,
+} from './composition.ts'
 
 class FakeShellWindow extends FakeWindow {
   shown = 0
@@ -123,6 +135,7 @@ function setup(
     providerOverrides?: ComposeOptions['providerOverrides']
     fakesDir?: string
     processEnv?: Record<string, string | undefined>
+    vault?: MemoryRecordLog
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'ao-comp-'))
@@ -813,5 +826,143 @@ describe('compose: acp providers and observation hooks', () => {
     expect(await call(IPC.provHooksRemove, { provider: 'cursor' })).toBe('not-installed')
     const after = JSON.parse(readFileSync(file, 'utf8')) as typeof json
     expect(after.hooks.stop!.map((h) => h.command)).toEqual(['my-own-hook'])
+  })
+})
+
+describe('compose with a projects vault', () => {
+  const KEY = 'wk_' + 'c'.repeat(32)
+
+  it('loads the vault before serving IPC, warns when it is memory-only, and exposes prj:*', async () => {
+    const { app, call, handlers, window } = setup({}, { vault: new MemoryRecordLog() })
+    await app.start()
+    expect([...handlers.keys()]).toEqual(expect.arrayContaining([IPC.prjList, IPC.prjCreate]))
+    const created = (await call(IPC.prjCreate, { name: 'Shop', folders: [] })) as { id: string }
+    expect(((await call(IPC.prjList)) as { id: string }[]).map((p) => p.id)).toEqual([created.id])
+    // The memory-only vault shows the banner (alongside the port banner mechanism).
+    expect(app.banner()).toEqual(VAULT_MEMORY_ONLY_BANNER)
+    await call(IPC.ready)
+    await wait(10)
+    expect(window.sent.filter(([c]) => c === IPC.banner).at(-1)![1]).toEqual(
+      VAULT_MEMORY_ONLY_BANNER,
+    )
+  })
+
+  it('has no prj channels without a vault', async () => {
+    const { app, handlers } = setup()
+    await app.start()
+    expect(handlers.has(IPC.prjList)).toBe(false)
+  })
+
+  it('writes the MCP wrapper and serves /mcp only with a bearer token', async () => {
+    const { app, dir } = setup({}, { vault: new MemoryRecordLog() })
+    await app.start()
+    expect(existsSync(join(dir, 'userData', 'mcp', 'agent-office-mcp.sh'))).toBe(true)
+    const res = await fetch(`http://127.0.0.1:${app.apiPort()}/mcp`, {
+      method: 'POST',
+      headers: { host: `localhost:${app.apiPort()}`, 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('locates an agent from an observe hook workspace key without exposing the key', async () => {
+    const { app, dir, call } = setup({}, { vault: new MemoryRecordLog() })
+    await app.start()
+    const token = readFileSync(join(dir, 'home', 'token'), 'utf8').trim()
+    const res = await fetch(`http://127.0.0.1:${app.apiPort()}/api/events`, {
+      method: 'POST',
+      headers: {
+        host: `localhost:${app.apiPort()}`,
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        agentId: 'cur:1',
+        provider: 'cursor',
+        status: 'thinking',
+        workspace: KEY,
+      }),
+    })
+    expect(res.status).toBe(202)
+    await wait(50)
+    const sessions = (await call(IPC.prjSessions, {})) as { agentId?: string }[]
+    expect(sessions.length).toBe(1)
+    expect(JSON.stringify(await call(IPC.ready))).not.toContain(KEY)
+    expect(JSON.stringify(sessions)).not.toContain(KEY)
+  })
+
+  function writeHistory(dir: string) {
+    const pdir = join(dir, 'claude', 'projects')
+    mkdirSync(join(pdir, '-work-shop'), { recursive: true })
+    const file = join(pdir, '-work-shop', 'sess-hist-1.jsonl')
+    writeFileSync(
+      file,
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'sess-hist-1',
+        cwd: '/work/SENTINEL-shop',
+        timestamp: '2026-01-01T10:00:00.000Z',
+        message: { role: 'user', content: 'SENTINEL-body' },
+      }) +
+        '\n' +
+        JSON.stringify({ type: 'ai-title', sessionId: 'sess-hist-1', aiTitle: 'Fix checkout' }) +
+        '\n',
+    )
+    // Old enough that the live tailer ignores it (recent files are already observed sessions).
+    const old = new Date(Date.now() - 3 * 86_400_000)
+    utimesSync(file, old, old)
+    return pdir
+  }
+
+  it('imports Claude history as imported, resumable records when claudeAdapter is on (idempotent, no leak)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-hist-'))
+    const { app, call } = setup(
+      { AGENT_OFFICE_CLAUDE: '1', CLAUDE_PROJECTS_DIR: writeHistory(dir) },
+      { vault: new MemoryRecordLog() },
+    )
+    await app.start()
+    expect(await call(IPC.prjImportHistory, {})).toEqual({ imported: 1, skipped: 0 })
+    expect(await call(IPC.prjImportHistory, {})).toEqual({ imported: 0, skipped: 1 })
+    const sessions = (await call(IPC.prjSessions, {})) as {
+      origin: string
+      title: string
+      canResume?: boolean
+      hasTranscript: boolean
+    }[]
+    expect(sessions.find((x) => x.origin === 'imported')).toMatchObject({
+      title: 'Fix checkout',
+      canResume: true,
+      hasTranscript: true,
+    })
+    expect(JSON.stringify(sessions)).not.toMatch(/SENTINEL|\/work\//)
+  })
+
+  it('imports nothing while the Claude adapter is off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-hist-'))
+    const { app, call } = setup(
+      { AGENT_OFFICE_CLAUDE: '0', CLAUDE_PROJECTS_DIR: writeHistory(dir) },
+      { vault: new MemoryRecordLog() },
+    )
+    await app.start()
+    expect(await call(IPC.prjImportHistory, {})).toEqual({ imported: 0, skipped: 0 })
+  })
+
+  it('tasks flow over IPC and show up on the dashboard', async () => {
+    const { app, call } = setup({}, { vault: new MemoryRecordLog() })
+    await app.start()
+    const prj = (await call(IPC.prjCreate, { name: 'Shop', folders: [] })) as { id: string }
+    const t = (await call(IPC.prjTaskCreate, { projectId: prj.id, title: 'Ship it' })) as {
+      id: string
+    }
+    await call(IPC.prjTaskUpdate, { taskId: t.id, state: 'done', confirm: true })
+    const list = (await call(IPC.prjTasks, prj.id)) as { state: string; evidence?: unknown }[]
+    expect(list).toHaveLength(1)
+    expect(list[0]!.state).toBe('done')
+    const dash = (await call(IPC.prjDashboard, { projectId: prj.id })) as {
+      tasks: { id: string }[]
+      completed: { evidence: string }[]
+    }
+    expect(dash.tasks.map((x) => x.id)).toEqual([t.id])
+    expect(dash.completed[0]!.evidence).toBe('user-confirmed')
   })
 })

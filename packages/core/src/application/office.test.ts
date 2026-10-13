@@ -10,6 +10,10 @@ import {
   FakeJsonConfigStore,
   FakeMessageRepository,
   FakeProviderProbe,
+  FakeRecordLog,
+  FakeRepoIdentity,
+  FakeTranscriptReader,
+  SeqRandom,
   FakeSettingsRepository,
   FakeWindow,
   fakePlatform,
@@ -188,5 +192,104 @@ describe('createOffice: providers', () => {
     await office.providers.setEnabled('cursor', true)
     const cursor = (await office.providers.list()).find((p) => p.id === 'cursor')
     expect(cursor).toMatchObject({ hooks: 'installed', state: 'observe-only' })
+  })
+})
+
+describe('createOffice: projects (docs/projects.md)', () => {
+  const identity = {
+    commonDirKey: 'cd-shop',
+    rootKey: 'rk-shop',
+    rootCommit: 'c0',
+    remotes: ['github.com/acme/shop'],
+    name: 'shop',
+    isWorktree: false,
+    relPath: '',
+  }
+
+  it('OF-projects is absent without a vault', () => {
+    expect(createOffice(deps()).projects).toBeUndefined()
+  })
+
+  it('OF-the vertical slice: project → managed codex session with MCP → retrieves approved memory → restart', async () => {
+    const vault = new FakeRecordLog()
+    const codex = new FakeAgentRunner({
+      provider: 'codex',
+      prefix: 'cx:',
+      caps: ['launch', 'send-message', 'stop'],
+    })
+    const settingsRepo = new FakeSettingsRepository()
+    const d = deps({
+      vault,
+      runtimes: new Map([['codex', codex]]),
+      runner: new FakeAgentRunner(),
+      settingsRepo,
+      repoIdentity: new FakeRepoIdentity().set('/work/shop', identity),
+      transcripts: new FakeTranscriptReader(),
+      random: new SeqRandom(),
+      mcpLaunch: (token: string) => ({
+        name: 'agent-office-memory',
+        command: '/w/mcp',
+        args: [],
+        env: { AGENT_OFFICE_MCP_TOKEN: token },
+      }),
+    })
+    await settingsRepo.save({
+      ...(await settingsRepo.load()),
+      providers: { codex: { enabled: true } },
+    })
+    const office = createOffice(d)
+    const projects = office.projects!
+    await projects.load()
+    const p = await projects.catalog.create({ name: 'Shop', folders: ['/work/shop'] })
+    expect(projects.catalog.get(p.id).policy.providers).toEqual({
+      'claude-code': 'read-propose',
+      codex: 'read-propose',
+    })
+    await projects.memory.create({
+      projectId: p.id,
+      scope: 'project',
+      kind: 'decision',
+      title: 'Use JWT',
+      body: 'JWT for auth',
+    })
+
+    const agentId = await office.sessions!.start({
+      provider: 'codex',
+      projectId: p.id,
+      cwd: '/work/shop',
+      name: 'cx',
+      mode: 'default',
+      extraDirs: [],
+      chrome: false,
+      first: { text: 'go', context: [], use: [] },
+    })
+    const token = codex.last().options.mcp!.env.AGENT_OFFICE_MCP_TOKEN!
+    const principal = projects.mcp.principal(token)!
+    expect(principal).toMatchObject({ projectId: p.id, provider: 'codex' })
+    expect(principal.sessionId).toMatch(/^ses_/)
+    expect(d.agents.get(agentId)?.projectId).toBe(p.id)
+    const r = await projects.mcp.call(principal, 'search_memory', { query: 'jwt' })
+    expect((r.structured.items as { title: string }[]).map((i) => i.title)).toEqual(['Use JWT'])
+    expect(projects.context.inspect(agentId).retrieved).toHaveLength(1)
+    expect(d.capabilities.get('codex', 'mcp:agent-office-memory')?.label).toBe('Context Hub')
+    expect(projects.workspace.dashboard(p.id).active.map((a) => a.agentId)).toEqual([agentId])
+
+    await office.sessions!.stop(agentId)
+    expect(projects.mcp.principal(token)).toBeNull()
+    await projects.store.flush()
+
+    const again = createOffice({
+      ...d,
+      agents: new FakeAgentRepository(),
+      bus: new FakeEventBus(),
+      vault: vault.reopen(),
+    })
+    await again.projects!.load()
+    expect(again.projects!.catalog.list().map((x) => x.name)).toEqual(['Shop'])
+    expect(again.projects!.sessions.list({ scope: p.id })).toMatchObject([
+      { provider: 'codex', origin: 'managed', state: 'inactive' },
+    ])
+    expect(again.projects!.memory.list({ scope: p.id }).map((m) => m.title)).toEqual(['Use JWT'])
+    expect(again.projects!.workspace.overview().vault).toBe('encrypted')
   })
 })

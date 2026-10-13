@@ -10,9 +10,11 @@ ANCHOR_RE = re.compile(
     r'^(seat:desk:[1-6]:[0-3]'
     r'|seat:meeting:[AB]:[0-5]'
     r'|seat:(lounge|cafe|reading):\d+'
-    r'|spot:(kitchen|booth|reception|elevator|garden|station|shelf):\d+'
+    r'|spot:(kitchen|booth|reception|elevator|garden|station|shelf|handoff):\d+'
+    r'|console:context:[0-5]'
+    r'|kiosk:project-directory'
     r'|spot:pingpong:\d+:[AB])$')
-PORT_RE = re.compile(r'^port:(desk:[1-6]:[0-3]|station:[0-7]|book:\d+|board:[0-5]|notebook:[0-7])$')
+PORT_RE = re.compile(r'^port:(desk:[1-6]:[0-3]|station:[0-7]|book:\d+|board:[0-5]|notebook:[0-7]|archive:(\d|1[01]))$')
 POSES = ('sit', 'stand', 'lounge')
 # Contract §4 / character.json: the anchor is where the character's root stands. The seat center is this
 # far behind the root (opposite the heading); `stand` spots are the root itself.

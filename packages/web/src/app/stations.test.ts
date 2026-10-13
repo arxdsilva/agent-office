@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { builtins, cap } from './__fixtures__/capabilities.ts'
-import { STATION_COUNT, assignSlots, assignStations } from './stations.ts'
+import {
+  CONTEXT_HUB_ID,
+  CONTEXT_IDLE,
+  STATION_COUNT,
+  assignSlots,
+  assignStations,
+  contextHubActive,
+  contextPulse,
+} from './stations.ts'
 
 const ids = (n: number, prefix = 'mcp:s') =>
   Array.from({ length: n }, (_, i) => cap(`${prefix}${i}`))
@@ -98,5 +106,27 @@ describe('assignSlots', () => {
     expect(s.overflow).toEqual(['b', 'c'])
     expect(assignSlots(['a'], undefined, 2).overflow).toEqual([])
     expect(assignSlots([], undefined, 0).overflow).toEqual([])
+  })
+})
+
+describe('Context Hub pulse (real retrievals only)', () => {
+  const slot = (id: string, glow: number) => ({ id, glow })
+  const surfaces = (...stations: ({ id: string; glow: number } | undefined)[]) => ({ stations })
+
+  it('is active only while the project MCP station glows, in any provider', () => {
+    expect(contextHubActive([])).toBe(false)
+    expect(contextHubActive([surfaces(slot(CONTEXT_HUB_ID, 0))])).toBe(false)
+    expect(contextHubActive([undefined, surfaces(undefined, slot(CONTEXT_HUB_ID, 1))])).toBe(true)
+    // Another adapter glowing (a shell call, another MCP server) never moves the hub.
+    expect(contextHubActive([surfaces(slot('shell', 1), slot('mcp:github', 1))])).toBe(false)
+  })
+
+  it('pulses between a dim idle glow and full strength, and never goes dark', () => {
+    expect(contextPulse(0, false)).toBe(CONTEXT_IDLE)
+    expect(contextPulse(1.234, false)).toBe(CONTEXT_IDLE)
+    const levels = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].map((t) => contextPulse(t, true))
+    expect(Math.max(...levels)).toBeLessThanOrEqual(1)
+    expect(Math.min(...levels)).toBeGreaterThan(CONTEXT_IDLE)
+    expect(new Set(levels).size).toBeGreaterThan(3)
   })
 })

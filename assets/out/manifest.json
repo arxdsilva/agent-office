@@ -2,14 +2,14 @@
   "version": 1,
   "blender": "5.2.2",
   "units": "m",
-  "hash": "ea483b87002dfe3e62121d8f24277d0525806d33d36d525902d82b227195bc92",
+  "hash": "cf7adb911668d302ab285c5e8c04abb29c92ff4f67d6425cf2c37c8d3186a42e",
   "hdri": "hdri/office.hdr",
   "modules": {
     "atrium": {
       "file": "atrium.glb",
       "lightmap": {
         "file": "atrium.lightmap.full.webp",
-        "intensity": 11.258,
+        "intensity": 11.1705,
         "variants": {
           "full": "atrium.lightmap.full.webp",
           "half": "atrium.lightmap.half.webp",
@@ -23,6 +23,150 @@
         "maxZ": 0
       },
       "anchors": {
+        "console:context:0": {
+          "x": -11.7904,
+          "y": 0,
+          "z": -19.2899,
+          "heading": -2.0071,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -11.2467,
+            "z": -19.0363
+          }
+        },
+        "console:context:1": {
+          "x": -12.6491,
+          "y": 0,
+          "z": -18.1908,
+          "heading": -2.4609,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -12.2715,
+            "z": -17.7246
+          }
+        },
+        "console:context:2": {
+          "x": -13.9027,
+          "y": 0,
+          "z": -17.5795,
+          "heading": -2.9147,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -13.7677,
+            "z": -16.9948
+          }
+        },
+        "console:context:3": {
+          "x": -15.2973,
+          "y": 0,
+          "z": -17.5795,
+          "heading": 2.9147,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -15.4323,
+            "z": -16.9948
+          }
+        },
+        "console:context:4": {
+          "x": -16.5509,
+          "y": 0,
+          "z": -18.1908,
+          "heading": 2.4609,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -16.9285,
+            "z": -17.7246
+          }
+        },
+        "console:context:5": {
+          "x": -17.4096,
+          "y": 0,
+          "z": -19.2899,
+          "heading": 2.0071,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -17.9533,
+            "z": -19.0363
+          }
+        },
+        "kiosk:project-directory": {
+          "x": -12.6,
+          "y": 0,
+          "z": -14.5,
+          "heading": 3.1416,
+          "pose": "stand",
+          "room": "hub",
+          "approach": {
+            "x": -12.6,
+            "z": -13.9
+          }
+        },
+        "port:archive:0": {
+          "x": -10.175,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:1": {
+          "x": -9.325,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:10": {
+          "x": -1.675,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:11": {
+          "x": -0.825,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:2": {
+          "x": -8.475,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:3": {
+          "x": -7.625,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:4": {
+          "x": -6.775,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:5": {
+          "x": -5.925,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:6": {
+          "x": -5.075,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:7": {
+          "x": -4.225,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:8": {
+          "x": -3.375,
+          "y": 1.64,
+          "z": -22.59
+        },
+        "port:archive:9": {
+          "x": -2.525,
+          "y": 1.64,
+          "z": -22.59
+        },
         "seat:cafe:0": {
           "x": 5.9101,
           "y": 0,
@@ -383,6 +527,30 @@
             "z": -4.45
           }
         },
+        "spot:handoff:0": {
+          "x": -7.5,
+          "y": 0,
+          "z": -7.4,
+          "heading": 1.5708,
+          "pose": "stand",
+          "room": "plaza",
+          "approach": {
+            "x": -8.1,
+            "z": -7.4
+          }
+        },
+        "spot:handoff:1": {
+          "x": -4.5,
+          "y": 0,
+          "z": -7.4,
+          "heading": -1.5708,
+          "pose": "stand",
+          "room": "plaza",
+          "approach": {
+            "x": -3.9,
+            "z": -7.4
+          }
+        },
         "spot:pingpong:0:A": {
           "x": 27.5,
           "y": 0,
@@ -562,10 +730,25 @@
             "z": -18.8,
             "width": 0.9
           },
+          "a:he": {
+            "x": -11.9,
+            "z": -18.2,
+            "width": 1
+          },
+          "a:hn": {
+            "x": -14.6,
+            "z": -16.6,
+            "width": 1.4
+          },
           "a:hub": {
             "x": 0,
             "z": -5.2,
             "width": 1.6
+          },
+          "a:hw": {
+            "x": -17.4,
+            "z": -17.6,
+            "width": 1
           },
           "a:lobby_c": {
             "x": -18.5,
@@ -583,9 +766,19 @@
             "width": 1
           },
           "a:lounge": {
-            "x": -11.8,
-            "z": -16.5,
+            "x": -10.2,
+            "z": -16.6,
             "width": 1
+          },
+          "a:pl1": {
+            "x": -8,
+            "z": -5.4,
+            "width": 1.2
+          },
+          "a:pl2": {
+            "x": -4,
+            "z": -5.3,
+            "width": 1.2
           },
           "a:portal": {
             "x": 0,
@@ -606,6 +799,41 @@
             "x": -11,
             "z": -10,
             "width": 1.2
+          },
+          "ap:console:context:0": {
+            "x": -11.2467,
+            "z": -19.0363,
+            "width": 0.35
+          },
+          "ap:console:context:1": {
+            "x": -12.2715,
+            "z": -17.7246,
+            "width": 0.35
+          },
+          "ap:console:context:2": {
+            "x": -13.7677,
+            "z": -16.9948,
+            "width": 0.35
+          },
+          "ap:console:context:3": {
+            "x": -15.4323,
+            "z": -16.9948,
+            "width": 0.35
+          },
+          "ap:console:context:4": {
+            "x": -16.9285,
+            "z": -17.7246,
+            "width": 0.35
+          },
+          "ap:console:context:5": {
+            "x": -17.9533,
+            "z": -19.0363,
+            "width": 0.35
+          },
+          "ap:kiosk:project-directory": {
+            "x": -12.6,
+            "z": -13.9,
+            "width": 0.35
           },
           "ap:seat:cafe:0": {
             "x": 6.5394,
@@ -755,6 +983,16 @@
           "ap:spot:elevator:5": {
             "x": -22.05,
             "z": -4.45,
+            "width": 0.35
+          },
+          "ap:spot:handoff:0": {
+            "x": -8.1,
+            "z": -7.4,
+            "width": 0.35
+          },
+          "ap:spot:handoff:1": {
+            "x": -3.9,
+            "z": -7.4,
             "width": 0.35
           },
           "ap:spot:pingpong:0:A": {
@@ -1124,12 +1362,72 @@
             "ap:spot:pingpong:1:B"
           ],
           [
+            "a:he",
+            "a:hn"
+          ],
+          [
+            "a:he",
+            "a:lounge"
+          ],
+          [
+            "a:he",
+            "ap:console:context:0"
+          ],
+          [
+            "a:he",
+            "ap:console:context:1"
+          ],
+          [
+            "a:he",
+            "ap:console:context:2"
+          ],
+          [
+            "a:hn",
+            "a:hw"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:0"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:1"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:2"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:3"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:4"
+          ],
+          [
+            "a:hn",
+            "ap:console:context:5"
+          ],
+          [
             "a:hub",
-            "a:lobby_e"
+            "a:pl2"
           ],
           [
             "a:hub",
             "a:portal"
+          ],
+          [
+            "a:hw",
+            "ap:console:context:3"
+          ],
+          [
+            "a:hw",
+            "ap:console:context:4"
+          ],
+          [
+            "a:hw",
+            "ap:console:context:5"
           ],
           [
             "a:lobby_c",
@@ -1165,6 +1463,10 @@
           ],
           [
             "a:lobby_e",
+            "a:pl1"
+          ],
+          [
+            "a:lobby_e",
             "a:west"
           ],
           [
@@ -1192,8 +1494,24 @@
             "a:west"
           ],
           [
+            "a:pl1",
+            "a:pl2"
+          ],
+          [
+            "a:pl1",
+            "ap:spot:handoff:0"
+          ],
+          [
+            "a:pl2",
+            "ap:spot:handoff:1"
+          ],
+          [
             "a:portal",
             "a:street"
+          ],
+          [
+            "a:west",
+            "ap:kiosk:project-directory"
           ]
         ]
       },
@@ -1227,8 +1545,41 @@
             "rect": [
               -33,
               -24,
+              -18.2,
+              -13.4
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "hub",
+            "name": "Project Hub",
+            "rect": [
+              -18.2,
+              -24,
               -11,
               -13.4
+            ],
+            "floor": "tile"
+          },
+          {
+            "id": "archive",
+            "name": "Session Archive",
+            "rect": [
+              -11,
+              -24,
+              0,
+              -21
+            ],
+            "floor": "wood"
+          },
+          {
+            "id": "plaza-s",
+            "name": "Plaza",
+            "rect": [
+              0,
+              -24,
+              3,
+              -21
             ],
             "floor": "tile"
           },
@@ -1237,7 +1588,7 @@
             "name": "Plaza",
             "rect": [
               -11,
-              -24,
+              -21,
               3,
               0
             ],
@@ -1865,6 +2216,110 @@
             "w": 7.6,
             "d": 2.7,
             "yaw": 3.142
+          },
+          {
+            "kind": "context-core",
+            "x": -14.6,
+            "z": -20.6,
+            "w": 2.1,
+            "d": 2.1,
+            "yaw": 0
+          },
+          {
+            "kind": "console",
+            "x": -12.515,
+            "z": -19.628,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": 1.134
+          },
+          {
+            "kind": "console",
+            "x": -13.153,
+            "z": -18.813,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": 0.681
+          },
+          {
+            "kind": "console",
+            "x": -14.083,
+            "z": -18.359,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": 0.227
+          },
+          {
+            "kind": "console",
+            "x": -15.117,
+            "z": -18.359,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": -0.227
+          },
+          {
+            "kind": "console",
+            "x": -16.047,
+            "z": -18.813,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": -0.681
+          },
+          {
+            "kind": "console",
+            "x": -16.685,
+            "z": -19.628,
+            "w": 0.72,
+            "d": 0.4,
+            "yaw": -1.134
+          },
+          {
+            "kind": "kiosk",
+            "x": -12.6,
+            "z": -15.58,
+            "w": 2,
+            "d": 1.5,
+            "yaw": 0
+          },
+          {
+            "kind": "rug",
+            "x": -6,
+            "z": -7.4,
+            "w": 3.7,
+            "d": 3.7,
+            "yaw": 0
+          },
+          {
+            "kind": "handoff-pad",
+            "x": -6,
+            "z": -7.4,
+            "w": 0.8,
+            "d": 0.8,
+            "yaw": 0
+          },
+          {
+            "kind": "archive-alcove",
+            "x": -5.5,
+            "z": -22.91,
+            "w": 10.2,
+            "d": 0.72,
+            "yaw": 0
+          },
+          {
+            "kind": "lectern",
+            "x": -8.05,
+            "z": -21.5,
+            "w": 0.6,
+            "d": 0.5,
+            "yaw": 0
+          },
+          {
+            "kind": "lectern",
+            "x": -2.95,
+            "z": -21.5,
+            "w": 0.6,
+            "d": 0.5,
+            "yaw": 0
           }
         ]
       }

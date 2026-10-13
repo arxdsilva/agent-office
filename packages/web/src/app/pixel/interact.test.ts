@@ -69,6 +69,7 @@ describe('interactionTarget (IN)', () => {
       PIXEL_COPY.prompt.open,
     )
     expect(promptFor({ kind: 'object', object: 'sign' })).toBe(PIXEL_COPY.prompt.read)
+    expect(promptFor({ kind: 'object', object: 'project-directory' })).toBe(PIXEL_COPY.prompt.open)
   })
 
   it('turns map objects into targets, resolving capability slots from the surfaces', () => {

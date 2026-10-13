@@ -1,6 +1,7 @@
 @import './styles/pixel.css';
 @import './styles/session.css';
 @import './styles/library.css';
+@import './styles/workspace.css';
 
 :root {
   --bg: #eef0f3;
@@ -204,7 +205,8 @@ textarea:focus-visible {
 .label-stack [hidden] {
   display: none;
 }
-.tag {
+.tag,
+.fixture-tag {
   pointer-events: auto;
   cursor: pointer;
   user-select: none;

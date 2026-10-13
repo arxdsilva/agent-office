@@ -12,6 +12,8 @@ import {
   ClaudeCodeTailer,
   ClaudeConfigReader,
   ClaudeKnowledgeReader,
+  ClaudeHistorySource,
+  ClaudeTranscriptReader,
   ClaudeProbe,
   ClaudeSettingsFile,
   CodexProbe,
@@ -30,22 +32,30 @@ import {
   geminiSettingsPath,
   JsonConfigFile,
   createAuth,
+  FileRecordLog,
   FsHookRunner,
+  GitRepoIdentity,
   InMemoryAgentRepository,
   InMemoryCapabilityRepository,
   InMemoryEventBus,
   InMemoryMessageRepository,
   JsonFileSettingsRepository,
   loadOrCreateToken,
+  loadOrCreateWorkspaceSalt,
+  McpLauncher,
+  observeWorkspace,
   MockAgents,
   NodeTranscriptFiles,
   RandomIds,
   resolveClaudeExecutable,
   ScriptedAgentRunner,
   startHttpServer,
+  TextIndex,
+  TranscriptRefs,
   SystemClock,
   TimerScheduler,
   type EnvConfig,
+  type KeyProvider,
   type RunningServer,
   type TailerStats,
 } from '@agent-office/adapters'
@@ -61,6 +71,9 @@ import {
   type ProviderHookTargets,
   type ProviderProbe,
   type PlatformInfo,
+  type RecordLog,
+  type SearchIndex,
+  type SecureRandom,
   type Scheduler,
   type TrayAction,
   type TrayView,
@@ -80,6 +93,7 @@ import {
 } from '@agent-office/shared'
 import {
   createIpcHandlers,
+  createProjectPushBridge,
   createPushBridge,
   registerIpc,
   type ContextEntry,
@@ -114,6 +128,15 @@ export interface ComposeOptions {
   userDataDir: string
   /** Absolute path of hooks/agent-office-hook.mjs. */
   hookScript: string
+  /** Absolute path of hooks/agent-office-mcp.mjs; defaults to the sibling of `hookScript`. */
+  mcpScript?: string
+  /**
+   * Projects vault: a record log (tests), or the OS-keychain key provider the encrypted vault in
+   * `<userData>/vault` is built with (index.ts, after app ready). Neither → no projects layer.
+   */
+  vault?: RecordLog
+  keyProvider?: KeyProvider
+  searchIndex?: SearchIndex
   /** Binary Claude Code should run for the hook (the app itself when packaged). */
   execPath: string
   runAsNode: boolean
@@ -158,6 +181,12 @@ const TEST_EVENT = {
 const NO_STATS: TailerStats = { projectsDirFound: false, activeSessions: 0 }
 
 const MAX_PICK = 10
+/** Shown when the vault runs without an OS keychain (nothing is saved). */
+export const VAULT_MEMORY_ONLY_BANNER: Banner = {
+  kind: 'error',
+  text: "Projects aren't being saved: no OS keychain",
+}
+const hexRandom: SecureRandom = { token: (bytes) => randomBytes(bytes).toString('hex') }
 
 /**
  * Opaque `ctx_` refs for picked paths, de-duplicated by path. Paths stay in main; the renderer
@@ -370,6 +399,25 @@ export function compose(o: ComposeOptions) {
     { provider: 'copilot', ...acp.copilot },
   ]
   const context = createContextRegistry({ dialog: shell.dialog, home })
+
+  // ── projects layer (docs/projects.md): only with a vault ──
+  const vault: RecordLog | undefined =
+    o.vault ??
+    (o.keyProvider
+      ? new FileRecordLog({ dir: join(o.userDataDir, 'vault'), keys: o.keyProvider, log: logger })
+      : undefined)
+  const transcriptFiles = new NodeTranscriptFiles()
+  const transcriptRefs = new TranscriptRefs()
+  const mcpLauncher = vault
+    ? new McpLauncher({
+        userData: o.userDataDir,
+        execPath: o.execPath,
+        script: o.mcpScript ?? join(dirname(o.hookScript), 'agent-office-mcp.mjs'),
+        platform: shell.platform.platform,
+        runAsNode: o.runAsNode,
+        url: hookUrl,
+      })
+    : undefined
   const office = createOffice({
     agents: new InMemoryAgentRepository(),
     capabilities: new InMemoryCapabilityRepository(),
@@ -407,13 +455,35 @@ export function compose(o: ComposeOptions) {
     ]),
     providerHookTargets: buildHookTargets(o, processEnv, home, hookUrl),
     displayPath: (p) => displayPathOf(p, home),
+    log: logger,
+    ...(vault
+      ? {
+          vault,
+          repoIdentity: new GitRepoIdentity({ salt: loadOrCreateWorkspaceSalt(env.home) }),
+          transcripts: new ClaudeTranscriptReader({ refs: transcriptRefs, files: transcriptFiles }),
+          // Experimental history import: lists nothing while the Claude adapter setting is off.
+          history: new ClaudeHistorySource({
+            dir: env.claudeProjectsDir,
+            files: transcriptFiles,
+            refs: transcriptRefs,
+            enabled: async () => effective(await office.settings.get()).claudeAdapter,
+          }),
+          searchIndex: o.searchIndex ?? new TextIndex(),
+          random: hexRandom,
+          ...(mcpLauncher ? { mcpLaunch: (token: string) => mcpLauncher.launch(token) } : {}),
+        }
+      : {}),
   })
+  const projects = office.projects
   const sessions = office.sessions!
 
   /** Env overrides (dev/test) win over saved settings for this run only. */
   const effective = (s: Settings): Settings => ({ ...s, ...env.overrides })
 
   let banner: Banner | null = null
+  let vaultBanner: Banner | null = null
+  /** The port banner wins; otherwise the vault warning stays visible. */
+  const shownBanner = (): Banner | null => banner ?? vaultBanner
   let stats: TailerStats = NO_STATS
   let portBusy = false
   let currentToken: string | undefined
@@ -424,7 +494,7 @@ export function compose(o: ComposeOptions) {
 
   const setBanner = (b: Banner | null) => {
     banner = b
-    shell.window.send(IPC.banner, b)
+    shell.window.send(IPC.banner, shownBanner())
   }
 
   const refreshHookStatus = async () => {
@@ -513,30 +583,25 @@ export function compose(o: ComposeOptions) {
     return { ok: true }
   }
 
-  async function startBackend(s: Settings): Promise<void> {
-    const b: NonNullable<typeof backend> = { stops: [] }
-    backend = b
-    let mock: MockAgents | undefined
-    if (s.mock) {
-      mock = new MockAgents({
-        activity: office.activity,
-        inbox: office.inbox,
-        query: office.query,
-        capabilities: office.capabilities,
-        events: bus,
-        scheduler,
-      })
-      mock.seed()
-      mock.start()
-      b.stops.push(() => mock!.stop())
-    }
+  /** Sources (Claude Code transcripts + capability discovery); started after the API is up. */
+  function startSources(s: Settings, b: NonNullable<typeof backend>): void {
     if (s.claudeAdapter) {
       // Discovery (MCP server names, skills, rules, memory titles) is opt-out via discoverCapabilities.
       let discovery: ClaudeCapabilityDiscovery | undefined
       const tailer = new ClaudeCodeTailer({
         dir: env.claudeProjectsDir,
         claudeHome: env.claudeHome,
-        files: new NodeTranscriptFiles(),
+        files: transcriptFiles,
+        refs: transcriptRefs,
+        ...(projects
+          ? {
+              onSessionLocated: (sessionId: string, cwd: string, ref: string) =>
+                void projects.observation.located(`cc:${sessionId}`, 'claude-code', {
+                  cwd,
+                  transcriptRef: ref,
+                }),
+            }
+          : {}),
         activity: office.activity,
         clock: new SystemClock(),
         scheduler,
@@ -572,6 +637,25 @@ export function compose(o: ComposeOptions) {
         stats = NO_STATS
       })
     }
+  }
+
+  async function startBackend(s: Settings): Promise<void> {
+    const b: NonNullable<typeof backend> = { stops: [] }
+    backend = b
+    let mock: MockAgents | undefined
+    if (s.mock) {
+      mock = new MockAgents({
+        activity: office.activity,
+        inbox: office.inbox,
+        query: office.query,
+        capabilities: office.capabilities,
+        events: bus,
+        scheduler,
+      })
+      mock.seed()
+      mock.start()
+      b.stops.push(() => mock!.stop())
+    }
     b.stops.push(scheduler.every(SWEEP_MS, () => office.activity.sweep()))
 
     const token = loadOrCreateToken(env.home)
@@ -580,11 +664,15 @@ export function compose(o: ComposeOptions) {
     let listening = s.port
     const api = buildHttpApi(
       {
-        activity: office.activity,
+        // Observe hooks send an opaque workspace key: it locates the agent's project, nothing more.
+        activity: projects
+          ? observeWorkspace(office.activity, projects.observation)
+          : office.activity,
         inbox: office.inbox,
         chat: office.chat,
         query: office.query,
         capabilities: office.capabilities,
+        ...(projects ? { mcp: projects.mcp } : {}),
         ...(mock ? { mock } : {}),
       },
       // Port getter: with port 0 (tests) the Host allowlist must follow the real port.
@@ -601,6 +689,11 @@ export function compose(o: ComposeOptions) {
       portBusy = true
       setBanner({ kind: 'error', text: `Port ${s.port} is busy.`, action: 'open-connect' })
     }
+    // The MCP bridge wrapper (managed sessions of projects), then the sources that locate sessions.
+    await mcpLauncher
+      ?.ensureInstalled()
+      .catch((err: Error) => logger.warn(`mcp wrapper unavailable: ${err.message}`))
+    if (backend === b) startSources(s, b)
     pushConnections()
   }
 
@@ -644,6 +737,12 @@ export function compose(o: ComposeOptions) {
         : undefined
       if (power) stops.push(power.stop)
 
+      if (projects) {
+        // Before IPC or MCP are served: rebuilds projects, sessions and memory from the vault.
+        await projects.load()
+        if (vault?.status() === 'memory-only') vaultBanner = VAULT_MEMORY_ONLY_BANNER
+      }
+
       registerIpc(
         shell.ipc,
         createIpcHandlers({
@@ -652,6 +751,7 @@ export function compose(o: ComposeOptions) {
           compose: office.compose,
           sessions,
           context,
+          ...(projects ? { projects } : {}),
           settings: office.settings,
           hooks: office.hooks,
           providers: office.providers,
@@ -665,7 +765,7 @@ export function compose(o: ComposeOptions) {
           onHookChanged: () => void refreshHookStatus(),
           onReady: () => {
             scheduler.after(0, () => {
-              shell.window.send(IPC.banner, banner)
+              shell.window.send(IPC.banner, shownBanner())
               shell.window.send(IPC.updateState, office.updates.state())
             })
           },
@@ -678,6 +778,15 @@ export function compose(o: ComposeOptions) {
           (channel, payload) => shell.window.send(channel, payload),
           scheduler,
         ),
+        ...(projects
+          ? [
+              createProjectPushBridge(
+                projects.workspace,
+                (channel, payload) => shell.window.send(channel, payload),
+                scheduler,
+              ),
+            ]
+          : []),
         office.updates.onChange((s) => shell.window.send(IPC.updateState, s)),
         office.settings.onChange(({ settings: s, restartRequired }) => {
           office.attention.setNotificationsEnabled(s.notifications)
@@ -705,6 +814,8 @@ export function compose(o: ComposeOptions) {
       if (!started) return
       started = false
       await sessions.stopAll()
+      projects?.mcp.revokeAll()
+      await projects?.store.flush()
       for (const s of stops.splice(0)) s()
       cancelTestAgent?.()
       office.attention.stop()
@@ -751,7 +862,7 @@ export function compose(o: ComposeOptions) {
     stopAll: (): Promise<void> => sessions.stopAll(),
 
     apiPort: (): number | undefined => backend?.server?.port,
-    banner: (): Banner | null => banner,
+    banner: shownBanner,
   }
 }
 

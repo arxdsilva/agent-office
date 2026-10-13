@@ -99,6 +99,13 @@ export const SIZES: Readonly<Record<string, SizeSpec>> = {
   window: { class: 'fixed', m: [2, 0.25], base: [32, 4], overhang: 12 },
   'booth-lamp': { class: 'fixed', m: [1.4, 1.4], base: [22, 22], overhang: 22 },
   'stats-board': { class: 'fixed', m: [4, 0.25], base: [64, 4], overhang: 26 },
+  // Project spaces (contract §4, additive)
+  kiosk: { class: 'fixed', m: [2, 1.5], base: [32, 24], overhang: 28 },
+  'context-core': { class: 'fixed', m: [2.1, 2.1], base: [32, 32], overhang: 40 },
+  console: { class: 'fixed', m: [0.72, 0.4], base: [12, 7], overhang: 18 },
+  'handoff-pad': { class: 'fixed', m: [0.8, 0.8], base: [13, 13], overhang: 12 },
+  'archive-alcove': { class: 'strip', thickness: 11, unit: 14, overhang: 32 },
+  lectern: { class: 'fixed', m: [0.6, 0.5], base: [10, 8], overhang: 12 },
 }
 
 /** Pieces hung on or pushed against a wall: within `WALL_GAP_M` their back edge meets the wall. */
@@ -595,6 +602,10 @@ function furnitureObject(
   if (p.theme) o.theme = p.theme
   if (f.kind === 'elevator') o.interact = { kind: 'object', object: 'elevator' }
   else if (f.kind === 'led-wall') o.interact = { kind: 'object', object: 'stats-board' }
+  else if (f.kind === 'kiosk') o.interact = { kind: 'object', object: 'project-directory' }
+  // The reception desk is the directory only while the plan has no kiosk (older floor plans).
+  else if (f.kind === 'reception-desk' && !plan.furniture.some((g) => g.kind === 'kiosk'))
+    o.interact = { kind: 'object', object: 'project-directory' }
   else if (f.kind === 'sign') {
     const label = p.label ?? p.provider
     o.interact = { kind: 'object', object: 'sign', ...(label && { label }) }

@@ -87,6 +87,8 @@ export interface SessionSummary {
   continuedFrom?: { handoffId: string; sessionId: string; provider: string }
   /** The provider's own history can be opened (main reads it on demand; nothing is copied). */
   hasTranscript: boolean
+  /** Experimental: the provider can resume this session natively (Claude only, verified locally). */
+  canResume?: boolean
 }
 
 export interface SessionMessageView {
@@ -149,7 +151,7 @@ export interface TaskView {
   id: string
   projectId: string
   title: string
-  state: 'open' | 'doing' | 'done' | 'dropped'
+  state: (typeof TASK_STATES)[number]
   source: 'user' | 'agent-reported'
   /** Strongest evidence so far. */
   evidence?: EvidenceLevel
@@ -342,6 +344,29 @@ export const HandoffUpdateArgsSchema = z.object({
   /** Memory ids the user kept in the bundle. */
   include: z.array(MemoryIdSchema).max(40).optional(),
 })
+export const TASK_STATES = ['open', 'doing', 'done', 'dropped'] as const
+export const TaskCreateArgsSchema = z.object({
+  projectId: ProjectIdSchema,
+  title: z.string().trim().min(1).max(120),
+  sessionId: SessionIdSchema.optional(),
+})
+/** A state change, or `confirm` (adds `user-confirmed` evidence). At least one is required. */
+export const TaskUpdateArgsSchema = z
+  .object({
+    taskId: TaskIdSchema,
+    state: z.enum(TASK_STATES).optional(),
+    confirm: z.literal(true).optional(),
+  })
+  .refine((a) => a.state !== undefined || a.confirm === true, { message: 'state or confirm' })
+/** Experimental: import past Claude Code sessions as `imported`, unassigned records (refs only). */
+export const ImportHistoryArgsSchema = z.object({
+  limit: z.number().int().min(1).max(500).default(200),
+})
+export interface ImportResult {
+  imported: number
+  /** Already known or unreadable. */
+  skipped: number
+}
 export const SearchArgsSchema = z.object({
   query: z.string().trim().min(1).max(200),
   projectId: ProjectIdSchema.optional(),

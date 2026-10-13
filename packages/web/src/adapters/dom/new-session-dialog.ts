@@ -18,6 +18,8 @@ export class DomNewSession implements NewSessionView {
   private dialog = byId<HTMLDialogElement>('new-session')
   private name = byId<HTMLInputElement>('ns-name')
   private provider = byId<HTMLSelectElement>('ns-provider')
+  private project = byId<HTMLSelectElement>('ns-project')
+  private projectKey = ''
   private model = byId<HTMLSelectElement>('ns-model')
   private mode = byId<HTMLSelectElement>('ns-mode')
   private chrome = byId<HTMLInputElement>('ns-chrome')
@@ -46,6 +48,7 @@ export class DomNewSession implements NewSessionView {
       ['ns-choose', c.choose],
       ['ns-name-l', c.name],
       ['ns-provider-l', 'Provider'],
+      ['ns-project-l', c.project],
       ['ns-model-l', c.model],
       ['ns-mode-l', c.mode],
       ['ns-extra-l', c.extra],
@@ -78,6 +81,7 @@ export class DomNewSession implements NewSessionView {
       if (PERMISSION_MODES.includes(m)) this.changeFn({ mode: m })
       else this.changeFn({ modeId: this.mode.value })
     })
+    this.project.addEventListener('change', () => this.changeFn({ projectId: this.project.value }))
     this.provider.addEventListener('change', () =>
       this.changeFn({ provider: this.provider.value as ProviderId }),
     )
@@ -164,6 +168,21 @@ export class DomNewSession implements NewSessionView {
         }),
       )
     }
+    const projects = vm.projects ?? []
+    const prkey = JSON.stringify(projects)
+    if (prkey !== this.projectKey) {
+      this.projectKey = prkey
+      this.project.replaceChildren(
+        ...projects.map((p) => {
+          const o = el('option', p.label)
+          o.value = p.id
+          o.selected = p.selected
+          return o
+        }),
+      )
+    }
+    this.project.hidden = projects.length === 0
+    byId('ns-project-l').hidden = projects.length === 0
     byId('ns-title').textContent = vm.title
     const multi = vm.providers.length > 1
     this.provider.hidden = !multi

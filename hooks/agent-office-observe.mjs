@@ -17,9 +17,10 @@
 //   payload for Copilot; the wrapper passes them via the config, see hook_event_name fallback below).
 //
 // Env: AGENT_OFFICE_URL, AGENT_OFFICE_TOKEN_FILE; AGENT_OFFICE_MANAGED=1 = do nothing.
-import { readFileSync } from 'node:fs'
+import { createHmac } from 'node:crypto'
+import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const MAX_STDIN = 256 * 1024
@@ -141,6 +142,58 @@ export function mapEvent(provider, input, env) {
   return event
 }
 
+/**
+ * The `wk_` key of the repository containing `dir`: HMAC-SHA256(salt, realpath(git common dir)),
+ * first 32 hex chars. Mirrors GitRepoIdentity.workspaceKey in the adapters. fs only (no spawn);
+ * returns undefined on any failure or when `dir` is not inside a git checkout. Never sends paths.
+ * @param {unknown} dir absolute directory
+ * @param {Record<string, string | undefined>} env
+ */
+export function workspaceKey(dir, env) {
+  try {
+    if (typeof dir !== 'string' || !isAbsolute(dir)) return undefined
+    const saltHex = readFileSync(
+      env.AGENT_OFFICE_WORKSPACE_SALT_FILE || join(homedir(), '.agent-office', 'workspace-salt'),
+      'utf8',
+    ).trim()
+    if (!/^[0-9a-f]{64}$/.test(saltHex)) return undefined
+    let cur = realpathSync(dir)
+    for (let i = 0; i < 64; i++) {
+      const dotGit = join(cur, '.git')
+      let st
+      try {
+        st = statSync(dotGit)
+      } catch {
+        st = undefined
+      }
+      if (st) {
+        let common = dotGit
+        if (st.isFile()) {
+          const m = readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)
+          if (!m) return undefined
+          const gitdir = resolve(cur, m[1])
+          common = gitdir
+          try {
+            common = resolve(gitdir, readFileSync(join(gitdir, 'commondir'), 'utf8').trim())
+          } catch {
+            /* submodule-style gitdir: it is its own common dir */
+          }
+        }
+        const mac = createHmac('sha256', Buffer.from(saltHex, 'hex'))
+          .update(realpathSync(common))
+          .digest('hex')
+        return `wk_${mac.slice(0, 32)}`
+      }
+      const up = dirname(cur)
+      if (up === cur) return undefined
+      cur = up
+    }
+  } catch {
+    /* fail open: omit the field */
+  }
+  return undefined
+}
+
 function readToken(file) {
   try {
     return readFileSync(file, 'utf8').trim()
@@ -162,6 +215,8 @@ export async function fromStdin(provider, raw, env, fetchImpl) {
     if (raw.length > MAX_STDIN) return
     const event = mapEvent(provider, JSON.parse(raw), env)
     if (!event) return
+    const wk = workspaceKey(PROVIDERS[provider].dir(JSON.parse(raw)), env)
+    if (wk) event.workspace = wk
     const token = readToken(
       env.AGENT_OFFICE_TOKEN_FILE || join(homedir(), '.agent-office', 'token'),
     )

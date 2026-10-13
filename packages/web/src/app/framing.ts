@@ -68,3 +68,71 @@ export function frameSurfaces(i: FrameInput): CameraPose {
     target: c,
   }
 }
+
+export interface AgentFrameInput {
+  /** Floor positions (m) of the agents to show. */
+  positions: Vec2[]
+  fovDeg: number
+  aspect: number
+  /** Extra room around the group (default 1.25). */
+  margin?: number
+  /** Elevation above the floor plane in degrees (default 50). */
+  elevationDeg?: number
+  /** Horizontal viewing direction, from the group towards the camera (default +z). */
+  from?: Vec2
+  /** Distance clamp (m), default 7 … 45. */
+  minDist?: number
+  maxDist?: number
+}
+
+export const AGENT_FRAME_DEFAULTS = {
+  margin: 1.25,
+  elevationDeg: 50,
+  minDist: 7,
+  maxDist: 45,
+  targetY: 1,
+  pad: 1.5,
+} as const
+
+/** Centroid of floor positions, or null when there are none. */
+export function centroid(positions: readonly Vec2[]): Vec2 | null {
+  if (!positions.length) return null
+  return {
+    x: positions.reduce((s, p) => s + p.x, 0) / positions.length,
+    z: positions.reduce((s, p) => s + p.z, 0) / positions.length,
+  }
+}
+
+/**
+ * Orbit-style pose that shows a group of agents from above at an angle, as close as fits (focus
+ * mode, plan §8). Null when there is nobody to frame.
+ */
+export function frameAgents(i: AgentFrameInput): CameraPose | null {
+  const c = centroid(i.positions)
+  if (!c) return null
+  const margin = i.margin ?? AGENT_FRAME_DEFAULTS.margin
+  const minDist = i.minDist ?? AGENT_FRAME_DEFAULTS.minDist
+  const maxDist = Math.max(minDist, i.maxDist ?? AGENT_FRAME_DEFAULTS.maxDist)
+  const radius =
+    Math.max(0, ...i.positions.map((p) => Math.hypot(p.x - c.x, p.z - c.z))) +
+    AGENT_FRAME_DEFAULTS.pad
+  // The limiting field of view is the narrower of the vertical and horizontal ones.
+  const tanV = Math.tan((i.fovDeg * Math.PI) / 360)
+  const tan = Math.min(tanV, tanV * i.aspect)
+  const dist = Math.min(maxDist, Math.max(minDist, (radius * margin) / tan))
+  let fx = i.from?.x ?? 0
+  let fz = i.from?.z ?? 1
+  const len = Math.hypot(fx, fz)
+  if (len < 1e-6) [fx, fz] = [0, 1]
+  else [fx, fz] = [fx / len, fz / len]
+  const el = ((i.elevationDeg ?? AGENT_FRAME_DEFAULTS.elevationDeg) * Math.PI) / 180
+  const target: Vec3 = { x: c.x, y: AGENT_FRAME_DEFAULTS.targetY, z: c.z }
+  return {
+    target,
+    position: {
+      x: c.x + fx * Math.cos(el) * dist,
+      y: target.y + Math.sin(el) * dist,
+      z: c.z + fz * Math.cos(el) * dist,
+    },
+  }
+}

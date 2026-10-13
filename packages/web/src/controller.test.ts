@@ -92,6 +92,43 @@ const connInfo = (over: Partial<ConnectionInfo> = {}): ConnectionInfo => ({
   ...over,
 })
 
+/** The projects API (docs/projects.md): inert in these tests; the workspace controller has its own. */
+const projectsStub = (): AgentOfficeApi['projects'] => {
+  const never = async () => {
+    throw new Error('projects API not used in this test')
+  }
+  return {
+    overview: never,
+    list: vi.fn(async () => []),
+    dashboard: never,
+    create: never,
+    update: never,
+    addRepos: never,
+    removeRepo: never,
+    sessions: vi.fn(async () => []),
+    messages: never,
+    assign: never,
+    memories: vi.fn(async () => []),
+    createMemory: never,
+    reviewMemory: never,
+    editMemory: never,
+    supersedeMemory: never,
+    mergeMemories: never,
+    contextPreview: never,
+    inspect: never,
+    prepareHandoff: never,
+    updateHandoff: never,
+    launchHandoff: never,
+    search: vi.fn(async () => []),
+    tasks: vi.fn(async () => []),
+    createTask: never,
+    updateTask: never,
+    importHistory: never,
+    resumeSession: never,
+    onPush: () => () => {},
+  }
+}
+
 function fakeGateway(
   initial: Settings = DEFAULT_SETTINGS,
   snapshotAgents: Agent[] = [agent('a', { name: 'Ada', status: 'idle' })],
@@ -199,6 +236,7 @@ function fakeGateway(
       install: vi.fn(async () => {}),
       onState: sub(listeners.update),
     },
+    projects: projectsStub(),
   } satisfies AgentOfficeApi
   return { api, listeners }
 }
@@ -1964,6 +2002,7 @@ function pixelScene(v: ReturnType<typeof fakeViews>) {
   s.onCamera = (fn) => void ((v.handlers as Record<string, unknown>).camera = fn)
   s.onZoom = (fn) => void ((v.handlers as Record<string, unknown>).sceneZoom = fn)
   s.onRun = (fn) => void ((v.handlers as Record<string, unknown>).sceneRun = fn)
+  s.onPickFixture = (fn) => void ((v.handlers as Record<string, unknown>).pickFixture = fn)
   s.setInputSuspended = (on) => void s.suspended.push(on)
   s.follow = (id) => void s.followed.push(id)
   s.travelTo = (t) => void s.travels.push(t)
@@ -1973,6 +2012,7 @@ function pixelScene(v: ReturnType<typeof fakeViews>) {
 async function setupPixel(
   initial: Settings = DEFAULT_SETTINGS,
   agents: Agent[] = [agent('a', { name: 'Ada', status: 'idle' })],
+  extra: Partial<Parameters<typeof createController>[0]> = {},
 ) {
   const g = fakeGateway(initial, agents)
   const v = fakeViews()
@@ -1993,6 +2033,7 @@ async function setupPixel(
     pixelHud: px.pixelHud,
     modeToggle: px.modeToggle,
     onViewMode: (m) => void px.viewModes.push(m),
+    ...extra,
   })
   await c.start()
   const tick = (ms: number) => timers.filter((t) => t.ms === ms).forEach((t) => t.fn())
@@ -2255,6 +2296,133 @@ describe('controller: 2D movement in every view and the minimap (C-move, C-map)'
     } finally {
       wing.plan = before
     }
+  })
+
+  // Projects-first (docs/projects.md §10): the reception's Project Directory in both offices opens the
+  // same workspace commands; the main controller only routes, the workspace controller decides.
+  const directory = {
+    heading: 'Which project would you like to explore?',
+    empty: 'No projects yet',
+    createProject: { id: 'new', label: 'New project', enabled: true },
+    entries: [
+      {
+        projectId: 'prj_atlas000001',
+        name: 'Atlas',
+        color: '#3366ff',
+        selected: false,
+        counts: { agents: 2, sessions: 5, memories: 3, pending: 1, tasks: 2 },
+        countsLabel: '2 active agents',
+        actions: [{ id: 'memory', label: 'Memory', enabled: true }],
+      },
+    ],
+  }
+  const workspaceBridge = () => {
+    const calls: unknown[][] = []
+    return {
+      calls,
+      projectDirectory: () => directory,
+      selectProject: async (id: string | null) => void calls.push(['select', id]),
+      perform: async (a: unknown) => void calls.push(['perform', a]),
+      openProjectPicker: () => void calls.push(['picker']),
+    }
+  }
+
+  // C-proj-1: E at the reception desk in 2D opens the Project Directory dialogue with its projects.
+  it('opens the Project Directory dialogue from the reception desk', async () => {
+    const ws = workspaceBridge()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: ws,
+    })
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    expect(
+      t.dialogue.vm?.actions.some(
+        (a) => (a as { projectId?: string }).projectId === 'prj_atlas000001',
+      ),
+    ).toBe(true)
+  })
+
+  // C-proj-2: picking a project selects it; project actions run the shared workspace commands.
+  it('routes directory picks and project actions to the workspace controller', async () => {
+    const ws = workspaceBridge()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: ws,
+    })
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    t.handlers.action!('project-select', { projectId: 'prj_atlas000001' })
+    expect(ws.calls).toContainEqual(['select', 'prj_atlas000001'])
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    t.handlers.action!('project-dashboard', { projectId: 'prj_atlas000001' })
+    expect(ws.calls).toContainEqual([
+      'perform',
+      { type: 'open-project', projectId: 'prj_atlas000001' },
+    ])
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    t.handlers.action!('project-memory', { projectId: 'prj_atlas000001' })
+    expect(ws.calls).toContainEqual([
+      'perform',
+      { type: 'open-memory', projectId: 'prj_atlas000001' },
+    ])
+  })
+
+  // C-proj-3: clicking the 3D reception's Project Directory opens the project picker.
+  it('opens the project picker from the 3D reception fixture', async () => {
+    const ws = workspaceBridge()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: ws,
+    })
+    ;(t.handlers as Record<string, (f: unknown) => void>).pickFixture!({
+      kind: 'project-directory',
+    })
+    expect(ws.calls).toContainEqual(['picker'])
+  })
+
+  // C-proj-4: leaving the Office pauses the scene's input; coming back resumes it.
+  it('suspends scene input while the Office is hidden', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' })
+    t.c.setOfficeVisible(false)
+    expect(t.scene.suspended.at(-1)).toBe(true)
+    t.c.setOfficeVisible(true)
+    expect(t.scene.suspended.at(-1)).toBe(false)
+  })
+
+  // C-proj-5: after picking a project at the 2D directory, its own dialogue offers the project
+  // actions (Dashboard, Memory, Sessions, Context, Start agent) instead of closing.
+  it('follows a directory pick with the project dialogue', async () => {
+    const ws = workspaceBridge()
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: ws,
+    })
+    t.interact({ kind: 'object', object: 'project-directory' } as InteractTarget)
+    t.handlers.action!('project-select', { projectId: 'prj_atlas000001' })
+    await Promise.resolve()
+    const actions = (t.dialogue.vm?.actions ?? []) as { id: string; projectId?: string }[]
+    expect(actions).toContainEqual(
+      expect.objectContaining({ id: 'project-memory', projectId: 'prj_atlas000001' }),
+    )
+    t.handlers.action!('project-memory', { projectId: 'prj_atlas000001' })
+    expect(ws.calls).toContainEqual([
+      'perform',
+      { type: 'open-memory', projectId: 'prj_atlas000001' },
+    ])
+  })
+
+  // C-proj-6: New Agent lists the projects first (#ns-project); the pick reaches sessions.start.
+  it('lets New Agent pick the project', async () => {
+    const t = await setupPixel({ ...DEFAULT_SETTINGS, viewMode: 'pixel' }, undefined, {
+      workspace: workspaceBridge(),
+    })
+    await t.handlers.newSession!()
+    expect(t.newSession.vm?.projects).toEqual([
+      { id: '', label: 'No project', selected: true },
+      { id: 'prj_atlas000001', label: 'Atlas', selected: false },
+    ])
+    await t.handlers.nsFolder!()
+    t.handlers.nsChange!({ text: 'Plan it', projectId: 'prj_atlas000001' })
+    expect(t.newSession.vm?.projects?.find((p) => p.selected)?.id).toBe('prj_atlas000001')
+    await t.handlers.nsStart!()
+    expect(t.api.sessions.start).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'prj_atlas000001' }),
+    )
   })
 
   // C-zoom-1: the HUD zoom control steps the scene's zoom; the scene's level and run toggle show in the HUD.

@@ -38,6 +38,7 @@ import type {
   RunnerExit,
   RunnerPermission,
   RunnerSession,
+  RunnerStart,
   Scheduler,
 } from '../ports/driven.ts'
 import type {
@@ -46,6 +47,7 @@ import type {
   ComposeMessage,
   ManagedSessions,
   ReportActivity,
+  SessionObservation,
   SettingsManagement,
   StartSession,
   UserChat,
@@ -96,6 +98,24 @@ export interface ManagedSessionDeps {
   maxSessions?: number
   startTimeoutMs?: number
   rateLimitPerSec?: number
+  /** Projects (docs/projects.md): validates `StartSession.projectId`. */
+  projectExists?: (projectId: string) => boolean
+  /** Per-session MCP tokens; `mint` returns null when the project policy denies the provider. */
+  mcp?: {
+    mint(o: { projectId: string; provider: string }): { token: string; tokenId: string } | null
+    bind(tokenId: string, agentId: string): void
+    revoke(tokenId: string): void
+  }
+  /** The bridge command for a token (built by the adapter that owns the wrapper). */
+  mcpLaunch?: (token: string) => RunnerStart['mcp']
+  /** Sessions started outside a project report their folder for matching. */
+  observation?: SessionObservation
+}
+
+/** Never an absolute path: the last segment of a POSIX or Windows path. */
+export function basenameOnly(path: string): string {
+  const last = path.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+  return last ? `…/${last}` : '…'
 }
 
 interface Pending {
@@ -118,6 +138,19 @@ interface Session {
   /** The current turn was interrupted: its (error) result must not flip the status. */
   interrupted: boolean
   models?: ModelOption[]
+  /** This session's MCP token (revoked when it ends). */
+  mcpTokenId?: string
+  /**
+   * Runner callbacks that arrived before start() registered the session (the first prompt is pushed
+   * before the id is known); replayed in order once it is registered, dropped if the start fails.
+   */
+  early?: Early[]
+}
+
+interface Early {
+  run: () => void
+  /** Set for a permission request: answers it when the start fails. */
+  deny?: (d: RunnerDecision) => void
 }
 
 const randomPermId = () => {
@@ -171,8 +204,17 @@ export class ManagedSessionService implements ManagedSessions {
     const mode = decl?.modes ? this.modeOption(decl, o.modeId ?? decl.defaultModeId) : undefined
     if (mode?.dangerous && !settings.allowBypassPermissions)
       throw new NotAllowedError('Dangerous modes are turned off in Settings')
+    if (o.projectId && this.d.projectExists && !this.d.projectExists(o.projectId))
+      throw new ValidationError('unknown project')
+    const sessionProvider = decl?.provider ?? 'claude-code'
+    const minted =
+      o.projectId && this.d.mcp && this.d.mcpLaunch
+        ? this.d.mcp.mint({ projectId: o.projectId, provider: sessionProvider })
+        : null
+    const mcp = minted ? this.d.mcpLaunch!(minted.token) : undefined
     this.starting++
     let s: Session
+    let starting: Session | undefined
     let sessionId: string
     try {
       const runner = runtime.start({
@@ -183,6 +225,9 @@ export class ManagedSessionService implements ManagedSessions {
         chrome: o.chrome,
         allowBypass: bypass || !!mode?.dangerous,
         ...(mode ? { modeId: mode.id } : {}),
+        ...(mcp ? { mcp } : {}),
+        // Native resume is Claude-only; other runners never see it.
+        ...(o.resume && sessionProvider === 'claude-code' ? { resume: o.resume } : {}),
       })
       s = {
         provider: decl?.provider ?? 'claude-code',
@@ -195,12 +240,23 @@ export class ManagedSessionService implements ManagedSessions {
         allow: new Set(),
         pending: new Map(),
         interrupted: false,
+        ...(minted ? { mcpTokenId: minted.tokenId } : {}),
+        early: [],
       }
       const sess = s
-      runner.onEvent((e) => this.onRunnerEvent(sess, e))
-      runner.onResult((r) => this.onRunnerResult(sess, r))
-      runner.onPermission((r) => this.onRunnerPermission(sess, r))
+      starting = s
+      runner.onEvent((e) => this.whenRegistered(sess, () => this.onRunnerEvent(sess, e)))
+      runner.onResult((r) => this.whenRegistered(sess, () => this.onRunnerResult(sess, r)))
+      runner.onPermission(
+        (r) =>
+          new Promise<RunnerDecision>((resolve) =>
+            this.whenRegistered(sess, () => resolve(this.onRunnerPermission(sess, r)), resolve),
+          ),
+      )
       runner.onExit((e) => this.onRunnerExit(sess, e))
+      // The first prompt goes in before the id: some runtimes (Claude CLI 2.1.x) report their
+      // session id only once it arrives. Every runner queues prompts until it is ready.
+      runner.push(composePrompt(o.first))
       try {
         sessionId = await this.withTimeout(runner.sessionId)
       } catch (err) {
@@ -208,6 +264,8 @@ export class ManagedSessionService implements ManagedSessions {
         throw err
       }
     } catch (err) {
+      if (minted) this.d.mcp!.revoke(minted.tokenId)
+      if (starting) this.dropEarly(starting)
       throw toStartError(err)
     } finally {
       this.starting--
@@ -217,6 +275,7 @@ export class ManagedSessionService implements ManagedSessions {
     s.agentId = agentId
     s.sessionId = sessionId
     this.sessions.set(agentId, s)
+    if (minted) this.d.mcp!.bind(minted.tokenId, agentId)
     this.report([
       {
         agentId,
@@ -234,6 +293,7 @@ export class ManagedSessionService implements ManagedSessions {
       permissionMode: o.mode,
       ...(decl ? { caps: [...decl.caps] } : {}),
       ...(mode ? { modeId: mode.id } : {}),
+      ...(o.projectId ? { projectId: o.projectId } : {}),
       managed: {
         chrome: o.chrome,
         pending: 0,
@@ -243,7 +303,12 @@ export class ManagedSessionService implements ManagedSessions {
       },
     }))
     this.cancelHeartbeat ??= this.d.scheduler.every(HEARTBEAT_MS, () => this.heartbeat())
-    this.deliver(s, o.first)
+    this.record(s, o.first)
+    const early = s.early ?? []
+    delete s.early
+    for (const e of early) e.run()
+    if (this.d.observation)
+      void this.d.observation.located(agentId, s.provider, { cwd: o.cwd }).catch(() => {})
     return agentId
   }
 
@@ -406,7 +471,7 @@ export class ManagedSessionService implements ManagedSessions {
     return new Promise((resolve) => {
       const id = (this.d.permId ?? randomPermId)()
       const { tool, summary } = summarizeToolRequest(r.tool, r.input, r.cwd)
-      const where = (this.d.displayPath ?? ((p: string) => p))(r.cwd)
+      const where = (this.d.displayPath ?? basenameOnly)(r.cwd)
       s.pending.set(id, { vm: { id, tool, summary, where }, key, resolve })
       this.pendingChanged(s)
     })
@@ -418,6 +483,18 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   // ── helpers ──
+
+  /** Runs `fn` now, or after start() registers the session; `deny` answers a dropped permission. */
+  private whenRegistered(s: Session, fn: () => void, deny?: (d: RunnerDecision) => void): void {
+    if (!s.early) return fn()
+    s.early.push({ run: fn, ...(deny ? { deny } : {}) })
+  }
+
+  private dropEarly(s: Session): void {
+    const early = s.early ?? []
+    delete s.early
+    for (const e of early) e.deny?.({ behavior: 'deny', message: SYSTEM.ended })
+  }
 
   private runtime(provider: ProviderId): AgentRunner | undefined {
     const r = this.d.runtimes?.get(provider)
@@ -475,6 +552,13 @@ export class ManagedSessionService implements ManagedSessions {
   }
 
   private deliver(s: Session, m: ComposedMessage): ChatMessage {
+    const msg = this.record(s, m)
+    s.runner.push(composePrompt(m))
+    return msg
+  }
+
+  /** Stores a user message as delivered and marks the agent thinking (the caller pushes it). */
+  private record(s: Session, m: ComposedMessage): ChatMessage {
     const chips = contextChips(m)
     const msg: ChatMessage = {
       ...newUserMessage(this.d.ids.next(), s.agentId, m.text, this.d.clock.now()),
@@ -484,7 +568,6 @@ export class ManagedSessionService implements ManagedSessions {
     this.d.messages.append(msg)
     this.d.bus.publish({ type: 'message.changed', message: msg })
     s.interrupted = false
-    s.runner.push(composePrompt(m))
     this.report([{ agentId: s.agentId, status: 'thinking', text: '' }])
     return msg
   }
@@ -493,6 +576,7 @@ export class ManagedSessionService implements ManagedSessions {
   private async end(s: Session, how: 'stopped' | 'exited' | 'crashed'): Promise<void> {
     if (!this.isLive(s)) return
     this.sessions.delete(s.agentId)
+    if (s.mcpTokenId) this.d.mcp?.revoke(s.mcpTokenId)
     if (this.sessions.size === 0) {
       this.cancelHeartbeat?.()
       this.cancelHeartbeat = undefined

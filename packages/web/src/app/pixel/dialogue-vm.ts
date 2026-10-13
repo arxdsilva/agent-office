@@ -6,13 +6,27 @@ import type { AgentPlan } from '../office-types.ts'
 import { PIXEL_COPY } from '../pixel-copy.ts'
 import type { OfficeState } from '../state.ts'
 import { activityLabel, type ActivityInfo } from '../view-models.ts'
+import { projectRefLabel, parseProjectRef, type ProjectLibraryVM } from '../project-library.ts'
+import type { ProjectDirectoryEntryVM, ProjectDirectoryVM } from '../workspace/types.ts'
 import type { DialogueAction, DialogueVM, InteractTarget } from './types.ts'
+
+/** Reception copy (kept here: pixel-copy.ts belongs to the lead). */
+const DIRECTORY_COPY = {
+  title: 'PROJECT DIRECTORY',
+  question: 'Which project would you like to explore?',
+  all: 'All Projects',
+  unavailable: 'No project directory yet.',
+} as const
 
 export interface DialogueContext {
   state: OfficeState
   plans: ReadonlyMap<string, AgentPlan>
   /** The controller's "Now" facts for an agent (same as the panel). */
   activityOf(id: string): ActivityInfo | undefined
+  /** The project directory (B1's `projectDirectoryVM`); absent → the reception desk is quiet. */
+  projectDirectory?: ProjectDirectoryVM
+  /** The selected project's Library (notebooks, shelves, boards as collections). */
+  projectLibrary?: ProjectLibraryVM | null
 }
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
@@ -25,7 +39,52 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
 }
 
 const A = PIXEL_COPY.actions
-const action = (id: DialogueAction, label: string) => ({ id, label })
+const action = (id: DialogueAction, label: string, projectId?: string) => ({
+  id,
+  label,
+  ...(projectId !== undefined && { projectId }),
+})
+
+/** The reception dialogue: one row per project (active agents shown) plus All Projects. */
+export function projectDirectoryDialogue(dir: ProjectDirectoryVM | undefined): DialogueVM {
+  if (!dir || !dir.entries.length)
+    return {
+      title: DIRECTORY_COPY.title,
+      lines: [dir?.empty ?? DIRECTORY_COPY.unavailable],
+      actions: [],
+    }
+  return {
+    title: DIRECTORY_COPY.title,
+    subtitle: dir.heading,
+    lines: [DIRECTORY_COPY.question],
+    actions: [
+      ...dir.entries.map((e) =>
+        action('project-select', `${e.name} · ${e.counts.agents} active`, e.projectId),
+      ),
+      action('project-all', DIRECTORY_COPY.all),
+    ],
+  }
+}
+
+const PROJECT_ACTION: Record<string, DialogueAction> = {
+  dashboard: 'project-dashboard',
+  memory: 'project-memory',
+  sessions: 'project-sessions',
+  context: 'context',
+  start: 'start-agent',
+}
+
+/** After a project is chosen: its counts and the same panels the desktop opens. */
+export function projectDialogue(entry: ProjectDirectoryEntryVM): DialogueVM {
+  return {
+    title: entry.name,
+    subtitle: DIRECTORY_COPY.title,
+    lines: [entry.countsLabel],
+    actions: entry.actions
+      .filter((a) => a.enabled && PROJECT_ACTION[a.id])
+      .map((a) => action(PROJECT_ACTION[a.id]!, a.label, entry.projectId)),
+  }
+}
 
 /** Live office numbers for the Main Street stats board. */
 export function officeCounts(state: OfficeState, plans: ReadonlyMap<string, AgentPlan>) {
@@ -42,6 +101,7 @@ export function officeCounts(state: OfficeState, plans: ReadonlyMap<string, Agen
 
 export function dialogueVM(t: InteractTarget, ctx: DialogueContext): DialogueVM | null {
   if (t.kind === 'agent') return agentVM(t.id, ctx)
+  if (t.kind === 'capability' && parseProjectRef(t.ref.id)) return projectRefDialogue(t, ctx)
   if (t.kind === 'capability') {
     const c = ctx.state.capabilities.get(t.ref.provider)?.find((x) => x.id === t.ref.id)
     if (!c) return null
@@ -71,6 +131,7 @@ export function dialogueVM(t: InteractTarget, ctx: DialogueContext): DialogueVM 
       actions: [],
     }
   }
+  if (t.object === 'project-directory') return projectDirectoryDialogue(ctx.projectDirectory)
   if (t.object === 'elevator')
     return { title: 'Elevators', lines: [PIXEL_COPY.dialogue.elevator], actions: [] }
   return { title: t.label ?? 'Sign', lines: [], actions: [] }
@@ -113,4 +174,28 @@ function agentVM(id: string, ctx: DialogueContext): DialogueVM | null {
   if (doing) lines.push(doing)
   vm.actions = [action('talk', A.talk), action('details', A.details), action('follow', A.follow)]
   return vm
+}
+
+/** A project collection, archive volume or decisions board: its name and count, then Memory. */
+function projectRefDialogue(
+  t: Extract<InteractTarget, { kind: 'capability' }>,
+  ctx: DialogueContext,
+): DialogueVM | null {
+  const lib = ctx.projectLibrary
+  const label = lib && projectRefLabel(lib, t.ref.id)
+  if (!lib || !label) return null
+  const kind = parseProjectRef(t.ref.id)!.kind
+  return {
+    title: label,
+    subtitle: lib.name,
+    lines: [],
+    actions: [
+      action(
+        kind === 'archive' ? 'project-sessions' : 'project-memory',
+        kind === 'archive' ? 'Open sessions' : 'Open memory',
+        lib.projectId,
+      ),
+    ],
+    ref: { ...t.ref },
+  }
 }

@@ -87,6 +87,8 @@ export interface NewSessionForm {
   provider: ProviderId
   /** Provider-specific mode (non-Claude providers); Claude uses `mode`. */
   modeId?: string
+  /** The project the new session belongs to (preselected when started from a project). */
+  projectId?: string
   folder?: ContextRef
   name: string
   model?: string
@@ -101,6 +103,8 @@ export interface NewSessionForm {
 export interface NewSessionVM {
   /** Dialog heading, e.g. "New Codex session". */
   title: string
+  /** The project picker (`#ns-project`), first; absent when there are no projects. */
+  projects?: { id: string; label: string; selected: boolean }[]
   /** Providers that can start a session now (enabled, `launch` cap, ready); the form's is selected. */
   providers: { id: ProviderId; label: string; selected: boolean }[]
   /** Attach files/folders (the provider's `attach-context` cap). */

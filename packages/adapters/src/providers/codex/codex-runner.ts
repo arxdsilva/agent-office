@@ -24,6 +24,7 @@ import {
   CODEX_DEFAULT_MODE,
   CODEX_MODES,
   decisionToCodex,
+  elicitationToPermission,
   itemEvent,
   modePreset,
   sandboxPolicy,
@@ -38,6 +39,8 @@ import {
   FileChangeApprovalParams,
   ItemNotification,
   M,
+  McpElicitationParams,
+  type McpElicitationResponse,
   ModelListResult,
   ThreadStartResult,
   TurnNotification,
@@ -186,6 +189,22 @@ class CodexSession implements RunnerSession {
           ...(this.s.model ? { model: this.s.model } : {}),
           approvalPolicy: preset.approvalPolicy,
           sandbox: preset.sandbox,
+          // Experimental: agent-office's project MCP server as a config.toml override
+          // (`[mcp_servers.<name>]`), only when the policy allows it (docs/projects.md §5).
+          // Checked against codex-cli 0.162.1: it starts the server and lists its tools.
+          ...(this.s.mcp
+            ? {
+                config: {
+                  mcp_servers: {
+                    [this.s.mcp.name]: {
+                      command: this.s.mcp.command,
+                      args: [...this.s.mcp.args],
+                      env: { ...this.s.mcp.env },
+                    },
+                  },
+                },
+              }
+            : {}),
         }),
       )
       if (this.ended) return
@@ -227,8 +246,9 @@ class CodexSession implements RunnerSession {
     })
     p.onRequest(M.commandApproval, (raw) => this.approve('command', raw))
     p.onRequest(M.fileChangeApproval, (raw) => this.approve('fileChange', raw))
-    // Every other server request (item/tool/requestUserInput, mcpServer/elicitation/request,
-    // item/tool/call, …) gets the peer's -32601 reply, so Codex never waits on us.
+    p.onRequest(M.mcpElicitation, (raw) => this.elicit(raw))
+    // Every other server request (item/tool/requestUserInput, item/tool/call, …) gets the peer's
+    // -32601 reply, so Codex never waits on us.
   }
 
   private ours(threadId: string): boolean {
@@ -320,6 +340,25 @@ class CodexSession implements RunnerSession {
       this.items.get(parsed.data.itemId),
       this.s.cwd,
     )
+    return { decision: await this.ask(perm) }
+  }
+
+  /**
+   * An MCP tool approval for agent-office's own project server goes through the permission card;
+   * every other elicitation is declined. One-time answers only: never a `persist` choice.
+   */
+  private async elicit(raw: unknown): Promise<McpElicitationResponse> {
+    const parsed = McpElicitationParams.safeParse(raw)
+    if (!parsed.success || !this.permissionFn || this.closed || !this.ours(parsed.data.threadId))
+      return { action: 'decline' }
+    const perm = elicitationToPermission(parsed.data, this.s.mcp?.name, this.s.cwd)
+    if (!perm) return { action: 'decline' }
+    const d = await this.ask(perm)
+    return d === 'accept' ? { action: 'accept', content: {} } : { action: d }
+  }
+
+  private async ask(perm: RunnerPermission): Promise<CodexDecision> {
+    if (!this.permissionFn) return 'decline'
     let cancel!: () => void
     const cancelled = new Promise<'cancel'>((r) => (cancel = () => r('cancel')))
     this.approvals.add(cancel)
@@ -331,7 +370,7 @@ class CodexSession implements RunnerSession {
         })),
         cancelled,
       ])
-      return { decision: decisionToCodex(d) }
+      return decisionToCodex(d)
     } finally {
       this.approvals.delete(cancel)
     }

@@ -562,6 +562,8 @@ export function newSessionVM(
     caps?: Capability[]
     /** `ConnectionInfo.providers`; absent (older main) = Claude Code only. */
     providers?: ProviderStatus[]
+    /** Projects for the picker (id + name only). */
+    projects?: { id: string; name: string }[]
   } = {},
 ): NewSessionVM {
   const ns = SESSION_COPY.newSession
@@ -586,6 +588,16 @@ export function newSessionVM(
   const label = opts.providers?.find((p) => p.id === form.provider)?.label
   return {
     title: claude ? ns.title : ns.titleFor(label ?? form.provider),
+    ...(opts.projects?.length && {
+      projects: [
+        { id: '', label: ns.noProject, selected: !form.projectId },
+        ...opts.projects.map((p) => ({
+          id: p.id,
+          label: p.name,
+          selected: p.id === form.projectId,
+        })),
+      ],
+    }),
     providers: startableProviders(opts.providers).map((p) => ({
       id: p.id,
       label: p.label,

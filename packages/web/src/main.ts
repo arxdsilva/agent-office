@@ -25,8 +25,11 @@ import type { Effective } from './app/graphics-types.ts'
 import { PRESETS } from './app/quality.ts'
 import { createSimClock, type SimClock } from './app/sim-clock.ts'
 import { createController } from './controller.ts'
+import { createWorkspaceViews, installWorkspaceKeys } from './adapters/dom/workspace-views.ts'
+import { createWorkspaceController, type WorkspaceController } from './workspace-controller.ts'
 import type { AgentPlan } from './app/office-types.ts'
 import type { OfficeGateway, SceneView } from './ports.ts'
+import type { ProviderId } from '@agent-office/shared'
 
 type PowerPreference = Effective['powerPreference']
 /** The scene's constructor with the startup options (RA: `powerPreference` is read once, at start). */
@@ -196,10 +199,64 @@ async function boot(): Promise<void> {
       if (scene.mode !== mode) await gateway.settings.set({ viewMode: scene.mode }).catch(() => {})
     }
   }
-  const controller = createController(deps)
+  // Projects-first workspace (docs/projects.md): the shell, dashboards and browsers. The office
+  // controller and the workspace controller reference each other, so both are bound late.
+  let workspace: WorkspaceController | null = null
+  let office: ReturnType<typeof createController> | null = null
+  let settingsNow = await gateway.settings.get()
+  const controller = createController({
+    ...deps,
+    workspace: {
+      projectDirectory: () =>
+        workspace?.projectDirectory() ?? {
+          heading: '',
+          entries: [],
+          empty: '',
+          createProject: { id: 'new-project', label: '', enabled: false },
+        },
+      selectProject: (id) => workspace?.selectDirectoryProject(id),
+      perform: (a) => workspace?.perform(a),
+      openProjectPicker: () => workspace?.openPalette(),
+    },
+  })
+  office = controller
+  const stage = document.getElementById('stage')
+  workspace = createWorkspaceController({
+    gateway,
+    views: createWorkspaceViews(document),
+    clock: { now: () => Date.now() },
+    settings: () => settingsNow,
+    scene: {
+      select: (agentId) => office?.select(agentId),
+      focusAgents: (ids) => scene.focusAgents?.(ids, { dim: true, frame: ids !== null }),
+      setOfficeVisible: (on) => {
+        if (stage) stage.hidden = !on
+        office?.setOfficeVisible(on)
+      },
+      openNewSession: (prefill) =>
+        office?.openNewSessionFor({
+          ...(prefill.projectId && { projectId: prefill.projectId }),
+          ...(prefill.objective && { objective: prefill.objective }),
+          ...(prefill.provider && { provider: prefill.provider as ProviderId }),
+        }),
+      switchMode: (mode) => void gateway.settings.set({ viewMode: mode }),
+      openConnect: () => office?.openConnect(),
+      setProjectLibrary: (vm) => scene.setProjectLibrary?.(vm),
+      selectedAgentId: () => office?.selectedAgentId() ?? null,
+    },
+  })
+  gateway.settings
+    .get()
+    .then((s) => (settingsNow = s))
+    .catch(() => {})
+  installWorkspaceKeys(document, {
+    togglePalette: () => workspace?.togglePalette(),
+    escape: () => workspace?.escape() ?? false,
+  })
   // The director's resync (plan §2.3) lets a freshly shown scene continue agents where they are.
   const r = (controller as { resync?: (now?: number) => Map<string, AgentPlan> }).resync
   if (r) resync = () => r.call(controller)
   await controller.start()
+  await workspace.start()
 }
 void boot()

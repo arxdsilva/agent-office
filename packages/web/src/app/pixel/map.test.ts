@@ -13,7 +13,14 @@ import {
   type TileQuery,
   type TileResolver,
 } from './map.ts'
-import type { ModulePlan, PixelMap, PlanByModule, PxRect, SpriteFoot } from './types.ts'
+import type {
+  ModulePlan,
+  PixelMap,
+  PlanByModule,
+  PlanFurniture,
+  PxRect,
+  SpriteFoot,
+} from './types.ts'
 import { PX_PER_M, WALL_PX } from './types.ts'
 
 /** Tile ids from a readable table: every distinct query gets its own id, stable per test. */
@@ -377,6 +384,7 @@ describe('buildPixelMap: objects (MAP-O)', () => {
           furniture: [
             { kind: 'elevator', x: 0, z: -18, w: 2, d: 1, yaw: 0 },
             { kind: 'led-wall', x: 3, z: -10, w: 2, d: 0.3, yaw: 0 },
+            { kind: 'reception-desk', x: -3, z: -8, w: 4, d: 1.5, yaw: 0 },
           ],
         },
       },
@@ -392,11 +400,61 @@ describe('buildPixelMap: objects (MAP-O)', () => {
     expect(m.objects.find((o) => o.kind === 'led-wall')!.interact).toMatchObject({
       object: 'stats-board',
     })
+    expect(m.objects.find((o) => o.kind === 'reception-desk')!.interact).toEqual({
+      kind: 'object',
+      object: 'project-directory',
+    })
     expect(m.objects.find((o) => o.kind === 'sign')).toMatchObject({
       solid: false,
       interact: { object: 'sign', label: 'p' },
     })
     expect(m.objects.some((o) => o.kind === 'booth-lamp')).toBe(true)
+  })
+})
+
+describe('buildPixelMap: project spaces (Project Directory kiosk)', () => {
+  const atriumWith = (furniture: PlanFurniture[]) => ({
+    ...wingPlan(),
+    atrium: {
+      rooms: [
+        { id: 'lobby', name: 'Lobby', rect: [-8, -20, 8, 0] as [number, number, number, number] },
+      ],
+      walls: [],
+      furniture,
+    },
+  })
+  const desk: PlanFurniture = { kind: 'reception-desk', x: -3, z: -8, w: 4, d: 1.5, yaw: 0 }
+  const kiosk: PlanFurniture = { kind: 'kiosk', x: 2, z: -6, w: 2, d: 1.5, yaw: 0 }
+
+  // Additive: with a kiosk anchor in the plan the directory moves there; the desk is plain furniture.
+  it('opens the project directory at the kiosk when the plan has one', () => {
+    const m = buildPixelMap(layoutFor(['p']), atriumWith([desk, kiosk]), fakeResolver())
+    expect(m.objects.find((o) => o.kind === 'kiosk')!.interact).toEqual({
+      kind: 'object',
+      object: 'project-directory',
+    })
+    expect(m.objects.find((o) => o.kind === 'kiosk')!.solid).toBe(true)
+    expect(m.objects.find((o) => o.kind === 'reception-desk')!.interact).toBeUndefined()
+  })
+
+  it('falls back to the reception desk when the plan has no kiosk', () => {
+    const m = buildPixelMap(layoutFor(['p']), atriumWith([desk]), fakeResolver())
+    expect(m.objects.find((o) => o.kind === 'reception-desk')!.interact).toEqual({
+      kind: 'object',
+      object: 'project-directory',
+    })
+  })
+
+  it('keeps the other project-space pieces solid and non-interactive', () => {
+    const pieces: PlanFurniture[] = (
+      ['context-core', 'console', 'handoff-pad', 'lectern'] as const
+    ).map((kind, i) => ({ kind, x: -6 + i * 3, z: -14, w: 0.8, d: 0.8, yaw: 0 }))
+    const m = buildPixelMap(layoutFor(['p']), atriumWith(pieces), fakeResolver())
+    for (const k of ['context-core', 'console', 'handoff-pad', 'lectern']) {
+      const o = m.objects.find((x) => x.kind === k)!
+      expect(o.solid).toBe(true)
+      expect(o.interact).toBeUndefined()
+    }
   })
 })
 

@@ -117,11 +117,14 @@ const builtin = (id: BuiltinId, tool?: string): CapabilityRef => ({
   ...(tool ? { tool } : {}),
 })
 
+/** Servers with a fixed label: agent-office's own project MCP server is the Context Hub. */
+const KNOWN_SERVERS: Record<string, string> = { 'agent-office-memory': 'Context Hub' }
+
 const mcp = (server: string, tool?: string): CapabilityRef => ({
   id: `mcp:${server}`,
   category: 'adapter',
   kind: DATABASE.test(server) ? 'database' : 'mcp',
-  label: prettifyServer(server),
+  label: KNOWN_SERVERS[server] ?? prettifyServer(server),
   ...(tool ? { tool } : {}),
 })
 

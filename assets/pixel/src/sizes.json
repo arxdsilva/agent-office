@@ -36,7 +36,13 @@
     "door": { "class": "fixed", "m": [1, 0.25], "base": [16, 4], "overhang": 26 },
     "window": { "class": "fixed", "m": [2, 0.25], "base": [32, 4], "overhang": 12 },
     "booth-lamp": { "class": "fixed", "m": [1.4, 1.4], "base": [22, 22], "overhang": 22 },
-    "stats-board": { "class": "fixed", "m": [4, 0.25], "base": [64, 4], "overhang": 26 }
+    "stats-board": { "class": "fixed", "m": [4, 0.25], "base": [64, 4], "overhang": 26 },
+    "kiosk": { "class": "fixed", "m": [2, 1.5], "base": [32, 24], "overhang": 28 },
+    "context-core": { "class": "fixed", "m": [2.1, 2.1], "base": [32, 32], "overhang": 40 },
+    "console": { "class": "fixed", "m": [0.72, 0.4], "base": [12, 7], "overhang": 18 },
+    "handoff-pad": { "class": "fixed", "m": [0.8, 0.8], "base": [13, 13], "overhang": 12 },
+    "archive-alcove": { "class": "strip", "thickness": 11, "unit": 14, "overhang": 32 },
+    "lectern": { "class": "fixed", "m": [0.6, 0.5], "base": [10, 8], "overhang": 12 }
   },
   "walls": { "thickness": 4, "face": 12, "glassFace": 12 },
   "character": { "w": 16, "h": 24, "anchor": [8, 23] }

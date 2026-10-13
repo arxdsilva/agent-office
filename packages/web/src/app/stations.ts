@@ -74,3 +74,29 @@ export function assignStations(capabilities: Capability[], prev?: SlotMap): Slot
   const ids = capabilities.filter((c) => c.category === 'adapter').map((c) => c.id)
   return assignSlots(ids, prev, STATION_COUNT, { pinned: PINNED_STATIONS, order: STATION_ORDER })
 }
+
+// ── Context Hub (the project spaces in the atrium) ──────────────────────────────────────────────
+/** The project MCP server's station: its glow is the only signal that moves the Context Hub. */
+export const CONTEXT_HUB_ID = 'mcp:agent-office-memory'
+/** The hub's resting glow (0..1): visible, but clearly below a retrieval. */
+export const CONTEXT_IDLE = 0.3
+
+/**
+ * True while any provider's Context Hub station is in use (a real MCP retrieval in flight). Reads
+ * only the station slots' id and glow, so it follows exactly what the Adapters room shows.
+ */
+export function contextHubActive(
+  byProvider: Iterable<
+    { stations: readonly ({ id: string; glow: number } | undefined)[] } | undefined
+  >,
+): boolean {
+  for (const s of byProvider)
+    if (s?.stations.some((st) => st?.id === CONTEXT_HUB_ID && st.glow > 0)) return true
+  return false
+}
+
+/** Console and core brightness (0..1) at time `t` seconds: steady while idle, a quick pulse in use. */
+export function contextPulse(t: number, active: boolean): number {
+  if (!active) return CONTEXT_IDLE
+  return 0.65 + 0.35 * Math.sin(t * 7)
+}

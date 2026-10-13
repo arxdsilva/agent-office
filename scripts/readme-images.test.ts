@@ -1,5 +1,5 @@
-// The README gallery stays honest: every image it shows exists, every Features bullet links to a
-// section with at least one image, and docs/screenshots stays within its size budget (plan §11.3).
+// The README gallery stays honest: every image it shows exists, it leads with the Project Dashboard,
+// every projects-first section shows an image, and docs/screenshots stays within its size budget (plan §11.3).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -68,9 +68,19 @@ function filesUnder(dir: string): string[] {
 describe('README images', () => {
   const all = sections(README)
 
-  it('has a hero image and the walkthrough clip under the pitch', () => {
+  // Projects first (the user's direction): the Project Dashboard leads, with the 3D and 2D offices.
+  it('leads with the Project Dashboard, then the 3D and 2D office views', () => {
     const intro = README.slice(0, README.indexOf('\n## '))
-    expect(mediaRefs(intro)).toEqual(
+    const refs = mediaRefs(intro)
+    expect(refs[0]).toBe('docs/screenshots/project-dashboard.png')
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        'docs/screenshots/office-3d-projects.png',
+        'docs/screenshots/office-2d-projects.png',
+      ]),
+    )
+    // The office overview and its fly-through clip are still shown.
+    expect(mediaRefs(README)).toEqual(
       expect.arrayContaining([
         'docs/screenshots/hero-overview.png',
         'docs/screenshots/walkthrough.webp',
@@ -85,20 +95,17 @@ describe('README images', () => {
     expect(missing).toEqual([])
   })
 
-  it('links every Features bullet to a section that shows an image', () => {
-    const features = all.find((s) => s.level === 2 && s.title === 'Features')
-    expect(features, 'a "## Features" section').toBeDefined()
-    const bullets = features!.body.split('\n').filter((l) => /^- /.test(l))
-    expect(bullets.length).toBeGreaterThanOrEqual(8)
-    const bySlug = new Map(all.map((s) => [slug(s.title), s]))
-    const problems = bullets.flatMap((b) => {
-      const anchors = [...b.matchAll(/\]\(#([^)]+)\)/g)].map((m) => m[1]!)
-      if (!anchors.length) return [`no section link: ${b.slice(0, 60)}`]
-      const ok = anchors.some((a) => {
-        const s = bySlug.get(a)
-        return s && mediaRefs(s.body).length > 0
-      })
-      return ok ? [] : [`no image behind ${anchors.join(', ')}`]
+  it('shows an image in every projects-first section', () => {
+    const wanted = [
+      'Projects-first workspace',
+      'Shared Memory and the Context Engine',
+      'Sessions and Handoffs',
+      '2D and 3D: projects in the office',
+    ]
+    const problems = wanted.flatMap((t) => {
+      const s = all.find((x) => x.level === 2 && x.title === t)
+      if (!s) return [`missing section: ${t}`]
+      return mediaRefs(s.body).length > 0 ? [] : [`no image in: ${t}`]
     })
     expect(problems).toEqual([])
   })

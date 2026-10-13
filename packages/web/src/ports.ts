@@ -27,6 +27,7 @@ import type {
   UseMenuVM,
 } from './app/session-types.ts'
 import type { Manifest } from './app/manifest.ts'
+import type { ProjectLibraryVM } from './app/project-library.ts'
 import type { CapabilityPanelVM, ProviderSurfaces } from './app/capability-vm.ts'
 import type { AgentPlan, BuildingLayout, ClipName, Link } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
@@ -117,6 +118,20 @@ export interface SceneView {
   onZoom?(fn: (z: { level: number; levels: number; atDefault: boolean }) => void): void
   /** 2D: the run toggle changed (R). */
   onRun?(fn: (on: boolean) => void): void
+  // ── Optional, added for the projects-first offices (plan §8 Phase A). Additive. ──
+  /**
+   * Project focus: show only these agents at full strength (`dim` fades the rest, labels
+   * included) and bring the group into view (`frame`: 3D orbit pose, 2D pan to the centroid).
+   * Null clears. The host replays the last call after a view-mode switch.
+   */
+  focusAgents?(ids: string[] | null, o: { dim: boolean; frame: boolean }): void
+  /** The user picked a fixture: the reception desk's Project Directory (3D click; 2D uses onInteract). */
+  onPickFixture?(fn: (f: { kind: 'project-directory' }) => void): void
+  /**
+   * The selected project's Library: notebooks, shelves and boards show collection names and
+   * counts (never titles). Null returns to the provider's capabilities. Replayed by the host.
+   */
+  setProjectLibrary?(vm: ProjectLibraryVM | null): void
 }
 
 export interface SceneSurfaces {
@@ -199,6 +214,8 @@ export interface NewSessionView {
       provider?: ProviderId
       /** A provider-specific mode (`ModeOptionVM.id` for non-Claude providers). */
       modeId?: string
+      /** The project picker; '' = no project. */
+      projectId?: string
     }) => void,
   ): void
   onStart(fn: () => void | Promise<void>): void
@@ -304,7 +321,8 @@ export interface DialogueView {
   render(vm: DialogueVM): void
   close(): void
   isOpen(): boolean
-  onAction(fn: (a: DialogueAction) => void): void
+  /** `o.projectId` for project actions (Project Directory rows and project dialogues). */
+  onAction(fn: (a: DialogueAction, o?: { projectId?: string }) => void): void
   onClose(fn: () => void): void
 }
 

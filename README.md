@@ -1,61 +1,133 @@
 # agent-office
 
-**Walk through your AI agents like an office.** agent-office is a desktop app (macOS, Windows,
-Linux) that shows every running AI agent as a worker in a 3D office:
+**agent-office. Your projects. Every agent. One shared memory.**
 
-- Agents are grouped into **wings by provider** and **desk pods by conversation topic**.
-- Where an agent is tells you what it is doing: working at its desk, in a meeting with its
-  subagents, waiting for you in a phone booth, on a coffee break, at a station in the Adapters
-  room, or reading in the Library.
-- You can **message them** without leaving the app.
+An agent is temporary. A project is persistent. agent-office is a desktop app (macOS, Windows, Linux) that keeps your projects, their sessions, memory, decisions, tasks and handoffs in one encrypted local place, and shows the agents working on them in a 3D or 2D office.
+
+![The Project Dashboard: active agents, recent activity, completed work, tasks and project knowledge for one project](docs/screenshots/project-dashboard.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/office-3d-projects.png" width="100%" alt="The 3D office with a project selected: its agents are highlighted in their wing"></td>
+<td width="50%"><img src="docs/screenshots/office-2d-projects.png" width="100%" alt="The 2D RPG office with the same project selected"></td>
+</tr>
+<tr>
+<td>The 3D office, focused on one project.</td>
+<td>The same project in the 2D RPG view.</td>
+</tr>
+</table>
+
+## Why agent-office
+
+Coding agents start fresh every time. You re-explain the same decisions, a session ends and its context is gone, and a second tool knows nothing about what the first one did.
+
+- **Projects outlive agents.** A project holds its repositories, sessions, memory, decisions, tasks and handoffs. All of it stays readable when every agent is offline and after a restart.
+- **Memory you control.** Knowledge is kept as reviewable items with provenance. Agents can propose memory; only you approve it.
+- **Any provider, one place.** Claude Code, Codex, Cursor, Gemini, Copilot and any HTTP agent share the same projects. You can hand a task from one provider to another with a reviewed bundle.
+- **Local and encrypted.** Project data lives in an encrypted vault on your machine. Provider transcripts are referenced, not copied.
+- **The office is still here.** Agents are shown as workers in a 3D (or 2D) office, grouped by provider and conversation topic, so you can see at a glance who is working, waiting for you, or stuck.
+
+## Projects-first workspace
+
+The app opens on the **Overview** once a project exists; the `startView` setting can pick the Overview or the Office instead.
+
+- **Overview:** every project, the agents waiting for you, recent completions and decisions, pending approvals, unfinished handoffs, unassigned sessions, and whether the vault is encrypted.
+- **Project Dashboard:** one project: active agents, recent activity, completed work, tasks, and knowledge (memory by kind). Actions start an agent, open memory or sessions, or prepare a handoff.
+- **Sidebar:** Overview, Office, Projects, Sessions, Memory, and the project list with counts.
+- **Command palette:** `Cmd+K` (`Ctrl+K` on Windows and Linux) searches projects, sessions and memory, and runs actions.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/overview.png" width="100%" alt="The Global Overview: project cards with active agents, pending reviews and recent activity"></td>
+<td width="50%"><img src="docs/screenshots/palette.png" width="100%" alt="The command palette (Cmd+K) listing projects, sessions and actions"></td>
+</tr>
+<tr>
+<td>The Overview across all projects.</td>
+<td>The command palette.</td>
+</tr>
+</table>
+
+Projects are found from repositories, not folder names. Several repositories can belong to one project, and a session whose repository matches nothing stays **unassigned** until you decide. Details: [`docs/projects.md`](docs/projects.md).
+
+## Shared Memory and the Context Engine
+
+Memory items have a **scope** (`global`, `project`, `session`, and an experimental `workspace`), a **kind** (instruction, constraint, decision, fact, note) and a **state**.
+
+- **Review and approval.** New items, including ones an agent proposes, start as `pending`. You approve, reject, edit, merge or supersede them. Edits keep earlier versions.
+- **Provenance.** Each item records where it came from: a Session Vault message, an imported note, or an agent proposal (shown with an "agent-proposed" badge).
+- **Project MCP server.** Managed sessions can retrieve approved memory through a local MCP server with the tools `search_memory`, `get_project_context`, `list_decisions` and `propose_memory`. Each session gets its own scoped token, revoked when the session ends. Results are labelled as reference data, not instructions.
+- **Context Engine.** It ranks the approved items a session may read (kind, scope, relevance to the objective, recency, pinned first) into a bundle with a size budget. Every item says why it was included or left out.
+- **Context Inspector.** For an agent it separates what is **available** (what the project policy exposes), what was **retrieved** (real MCP calls), and what was **delivered** (bundles agent-office put into a first message or handoff). It never claims what a model used internally.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/project-memory.png" width="100%" alt="Project memory: items by kind and state, with approve, reject and edit actions and provenance"></td>
+<td width="50%"><img src="docs/screenshots/context-inspector.png" width="100%" alt="The Context Inspector: available, retrieved and delivered context for one agent"></td>
+</tr>
+<tr>
+<td>Memory review: pending items wait for your approval.</td>
+<td>The Context Inspector: available, retrieved, delivered.</td>
+</tr>
+</table>
+
+## Sessions and Handoffs
+
+Every agent session becomes a **session record** that stays after the agent leaves. Its origin is **managed** (started in agent-office), **observed** (started elsewhere) or **imported** (past Claude Code history, experimental).
+
+- **Session Vault:** browse sessions by project, provider and state, read agent-office's chat for a session, and open an old Claude Code session by reading its own transcript on demand.
+- **Search:** deep search across sessions and memory.
+- **Save as memory:** turn any Session Vault message into a memory draft that keeps the session and message as provenance.
+- **Handoff:** pick a session and a target provider, set an objective, review the context bundle that will be sent, and launch a managed session with it. The bundle is what you reviewed, nothing else. Handoffs need the target provider to have a managed runtime.
+- **Tasks:** you create tasks and confirm them. Each shows an evidence level (`agent-reported`, `user-confirmed`). Agents never write tasks.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/session-vault.png" width="100%" alt="The Session Vault: a session's messages with a Save as memory action"></td>
+<td width="50%"><img src="docs/screenshots/handoff.png" width="100%" alt="The handoff dialog: objective, target provider and the context bundle to review"></td>
+</tr>
+<tr>
+<td>The Session Vault, with Save as memory.</td>
+<td>A cross-provider handoff with a reviewed bundle.</td>
+</tr>
+</table>
+
+## 2D and 3D: projects in the office
+
+The office is not a separate product: it shows the same projects. Both renderers use the same commands and panels.
+
+- **Project Hub:** the atrium room with the **Project Directory** kiosk. Walk up to it (or use the reception desk) to pick a project; the office focuses its agents and flies to its main wing.
+- **Context Hub core:** a glowing column ringed by six consoles. It is the project MCP station; it pulses only when a real memory retrieval happens.
+- **Handoff Station:** a pad in the plaza where two visitors face each other. It is a place in the building; handoffs themselves are started from the agent panel or a project.
+- **Session Archive:** twelve arched alcoves between the Project Hub and the plaza. They are placed in the building but do not show content yet. With a project selected, the Library shelves already show archive volumes by time bucket (never one book per record).
+- The LED wall shows the selected project's counts.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/project-directory-3d.png" width="100%" alt="The Project Directory kiosk in the 3D atrium"></td>
+<td width="50%"><img src="docs/screenshots/project-directory-2d.png" width="100%" alt="The Project Directory kiosk in the 2D RPG view"></td>
+</tr>
+<tr>
+<td>The Project Directory in 3D.</td>
+<td>The Project Directory in 2D.</td>
+</tr>
+</table>
+
+Layout contract: [`docs/graphics-contract.md`](docs/graphics-contract.md). Room details: [`docs/projects.md`](docs/projects.md) §10.
+
+## The office
 
 ![The whole office from above: the atrium, Main Street and three provider wings](docs/screenshots/hero-overview.png)
 
 <img src="docs/screenshots/walkthrough.webp" width="100%" alt="A camera fly-through: the atrium, Main Street, then the claude-code wing with its desks, meeting room, Adapters room and Library">
 
-## Connect your agents
-
-Open the app. If the office is empty, a card offers three ways in. The **🔌 Connect** button (next to ⚙) shows the same choices at any time, with live status for each:
-
-| Way in            | What you do                                                                                                                                                                              | You'll see                                                                                                                    |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Claude Code**   | Nothing: run `claude` in any project. To message sessions from the app, click **Install** under "Let me message agents".                                                                 | "● 1 active session". The agent walks in through the elevator to the `claude-code` wing.                                      |
-| **Any framework** | Copy the ready-made curl, Python or JavaScript snippet from **Connect → Any framework** into your agent. It already has the right port and reads the token from `~/.agent-office/token`. | "✓ Received from `<provider>`". The provider's wing appears. **Send a test agent** checks the whole path from inside the app. |
-| **Demo**          | **Try the demo**                                                                                                                                                                         | 9 sample agents across 3 providers, to explore the rooms, links and chat                                                      |
-
-<table><tr>
-<td><img src="docs/screenshots/empty-state.png" alt="An empty office: a card offers Claude Code, any framework over HTTP, or a demo, each with live status" width="100%"></td>
-<td><img src="docs/screenshots/connect-panel.png" alt="The Connect panel on the Any framework tab: endpoint, token location, a copyable curl snippet and a received-event confirmation" width="100%"></td>
-</tr></table>
-
-The **Connected** tab lists every provider, its agent count and how it's connected (transcripts, hook, HTTP or demo), with a button to fly to its wing. If port 4317 is taken, the Any framework tab says so and lets you pick another port. The Claude Code hook follows the new port automatically.
-
-## Features
-
-- **Live 3D office.** Claude Code, OpenAI Agents, LangGraph or your own framework each get a themed wing of a headquarters building. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they are doing ([Tour](#tour)).
-- **Managed sessions.** Start Claude Code from the app and switch its permission mode and model live, approve tool calls from permission cards, interrupt or stop it ([Managed sessions](#managed-sessions)).
-- **Context and tools in every message.** Attach files and folders, and ask the agent to use the Chrome browser, an MCP server or a skill ([Talk to agents](#talk-to-agents)).
-- **2D RPG mode (optional).** The same live office as a top-down, GBA-style pixel-art world you can walk around; talk to agents with E ([2D RPG mode](#2d-rpg-mode-optional)).
-- **Light and dark themes.** System, Light or Dark, with the same features in both ([Appearance](#appearance)).
-- **Chat with agents.** Messages go into a per-agent inbox. Claude Code sessions receive them through an opt-in hook, and any other agent can long-poll the inbox over HTTP ([Talk to agents](#talk-to-agents)).
-- **Adapters room.** Every wing shows what its agents can reach (filesystem, shell, web, subagents, MCP servers, APIs, databases) as stations. Tool calls draw live links to them; sustained use sends the agent there ([Adapters](#adapters)).
-- **Library.** Browse every skill, rule and memory entry from 📚, or fly to them in the office. Skills are books on the shelves, rules are boards on the wall and memory entries are notebooks. They glow when an agent consults them, and agents go and read when they use several ([Library](#library)).
-- **Tray and notifications.** The app keeps running in the tray or menu bar, with live counts. You get a native notification when an agent starts waiting for you, replies, or hits an error ([Tray and notifications](#tray-and-notifications)).
-- **Obvious setup.** An empty office shows how to connect Claude Code, any framework or a demo; the 🔌 Connect panel has live status, copy-ready snippets and a test button ([Connect your agents](#connect-your-agents)).
-- **Zero-config Claude Code.** Running sessions, their subagents, configured MCP servers, skills and rules appear automatically ([Using it with Claude Code](#using-it-with-claude-code)).
-- **Any agent framework.** A local HTTP API takes status events, capability declarations and chat replies ([Adapters](#adapters), [HTTP API](#http-api-for-any-agent-framework)).
-- **Walk mode.** First-person WASD through the office. Press `E` to talk to the agent you're looking at ([Walk mode](#walk-mode)).
-- **One-click hook setup and auto-update** from Settings, with a backup of your Claude Code settings ([Settings](#settings)).
-- **Graphics presets** from Low to Ultra, with an Auto mode that keeps the frame rate smooth ([Graphics](#graphics)).
-- **Hand-made characters** with 22 animation clips, built in Blender by committed scripts ([Characters](#characters)).
+- **Live 3D office.** Each provider gets a themed wing. Every topic gets a desk pod, and agents walk to meeting rooms, phone booths, the kitchen and the game area to act out what they do.
+- **Talk to agents.** Messages go into a per-agent inbox ([Talk to agents](#talk-to-agents)). Start managed sessions with permission cards ([Managed sessions](#managed-sessions)).
+- **Adapters room and Library.** Stations show what an agent can reach; skills, rules and memory titles are books, boards and notebooks ([Adapters](#adapters), [Library](#library)).
+- **2D RPG mode, walk mode, tray and notifications, graphics presets, light and dark themes.** See the sections below.
 
 ## Tour
 
-The office is one floor of a big-tech-style headquarters. Where an agent is tells you what it is
-doing. Name tags and the chat panel say it in words too, for example "In meeting room A with 2
-subagents" or "Waiting for you in booth 3".
-
-### Atrium
+The office is one floor of a headquarters building. Where an agent is tells you what it is doing; name tags and the chat panel say it in words too, for example "In meeting room A with 2 subagents" or "Waiting for you in booth 3".
 
 <table>
 <tr>
@@ -63,107 +135,48 @@ subagents" or "Waiting for you in booth 3".
 <td width="50%"><img src="docs/screenshots/atrium-cafe-ledwall.png" width="100%" alt="The cafe tables under the LED stats wall"></td>
 </tr>
 <tr>
-<td>New agents step out of the elevators and check in at reception.</td>
+<td><b>Atrium.</b> New agents step out of the elevators and check in at reception. Finished agents walk back and leave.</td>
 <td>Idle agents take a coffee at the cafe; the LED wall counts agents, work, waits and meetings live.</td>
 </tr>
-</table>
-
-### Main Street
-
-<table>
 <tr>
 <td width="50%"><img src="docs/screenshots/main-street.png" width="100%" alt="Main Street from above, with an agent walking to its wing"></td>
 <td width="50%"><img src="docs/screenshots/game-area.png" width="100%" alt="Two ping-pong matches in the game area"></td>
 </tr>
 <tr>
-<td>The boulevard between the wings: agents walk it on their way in, out and to breaks.</td>
+<td><b>Main Street.</b> The boulevard between the wings.</td>
 <td>The game area: two agents on a long idle break pair up for ping-pong.</td>
 </tr>
-</table>
-
-### Wings and themes
-
-<table>
 <tr>
 <td width="50%"><img src="docs/screenshots/wing-terracotta.png" width="100%" alt="The claude-code wing in the terracotta theme"></td>
-<td width="50%"><img src="docs/screenshots/wing-nordic.png" width="100%" alt="The openai-agents wing in the nordic theme"></td>
-</tr>
-<tr>
-<td><code>claude-code</code> (terracotta): desk pods by topic, booths, meeting rooms, kitchen and lounge.</td>
-<td><code>openai-agents</code> (nordic). A provider with more than 24 agents gets an annex wing.</td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/screenshots/wing-forest.png" width="100%" alt="The langgraph wing in the forest theme"></td>
 <td width="50%"><img src="docs/screenshots/themes-gallery.png" width="100%" alt="The six wing themes side by side"></td>
 </tr>
 <tr>
-<td><code>langgraph</code> (forest). Wing signs show the provider id as plain text.</td>
-<td>All six themes: terracotta, nordic, forest, ocean, brass and neon.</td>
+<td><b>Wings.</b> <code>claude-code</code> in terracotta: desk pods by topic, booths, meeting rooms, kitchen and lounge. A provider with more than 24 agents gets an annex wing.</td>
+<td>Six themes: terracotta, nordic, forest, ocean, brass and neon. Wing signs show the provider id as plain text.</td>
 </tr>
-</table>
-
-### Desks
-
-<table>
 <tr>
 <td width="50%"><img src="docs/screenshots/desk-pod.png" width="100%" alt="A desk pod with agents typing and thinking"></td>
 <td width="50%"><img src="docs/screenshots/error-state.png" width="100%" alt="An agent scratching its head at a red monitor"></td>
 </tr>
 <tr>
-<td>One pod per topic: agents type (amber monitor, running a tool) or think (blue).</td>
+<td><b>Desks.</b> One pod per topic: agents type (amber monitor, running a tool) or think (blue).</td>
 <td>An agent that hit an error stands up and scratches its head at a red monitor.</td>
 </tr>
-</table>
-
-### Meeting rooms
-
-<table>
 <tr>
 <td width="50%"><img src="docs/screenshots/meeting-room.png" width="100%" alt="A parent agent and two subagents around the meeting table"></td>
-<td width="50%"><img src="docs/screenshots/team-meeting.webp" width="100%" alt="Clip: a parent and its new subagents get up and walk into meeting room A"></td>
-</tr>
-<tr>
-<td>A parent agent and its active subagents work as a team in meeting room A or B.</td>
-<td>When subagents spawn, the team gets up and walks into a free meeting room.</td>
-</tr>
-</table>
-
-### Phone booths
-
-<table>
-<tr>
 <td width="50%"><img src="docs/screenshots/phone-booth.png" width="100%" alt="Two agents on the phone in booths with green lights"></td>
-<td width="50%"><img src="docs/screenshots/booth-waiting.webp" width="100%" alt="Clip: an agent finishes its turn and walks to a booth"></td>
 </tr>
 <tr>
-<td>A green booth light means the agent finished its turn and is <strong>waiting for you</strong>.</td>
-<td>The moment an agent starts waiting, it walks to a free booth. Click it to reply.</td>
+<td><b>Meeting rooms.</b> A parent agent and its active subagents work as a team in room A or B.</td>
+<td><b>Phone booths.</b> A green light means the agent finished its turn and is <strong>waiting for you</strong>. Click it to reply.</td>
 </tr>
-</table>
-
-### Kitchen and lounge
-
-<table>
 <tr>
 <td width="50%"><img src="docs/screenshots/kitchen-lounge.png" width="100%" alt="Idle agents at the kitchen island and on the lounge sofas"></td>
-<td width="50%"><img src="docs/screenshots/atrium-cafe-ledwall.png" width="100%" alt="Idle agents at the cafe"></td>
-</tr>
-<tr>
-<td>After 45 seconds idle, agents take a break in the kitchen or on the lounge sofas…</td>
-<td>…or at the atrium cafe. Pairs on a long break go to ping-pong.</td>
-</tr>
-</table>
-
-### Arrival and leaving
-
-<table>
-<tr>
 <td width="50%"><img src="docs/screenshots/elevator-arrival.webp" width="100%" alt="Clip: new agents arrive through the elevators and walk past reception to their wings"></td>
-<td width="50%"><img src="docs/screenshots/atrium-reception.png" width="100%" alt="Agents at reception"></td>
 </tr>
 <tr>
-<td>New agents arrive through the elevators, check in and walk to their wing.</td>
-<td>Finished (<code>done</code>) agents walk back to the elevators and leave.</td>
+<td><b>Kitchen and lounge.</b> After 45 seconds idle, agents take a break here or at the cafe.</td>
+<td><b>Arrival.</b> New agents arrive through the elevators and walk to their wing.</td>
 </tr>
 </table>
 
@@ -447,7 +460,39 @@ picking a book from the shelf and reading.
 
 ![The character lineup and one frame of 16 of the animation clips](docs/screenshots/characters.png)
 
-## Download
+## Providers
+
+agent-office can **manage** sessions it starts and **observe** sessions you start elsewhere. It uses each provider's documented interface and your own CLI login; it never stores credentials. Each provider gets its own wing.
+
+![Connect → Providers: one card per AI provider with its version, state, capabilities and setup actions](docs/screenshots/providers.png)
+
+| Provider             | Observe                                             | Managed sessions                      | Project MCP memory                   | Native resume |
+| -------------------- | --------------------------------------------------- | ------------------------------------- | ------------------------------------ | ------------- |
+| Claude Code          | Yes (transcripts, opt-in inbox hook)                | Yes (Claude Agent SDK)                | Yes (verified with 2.1.270)          | Experimental  |
+| Codex                | No (no documented surface)                          | Yes (`codex app-server`)              | Yes (verified with 0.162.1)          | No            |
+| Cursor               | Yes, read-only (hooks)                              | Yes (`agent acp`)                     | Experimental (ACP)                   | No            |
+| Gemini CLI           | Yes, read-only (hooks)                              | Yes (`gemini --acp`)                  | Experimental (ACP)                   | No            |
+| GitHub Copilot       | Yes, read-only (hooks)                              | Yes (`copilot --acp`, public preview) | Experimental (ACP)                   | No            |
+| ChatGPT              | No                                                  | No (disabled)                         | No                                   | No            |
+| HTTP / any framework | Yes ([HTTP API](#http-api-for-any-agent-framework)) | No                                    | No (observed sessions never get MCP) | No            |
+
+Observed sessions never get project memory over MCP; only managed sessions do. Tested CLI versions and the capability matrix: [`docs/provider-integrations.md`](docs/provider-integrations.md).
+
+**To enable one:** install its CLI and log in with the CLI's own command, then open **🔌 Connect → Providers**, turn the provider on and press **Check again**. A **Ready** card means you can start a session with **⊕ New session**. For Cursor, Gemini and Copilot you can also click **Install hooks** to see sessions you start in their own terminal or IDE. Detection never starts a session.
+
+Limitations:
+
+- **Codex sessions started outside agent-office are not visible.** Start Codex sessions from the app.
+- **ChatGPT is disabled.** It needs a public HTTPS endpoint or OpenAI's MCP tunnel.
+- **Observed Cursor, Gemini and Copilot sessions are read-only.** You can't message, interrupt or approve them from the app. Cursor subagents aren't shown. Cursor and Copilot hooks are still pending a real-CLI check, and Gemini real sessions need a login.
+- Extra folders aren't sent to ACP agents (none of the tested CLIs accepts them).
+- Modes that skip approvals (Codex Full access, Gemini Auto-approve, Copilot Autopilot) need Settings → "Allow Bypass permissions mode".
+
+`make verify-providers` re-checks the real CLIs on your machine (it uses your accounts).
+
+## Install and quick start
+
+### Download
 
 Get the latest installer from [Releases](https://github.com/arxdsilva/agent-office/releases):
 
@@ -457,34 +502,24 @@ Get the latest installer from [Releases](https://github.com/arxdsilva/agent-offi
 | Windows                         | `.exe` (NSIS)        | SmartScreen may warn on first run because the build is unsigned. Auto-updates.                                                                                                                                                                                                         |
 | Linux                           | `.AppImage` / `.deb` | AppImage auto-updates. `.deb` notifies you instead.                                                                                                                                                                                                                                    |
 
-## AI providers
+### Connect your agents
 
-agent-office can **manage** sessions it starts and **observe** sessions you start elsewhere, for several AI coding tools. Each provider gets its own wing.
+Open the app. If the office is empty, a card offers three ways in. The **🔌 Connect** button (next to ⚙) shows the same choices at any time, with live status for each:
 
-![Connect → Providers: one card per AI provider with its version, state, capabilities and setup actions](docs/screenshots/providers.png)
+| Way in            | What you do                                                                                                                                                                              | You'll see                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Claude Code**   | Nothing: run `claude` in any project. To message sessions from the app, click **Install** under "Let me message agents".                                                                 | "● 1 active session". The agent walks in through the elevator to the `claude-code` wing.                                      |
+| **Any framework** | Copy the ready-made curl, Python or JavaScript snippet from **Connect → Any framework** into your agent. It already has the right port and reads the token from `~/.agent-office/token`. | "✓ Received from `<provider>`". The provider's wing appears. **Send a test agent** checks the whole path from inside the app. |
+| **Demo**          | **Try the demo**                                                                                                                                                                         | 9 sample agents across 3 providers, to explore the rooms, links and chat                                                      |
 
-| Provider           | Managed via                           | Observed via                    | Status                                                              |
-| ------------------ | ------------------------------------- | ------------------------------- | ------------------------------------------------------------------- |
-| Claude Code        | Claude Agent SDK                      | Transcripts + opt-in inbox hook | Verified (2.1.270)                                                  |
-| OpenAI Codex       | `codex app-server`                    | Not observable                  | Verified (0.162.1)                                                  |
-| Cursor             | `agent acp` (ACP)                     | Cursor hooks (read-only)        | Verified (agent 2026.10.01); hooks pending a real-CLI check         |
-| GitHub Copilot CLI | `copilot --acp` (ACP, public preview) | Copilot hooks (read-only)       | Verified (1.0.96); hooks pending a real-CLI check                   |
-| Gemini CLI         | `gemini --acp` (ACP)                  | Gemini hooks (read-only)        | Protocol verified against a fake agent; real sessions need a login  |
-| ChatGPT            | Disabled                              | Disabled                        | Needs a public HTTPS endpoint or OpenAI's MCP tunnel; not supported |
+<table><tr>
+<td><img src="docs/screenshots/empty-state.png" alt="An empty office: a card offers Claude Code, any framework over HTTP, or a demo, each with live status" width="100%"></td>
+<td><img src="docs/screenshots/connect-panel.png" alt="The Connect panel on the Any framework tab: endpoint, token location, a copyable curl snippet and a received-event confirmation" width="100%"></td>
+</tr></table>
 
-**To enable one:** install its CLI and log in with the CLI's own command, then open **🔌 Connect → Providers**, turn the provider on and press **Check again**. A **Ready** card means you can start a session with **⊕ New session**. For Cursor, Gemini and Copilot you can also click **Install hooks** to see sessions you start in their own terminal or IDE. Detection never starts a session, and agent-office never logs in or handles credentials for you.
+The **Connected** tab lists every provider, its agent count and how it's connected (transcripts, hook, HTTP or demo), with a button to fly to its wing. If port 4317 is taken, the Any framework tab says so and lets you pick another port. The Claude Code hook follows the new port automatically.
 
-Limitations:
-
-- **Codex sessions started outside agent-office are not visible.** Codex has no documented way to observe them. Start Codex sessions from the app.
-- **ChatGPT is disabled.**
-- **Observed Cursor, Gemini and Copilot sessions are read-only.** You can't message, interrupt or approve them from the app; the panel says where to reply. Cursor subagents aren't shown.
-- Managed sessions don't resume after an app restart, and extra folders aren't sent to ACP agents (none of the tested CLIs accepts them).
-- Modes that skip approvals (Codex Full access, Gemini Auto-approve, Copilot Autopilot) need Settings → "Allow Bypass permissions mode".
-
-Setup per provider, the capability matrix, troubleshooting and how to add a provider: [docs/provider-integrations.md](docs/provider-integrations.md). `make verify-providers` re-checks the real CLIs on your machine (it uses your accounts).
-
-## Using it with Claude Code
+### Using it with Claude Code
 
 1. Open agent-office. Any Claude Code session active in the last 10 minutes appears in the `claude-code` wing, at a desk pod named after the session title. Its subagents sit next to it, and join it in a meeting room while they work.
 2. **To message sessions:** 🔌 Connect → Claude Code → **Install**. You can also use ⚙ Settings, the tray menu, or the button shown in the chat panel.
@@ -582,25 +617,27 @@ while True:
         call("POST", "/replies", {"text": answer, "inReplyTo": msg["id"]})
 ```
 
-## Security
+### IPC API (projects)
 
-The app can inject text into live agent sessions, so it is locked down:
+The renderer talks to the main process through `window.agentOffice` (`packages/shared/src/desktop-api.ts`). Changes are additive. The projects methods live under `projects.*`; each maps to a `prj:*` channel (`packages/shared/src/ipc-channels.ts`), and main pushes updates on `prj:push`.
 
-- **Local API**
-  - It binds to `127.0.0.1` only.
-  - Requests with a foreign `Host` get 421, which blocks DNS rebinding.
-  - Requests from a foreign `Origin` get 403.
-  - Writes need the bearer token (401 otherwise).
-  - All input is validated with zod, with size limits and a message rate limit.
-  - The API serves no web page and no WebSocket.
-- **Electron**
-  - The renderer is sandboxed and context-isolated, with no Node integration.
-  - The production renderer is served from a privileged `app://renderer` scheme (read-only, contained in the bundled files, path traversal refused), so the CSP can stay `'self'`-only: `script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`. WebAssembly may compile (the mesh decoder); JavaScript `eval` and every remote origin stay blocked.
-  - Navigation and popups are blocked, and only the pointer-lock and notifications permissions are allowed.
-  - Every IPC payload is validated and its sender is checked.
-- **Agent text** is always rendered as text, never as HTML.
+| Method                                                                    | Channel                                                           | Purpose                                                  |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
+| `overview()`, `list()`, `dashboard(projectId)`                            | `prj:overview`, `prj:list`, `prj:dashboard`                       | Global Overview, project list, one project's dashboard   |
+| `create(args)`, `update(args)`                                            | `prj:create`, `prj:update`                                        | Create or edit a project                                 |
+| `addRepos(projectId, folders)`, `removeRepo(projectId, repo)`             | `prj:add-repos`, `prj:remove-repo`                                | Link picked folders (opaque `ctx_` refs) as repositories |
+| `sessions(args)`, `messages(args)`, `assign(sessionId, projectId)`        | `prj:sessions`, `prj:messages`, `prj:assign`                      | Session Vault list, messages, (re)assignment             |
+| `memories(args)`, `createMemory(draft)`                                   | `prj:memories`, `prj:memory-create`                               | List and create memory items                             |
+| `reviewMemory(id, action)`, `editMemory(args)`                            | `prj:memory-review`, `prj:memory-edit`                            | Approve or reject, edit                                  |
+| `supersedeMemory(id, replacement)`, `mergeMemories(ids, into)`            | `prj:memory-supersede`, `prj:memory-merge`                        | Replace or merge items                                   |
+| `contextPreview(args)`, `inspect(agentId)`                                | `prj:context-preview`, `prj:inspect`                              | Ranked context bundle, Context Inspector                 |
+| `prepareHandoff(args)`, `updateHandoff(args)`, `launchHandoff(handoffId)` | `prj:handoff-prepare`, `prj:handoff-update`, `prj:handoff-launch` | Handoff flow                                             |
+| `search(args)`                                                            | `prj:search`                                                      | Deep search across projects, sessions, messages, memory  |
+| `tasks(projectId)`, `createTask(args)`, `updateTask(args)`                | `prj:tasks`, `prj:task-create`, `prj:task-update`                 | Tasks and user-confirmed evidence                        |
+| `importHistory(args?)`, `resumeSession(sessionId)` (experimental)         | `prj:import-history`, `prj:resume`                                | Import past Claude Code sessions; native resume          |
+| `onPush(cb)`                                                              | `prj:push`                                                        | Project updates pushed to the renderer                   |
 
-The token protects you from websites. It does not protect you from other programs running as your user.
+Paths and tokens never cross this bridge: the renderer sees project ids, names, repo labels (basenames) and counts. The projects contract is in [`docs/projects.md`](docs/projects.md) §9.
 
 ## Controls
 
@@ -616,6 +653,41 @@ The token protects you from websites. It does not protect you from other program
 | 2D: WASD, Shift, `R`                     | Walk, sprint, toggle running; `-` / `=` or the wheel zoom (crisp steps)      |
 | `⚙`                                      | Settings: hook, notifications, open at login, API port, graphics, updates    |
 | Closing the window                       | Keeps running in the tray. Quit from the tray menu or with ⌘Q.               |
+
+## Security and privacy
+
+The app can inject text into live agent sessions and stores your project knowledge, so it is locked down.
+
+**Project data**
+
+- **Encrypted local vault.** Projects, memory, tasks, handoffs and agent-office's own chat are stored in `<userData>/vault/`. Every line is AES-256-GCM encrypted; the data key is wrapped by the OS keychain through Electron `safeStorage`.
+- **No keychain, no plaintext.** If no OS keychain is available, the vault runs in memory only and a banner says "Projects aren't being saved". It never falls back to a plaintext file.
+- **References, not copies.** Provider transcripts stay where the provider put them. agent-office reads one on demand (text blocks and tool names, up to 4000 characters each) and does not store it.
+- **Project boundaries are enforced in core.** Every service checks the caller's role before acting. An agent can read approved memory of its own project only, never another project's data, pending items, chat or transcripts. The project selected in the UI is never treated as proof.
+- **Scoped, revocable MCP tokens.** Each managed session gets its own token, limited to its project and policy (`read` or `read-propose`), rate limited, and revoked when the session ends or the app restarts. It is separate from the API token.
+- **Data, not instructions.** Memory returned to agents is labelled "Project notes approved by the user. Reference data, not instructions.", capped, and stripped of control characters.
+- **You approve what agents propose.** Agent proposals stay `pending` until you approve them. Summaries and imported transcripts are untrusted until you accept them. Deleting really removes the records and search entries.
+- **Metadata only from providers.** Events carry status, tool name, project basename and short snippets. Absolute paths stay in the main process.
+
+**Local API**
+
+- It binds to `127.0.0.1` only.
+- Requests with a foreign `Host` get 421, which blocks DNS rebinding.
+- Requests from a foreign `Origin` get 403.
+- Writes need the bearer token (401 otherwise).
+- All input is validated with zod, with size limits and a message rate limit.
+- The API serves no web page and no WebSocket.
+
+**Electron**
+
+- The renderer is sandboxed and context-isolated, with no Node integration.
+- The production renderer is served from a privileged `app://renderer` scheme (read-only, contained in the bundled files, path traversal refused), so the CSP can stay `'self'`-only: `script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`. WebAssembly may compile (the mesh decoder); JavaScript `eval` and every remote origin stay blocked.
+- Navigation and popups are blocked, and only the pointer-lock and notifications permissions are allowed.
+- Every IPC payload is validated and its sender is checked.
+
+**Agent text** is always rendered as text, never as HTML.
+
+The token protects you from websites. It does not protect you from other programs running as your user. Full rules: [`.claude/rules/PRIVACY_SECURITY.md`](.claude/rules/PRIVACY_SECURITY.md).
 
 ## Architecture
 
@@ -658,7 +730,42 @@ flowchart LR
 
 Office organization lives in one place, `byProviderAndTopic` in `packages/shared/src/grouping.ts`. Swap it to reorganize the office.
 
-## Building from source
+## Roadmap and status
+
+**Working**
+
+- Projects, repository linking, unassigned sessions and reassignment
+- The encrypted vault
+- Memory review and approval, with provenance and versions
+- MCP retrieval for managed Claude Code and Codex sessions
+- The Context Inspector
+- The Session Vault, search, Save as memory and cross-provider handoffs
+- Tasks with user-confirmed evidence
+- Deep search
+- The Project Directory in 3D and 2D
+
+**Experimental**
+
+- Project MCP injection for ACP providers (Cursor, Gemini, Copilot), and for Claude Code and Codex versions other than the ones verified (`make verify-providers`)
+- Claude history import
+- Claude native resume
+- Provider-written summaries
+- The `workspace` memory scope
+
+**Planned**
+
+- Commit detection (`committed` evidence) and `tests-verified` evidence
+- Embeddings
+- Cloud sync
+- MCP for observed sessions
+- Project grouping inside wings
+- Content in the Session Archive alcoves (placed, but empty for now)
+
+Also open: persistence and replay of office state, OpenTelemetry GenAI spans as a source, code signing and notarization for macOS releases, custom avatars and office themes.
+
+## Contributing
+
+### Building from source
 
 Requires Node 22+ and pnpm (`corepack enable`).
 
@@ -683,7 +790,7 @@ make codex-schema-check # check our Codex protocol subset against the installed 
   2. Pushing the tag builds installers on macOS, Windows and Linux into a **draft** GitHub release.
   3. Signing is used automatically when the `CSC_*` and `APPLE_*` secrets exist.
 
-## Building the assets
+### Building the assets
 
 The building, furniture and characters are made in **Blender 5.2** by committed Python scripts (`assets/blender/`). Nothing that ships is edited by hand; every `.glb` comes out of the pipeline.
 
@@ -703,14 +810,6 @@ make assets          # final build → packages/web/public/assets/ (validated by
 - Textures and HDRIs are CC0 from Poly Haven, listed in `assets/LICENSES.md`. No logos or trademarks appear in any asset; wing signs show the provider id as plain text drawn at runtime.
 
 Working with an AI assistant? Start from [`AGENTS.md`](AGENTS.md), which has the architecture, glossary, rules and definition of done. Claude Code users also get project skills: `/run-office`, `/add-port-adapter`, `/add-event-source`, `/protocol-change`, `/scene-change`, `/asset-change`, `/interaction-change` and `/desktop-change`.
-
-## Roadmap
-
-- Office organization v2 (the grouping strategy is pluggable)
-- Persistence and replay, as a new `AgentRepository` adapter
-- OpenTelemetry GenAI spans as a source
-- Code signing and notarization for macOS releases
-- Custom avatars and office themes
 
 ## License
 

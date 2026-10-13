@@ -7,6 +7,7 @@ import type { Effective, GraphicsStats, HardwareInfo } from '../app/graphics-typ
 import type { ViewEntry } from '../app/library-types.ts'
 import type { AgentPlan, BuildingLayout, Link } from '../app/office-types.ts'
 import type { InteractTarget, TileRect } from '../app/pixel/types.ts'
+import type { ProjectLibraryVM } from '../app/project-library.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../ports.ts'
 
 /** Adapter-level extras some scenes have (ThreeScene: hardware tier input, the FPS readout). */
@@ -45,6 +46,7 @@ const LISTENERS = [
   'onMinimapBase',
   'onZoom',
   'onRun',
+  'onPickFixture',
   'onFrameStats',
 ] as const
 type ListenerName = (typeof LISTENERS)[number]
@@ -64,6 +66,8 @@ export class SceneHost implements SceneView {
   private highlighted: string | null = null
   private selected: string | null = null
   private suspended = false
+  private focus: { ids: string[] | null; o: { dim: boolean; frame: boolean } } | null = null
+  private projectLibrary: ProjectLibraryVM | null = null
   private plans = new Map<string, AgentPlan>()
   /** Switches run one after another; the last request wins. */
   private queue: Promise<unknown> = Promise.resolve()
@@ -130,10 +134,12 @@ export class SceneHost implements SceneView {
     if (this.surfaces) s.setSurfaces(this.surfaces)
     if (this.highlighted !== null) s.highlightLinks(this.highlighted)
     if (this.suspended) s.setInputSuspended?.(true)
+    if (this.projectLibrary) s.setProjectLibrary?.(this.projectLibrary)
     const resynced = this.deps.resync()
     const plans = resynced.size ? resynced : this.cachedPlans()
     if (plans.size) s.direct(plans, [])
     if (this.selected !== null) s.select(this.selected)
+    if (this.focus?.ids) s.focusAgents?.(this.focus.ids, this.focus.o)
   }
 
   private cachedPlans(): Map<string, AgentPlan> {
@@ -300,6 +306,20 @@ export class SceneHost implements SceneView {
 
   onRun(fn: (on: boolean) => void): void {
     this.listen('onRun', fn)
+  }
+
+  focusAgents(ids: string[] | null, o: { dim: boolean; frame: boolean }): void {
+    this.focus = ids ? { ids, o } : null
+    this.scene.focusAgents?.(ids, o)
+  }
+
+  onPickFixture(fn: (f: { kind: 'project-directory' }) => void): void {
+    this.listen('onPickFixture', fn)
+  }
+
+  setProjectLibrary(vm: ProjectLibraryVM | null): void {
+    this.projectLibrary = vm
+    this.scene.setProjectLibrary?.(vm)
   }
 
   // ── Adapter-level extras (main.ts) ──

@@ -150,12 +150,27 @@ class SdkSession implements RunnerSession {
       additionalDirectories: s.extraDirs,
       settingSources: ['user', 'project', 'local'],
       allowDangerouslySkipPermissions: s.mode === 'bypassPermissions' && s.allowBypass,
+      // Experimental native resume: the Agent SDK loads the conversation history of that session.
+      ...(s.resume ? { resume: s.resume } : {}),
       // The hook exits early on AGENT_OFFICE_MANAGED: managed sessions don't use the inbox.
       env: { ...o.env, AGENT_OFFICE_MANAGED: '1' },
       canUseTool,
       // Claude in Chrome: the CLI's `--chrome` flag (not a typed SDK option).
       ...(s.chrome ? { extraArgs: { chrome: null } } : {}),
       ...(o.executable ? { pathToClaudeCodeExecutable: o.executable } : {}),
+      // agent-office's project MCP server (docs/projects.md §5), only when the policy allows it.
+      ...(s.mcp
+        ? {
+            mcpServers: {
+              [s.mcp.name]: {
+                type: 'stdio' as const,
+                command: s.mcp.command,
+                args: s.mcp.args,
+                env: s.mcp.env,
+              },
+            },
+          }
+        : {}),
     }
   }
 

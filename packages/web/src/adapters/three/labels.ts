@@ -17,6 +17,10 @@ const OCCLUSION_MS = 250
 const HEAD_CLEARANCE = 0.32
 const OCCLUDED_OPACITY = 0.3
 const LEASH = 0.06
+/** Opacity of tags outside the project focus. */
+const DIM_LABEL = 0.25
+/** A fixture label (Project Directory) fades out beyond this distance (m). */
+const FIXTURE_FAR = 90
 
 function bubbleText(a: Agent): string {
   switch (a.status) {
@@ -83,12 +87,35 @@ class Label {
   }
 }
 
+/** A static, clickable world label (the reception's Project Directory). */
+class FixtureLabel {
+  readonly obj: CSS2DObject
+  readonly stack = document.createElement('div')
+  constructor(key: string, text: string, onPick: () => void) {
+    const tag = document.createElement('div')
+    tag.className = 'fixture-tag tag-like'
+    tag.dataset.fixture = key
+    tag.textContent = text
+    tag.addEventListener('click', (e) => {
+      e.stopPropagation()
+      onPick()
+    })
+    this.stack.className = 'label-stack'
+    this.stack.append(tag)
+    this.obj = new CSS2DObject(this.stack)
+    this.obj.center.set(0.5, 1)
+  }
+}
+
 export class Labels {
   readonly renderer = new CSS2DRenderer()
   /** Own scene, so the CSS2D pass never walks the building's scene graph. */
   private scene = new THREE.Scene()
   private group = new THREE.Group()
   private labels = new Map<string, Label>()
+  private fixtures = new Map<string, FixtureLabel>()
+  /** Project focus: tags of agents outside it recede (null: all normal). */
+  private focus: ReadonlySet<string> | null = null
   private selected: string | null = null
   private lastOcclusion = 0
   private ray = new THREE.Ray()
@@ -140,6 +167,34 @@ export class Labels {
     if (mode === this.filter.mode && nearbyM === this.filter.nearbyM) return
     this.filter.mode = mode
     this.filter.nearbyM = nearbyM
+    this.dirty = true
+  }
+
+  /** Dims the tags of agents outside `ids` (null clears). */
+  setFocus(ids: ReadonlySet<string> | null): void {
+    this.focus = ids
+    this.dirty = true
+  }
+
+  /** Adds, moves or (pos null) removes a clickable world label. The text goes through textContent. */
+  setFixture(key: string, text: string, pos: THREE.Vector3 | null, onPick: () => void): void {
+    const had = this.fixtures.get(key)
+    if (!pos) {
+      if (!had) return
+      had.stack.remove()
+      this.group.remove(had.obj)
+      this.fixtures.delete(key)
+      this.dirty = true
+      return
+    }
+    const f = had ?? new FixtureLabel(key, text, onPick)
+    if (!had) {
+      this.fixtures.set(key, f)
+      this.group.add(f.obj)
+      f.stack.style.display = 'none'
+      this.renderer.domElement.append(f.stack)
+    }
+    f.obj.position.copy(pos)
     this.dirty = true
   }
 
@@ -205,9 +260,20 @@ export class Labels {
         l.occluded = needsOcclusion(f, id, d) && this.blocked(l.obj.position, d, occluders)
       // Behind a wall the tag stays (clickable, so you can still find someone) but recedes.
       const fade = d <= near ? 1 : Math.max(0, 1 - (d - near) / (far - near))
-      const opacity = selected ? 1 : fade * (l.occluded ? OCCLUDED_OPACITY : 1)
+      const dim = this.focus && !this.focus.has(id) ? DIM_LABEL : 1
+      const opacity = selected ? 1 : fade * (l.occluded ? OCCLUDED_OPACITY : 1) * dim
       const o = opacity.toFixed(2)
       if (l.stack.style.opacity !== o) l.stack.style.opacity = o
+    }
+    // Fixture labels: always shown, fading out with distance.
+    for (const f of this.fixtures.values()) {
+      const d = this.camPos.distanceTo(f.obj.position)
+      const o =
+        d >= FIXTURE_FAR
+          ? '0'
+          : (d <= FADE_FAR ? 1 : 1 - (d - FADE_FAR) / (FIXTURE_FAR - FADE_FAR)).toFixed(2)
+      if (f.stack.style.opacity !== o) ((f.stack.style.opacity = o), (changed = true))
+      f.obj.visible = o !== '0'
     }
     // The CSS2D pass projects every tag; skip it when neither the view nor any tag changed.
     camera.updateMatrixWorld()

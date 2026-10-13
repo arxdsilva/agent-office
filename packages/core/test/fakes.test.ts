@@ -15,6 +15,18 @@ import {
   FakeSettingsRepository,
 } from './fakes/index.ts'
 import {
+  historySourceContract,
+  recordLogContract,
+  searchIndexContract,
+  transcriptReaderContract,
+} from './contracts/projects.ts'
+import {
+  FakeHistorySource,
+  FakeRecordLog,
+  FakeSearchIndex,
+  FakeTranscriptReader,
+} from './fakes/projects.ts'
+import {
   agentRepositoryContract,
   eventBusContract,
   messageRepositoryContract,
@@ -89,3 +101,54 @@ managedRuntimeContract('FakeAgentRunner (with decl)', () => {
     alive: () => !s().closed,
   }
 })
+
+// ── projects-first ports ──
+recordLogContract('FakeRecordLog', async () => {
+  const log = new FakeRecordLog()
+  return {
+    log,
+    reopen: async () => log.reopen(),
+    corrupt: async (p) => {
+      // The fake "skips" a corrupt line by dropping it, as the real adapter does on read.
+      log.storage.get(p)?.splice(1, 1)
+    },
+  }
+})
+searchIndexContract('FakeSearchIndex', () => new FakeSearchIndex())
+transcriptReaderContract('FakeTranscriptReader', async () => {
+  const reader = new FakeTranscriptReader().set(
+    'tr_fixture',
+    Array.from({ length: 7 }, (_, i) => ({
+      uuid: `u${i}`,
+      role: i % 2 ? ('assistant' as const) : ('user' as const),
+      text: i === 3 ? 'about the deploy pipeline' : `message ${i}`,
+      ts: 100 + i,
+      tools: i % 2 ? ['Bash'] : [],
+    })),
+  )
+  return {
+    reader,
+    ref: 'tr_fixture',
+    total: 7,
+    word: 'deploy',
+    secret: 'SENTINEL-SECRET-123',
+    unknownRef: 'tr_nothing',
+  }
+})
+
+historySourceContract('FakeHistorySource', async () => ({
+  source: new FakeHistorySource(
+    [5, 3, 9]
+      .map((t, i) => ({
+        provider: 'claude-code',
+        providerSessionId: `s${i}`,
+        transcriptRef: `tr_s${i}`,
+        title: `Session ${i}`,
+        startedAt: t,
+        lastSeenAt: t + 10,
+      }))
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt),
+  ),
+  total: 3,
+  secret: 'SENTINEL-SECRET-123',
+}))

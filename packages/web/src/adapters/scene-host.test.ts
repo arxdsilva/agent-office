@@ -5,6 +5,7 @@ import type { ViewMode } from '@agent-office/shared'
 import type { Effective } from '../app/graphics-types.ts'
 import type { ViewEntry } from '../app/library-types.ts'
 import type { AgentPlan, BuildingLayout, Link } from '../app/office-types.ts'
+import type { ProjectLibraryVM } from '../app/project-library.ts'
 import type { InteractTarget } from '../app/pixel/types.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../ports.ts'
 import { SceneHost } from './scene-host.ts'
@@ -55,6 +56,9 @@ function fakeScene(mode: ViewMode) {
     setInputSuspended: rec('setInputSuspended'),
     follow: rec('follow'),
     travelTo: rec('travelTo'),
+    focusAgents: rec('focusAgents'),
+    setProjectLibrary: rec('setProjectLibrary'),
+    onPickFixture: on('onPickFixture'),
     ...(mode === 'pixel'
       ? { onInteract: on('onInteract'), onRoom: on('onRoom') }
       : { hardwareInfo: () => null, onFrameStats: on('onFrameStats') }),
@@ -405,5 +409,36 @@ describe('SceneHost: 2D zoom and run (HS-7)', () => {
     expect(runs).toEqual([true])
     host.zoomBy(-1)
     expect(made[1]!.calls.find((c) => c.name === 'zoomBy')?.args).toEqual([-1])
+  })
+
+  // HS-9: project focus, library and fixture picks forward, replay after a switch and re-attach.
+  it('HS-9 forwards project focus and library, replays them, and re-attaches onPickFixture', async () => {
+    const { host, made } = setup()
+    const fixtures: unknown[] = []
+    host.onPickFixture((f) => fixtures.push(f))
+    await host.load('m.json')
+    const lib = { projectId: 'prj_a' } as unknown as ProjectLibraryVM
+    host.focusAgents(['a', 'b'], { dim: true, frame: true })
+    host.setProjectLibrary(lib)
+    expect(made[0]!.calls.find((c) => c.name === 'focusAgents')?.args).toEqual([
+      ['a', 'b'],
+      { dim: true, frame: true },
+    ])
+    expect(made[0]!.calls.find((c) => c.name === 'setProjectLibrary')?.args).toEqual([lib])
+    await host.switchTo('pixel')
+    const p = made[1]!
+    expect(p.calls.find((c) => c.name === 'focusAgents')?.args).toEqual([
+      ['a', 'b'],
+      { dim: true, frame: true },
+    ])
+    expect(p.calls.find((c) => c.name === 'setProjectLibrary')?.args).toEqual([lib])
+    p.fire('onPickFixture', { kind: 'project-directory' })
+    expect(fixtures).toEqual([{ kind: 'project-directory' }])
+    // Cleared state is not replayed.
+    host.focusAgents(null, { dim: true, frame: false })
+    host.setProjectLibrary(null)
+    await host.switchTo('3d')
+    const again = made[2]!.calls.filter((c) => c.name === 'focusAgents')
+    expect(again).toEqual([])
   })
 })

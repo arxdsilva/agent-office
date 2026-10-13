@@ -14,7 +14,7 @@ XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb
 # render on software GL there (TESTING.md: E2E runs on software GL in CI), or the office never loads.
 SOFTWARE_GL := $(if $(XVFB),AGENT_OFFICE_FORCE_SOFTWARE_GL=1,)
 
-.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check
+.PHONY: help install dev dev-mock build package package-dist icons assets assets-draft assets-test asset-previews screenshots screenshots-projects screenshots-macos perf test test-e2e test-ui coverage typecheck arch fmt fmt-check check install-hook uninstall-hook hook-status token demo-event demo-message release clean verify-providers codex-schema-check
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -63,6 +63,9 @@ asset-previews: ## Render Eevee preview stills of every module → assets/previe
 
 screenshots: ## Capture in-app screenshots from fixed camera bookmarks → docs/screenshots (needs make build)
 	$(ELECTRON_ENV) node scripts/screenshots.mjs
+
+screenshots-projects: ## Capture the projects workspace (dashboard, memory, sessions, directories) from synthetic fixtures → docs/screenshots (needs make build)
+	$(ELECTRON_ENV) node scripts/capture/projects.mjs
 
 screenshots-macos: ## macOS only: capture the real tray menu and a native notification (needs Screen Recording + Accessibility)
 	node scripts/capture/macos.mjs

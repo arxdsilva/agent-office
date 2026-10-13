@@ -104,7 +104,7 @@ ever sees project ids, names, repo labels (basenames) and counts.
   provider `read` or `read-propose`; revoked when the session ends or the app restarts; 20 calls/min;
   separate from the API token. A missing, unknown or revoked token gets 401 with no detail.
 - **Injection** (`RunnerStart.mcp`): Claude Agent SDK `mcpServers`; ACP `session/new mcpServers`;
-  Codex `thread/start config` (experimental until verified against the installed CLI). Observed
+  Codex `thread/start config` (verified with codex 0.162.1; Codex asks before each MCP tool call through `mcpServer/elicitation/request`, shown as a permission card and answered once, never persisted). Observed
   sessions never get MCP.
 - **Tools:**
 
@@ -147,12 +147,27 @@ Stored kinds: `session.started|ended|assigned`, `memory.proposed|approved|reject
 - "Summarize with <provider>" (experimental): explicit consent, a read-only managed session gets
   agent-office's chat only; stored only after the user accepts it.
 - Evidence levels: `agent-reported`, `committed` (commits since the session started, on demand),
-  `user-confirmed`, `tests-verified` (planned).
+  `user-confirmed`, `tests-verified` (planned). Users create tasks and confirm them
+  (`projects.createTask`, `updateTask {state?, confirm?}`); agents never write tasks.
+- "Save as memory" on any Session Vault message creates a draft with `from {sessionId, messageId}`;
+  the provenance keeps both.
+
+## 8a. History import and native resume (experimental)
+
+- `projects.importHistory({limit ≤ 500})`: an explicit user action. Main lists past Claude Code
+  sessions (`HistorySource`, `~/.claude/projects` or `CLAUDE_PROJECTS_DIR`) and creates
+  `origin: 'imported'`, unassigned session records with project suggestions. Only metadata and a
+  `tr_` ref are stored; the transcript stays where it is and is read on demand. Idempotent.
+- `projects.resumeSession(sessionId)`: Claude only. Starts a managed session with the Agent SDK's
+  `resume` (`RunnerStart.resume`), in the record's folder (main only), on the record's project, with the
+  usual MCP policy. `SessionSummary.canResume` says when it is offered. The provider session id never
+  leaves main.
 
 ## 9. IPC and UI contract
 
 IPC: `AgentOfficeApi.projects` (`packages/shared/src/desktop-api.ts`), channels `prj:*`, push
-`prj:push` (`ProjectMessage`). New sessions: `NewSessionArgs.projectId`, `repo`, `context_memories`.
+`prj:push` (`ProjectMessage`); tasks `prj:tasks`, `prj:task-create`, `prj:task-update`; experimental
+`prj:import-history`, `prj:resume`. New sessions: `NewSessionArgs.projectId`, `repo`, `context_memories`.
 
 Stable DOM ids (Playwright): shell `#sidebar` (`#sb-overview`, `#sb-office`, `#sb-projects`,
 `#sb-sessions`, `#sb-memory`, `#sb-project-list li[data-project-id]`, `.sb-count`, `#sb-new-project`),
@@ -182,15 +197,33 @@ Both renderers use the same commands and panels — no renderer business logic:
   show restricted titles.
 - **Context Hub**: the `mcp:agent-office-memory` station; it pulses only on real retrievals and opens
   the Context Inspector.
-- Planned: dedicated atrium rooms (Project Hub, Context Hub core, Handoff Station, Archive alcoves).
+- **Atrium rooms** (graphics contract §4/§5/§11):
+  - **Project Hub** (room `hub`): the `kiosk:project-directory` anchor is the visitor spot in front of
+    the Project Directory kiosk; the pick proxy and the 2D `project-directory` interaction use it and
+    fall back to the reception desk when the manifest lacks it.
+  - **Context Hub core:** a glowing column with six consoles (`console:context:0-5`) and screens
+    `context:<n>` / `context-core`; they pulse on real retrievals (`mcp:agent-office-memory`).
+  - **Handoff Station:** the pad and rug in the plaza, with two facing spots (`spot:handoff:0-1`).
+  - **Session Archive:** twelve arched alcoves in the plaza (`port:archive:0-11`). They exist in the
+    building but nothing is drawn on them yet; project archive volumes appear on the Library shelves.
+  - Older manifests without these anchors still load.
 
 ## 11. Status
 
 | Capability | Status |
 | --- | --- |
-| Projects, unassigned sessions, reassignment, encrypted vault | in progress (this release) |
-| Shared memory with review and provenance; MCP retrieval | in progress |
-| Context Inspector, handoffs | in progress |
-| Codex / ACP MCP injection | experimental until verified per CLI |
-| Provider summaries, deep transcript search, native resume, commit detection | experimental |
-| Embeddings, cloud sync, `tests-verified`, MCP for observed sessions | planned / not planned |
+| Projects, unassigned sessions, reassignment, encrypted vault | working |
+| Shared memory with review and provenance; MCP retrieval | working |
+| Context Inspector | working |
+| Session Vault, search, Save as memory, handoffs | working |
+| Tasks with user-confirmed evidence | working |
+| Deep search | working |
+| Project Directory in 3D and 2D | working |
+| Claude Code / Codex MCP injection | verified (Claude 2.1.270, Codex 0.162.1; `make verify-providers`) |
+| ACP MCP injection (Cursor, Gemini, Copilot) | experimental until verified per CLI |
+| Claude history import, Claude native resume | experimental |
+| Provider summaries, the `workspace` scope | experimental |
+| Commit detection (`committed` evidence), `tests-verified` | planned |
+| Embeddings, cloud sync | planned |
+| MCP for observed sessions | planned |
+| Project grouping inside wings; content in the Archive alcoves | planned |

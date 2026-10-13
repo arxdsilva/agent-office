@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS, type Settings } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
 import {
   NotAllowedError,
+  ValidationError,
   RateLimitedError,
   SessionStartError,
   UnknownAgentError,
@@ -23,9 +24,10 @@ import {
   FALLBACK_MODELS,
   MAX_MANAGED,
   ManagedSessionService,
+  type ManagedSessionDeps,
 } from './managed-session-service.ts'
 
-function setup(over: Partial<Settings> = {}) {
+function setup(over: Partial<Settings> = {}, extra: Partial<ManagedSessionDeps> = {}) {
   const agents = new FakeAgentRepository()
   const messages = new FakeMessageRepository()
   const bus = new FakeEventBus()
@@ -55,6 +57,7 @@ function setup(over: Partial<Settings> = {}) {
       p.startsWith('/Users/me/')
         ? p.replace('/Users/me', '~')
         : `…/${p.split('/').slice(-2).join('/')}`,
+    ...extra,
   })
   const compose = new ComposeService({ chat: inbox, messages, bus, sessions: svc })
   return {
@@ -148,6 +151,55 @@ describe('ManagedSessionService.start', () => {
     scheduler.fireTimers()
     await expect(p).rejects.toMatchObject({ code: 'other' })
     expect(runner.last().closed).toBe(true)
+  })
+
+  it('MS-first-before-id: a runtime that reports its id only after the first prompt still starts', async () => {
+    // Claude CLI 2.1.270: the SDK emits system/init only once the first user message arrives.
+    const { svc, runner, messages, agents } = setup()
+    runner.autoInit = false
+    const original = runner.start.bind(runner)
+    runner.start = (o) => {
+      const s = original(o)
+      const push = s.push.bind(s)
+      s.push = (p) => {
+        push(p)
+        if (s.prompts.length === 1) {
+          s.init()
+          // Activity and a permission request can follow the id before start() has registered it.
+          s.emit({ status: 'tool', tool: 'Bash' })
+          void s.ask('Bash', { command: 'ls' })
+        }
+      }
+      return s
+    }
+    const agentId = await svc.start(START)
+    expect(agentId).toBe('cc:sess-1')
+    expect(runner.last().prompts).toEqual(['Plan the logout flow'])
+    expect(messages.byAgent(agentId)).toMatchObject([
+      { from: 'user', text: 'Plan the logout flow', state: 'delivered' },
+    ])
+    await tick()
+    // Nothing that arrived before registration is lost or auto-denied.
+    expect(svc.pending(agentId)).toHaveLength(1)
+    expect(agents.get(agentId)?.managed?.pending).toBe(1)
+  })
+
+  it('a start that fails after the early first push denies anything buffered', async () => {
+    const { svc, runner } = setup()
+    runner.autoInit = false
+    let decision: unknown
+    const original = runner.start.bind(runner)
+    runner.start = (o) => {
+      const s = original(o)
+      s.push = () => {
+        void s.ask('Bash', { command: 'ls' }).then((d) => (decision = d))
+        s.exit({ error: 'auth' })
+      }
+      return s
+    }
+    await expect(svc.start(START)).rejects.toMatchObject({ code: 'auth' })
+    await tick()
+    expect(decision).toMatchObject({ behavior: 'deny' })
   })
 
   it('maps a runner that throws while starting', async () => {
@@ -587,5 +639,104 @@ describe('multi-provider runtimes', () => {
     await t.svc.models(cx)
     expect(t.svc.knownModels('codex')).toEqual(t.codex.last().models)
     expect(await t.svc.models()).toEqual(FALLBACK_MODELS) // Codex models never leak into Claude's
+  })
+})
+
+describe('projects (docs/projects.md §5)', () => {
+  it('MS-where-default: without displayPath the card never shows an absolute path', async () => {
+    const t = setup({}, { displayPath: undefined })
+    const agentId = await t.svc.start({ ...START, cwd: '/srv/secret/acme-api' })
+    void t.runner.last().ask('Bash', { command: 'ls' })
+    const where = t.svc.pending(agentId)[0]!.where
+    expect(where).not.toMatch(/^(\/|[A-Za-z]:|\\)/)
+    expect(where).not.toContain('secret')
+    expect(where).toContain('acme-api')
+    const w = setup({}, { displayPath: undefined })
+    const id2 = await w.svc.start({ ...START, cwd: 'C:\\Users\\me\\proj' })
+    void w.runner.last().ask('Bash', { command: 'ls' })
+    expect(w.svc.pending(id2)[0]!.where).toBe('…/proj')
+  })
+
+  it('MS-resume: passes the provider session id to Claude runners only', async () => {
+    const t = setup()
+    await t.svc.start({ ...START, resume: 'abc-123' })
+    expect(t.runner.last().options.resume).toBe('abc-123')
+    const plain = setup()
+    await plain.svc.start(START)
+    expect(plain.runner.last().options).not.toHaveProperty('resume')
+    const codex = new FakeAgentRunner(CODEX_DECL)
+    const c = setup({}, { runtimes: new Map([['codex', codex]]) })
+    await c.svc.start({ ...START, provider: 'codex', resume: 'abc-123' })
+    expect(codex.last().options).not.toHaveProperty('resume')
+  })
+
+  function withMcp(allow = true) {
+    const calls: string[] = []
+    const located: unknown[] = []
+    const t = setup(
+      {},
+      {
+        projectExists: (id) => id === 'prj_aaaaaaaaaaaa',
+        mcp: {
+          mint: (o) => {
+            calls.push(`mint:${o.projectId}:${o.provider}`)
+            return allow ? { token: 'mcp_0123456789abcdef', tokenId: 'tok_1' } : null
+          },
+          bind: (tokenId, agentId) => void calls.push(`bind:${tokenId}:${agentId}`),
+          revoke: (tokenId) => void calls.push(`revoke:${tokenId}`),
+        },
+        mcpLaunch: (token) => ({
+          name: 'agent-office',
+          command: '/wrap/mcp.sh',
+          args: [],
+          env: { AGENT_OFFICE_MCP_TOKEN: token },
+        }),
+        observation: { located: async (...a: unknown[]) => void located.push(a) },
+      },
+    )
+    return { ...t, calls, located }
+  }
+
+  it('MS-project: mints a token, passes RunnerStart.mcp, binds, sets Agent.projectId, revokes on stop', async () => {
+    const t = withMcp()
+    const agentId = await t.svc.start({ ...START, projectId: 'prj_aaaaaaaaaaaa' })
+    expect(t.runner.last().options.mcp).toEqual({
+      name: 'agent-office',
+      command: '/wrap/mcp.sh',
+      args: [],
+      env: { AGENT_OFFICE_MCP_TOKEN: 'mcp_0123456789abcdef' },
+    })
+    expect(t.agents.get(agentId)?.projectId).toBe('prj_aaaaaaaaaaaa')
+    expect(t.calls).toEqual(['mint:prj_aaaaaaaaaaaa:claude-code', `bind:tok_1:${agentId}`])
+    // The folder is reported (main only) so the record can resume natively later.
+    expect(t.located).toEqual([[agentId, 'claude-code', { cwd: START.cwd }]])
+    await t.svc.stop(agentId)
+    expect(t.calls.at(-1)).toBe('revoke:tok_1')
+  })
+
+  it('MS-project: revoked when the runner exits, and when the start fails', async () => {
+    const t = withMcp()
+    const agentId = await t.svc.start({ ...START, projectId: 'prj_aaaaaaaaaaaa' })
+    t.runner.last().exit({})
+    await tick()
+    expect(t.calls.at(-1)).toBe('revoke:tok_1')
+    t.runner.failNext = { error: 'auth' }
+    await expect(t.svc.start({ ...START, projectId: 'prj_aaaaaaaaaaaa' })).rejects.toBeInstanceOf(
+      SessionStartError,
+    )
+    expect(t.calls.at(-1)).toBe('revoke:tok_1')
+    expect(agentId).toBeTruthy()
+  })
+
+  it('MS-project: policy refuses → no MCP; unknown project → ValidationError; every start → located(cwd)', async () => {
+    const t = withMcp(false)
+    await t.svc.start({ ...START, projectId: 'prj_aaaaaaaaaaaa' })
+    expect(t.runner.last().options.mcp).toBeUndefined()
+    await expect(t.svc.start({ ...START, projectId: 'prj_bbbbbbbbbbbb' })).rejects.toBeInstanceOf(
+      ValidationError,
+    )
+    const id = await t.svc.start(START)
+    expect(t.located.at(-1)).toEqual([id, 'claude-code', { cwd: START.cwd }])
+    expect(t.agents.get(id)?.projectId).toBeUndefined()
   })
 })

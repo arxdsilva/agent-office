@@ -407,3 +407,17 @@ describe('mcpDecl / builtinDecls', () => {
     ])
   })
 })
+
+describe('agent-office’s own MCP server', () => {
+  it('CAP-context-hub: mcp:agent-office-memory is labelled “Context Hub”', () => {
+    expect(mcpDecl('agent-office-memory')).toMatchObject({
+      id: 'mcp:agent-office-memory',
+      label: 'Context Hub',
+      kind: 'mcp',
+    })
+    expect(classifyUse('claude-code', 'mcp__agent-office-memory__search_memory')).toMatchObject({
+      id: 'mcp:agent-office-memory',
+      label: 'Context Hub',
+    })
+  })
+})

@@ -5,7 +5,7 @@
 import { GraphicsAdvancedSchema, STATUS_COLORS, type GraphicsQuality } from '@agent-office/shared'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { toWorld } from '../../app/building.ts'
+import { directoryFixture, toWorld } from '../../app/building.ts'
 import { createPacer } from '../../app/frame-pacer.ts'
 import type { Effective, GraphicsStats, HardwareInfo } from '../../app/graphics-types.ts'
 import type { ViewEntry } from '../../app/library-types.ts'
@@ -15,7 +15,8 @@ import { nearestNode } from '../../app/navigation.ts'
 import type { Manifest } from '../../app/manifest.ts'
 import type { AgentPlan, BuildingLayout, Link, Vec2, Vec3 } from '../../app/office-types.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
-import { frameSurfaces } from '../../app/framing.ts'
+import { frameAgents, frameSurfaces } from '../../app/framing.ts'
+import { projectSurfaces, type ProjectLibraryVM } from '../../app/project-library.ts'
 import { effectiveGraphics, resolvePreset, type Preset } from '../../app/quality.ts'
 import type { ProviderSurfaces } from '../../app/capability-vm.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../../ports.ts'
@@ -23,6 +24,7 @@ import { AssetStore, LoadingScreen, textureBytes, within, type LoadingElements }
 import { BuildingView, type ScreenState } from './building-view.ts'
 import { anchorBookmark, bookmarksFor, CameraDirector, type Bookmark } from './camera-director.ts'
 import { CharacterSystem, loadCharacterAssets } from './characters.ts'
+import { isEmptyBox, ndcToClient, pointerToNdc } from './viewport.ts'
 import { Labels } from './labels.ts'
 import { LinkSystem } from './links.ts'
 import { RenderPipeline } from './render-pipeline.ts'
@@ -49,6 +51,10 @@ const ASSET_BASE = 'assets/'
 const SHADOW_EXTENT = 22
 const SUN_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize()
 const ELEVATOR_OPEN_DIST = 3.2
+/** The reception's Project Directory: label text, label height, and the pick proxy (shared). */
+const DIRECTORY_LABEL = 'Project Directory'
+const DIRECTORY_GEOMETRY = new THREE.BoxGeometry(2.6, 1.8, 1.6)
+const DIRECTORY_MATERIAL = new THREE.MeshBasicMaterial({ visible: false })
 const TV_ON: ScreenState = { color: '#7fb2ff', intensity: 2 }
 
 /** `?debug=1` is added by the main process only when AGENT_OFFICE_DEBUG=1 (capture scripts). */
@@ -138,6 +144,13 @@ export class ThreeScene implements SceneView {
   private selected: string | null = null
   private pickFn: (id: string | null) => void = () => {}
   private pickCapFn: (ref: CapabilityRef) => void = () => {}
+  private pickFixtureFn: (f: { kind: 'project-directory' }) => void = () => {}
+  /** Project focus (agents shown at full strength) and the selected project's Library. */
+  private focusSet: ReadonlySet<string> | null = null
+  private baseSurfaces: Map<string, ProviderSurfaces> | null = null
+  private projectLibrary: ProjectLibraryVM | null = null
+  /** Invisible pick proxy at the reception desk (the Project Directory). */
+  private directoryProxy: THREE.Mesh | null = null
   private bubbles = new Map<string, string>()
   private focusRef: CapabilityRef | null = null
   private highlighted: string | null = null
@@ -195,6 +208,11 @@ export class ThreeScene implements SceneView {
 
     this.applyGraphics(this.gfx)
     this.listen(window, 'resize', () => this.resize())
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => this.resize())
+      ro.observe(el.stage)
+      this.teardown.push(() => ro.disconnect())
+    }
     this.resize()
     this.bindInput()
     this.bindContext()
@@ -244,6 +262,7 @@ export class ThreeScene implements SceneView {
     this.pipeline.dispose()
     this.envMap?.dispose()
     this.envMap = null
+    this.setDirectoryProxy(null)
     this.labels.renderer.domElement.remove()
     // Accessible lists hold buttons bound to this scene: clear them (and their render keys).
     for (const list of [this.el.capabilities, this.el.links]) {
@@ -287,6 +306,7 @@ export class ThreeScene implements SceneView {
    */
   private tick(t: number): void {
     if (this.disposed) return
+    if (isEmptyBox(this.box())) return // stage hidden (user left the Office)
     if (!this.pacer.shouldRender(t, this.limit())) return
     const dt = this.lastFrame < 0 ? 0 : Math.min(0.5, (t - this.lastFrame) / 1000)
     this.lastFrame = t
@@ -385,6 +405,83 @@ export class ThreeScene implements SceneView {
     this.updateBookmarks()
     this.renderSigns(layout)
     this.updateSurfaces()
+    this.placeDirectory(layout)
+  }
+
+  /** The Project Directory: a pick proxy and a "Project Directory" label at the kiosk (else reception). */
+  private placeDirectory(layout: BuildingLayout): void {
+    const f = directoryFixture(layout.anchors.values())
+    if (!f) {
+      this.setDirectoryProxy(null)
+      this.labels.setFixture('project-directory', DIRECTORY_LABEL, null, () => {})
+      return
+    }
+    this.setDirectoryProxy(new THREE.Vector3(f.x, f.proxyY, f.z))
+    this.labels.setFixture(
+      'project-directory',
+      DIRECTORY_LABEL,
+      new THREE.Vector3(f.x, f.labelY, f.z),
+      () => this.pickFixtureFn({ kind: 'project-directory' }),
+    )
+  }
+
+  private setDirectoryProxy(at: THREE.Vector3 | null): void {
+    if (!at) {
+      if (this.directoryProxy) this.scene.remove(this.directoryProxy)
+      this.directoryProxy = null
+      return
+    }
+    if (!this.directoryProxy) {
+      // Shared invisible material (raycasts ignore `visible`, like the agent hit boxes).
+      this.directoryProxy = new THREE.Mesh(DIRECTORY_GEOMETRY, DIRECTORY_MATERIAL)
+      this.directoryProxy.name = 'project-directory'
+      this.directoryProxy.userData.fixture = 'project-directory'
+      this.scene.add(this.directoryProxy)
+    }
+    this.directoryProxy.position.copy(at)
+    this.directoryProxy.updateMatrixWorld()
+  }
+
+  onPickFixture(fn: (f: { kind: 'project-directory' }) => void): void {
+    this.pickFixtureFn = fn
+  }
+
+  /** Dim everyone outside the project (tags too) and bring the group into view. */
+  focusAgents(ids: string[] | null, o: { dim: boolean; frame: boolean }): void {
+    this.focusSet = ids && o.dim ? new Set(ids) : null
+    this.characters?.setFocus(this.focusSet)
+    this.labels.setFocus(this.focusSet)
+    this.el.stage.dataset.projectFocus = ids ? String(ids.length) : ''
+    if (!ids || !o.frame || !this.characters) return
+    const positions: Vec2[] = []
+    for (const id of ids) {
+      const p = this.characters.positionOf(id)
+      if (p) positions.push({ x: p.x, z: p.z })
+    }
+    const pose = frameAgents({ positions, fovDeg: this.camera.fov, aspect: this.camera.aspect })
+    if (!pose) return
+    if (this.selected) this.pickFn(null)
+    this.focusRef = null
+    this.el.stage.dataset.focus = ''
+    this.current = null
+    this.cam.flyTo({
+      target: new THREE.Vector3(pose.target.x, pose.target.y, pose.target.z),
+      position: new THREE.Vector3(pose.position.x, pose.position.y, pose.position.z),
+    })
+    this.emitViews()
+  }
+
+  /** The selected project's collections replace the provider's notebooks, shelves and boards. */
+  setProjectLibrary(vm: ProjectLibraryVM | null): void {
+    this.projectLibrary = vm
+    if (this.baseSurfaces) this.applySurfaces()
+  }
+
+  private applySurfaces(): void {
+    const base = this.baseSurfaces!
+    const byProvider = this.projectLibrary ? projectSurfaces(base, this.projectLibrary) : base
+    this.building?.setSurfaces(byProvider)
+    this.renderCapabilityList(byProvider)
   }
 
   direct(plans: Map<string, AgentPlan>, departed: string[]): void {
@@ -396,6 +493,7 @@ export class ThreeScene implements SceneView {
     for (const [id, plan] of plans) {
       this.characters?.upsert(plan, now)
       this.labels.upsert(plan.agent, plan.intent.activity, this.bubbles.get(id))
+      if (this.focusSet) this.characters?.setFocus(this.focusSet)
       const local = plan.intent.target.slice(plan.intent.target.lastIndexOf('/') + 1)
       if (local.startsWith('seat:desk:')) this.desks.set(id, plan.intent.target)
     }
@@ -411,8 +509,8 @@ export class ThreeScene implements SceneView {
     this.bubbles = s.bubbles
     for (const [id, plan] of this.plans)
       this.labels.upsert(plan.agent, plan.intent.activity, s.bubbles.get(id))
-    this.building?.setSurfaces(s.byProvider)
-    this.renderCapabilityList(s.byProvider)
+    this.baseSurfaces = s.byProvider
+    this.applySurfaces()
   }
 
   onPickCapability(fn: (ref: CapabilityRef) => void): void {
@@ -939,10 +1037,18 @@ export class ThreeScene implements SceneView {
     return true
   }
 
+  /** The stage's box (the canvas fills it). Empty while the stage is hidden. */
+  private box(): DOMRect {
+    return this.el.stage.getBoundingClientRect()
+  }
+
   private resize(): void {
-    this.pipeline.resize(innerWidth, innerHeight)
-    this.labels.setSize(innerWidth, innerHeight)
-    this.camera.aspect = innerWidth / innerHeight
+    const r = this.box()
+    // Hidden or collapsed stage: keep the last size; the observer re-measures when it shows again.
+    if (isEmptyBox(r)) return
+    this.pipeline.resize(r.width, r.height)
+    this.labels.setSize(r.width, r.height)
+    this.camera.aspect = r.width / r.height
     this.camera.updateProjectionMatrix()
     // Framed bookmarks depend on the aspect ratio.
     this.updateBookmarks()
@@ -963,6 +1069,8 @@ export class ThreeScene implements SceneView {
   private pickAt(x: number, y: number): void {
     const id = this.pick(x, y)
     if (id) return this.pickFn(id)
+    if (this.directoryProxy && this.raycaster.intersectObject(this.directoryProxy, false).length)
+      return this.pickFixtureFn({ kind: 'project-directory' })
     const ref = this.pickSurface()
     if (ref) this.pickCapFn(ref)
     else this.pickFn(null)
@@ -1000,7 +1108,8 @@ export class ThreeScene implements SceneView {
   private hoverAt(x: number, y: number): void {
     if (!this.gfx.hover || this.cam.mode !== 'orbit' || !this.building)
       return this.hover(null, x, y)
-    this.pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1)
+    const n = pointerToNdc(this.box(), x, y)
+    this.pointer.set(n.x, n.y)
     this.raycaster.setFromCamera(this.pointer, this.camera)
     this.hover(this.pickSurface(), x, y)
   }
@@ -1040,7 +1149,8 @@ export class ThreeScene implements SceneView {
       const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1])
       downAt = null
       if (moved > 5) return // it was a drag
-      this.pickAt((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
+      const n = pointerToNdc(this.box(), e.clientX, e.clientY)
+      this.pickAt(n.x, n.y)
     })
     this.listen(this.el.walkButton, 'click', () => {
       this.cam.markInput()
@@ -1127,7 +1237,7 @@ export class ThreeScene implements SceneView {
         if (!p) return null
         const v = p.clone().project(this.camera)
         if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null
-        return { x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight }
+        return ndcToClient(this.box(), v.x, v.y)
       },
       hardware: () => this.hardwareInfo(),
       gpu: () => this.stats(),

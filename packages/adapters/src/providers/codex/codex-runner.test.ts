@@ -123,6 +123,117 @@ describe('CodexRunner (fake app-server process)', () => {
     })
   })
 
+  // MCP (experimental): RunnerStart.mcp becomes thread/start config.mcp_servers.<name>.
+  it('passes RunnerStart.mcp as thread/start config.mcp_servers', async () => {
+    const f = real()
+    const mcp = {
+      name: 'agent-office',
+      command: '/u/mcp/agent-office-mcp.sh',
+      args: [],
+      env: { AGENT_OFFICE_MCP_URL: 'http://127.0.0.1:1/mcp', AGENT_OFFICE_MCP_TOKEN: 'mcp_t' },
+    }
+    await f.start({ mcp }).s.sessionId
+    expect(f.received()[3]!.params).toEqual({
+      cwd: dir,
+      approvalPolicy: 'untrusted',
+      sandbox: 'workspace-write',
+      config: {
+        mcp_servers: {
+          'agent-office': { command: mcp.command, args: [], env: mcp.env },
+        },
+      },
+    })
+  })
+
+  // codex-cli 0.162.1 asks before calling an MCP tool with mcpServer/elicitation/request. For our
+  // own project server it becomes a permission card; the answer is one-time only (never `persist`).
+  describe('MCP tool approval (mcpServer/elicitation/request)', () => {
+    // A bridge that exits at once: the fake then replies `mcp: unavailable`, which is enough here.
+    const mcp = { name: 'agent-office', command: process.execPath, args: ['-e', ''], env: {} }
+    const elicitReplies = (f: ReturnType<typeof real>) =>
+      f.received().flatMap((m) => (m.elicitReply !== undefined ? [m.elicitReply] : []))
+
+    it('asks through the permission card and accepts once on allow', async () => {
+      const f = real()
+      const { s, results } = f.start({ mcp })
+      const asked: RunnerPermission[] = []
+      s.onPermission(async (p) => {
+        asked.push(p)
+        return { behavior: 'allow' }
+      })
+      await s.sessionId
+      s.push('/mcp deploy')
+      await until(() => results.length > 0)
+      expect(asked).toEqual([{ tool: 'mcp__agent-office__search_memory', input: {}, cwd: dir }])
+      // No tool arguments reach the card; no persistent choice goes back to Codex.
+      expect(JSON.stringify(asked)).not.toContain('SENTINEL_QUERY')
+      expect(elicitReplies(f)).toEqual([{ action: 'accept', content: {} }])
+      expect(results[0]!.text).toBe('mcp: unavailable')
+    })
+
+    it('declines on deny, and when no approver is connected', async () => {
+      const f = real()
+      const { s, results } = f.start({ mcp })
+      s.onPermission(async () => ({ behavior: 'deny', message: 'no' }))
+      await s.sessionId
+      s.push('/mcp deploy')
+      await until(() => results.length > 0)
+      expect(elicitReplies(f)).toEqual([{ action: 'decline' }])
+      expect(results[0]!.text).toBe('mcp: declined')
+
+      const g = real()
+      const other = g.start({ mcp })
+      await other.s.sessionId
+      other.s.push('/mcp deploy')
+      await until(() => other.results.length > 0)
+      expect(elicitReplies(g)).toEqual([{ action: 'decline' }])
+    })
+
+    it('declines elicitations from any other server without asking', async () => {
+      const f = real()
+      const { s, results } = f.start({ mcp })
+      let asked = 0
+      s.onPermission(async () => {
+        asked++
+        return { behavior: 'allow' }
+      })
+      await s.sessionId
+      s.push('/elicit-other')
+      await until(() => results.length > 0)
+      expect(asked).toBe(0)
+      expect(elicitReplies(f)).toEqual([{ action: 'decline' }])
+
+      // Without RunnerStart.mcp there is no server of ours at all.
+      const g = real()
+      const none = g.start()
+      none.s.onPermission(async () => {
+        asked++
+        return { behavior: 'allow' }
+      })
+      await none.s.sessionId
+      none.s.push('/elicit-other')
+      await until(() => none.results.length > 0)
+      expect(asked).toBe(0)
+      expect(elicitReplies(g)).toEqual([{ action: 'decline' }])
+    })
+
+    it('cancels a pending approval on interrupt', async () => {
+      const f = real()
+      const { s, results } = f.start({ mcp })
+      let asked = false
+      s.onPermission(() => {
+        asked = true
+        return new Promise(() => {})
+      })
+      await s.sessionId
+      s.push('/mcp deploy')
+      await until(() => asked)
+      await s.interrupt()
+      await until(() => results.length > 0)
+      expect(elicitReplies(f)).toEqual([{ action: 'cancel' }])
+    })
+  })
+
   // CX-2: no login → exit 'auth' before any thread exists; the process is gone.
   it('exits with auth when Codex needs a login', async () => {
     const f = real({ FAKE_CODEX_AUTH: 'none' })

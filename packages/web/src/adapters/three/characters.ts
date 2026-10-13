@@ -164,6 +164,8 @@ const LABEL_LIFT = 0.25
 /** Same margin as motion.ts `fromPreset`: impostors start 10 m beyond the LOD1 distance. */
 const IMPOSTOR_MARGIN = 10
 const HEAD_SMOOTH_TAU = 0.12
+/** Opacity of agents outside the project focus (shared by every dimmed agent). */
+export const DIM_OPACITY = 0.3
 
 interface Agent {
   id: string
@@ -215,6 +217,8 @@ export class CharacterSystem {
   private targets: THREE.Object3D[] | undefined
   private nImpostors = 0
   private nAnimated = 0
+  /** Project focus: agents outside it are drawn at DIM_OPACITY (null: everyone at full strength). */
+  private focus: ReadonlySet<string> | null = null
   // Per-frame scratch (allocation-free update).
   private readonly frustum = new THREE.Frustum()
   private readonly proj = new THREE.Matrix4()
@@ -411,7 +415,8 @@ export class CharacterSystem {
         if (tier !== 'frozen') animated++
       }
       this.applyFade(a)
-      if (m.visible && this.blobs.visible) this.blobs.push(m.pos.x, m.pos.z, 0.95 * m.opacity)
+      if (m.visible && this.blobs.visible)
+        this.blobs.push(m.pos.x, m.pos.z, 0.95 * m.opacity * this.dimOf(a))
       this.updateHead(a, dt)
     }
     this.blobs.end()
@@ -561,11 +566,22 @@ export class CharacterSystem {
     a.model.visible = !on
   }
 
+  /** Focus dimming for one agent (1 when no focus or the agent is in it). */
+  private dimOf(a: Agent): number {
+    return this.focus && !this.focus.has(a.id) ? DIM_OPACITY : 1
+  }
+
+  /** Dims every agent outside `ids` (null clears). Takes effect on the next frame. */
+  setFocus(ids: ReadonlySet<string> | null): void {
+    this.focus = ids
+  }
+
   private applyFade(a: Agent) {
     const m = a.mover.motion
-    if (m.visible && m.opacity < 1 && !a.impostor) {
+    const opacity = m.opacity * this.dimOf(a)
+    if (m.visible && opacity < 1 && !a.impostor) {
       a.fade.begin(a.parts.meshes)
-      a.fade.set(m.opacity)
+      a.fade.set(opacity)
     } else if (a.fade.active) a.fade.end()
   }
 

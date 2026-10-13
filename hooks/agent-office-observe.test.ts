@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -246,6 +246,57 @@ describe('fromStdin (HK-6..8)', () => {
       async () => (n++, new Response()),
     )
     expect(n).toBe(0)
+  })
+})
+
+describe('fromStdin: workspace key', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ao-wk-'))
+  const tokenFile = join(home, 'token')
+  const saltFile = join(home, 'workspace-salt')
+  writeFileSync(tokenFile, 'tok\n')
+  const repoDir = join(home, 'SENTINEL-parent', 'repo')
+  mkdirSync(join(repoDir, '.git'), { recursive: true })
+  const env = (o: object = {}) => ({
+    AGENT_OFFICE_URL: 'http://127.0.0.1:4317',
+    AGENT_OFFICE_TOKEN_FILE: tokenFile,
+    AGENT_OFFICE_WORKSPACE_SALT_FILE: saltFile,
+    ...o,
+  })
+  const post = async (e: object) => {
+    let body = ''
+    const f = async (_u: string, init: any) => ((body = init.body), new Response())
+    await fromStdin(
+      'cursor',
+      JSON.stringify(cursor({ hook_event_name: 'stop', workspace_roots: [repoDir] })),
+      e as any,
+      f,
+    )
+    return body
+  }
+
+  it('sends wk_ + 32 hex and never the path', async () => {
+    writeFileSync(saltFile, 'ab'.repeat(32) + '\n')
+    const body = await post(env())
+    expect(JSON.parse(body).workspace).toMatch(/^wk_[0-9a-f]{32}$/)
+    expect(body).not.toContain('SENTINEL-parent')
+    expect(body).not.toContain(home)
+  })
+  it('omits the field without a salt or outside git, and still posts', async () => {
+    expect(
+      JSON.parse(await post(env({ AGENT_OFFICE_WORKSPACE_SALT_FILE: join(home, 'none') }))),
+    ).not.toHaveProperty('workspace')
+    writeFileSync(saltFile, 'not-hex')
+    expect(JSON.parse(await post(env()))).not.toHaveProperty('workspace')
+    writeFileSync(saltFile, 'ab'.repeat(32))
+    const f = async (_u: string, init: any) => ((body = init.body), new Response())
+    let body = ''
+    await fromStdin(
+      'cursor',
+      JSON.stringify(cursor({ hook_event_name: 'stop', workspace_roots: [tmpdir()] })),
+      env() as any,
+      f,
+    )
+    expect(JSON.parse(body).status).toBe('waiting')
   })
 })
 

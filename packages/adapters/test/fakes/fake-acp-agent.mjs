@@ -11,12 +11,15 @@
 //   /fs       sends fs/read_text_file (expects an error), then end_turn
 //   /ext      sends a cursor/* extension request + unknown notifications/updates, then end_turn
 //   /partial  writes one message line split across two stdout chunks, then end_turn
+//   /mcp <query>  calls search_memory on the first stdio server from session/new mcpServers and
+//                 replies `mcp: <titles>` | `mcp: none` | `mcp: unavailable`
 // Env: FAKE_ACP_AUTH=required (session/new → auth_required until authenticate) | fail (authenticate
 // fails too) · FAKE_ACP_VERSION (answer another protocolVersion) · FAKE_ACP_SESSION (session id) ·
 // FAKE_ACP_ADDDIRS=1 (advertise additionalDirectories) · FAKE_ACP_NOMODELS=1 · FAKE_ACP_NOFLAG=1
 // (help without the ACP flag) · FAKE_ACP_HANG=1 (--version never returns) · FAKE_LOG (append
 // every received message, as JSON lines).
 import { appendFileSync } from 'node:fs'
+import { probeMcp } from './mcp-probe.mjs'
 
 const argv = process.argv.slice(2)
 const env = process.env
@@ -138,6 +141,7 @@ let currentMode = P.modes[0].id
 let currentModel = 'auto'
 let active // { id, cancel: () => void }
 let toolSeq = 0
+let mcpServer // the first stdio server from session/new mcpServers, if any
 
 const update = (u) => notify('session/update', { sessionId, update: u })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -192,6 +196,10 @@ async function prompt(m) {
   }
 
   if (text.startsWith('/crash')) process.exit(1)
+  if (text.startsWith('/mcp')) {
+    say([await probeMcp(mcpServer, text.slice(4).trim())])
+    return endTurn(m.id, 'end_turn')
+  }
   if (text.startsWith('/quick')) {
     say([`ok: ${text}`])
     return endTurn(m.id, 'end_turn')
@@ -323,6 +331,15 @@ function handle(m) {
       return reply(m.id, {})
     case 'session/new': {
       if (!authenticated) return fail(m.id, -32000, P.authMessage)
+      // ACP stdio servers: {name, command, args, env: [{name, value}]}.
+      {
+        const s = (m.params?.mcpServers ?? [])[0]
+        mcpServer = s && {
+          command: s.command,
+          args: s.args ?? [],
+          env: Object.fromEntries((s.env ?? []).map((e) => [e.name, e.value])),
+        }
+      }
       const noModels = !!env.FAKE_ACP_NOMODELS
       return reply(m.id, {
         sessionId,

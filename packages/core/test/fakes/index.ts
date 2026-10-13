@@ -335,3 +335,4 @@ export class FakeWindow implements WindowState {
   }
 }
 export * from './agent-runner.ts'
+export * from './projects.ts'

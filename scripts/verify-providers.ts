@@ -5,11 +5,44 @@
 //
 //   pnpm exec tsx scripts/verify-providers.ts [--only codex,cursor] [--json]
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import type { AgentRunner, ProviderProbe, RunnerSession } from '@agent-office/core'
+import {
+  createOffice,
+  type AgentRunner,
+  type ProviderProbe,
+  type RunnerSession,
+} from '@agent-office/core'
+import {
+  FakeClaudeSettingsStore,
+  FakeHookRunner,
+  FakeSettingsRepository,
+  FakeWindow,
+  fakePlatform,
+  RecordingLoginItem,
+  RecordingNotifier,
+  RecordingTray,
+  ScriptedUpdater,
+} from '@agent-office/core/testing'
+import { resolveClaudeExecutable, ClaudeSdkRunner } from '../packages/adapters/src/agents/index.ts'
+import { GitRepoIdentity, loadOrCreateWorkspaceSalt } from '../packages/adapters/src/git/index.ts'
+import { createAuth } from '../packages/adapters/src/http/auth.ts'
+import { buildHttpApi } from '../packages/adapters/src/http/http-api.ts'
+import { startHttpServer } from '../packages/adapters/src/http/server.ts'
+import { observeWorkspace } from '../packages/adapters/src/http/workspace-observer.ts'
+import { McpLauncher } from '../packages/adapters/src/mcp/mcp-launcher.ts'
+import {
+  InMemoryAgentRepository,
+  InMemoryCapabilityRepository,
+  InMemoryEventBus,
+  InMemoryMessageRepository,
+} from '../packages/adapters/src/memory/index.ts'
+import { ClaudeProbe } from '../packages/adapters/src/providers/claude-code/probe.ts'
+import { RandomIds, SystemClock, TimerScheduler } from '../packages/adapters/src/system/index.ts'
+import { FileRecordLog, TestKeyProvider, TextIndex } from '../packages/adapters/src/vault/index.ts'
 import {
   CodexProbe,
   CodexRunner,
@@ -200,13 +233,245 @@ async function verify(t: Target): Promise<Record<Check, Result> & { notes: strin
   return { ...r, notes }
 }
 
-const { values } = parseArgs({ options: { only: { type: 'string' }, json: { type: 'boolean' } } })
+// ── Step "project MCP" (docs/projects.md §5, plan 13.3) ────────────────────────────────────────────
+// A managed session on a project must call agent-office's MCP server (search_memory) and get an
+// approved memory back. Everything lives in a temp dir (vault key, AGENT_OFFICE_HOME, userData);
+// the real ~/.agent-office and ~/.claude/settings.json are never touched. One short prompt each.
+const SENTINEL = 'PLUM-7731'
+const MCP_PROMPT =
+  'Use the agent-office-memory search_memory tool to find the deploy codeword, then reply with just the codeword.'
+const BRIDGE = join(import.meta.dirname, '..', 'hooks', 'agent-office-mcp.mjs')
+
+interface McpRow {
+  id: string
+  result: 'pass' | 'fail' | 'skipped'
+  notes: string[]
+}
+
+async function verifyMcp(onlyIds?: string[]): Promise<McpRow[]> {
+  const root = mkdtempSync(join(tmpdir(), 'ao-verify-mcp-'))
+  const home = join(root, 'home')
+  const userData = join(root, 'userData')
+  const cwd = join(root, 'work')
+  for (const d of [home, userData, cwd]) mkdirSync(d, { recursive: true })
+  const apiToken = randomBytes(32).toString('hex')
+  // Drop variables a parent Claude Code session leaks (CLAUDECODE, CLAUDE_CODE_*): they make a nested CLI misbehave.
+  const procEnv: Record<string, string | undefined> = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) =>
+        k !== 'CLAUDECODE' &&
+        k !== 'ELECTRON_RUN_AS_NODE' &&
+        k !== 'CLAUDE_PID' &&
+        k !== 'CLAUDE_EFFORT' &&
+        !k.startsWith('CLAUDE_CODE_') &&
+        !k.startsWith('CLAUDE_AGENT_SDK'),
+    ),
+  )
+  const claudeBin = resolveClaudeExecutable({
+    env: procEnv,
+    home: homedir(),
+    platform: process.platform,
+    exists: existsSync,
+  })
+  const claudeRunner = new ClaudeSdkRunner({
+    env: procEnv,
+    log: {
+      debug: () => {},
+      info: () => {},
+      warn: (m: string) => console.log(`  [claude-sdk] ${m}`),
+      error: (m: string) => console.log(`  [claude-sdk] ${m}`),
+    } as never,
+    ...(claudeBin ? { executable: claudeBin } : {}),
+  })
+  const codexRunner = new CodexRunner({})
+  const scheduler = new TimerScheduler()
+  let base = ''
+  const launcher = new McpLauncher({
+    userData,
+    execPath: process.execPath,
+    script: BRIDGE,
+    platform: process.platform,
+    runAsNode: false,
+    url: () => base,
+  })
+  const office = createOffice({
+    agents: new InMemoryAgentRepository(),
+    capabilities: new InMemoryCapabilityRepository(),
+    messages: new InMemoryMessageRepository(),
+    bus: new InMemoryEventBus(),
+    clock: new SystemClock(),
+    ids: new RandomIds(),
+    scheduler,
+    settingsRepo: new FakeSettingsRepository(),
+    loginItem: new RecordingLoginItem(),
+    claudeSettings: new FakeClaudeSettingsStore(),
+    hookRunner: new FakeHookRunner(),
+    notifier: new RecordingNotifier(),
+    tray: new RecordingTray(),
+    window: new FakeWindow(),
+    updater: new ScriptedUpdater(),
+    platform: fakePlatform({ packaged: false }),
+    releaseUrl: 'https://example.invalid',
+    runner: claudeRunner,
+    providers: [{ provider: 'codex', runner: codexRunner }],
+    runtimes: new Map([['codex', codexRunner]]),
+    vault: new FileRecordLog({
+      dir: join(userData, 'vault'),
+      keys: new TestKeyProvider({ master: 'verify-mcp' }),
+    }),
+    repoIdentity: new GitRepoIdentity({ salt: loadOrCreateWorkspaceSalt(home) }),
+    searchIndex: new TextIndex(),
+    random: { token: (n) => randomBytes(n).toString('hex') },
+    mcpLaunch: (token) => launcher.launch(token),
+  })
+  const projects = office.projects!
+  await office.providers.setEnabled('codex', true)
+  await projects.load()
+  let auth = createAuth({ token: apiToken, port: 0 })
+  const app = buildHttpApi(
+    {
+      activity: observeWorkspace(office.activity, projects.observation),
+      inbox: office.inbox,
+      chat: office.chat,
+      query: office.query,
+      capabilities: office.capabilities,
+      mcp: projects.mcp,
+    },
+    {
+      token: apiToken,
+      hostAllowed: (h) => auth.hostAllowed(h),
+      originAllowed: (x) => auth.originAllowed(x),
+      bearerOk: (h) => auth.bearerOk(h),
+      tokenOk: (t) => auth.tokenOk(t),
+    },
+  )
+  const server = await startHttpServer(app, { host: '127.0.0.1', port: 0 })
+  auth = createAuth({ token: apiToken, port: server.port })
+  base = `http://127.0.0.1:${server.port}`
+  await launcher.ensureInstalled()
+
+  const project = await projects.catalog.create({ name: 'Verify', folders: [] })
+  await projects.memory.create({
+    projectId: project.id,
+    scope: 'project',
+    kind: 'decision',
+    title: `The deploy codeword is ${SENTINEL}`,
+    body: `The deploy codeword is ${SENTINEL}. Say it when asked for the deploy codeword.`,
+  })
+
+  const rows: McpRow[] = []
+  const targets: { id: 'claude-code' | 'codex'; probe: ProviderProbe; modeId?: string }[] = [
+    {
+      id: 'claude-code',
+      probe: new ClaudeProbe({ resolve: () => claudeBin }),
+    },
+    { id: 'codex', probe: new CodexProbe({}), modeId: 'ask' },
+  ]
+  try {
+    for (const t of targets.filter((x) => !onlyIds || onlyIds.includes(x.id))) {
+      const notes: string[] = []
+      const probe = await t.probe.detect()
+      if (!probe.installed || !probe.flagsOk) {
+        rows.push({ id: t.id, result: 'skipped', notes: ['not installed (or flags missing)'] })
+        continue
+      }
+      if (probe.auth === 'needed') {
+        rows.push({ id: t.id, result: 'skipped', notes: ['not logged in'] })
+        continue
+      }
+      notes.push(`version ${probe.version ?? '?'}`)
+      process.stdout.write(`verifying project MCP with ${t.id}…\n`)
+      let agentId: string | undefined
+      let result: McpRow['result'] = 'fail'
+      try {
+        agentId = await withTimeout(
+          office.sessions!.start({
+            ...(t.id === 'codex' ? { provider: 'codex' as const } : {}),
+            ...(t.modeId ? { modeId: t.modeId } : {}),
+            projectId: project.id,
+            cwd,
+            name: `verify-mcp-${t.id}`,
+            mode: 'default',
+            extraDirs: [],
+            chrome: false,
+            first: { text: MCP_PROMPT, context: [], use: [] },
+          }),
+        )
+        const id = agentId
+        const seen = new Set<string>()
+        const deadline = Date.now() + STEP_MS
+        let reply = ''
+        while (Date.now() < deadline) {
+          // Approve the MCP tool only; deny anything else the runner asks for.
+          for (const req of office.sessions!.pending(id)) {
+            if (seen.has(req.id)) continue
+            seen.add(req.id)
+            const isMcp = /agent-office|search_memory|mcp/i.test(`${req.tool} ${req.summary}`)
+            notes.push(`permission ${isMcp ? 'allowed' : 'denied'}: ${req.tool}`)
+            office.sessions!.answer(id, req.id, isMcp ? 'allow' : 'deny')
+          }
+          const msg = office.chat
+            .history(id)
+            .find((m) => m.from === 'agent' && m.text.includes(SENTINEL))
+          if (msg) {
+            reply = msg.text
+            break
+          }
+          await new Promise((ok) => setTimeout(ok, 250))
+        }
+        const retrieved = projects.context.inspect(id).retrieved
+        const replyOk = reply.includes(SENTINEL)
+        const retrievalOk = retrieved.some((r) => r.tool === 'search_memory')
+        if (!replyOk) {
+          const last = office.chat
+            .history(id)
+            .filter((m) => m.from === 'agent')
+            .at(-1)
+          notes.push(
+            `no sentinel in reply; last agent text: ${(last?.text ?? '(none)').slice(0, 160)}`,
+          )
+        }
+        if (!retrievalOk) notes.push('no mcp.retrieval recorded for this session')
+        else
+          notes.push(
+            `mcp.retrieval x${retrieved.length} (${retrieved.map((r) => r.tool).join(',')})`,
+          )
+        result = replyOk && retrievalOk ? 'pass' : 'fail'
+      } catch (e) {
+        const msg = (e as Error).message
+        notes.push(`error: ${msg}`)
+        if (/auth/i.test(msg)) result = 'skipped'
+      } finally {
+        if (agentId) await office.sessions!.stop(agentId).catch(() => {})
+      }
+      rows.push({ id: t.id, result, notes })
+    }
+  } finally {
+    await office.sessions!.stopAll().catch(() => {})
+    projects.mcp.revokeAll()
+    await projects.store.flush().catch(() => {})
+    await server.close().catch(() => {})
+    scheduler.dispose()
+    rmSync(root, { recursive: true, force: true })
+  }
+  return rows
+}
+
+const { values } = parseArgs({
+  options: {
+    only: { type: 'string' },
+    json: { type: 'boolean' },
+    'mcp-only': { type: 'boolean' },
+    'skip-mcp': { type: 'boolean' },
+  },
+})
 const only = values.only?.split(',')
 const rows: (Record<string, unknown> & { id: string })[] = []
-for (const t of TARGETS.filter((x) => !only || only.includes(x.id))) {
+for (const t of values['mcp-only'] ? [] : TARGETS.filter((x) => !only || only.includes(x.id))) {
   process.stdout.write(`verifying ${t.id}…\n`)
   rows.push({ id: t.id, ...(await verify(t)) })
 }
+const mcpRows = values['skip-mcp'] ? [] : await verifyMcp(only)
 if (values.json) console.log(JSON.stringify(rows, null, 2))
 else {
   console.log(['provider', ...CHECKS].join('\t'))
@@ -214,5 +479,18 @@ else {
     console.log([row.id, ...CHECKS.map((c) => row[c])].join('\t'))
     for (const n of row.notes as string[]) console.log(`  · ${n}`)
   }
+  if (mcpRows.length) {
+    console.log('\nproject MCP\tresult')
+    for (const row of mcpRows) {
+      console.log(`${row.id}\t${row.result}`)
+      for (const n of row.notes) console.log(`  · ${n}`)
+    }
+  }
 }
-process.exit(rows.some((row) => CHECKS.some((c) => row[c] === 'fail')) ? 1 : 0)
+if (values.json && mcpRows.length) console.log(JSON.stringify({ projectMcp: mcpRows }, null, 2))
+process.exit(
+  rows.some((row) => CHECKS.some((c) => row[c] === 'fail')) ||
+    mcpRows.some((r) => r.result === 'fail')
+    ? 1
+    : 0,
+)

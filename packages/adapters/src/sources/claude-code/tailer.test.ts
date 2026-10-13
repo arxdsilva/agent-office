@@ -283,6 +283,52 @@ describe('ClaudeCodeTailer: active cwds and Claude paths (capability discovery)'
   })
 })
 
+describe('ClaudeCodeTailer: onSessionLocated', () => {
+  function build() {
+    const files = new MemoryTranscriptFiles()
+    const located: [string, string, string][] = []
+    const events: AgentEvent[] = []
+    const t = new ClaudeCodeTailer({
+      dir: '/h/.claude/projects',
+      files,
+      activity: { report: (e) => (events.push(...e), e.length) },
+      clock: new FakeClock(T0 + 10),
+      scheduler: new ManualScheduler(),
+      expireAfterMs: 1_000,
+      onSessionLocated: (...a) => located.push(a),
+    })
+    return { files, located, events, t }
+  }
+
+  it('fires once per top-level session with an opaque ref and never leaks the cwd', async () => {
+    const { files, located, events, t } = build()
+    const f = '/h/.claude/projects/p/sess-1.jsonl'
+    files.write(f, user('hi') + '\n' + user('again') + '\n', T0)
+    files.write('/h/.claude/projects/p/sess-1/subagents/agent-a1.jsonl', user('sub') + '\n', T0)
+    await t.tick()
+    await t.tick()
+    expect(located).toHaveLength(1)
+    const [sid, cwd, ref] = located[0]!
+    expect(sid).toBe('sess-1')
+    expect(cwd).toBe('/home/dev/projects/shop')
+    expect(ref).toMatch(/^tr_[0-9a-f]{24}$/)
+    expect(ref).not.toContain('sess-1')
+    expect(t.refs.resolve(ref)).toBe(f)
+    expect(JSON.stringify(events)).not.toContain('/home/dev')
+  })
+
+  it('waits for a line that carries a cwd and ignores malformed ones', async () => {
+    const { files, located, t } = build()
+    const f = '/h/.claude/projects/p/s2.jsonl'
+    files.write(f, '{"cwd": broken\n' + JSON.stringify({ type: 'x', cwd: 5 }) + '\n', T0)
+    await t.tick()
+    expect(located).toHaveLength(0)
+    files.append(f, user('ok') + '\n', T0)
+    await t.tick()
+    expect(located).toHaveLength(1)
+  })
+})
+
 describe('ClaudeCodeTailer: stale cwds', () => {
   it('does not announce cwds whose sessions are already expired', async () => {
     const files = new MemoryTranscriptFiles()

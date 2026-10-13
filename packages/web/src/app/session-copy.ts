@@ -75,6 +75,8 @@ export const SESSION_COPY = {
     name: 'Name',
     model: 'Model',
     modelDefault: 'Default (recommended)',
+    project: 'Project',
+    noProject: 'No project',
     mode: 'Mode',
     extra: 'Extra folders',
     addFolder: '+ Add folder',

@@ -1,0 +1,5 @@
+export { FileRecordLog, type FileRecordLogOptions } from './file-record-log.ts'
+export { TestKeyProvider, type KeyProvider } from './key-provider.ts'
+export { MemoryRecordLog } from './memory-record-log.ts'
+export { PARTITION } from './partition.ts'
+export { TextIndex, tokenize } from './text-index.ts'

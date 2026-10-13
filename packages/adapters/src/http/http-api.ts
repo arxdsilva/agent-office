@@ -1,5 +1,6 @@
 import type {
   AgentInbox,
+  McpMemoryAccess,
   OfficeQuery,
   ReportActivity,
   ReportCapabilities,
@@ -13,6 +14,7 @@ import {
 } from '@agent-office/shared'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import type { Auth } from './auth.ts'
+import { registerMcpRoute } from '../mcp/mcp-route.ts'
 import { httpStatusFor } from './errors.ts'
 
 /** Mock-mode only: spawn N extra agents for perf testing. */
@@ -29,6 +31,8 @@ export interface HttpApiPorts {
   /** Generic providers declare what their agents can use (docs/capabilities.md §4). */
   capabilities?: ReportCapabilities
   mock?: MockControl
+  /** agent-office's project MCP server (`POST /mcp`, docs/projects.md §5); route only when given. */
+  mcp?: McpMemoryAccess
 }
 
 const MAX_WAIT_SEC = 25
@@ -143,6 +147,8 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
       },
     )
   }
+
+  if (ports.mcp) registerMcpRoute(app, ports.mcp)
 
   if (ports.mock) {
     const mock = ports.mock

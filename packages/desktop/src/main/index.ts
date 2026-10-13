@@ -19,6 +19,7 @@ import {
   protocol,
   session,
 } from 'electron'
+import { ElectronKeyProvider } from './adapters/electron-safe-storage.ts'
 import { ElectronNotifier } from './adapters/electron-notifier.ts'
 import { ElectronTray } from './adapters/electron-tray.ts'
 import { ElectronUpdater } from './adapters/electron-updater.ts'
@@ -75,10 +76,12 @@ function resources() {
   return app.isPackaged
     ? {
         hookScript: join(process.resourcesPath, 'hooks', 'agent-office-hook.mjs'),
+        mcpScript: join(process.resourcesPath, 'hooks', 'agent-office-mcp.mjs'),
         icons: join(process.resourcesPath, 'icons'),
       }
     : {
         hookScript: join(app.getAppPath(), '..', '..', 'hooks', 'agent-office-hook.mjs'),
+        mcpScript: join(app.getAppPath(), '..', '..', 'hooks', 'agent-office-mcp.mjs'),
         icons: join(app.getAppPath(), 'build'),
         // Fake provider CLIs for E2E (AGENT_OFFICE_FAKE_PROVIDERS=1); never shipped.
         fakesDir: join(app.getAppPath(), '..', '..', 'packages', 'adapters', 'test', 'fakes'),
@@ -235,6 +238,9 @@ async function main(): Promise<void> {
     env: loadEnv(process.env, homedir()),
     userDataDir: app.getPath('userData'),
     hookScript: paths.hookScript,
+    mcpScript: paths.mcpScript,
+    // After app ready: safeStorage wraps the vault's data key (no keychain → memory-only + banner).
+    keyProvider: new ElectronKeyProvider(),
     fakesDir: 'fakesDir' in paths ? paths.fakesDir : undefined,
     execPath: process.execPath,
     runAsNode: true,

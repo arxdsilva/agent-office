@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { frameSurfaces, type FrameInput } from './framing.ts'
+import {
+  centroid as agentsCentroid,
+  frameAgents,
+  frameSurfaces,
+  type FrameInput,
+} from './framing.ts'
 import type { Vec3 } from './office-types.ts'
 
 const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z })
@@ -96,5 +101,62 @@ describe('frameSurfaces', () => {
   it('an empty surface list gives a pose at the inside point', () => {
     const pose = frameSurfaces({ ...base, surfaces: [] })
     expect(pose.target).toEqual({ x: 0, y: 1.2, z: 3 })
+  })
+})
+
+describe('frameAgents', () => {
+  const view = { fovDeg: 50, aspect: 16 / 9 }
+
+  it('FA-1: nobody to frame gives null, and the centroid is the mean', () => {
+    expect(frameAgents({ ...view, positions: [] })).toBeNull()
+    expect(agentsCentroid([])).toBeNull()
+    expect(
+      agentsCentroid([
+        { x: 0, z: 0 },
+        { x: 4, z: 2 },
+      ]),
+    ).toEqual({ x: 2, z: 1 })
+  })
+
+  it('FA-2: looks at the group centroid from above and from the south', () => {
+    const p = frameAgents({
+      ...view,
+      positions: [
+        { x: 0, z: 0 },
+        { x: 10, z: 0 },
+      ],
+    })!
+    expect(p.target).toEqual({ x: 5, y: 1, z: 0 })
+    expect(p.position.y).toBeGreaterThan(p.target.y)
+    expect(p.position.z).toBeGreaterThan(0)
+    expect(p.position.x).toBeCloseTo(5)
+  })
+
+  it('FA-3: a wider group sits further back, within the clamp', () => {
+    const dist = (w: number) => {
+      const p = frameAgents({
+        ...view,
+        positions: [
+          { x: 0, z: 0 },
+          { x: w, z: 0 },
+        ],
+      })!
+      return Math.hypot(
+        p.position.x - p.target.x,
+        p.position.y - p.target.y,
+        p.position.z - p.target.z,
+      )
+    }
+    expect(dist(30)).toBeGreaterThan(dist(10))
+    expect(dist(0)).toBeCloseTo(7)
+    expect(dist(900)).toBeCloseTo(45)
+  })
+
+  it('FA-4: a custom direction and a zero direction (falls back to +z)', () => {
+    const e = frameAgents({ ...view, positions: [{ x: 0, z: 0 }], from: { x: 1, z: 0 } })!
+    expect(e.position.x).toBeGreaterThan(0)
+    expect(e.position.z).toBeCloseTo(0)
+    const z = frameAgents({ ...view, positions: [{ x: 0, z: 0 }], from: { x: 0, z: 0 } })!
+    expect(z.position.z).toBeGreaterThan(0)
   })
 })

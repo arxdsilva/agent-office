@@ -50,10 +50,12 @@ export class PixelRenderer {
   /** Matches the backing store to the window in device pixels and picks the integer scale. */
   resize(): void {
     const dpr = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1
-    const cssW = this.stage.clientWidth || innerWidth
-    const cssH = this.stage.clientHeight || innerHeight
-    this.width = Math.max(1, Math.round(cssW * dpr))
-    this.height = Math.max(1, Math.round(cssH * dpr))
+    const cssW = this.stage.clientWidth
+    const cssH = this.stage.clientHeight
+    // Hidden or collapsed stage: keep the last size (the first call falls back to the window).
+    if (!(cssW > 0 && cssH > 0) && this.width > 0) return
+    this.width = Math.max(1, Math.round((cssW || innerWidth) * dpr))
+    this.height = Math.max(1, Math.round((cssH || innerHeight) * dpr))
     if (this.canvas.width !== this.width) this.canvas.width = this.width
     if (this.canvas.height !== this.height) this.canvas.height = this.height
     this.scale = Math.max(1, Math.floor(Math.min(this.width / VIEW_W, this.height / VIEW_H)))

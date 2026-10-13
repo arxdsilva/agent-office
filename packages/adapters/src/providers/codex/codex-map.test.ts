@@ -3,6 +3,7 @@ import {
   approvalToPermission,
   commandHead,
   decisionToCodex,
+  elicitationToPermission,
   itemEvent,
   modePreset,
   replySnippet,
@@ -121,6 +122,51 @@ describe('approvalToPermission', () => {
       cwd: '/work/app',
     })
     expect(approvalToPermission('fileChange', {}, undefined, '/w').input).toEqual({ file_path: '' })
+  })
+})
+
+describe('elicitationToPermission', () => {
+  const tool = (over: Record<string, unknown> = {}, meta: Record<string, unknown> = {}) => ({
+    threadId: 't',
+    serverName: 'agent-office',
+    mode: 'form',
+    message: 'Allow the agent-office MCP server to run tool "search_memory"?',
+    _meta: { codex_approval_kind: 'mcp_tool_call', persist: ['session', 'always'], ...meta },
+    ...over,
+  })
+
+  it('maps a tool approval from our server to an mcp__ tool without its arguments', () => {
+    expect(elicitationToPermission(tool(), 'agent-office', '/w')).toEqual({
+      tool: 'mcp__agent-office__search_memory',
+      input: {},
+      cwd: '/w',
+    })
+    // `tool_title` wins over the message when present.
+    expect(
+      elicitationToPermission(
+        tool({ message: 'x' }, { tool_title: 'search_memory' }),
+        'agent-office',
+        '/w',
+      )?.tool,
+    ).toBe('mcp__agent-office__search_memory')
+  })
+
+  it('refuses other servers, other kinds, URL elicitations and odd tool names', () => {
+    expect(elicitationToPermission(tool(), undefined, '/w')).toBeUndefined()
+    expect(
+      elicitationToPermission(tool({ serverName: 'evil' }), 'agent-office', '/w'),
+    ).toBeUndefined()
+    expect(
+      elicitationToPermission(tool({}, { codex_approval_kind: 'other' }), 'agent-office', '/w'),
+    ).toBeUndefined()
+    expect(elicitationToPermission(tool({ _meta: null }), 'agent-office', '/w')).toBeUndefined()
+    expect(elicitationToPermission(tool({ mode: 'url' }), 'agent-office', '/w')).toBeUndefined()
+    expect(
+      elicitationToPermission(tool({ message: 'run tool "a b; rm -rf /"?' }), 'agent-office', '/w'),
+    ).toBeUndefined()
+    expect(
+      elicitationToPermission(tool({ message: 'no tool' }), 'agent-office', '/w'),
+    ).toBeUndefined()
   })
 })
 

@@ -77,6 +77,7 @@ export function interactionTarget(
 export function promptFor(t: InteractTarget): string {
   if (t.kind === 'agent') return PIXEL_COPY.prompt.talk
   if (t.kind === 'capability') return PIXEL_COPY.prompt.open
+  if (t.object === 'project-directory') return PIXEL_COPY.prompt.open
   return PIXEL_COPY.prompt.read
 }
 

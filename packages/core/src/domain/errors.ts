@@ -33,3 +33,15 @@ export class SessionStartError extends DomainError {
 }
 /** The action is not allowed by the user's settings (e.g. bypass mode while it's disabled). */
 export class NotAllowedError extends DomainError {}
+/** The principal may not do this (docs/projects.md §2). Carries no detail on purpose. */
+export class ForbiddenError extends DomainError {
+  constructor() {
+    super('forbidden')
+  }
+}
+/** An id that names nothing the caller can see (projects, sessions, memory, handoffs). */
+export class NotFoundError extends DomainError {
+  constructor(readonly what: string) {
+    super(`not found: ${what}`)
+  }
+}

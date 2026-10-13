@@ -71,3 +71,33 @@ export {
   type ProviderHookTarget,
   type ProviderHookTargets,
 } from './application/provider-hook-service.ts'
+// Projects-first workspace (docs/projects.md).
+export { createProjects, type Projects, type ProjectsDeps } from './application/projects.ts'
+export {
+  McpMemoryAccessService,
+  MCP_CALLS_PER_MIN,
+  MCP_ITEM_BODY,
+  MCP_PROPOSALS_PER_HOUR,
+  MCP_RESULT_CHARS,
+} from './application/mcp-memory-access.ts'
+export { InMemorySearchIndex } from './application/global-search.ts'
+export { basenameOnly } from './application/managed-session-service.ts'
+export {
+  authorize,
+  ACTIONS,
+  USER,
+  type Action,
+  type Principal,
+  type Resource,
+} from './domain/authz.ts'
+export {
+  matchProject,
+  type MatchResult,
+  type MatchRule,
+  type Suggestion,
+} from './domain/repo-identity.ts'
+export { bm25, rankContext, tokenize, DEFAULT_BUDGET_CHARS } from './domain/context-rank.ts'
+export { DATA_PREFACE, CONTEXT_OPEN, CONTEXT_CLOSE, renderContextBlock } from './domain/handoff.ts'
+export type { Project, RepoLink } from './domain/project.ts'
+export type { SessionRecord } from './domain/session-record.ts'
+export type { MemoryItem } from './domain/memory.ts'

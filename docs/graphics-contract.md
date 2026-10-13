@@ -59,9 +59,14 @@ The single source of truth shared by the Blender pipeline (`assets/blender/**`) 
   - `port:book:<0-23>`: the spine center
   - `port:board:<0-5>`: the board center
   - `port:notebook:<0-7>`
+- **Project spaces (additive, atrium only):** the Project Hub, the Handoff Station and the Session Archive. Older manifests without them still parse and fall back to the reception desk:
+  - `kiosk:project-directory` (1, stand, room `hub`): the visitor spot in front of the Project Directory kiosk; the kiosk stands 1.1 m ahead along the anchor's heading. The runtime pick proxy and the 2D `project-directory` interaction use it, falling back to the centre of `spot:reception:*` when it is missing.
+  - `console:context:<0-5>` (stand, room `hub`): the visitor spot at each of six consoles around the Context Hub core, facing the core. Kind `console` is new (grammar `console:<group>:<index>`); `kiosk` takes a name (`kiosk:<name>`, lowercase and hyphens).
+  - `spot:handoff:<0-1>` (stand, room `plaza`): the two sides of the Handoff Station pad, facing each other across the pedestal.
+  - `port:archive:<0-11>` (a port, y ≈ 1.6, room-less): the spine of the volume in each of the twelve arched alcoves of the Session Archive, left to right. Alcoves 0–11 are archive volumes for the runtime to label or glow; nothing draws on them yet.
 - **Required counts per module:**
   - **wing:** 24 desk seats (6 pods × 4); `meeting:A` and `meeting:B` with 6 seats each; 4 booth spots; 6 kitchen spots; 8 lounge seats; **8 station spots; 4 reading seats; 2 shelf spots; ports for all 24 desks, 8 stations, 24 books, 6 boards and 8 notebooks**
-  - **atrium:** 4 reception spots, 6 elevator spots, 24 cafe seats, 2 ping-pong tables × A/B
+  - **atrium:** 4 reception spots, 6 elevator spots, 24 cafe seats, 2 ping-pong tables × A/B; **1 `kiosk:project-directory`, 6 `console:context:*`, 2 `spot:handoff:*`, 12 `port:archive:*`**
   - **garden:** 6 garden spots
 
 ## 5. glTF node roles (runtime-driven surfaces)
@@ -73,6 +78,8 @@ three.js strips `:` from node names, so the **role is carried in glTF `extras`**
 | `led` | `booth:1` | Emissive ring; green when occupied by a waiting agent |
 | `sign` | `wing` | A plane whose CanvasTexture shows the provider name (the runtime draws the text) |
 | `elevatorDoor` | `0:L`, `0:R`, … | Slides open and closed along local x by ±0.55 m |
+| `screen` | `context:<0-5>` | A Context Hub console screen (atrium). The runtime sets its emissive colour and strength: a steady glow, a pulse while a real retrieval runs through the project MCP station (`mcp:agent-office-memory`) |
+| `screen` | `context-core` | The Context Hub core: the glowing column (atrium); pulses on the same signal as the consoles |
 | `ceiling` | none | Hidden in orbit view, shown in walk mode |
 | `collider` | none | Invisible boxes for walk-mode collision (exported as meshes; the runtime hides them and reads their bounding boxes) |
 | `baked` | none | Static mesh with a UV1 lightmap (§6) |
@@ -173,6 +180,7 @@ No logos, trademarks or real company names in any asset. Signs are blank planes;
 - `rooms: [{ id, name, rect: [x0, z0, x1, z1], floor? }]`: every anchor's `extras.room` names one of these rooms.
 - `walls: [{ a: [x, z], b: [x, z], kind: 'solid' | 'glass' | 'curtain', openings?: [[t0, t1]], side?: -1 | 1, thick?: m }]`: `side` is the side of the a→b line the wall body extends to (−1 left, +1 right, module-local), and `thick` is the body thickness. The 2D map uses them to place a wall on the tile its 3D body occupies, the same in mirrored wings. openings are door and gap intervals in metres along a→b. Every nav edge that crosses a wall must pass through an opening.
 - `furniture: [{ kind, x, z, w, d, yaw, ref? }]`: `kind` is from `FURNITURE_KINDS` (`packages/web/src/app/pixel/types.ts`). `ref` links interactive pieces to anchors (`station:<i>`, `book:<i>`, `board:<i>`, `notebook:<i>`, `booth:<i>`). Only furniture that exists in the 3D module is listed.
+- **Project spaces (additive):** new kinds `kiosk` (Project Directory dais and screen, `interact` project-directory), `context-core`, `console`, `handoff-pad`, `archive-alcove` (a strip along x; the Session Archive arcade) and `lectern`. The plan also has the rooms `hub` (Project Hub, x ∈ [−18.2, −11], z ∈ [−24, −13.4]) and `archive` (Session Archive, x ∈ [−11, 0], z ∈ [−24, −21]), and the Handoff Station disc is a `rug` around a `handoff-pad`. The old `waiting` room ends at x = −18.2 and `plaza` starts at z = −21 (`plaza-s` fills x ∈ [0, 3], z ∈ [−24, −21]). The kiosk's visitor spot is `kiosk:project-directory`.
 - **Optional:** the 3D renderer ignores it, and the 2D mode shows a "map data missing" card without it.
 - **Details (as exported):**
   - `rect` is axis-aligned in module space. Rooms tile each module without overlapping (rooms without anchors, such as `hall`, `vestibule`, `plaza`, `court`, `storage`, `pods-north`/`pods-south`, cover the rest of the floor). `floor` is one of `wood`, `carpet`, `tile`, `concrete`.

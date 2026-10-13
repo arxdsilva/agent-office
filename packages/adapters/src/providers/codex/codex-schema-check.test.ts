@@ -64,6 +64,15 @@ describe('checkCodexSchema', () => {
     expect(bad.Thread).toEqual(['(definition Thread)'])
   })
 
+  // MCP injection (docs/projects.md §5) relies on thread/start's free-form `config` map.
+  it('relies on ThreadStartParams.config and reports it when missing', () => {
+    expect(CODEX_RELIES_ON.definitions.ThreadStartParams).toContain('config')
+    const b = complete()
+    b.definitions.ThreadStartParams = obj(['cwd', 'model', 'approvalPolicy', 'sandbox'])
+    const bad = checkCodexSchema(b).rows.find((x) => x.name === 'ThreadStartParams')!
+    expect(bad).toMatchObject({ ok: false, missing: ['config'] })
+  })
+
   it('reads method names from a union', () => {
     expect([...unionMethods(union(['a', 'b']))]).toEqual(['a', 'b'])
     expect([...unionMethods({})]).toEqual([])

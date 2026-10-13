@@ -131,6 +131,11 @@ export const REQUIRED_ANCHORS: Partial<Record<ModuleKind, [prefix: string, count
     ['spot:elevator:', 6],
     ['seat:cafe:', 24],
     ['spot:pingpong:', 4],
+    // Project spaces (contract §4, additive): Project Hub, Handoff Station, Session Archive.
+    ['kiosk:project-directory', 1],
+    ['console:context:', 6],
+    ['spot:handoff:', 2],
+    ['port:archive:', 12],
   ],
   garden: [['spot:garden:', 6]],
 }
@@ -224,7 +229,7 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0
 const HEX = /^#[0-9a-fA-F]{6}$/
-const ANCHOR_ID = /^(seat|spot|port):[a-z]+(:[A-Za-z0-9]+){1,2}$/
+const ANCHOR_ID = /^(seat|spot|port|console):[a-z]+(:[A-Za-z0-9]+){1,2}$|^kiosk:[a-z]+(-[a-z]+)*$/
 
 /** A file reference relative to the assets dir; never absolute or escaping it. */
 export function isSafeRef(ref: unknown, ext?: RegExp): ref is string {
@@ -261,7 +266,7 @@ function checkBounds(path: string, v: unknown, out: string[]) {
 export function checkAnchor(path: string, id: string, a: unknown): string[] {
   const out: string[] = []
   const at = `${path}["${id}"]`
-  if (!ANCHOR_ID.test(id)) out.push(`${at}: id must match <seat|spot|port>:<group>:<index>[:<sub>]`)
+  if (!ANCHOR_ID.test(id)) out.push(`${at}: id must match <seat|spot|port|console>:<group>:<index>[:<sub>] or kiosk:<name>`)
   if (!isObj(a)) return [...out, `${at}: must be an object`]
   // Ports are 3D link attach points (contract §4): only a position, y may be off the floor.
   if (id.startsWith('port:')) {

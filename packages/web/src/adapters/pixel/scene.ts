@@ -30,6 +30,8 @@ import {
   type CameraEvent,
   type CameraState,
 } from '../../app/pixel/camera-mode.ts'
+import { contextScreenColor } from '../../app/pixel/context-hub.ts'
+import { contextHubActive, contextPulse } from '../../app/stations.ts'
 import { minimapLabels } from '../../app/pixel/minimap.ts'
 import { MinimapBase } from './minimap-base.ts'
 import { createSimClock, type SimClock } from '../../app/sim-clock.ts'
@@ -42,6 +44,13 @@ import {
   slotCapability,
   type InteractObject,
 } from '../../app/pixel/interact.ts'
+import type { ProviderSurfaces } from '../../app/capability-vm.ts'
+import { centroid } from '../../app/framing.ts'
+import {
+  projectRefLabel,
+  projectSurfaces,
+  type ProjectLibraryVM,
+} from '../../app/project-library.ts'
 import { dirVector, pixelToWorld, toPixel, toTile } from '../../app/pixel/project.ts'
 import { roomLabel } from '../../app/pixel/rooms.ts'
 import { blocked, nearestFree, playerSpeed, spawnPoint, stepPlayer } from '../../app/pixel/walk.ts'
@@ -97,6 +106,9 @@ const debugEnabled = () => new URLSearchParams(location.search).get('debug') ===
 const NEARBY_M = 4
 /** How far the player stands from what they travel to (m). */
 const PLACE_NEAR_M = 1
+/** Alpha of agents outside the project focus. */
+const DIM_ALPHA = 0.35
+
 /** Objects considered for E/interaction around the player (m). */
 const INTERACT_PREFILTER_M = 3
 
@@ -150,6 +162,12 @@ export class PixelScene implements SceneView {
   private theme: 'light' | 'dark' = 'dark'
   private links: Link[] = []
   private surfaces: SceneSurfaces | null = null
+  /** The provider surfaces as received, and the selected project's Library over them. */
+  private baseSurfaces: Map<string, ProviderSurfaces> | null = null
+  private projectLibrary: ProjectLibraryVM | null = null
+  private bubbles = new Map<string, string>()
+  /** Project focus: agents outside it are drawn at DIM_ALPHA (null: everyone normal). */
+  private focusSet: ReadonlySet<string> | null = null
   private highlighted: string | null = null
   private selected: string | null = null
   /** Camera mode (app/pixel/camera-mode.ts): player, overview, follow or pan. */
@@ -244,6 +262,11 @@ export class PixelScene implements SceneView {
       this.off.push(() => t.removeEventListener(type, fn))
     }
     on(window, 'resize', () => this.renderer.resize())
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => this.renderer.resize())
+      ro.observe(this.el.stage)
+      this.off.push(() => ro.disconnect())
+    }
     on(document, 'visibilitychange', () => this.arm())
     if (debugEnabled()) this.installDebug()
     this.arm()
@@ -264,6 +287,8 @@ export class PixelScene implements SceneView {
     this.raf = 0
     if (this.disposed) return
     if (this.limit() !== 0) this.raf = requestAnimationFrame((n) => this.tick(n))
+    // Stage hidden (user left the Office): skip rendering.
+    if (!(this.el.stage.clientWidth > 0 && this.el.stage.clientHeight > 0)) return
     if (!this.pacer.shouldRender(t, this.limit())) return
     const dt = this.lastT < 0 ? 0 : Math.min(0.5, (t - this.lastT) / 1000)
     this.lastT = t
@@ -450,6 +475,10 @@ export class PixelScene implements SceneView {
         if (a) booths.push(toPixel(a.pos, map))
       }
     }
+    // The Context Hub's consoles and core glow on the 3D hub's signal (real MCP retrievals only).
+    const hub = contextScreenColor(
+      contextPulse(this.time, contextHubActive(this.surfaces?.byProvider.values() ?? [])),
+    )
     type D = { y: number; draw: () => void }
     const list: D[] = []
     // Objects y-sort by their box's bottom edge (the feet line), characters by their feet.
@@ -464,6 +493,7 @@ export class PixelScene implements SceneView {
             q.px >= b.x - 8 && q.px <= b.x + b.w + 8 && q.py >= b.y - 8 && q.py <= b.y + b.h + 8,
         )
       const clip = this.artClips.get(ob.id) ?? null
+      if (ob.kind === 'console' || ob.kind === 'context-core') monitors.set(ob.id, hub)
       list.push({
         // Chairs sort at their top edge so whoever sits on one is drawn over it.
         y: FLAT_KINDS.has(ob.kind) ? -1e9 : ob.kind === 'chair' ? b.y + 1 : b.y + b.h,
@@ -489,7 +519,7 @@ export class PixelScene implements SceneView {
           if (n.id === this.selected && !drawFx(c, this.atlas, 'select', px, py, this.time))
             drawSelection(c, px, py, this.time)
           const f = this.sprites.frame(n.look, n.key, n.dir, n.anim, n.animT, n.props, n.name)
-          c.globalAlpha = m.opacity * f.alpha
+          c.globalAlpha = m.opacity * f.alpha * this.dimAlpha(n.id)
           c.drawImage(f.canvas, Math.round(px) - f.ax, Math.round(py) - f.ay)
           c.globalAlpha = 1
         },
@@ -558,7 +588,13 @@ export class PixelScene implements SceneView {
       const target = this.target()
       if (target) {
         const t = toPixel(target.pos, map)
-        const text = promptFor(target.target)
+        const t0 = target.target
+        const lib =
+          t0.kind === 'capability' && this.projectLibrary
+            ? projectRefLabel(this.projectLibrary, t0.ref.id)
+            : null
+        // A project surface shows its collection name and count (never a title).
+        const text = lib ? `${promptFor(t0)} · ${lib}` : promptFor(t0)
         drawTag(c, text, t.px, t.py - CHAR_H - 14, { bg: 'rgba(255,210,63,0.92)', fg: '#1c1820' })
       }
       if (!drawFx(c, this.atlas, 'marker', pp.px, pp.py - CHAR_H, this.time))
@@ -678,6 +714,7 @@ export class PixelScene implements SceneView {
 
   private showTag(n: Npc): boolean {
     if (this.essentialTag(n)) return true
+    if (this.focusSet && !this.focusSet.has(n.id)) return false
     const mode = this.gfx?.labels.mode ?? 'nearby'
     if (mode === 'all') return true
     if (mode === 'selected') return false
@@ -1004,8 +1041,41 @@ export class PixelScene implements SceneView {
   }
 
   setSurfaces(s: SceneSurfaces): void {
-    this.surfaces = s
+    this.baseSurfaces = s.byProvider
+    this.bubbles = s.bubbles
+    this.applySurfaces()
+  }
+
+  /** Notebooks, shelves and boards come from the selected project's Library when there is one. */
+  private applySurfaces(): void {
+    if (!this.baseSurfaces) return
+    const byProvider = this.projectLibrary
+      ? projectSurfaces(this.baseSurfaces, this.projectLibrary)
+      : this.baseSurfaces
+    this.surfaces = { bubbles: this.bubbles, byProvider }
     this.updateResolver()
+  }
+
+  setProjectLibrary(vm: ProjectLibraryVM | null): void {
+    this.projectLibrary = vm
+    this.applySurfaces()
+  }
+
+  /** Non-focused sprites at DIM_ALPHA and the camera to the group's centroid. */
+  focusAgents(ids: string[] | null, o: { dim: boolean; frame: boolean }): void {
+    this.focusSet = ids && o.dim ? new Set(ids) : null
+    if (!ids || !o.frame) return
+    const at = centroid(
+      ids.flatMap((id) => {
+        const p = this.npcs.npcs.get(id)?.motion.pos
+        return p ? [{ x: p.x, z: p.z }] : []
+      }),
+    )
+    if (at) this.panTo(at)
+  }
+
+  private dimAlpha(id: string): number {
+    return this.focusSet && !this.focusSet.has(id) ? DIM_ALPHA : 1
   }
 
   private updateResolver(): void {

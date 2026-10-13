@@ -1,8 +1,15 @@
+import { basename } from 'node:path'
 import {
   DomainError,
+  ForbiddenError,
+  NotFoundError,
+  RateLimitedError,
   SessionStartError,
+  ValidationError,
+  type Projects,
   type ComposedMessage,
   type ComposeMessage,
+  type StartSession,
   type HookManagement,
   type ManagedSessions,
   type OfficeQuery,
@@ -13,10 +20,33 @@ import {
   type UpdateManagement,
   type UserChat,
 } from '@agent-office/core'
+import { z } from 'zod'
 import {
   AnswerArgsSchema,
+  AssignSessionArgsSchema,
+  ContextPreviewArgsSchema,
   CopyTextSchema,
+  HandoffIdSchema,
+  HandoffPrepareArgsSchema,
+  HandoffUpdateArgsSchema,
+  ImportHistoryArgsSchema,
   IPC,
+  MemoryActionArgsSchema,
+  MemoryDraftSchema,
+  MemoryEditArgsSchema,
+  MemoryListArgsSchema,
+  MemoryMergeArgsSchema,
+  MemorySupersedeArgsSchema,
+  NewProjectArgsSchema,
+  ProjectIdSchema,
+  RepoRefSchema,
+  SearchArgsSchema,
+  SessionIdSchema,
+  SessionListArgsSchema,
+  SessionMessagesArgsSchema,
+  TaskCreateArgsSchema,
+  TaskUpdateArgsSchema,
+  UpdateProjectArgsSchema,
   NewSessionArgsSchema,
   PickKindSchema,
   ProviderCallSchema,
@@ -31,6 +61,7 @@ import {
   type ContextRef,
   type HookStatus,
   type PowerState,
+  type ProjectMessage,
   type StartResult,
   type SendResult,
   type ServerMessage,
@@ -92,6 +123,35 @@ export interface IpcPorts {
   providerHooks?: ProviderHooks
   /** Called after a provider action so connection info is pushed again. */
   onProvidersChanged?: () => void
+  /** Projects, memory, handoffs and search (only with a vault); the `prj:*` channels need it. */
+  projects?: Pick<
+    Projects,
+    | 'catalog'
+    | 'repos'
+    | 'sessions'
+    | 'assignment'
+    | 'memory'
+    | 'context'
+    | 'handoffs'
+    | 'workspace'
+    | 'search'
+    | 'tasks'
+    | 'history'
+  >
+}
+
+/** Absolute paths (posix or windows) never leave main, not even inside an error message. */
+const PATHLIKE = /(?:[A-Za-z]:)?[\\/][^\s'"]*[\\/][^\s'"]*/g
+
+/** A renderer-safe error: no paths, no stack, no internals. */
+export function safeError(err: unknown): Error {
+  if (err instanceof InvalidContextError) return new Error(err.message)
+  if (err instanceof ForbiddenError) return new Error('forbidden')
+  if (err instanceof NotFoundError) return new Error('not found')
+  if (err instanceof RateLimitedError) return new Error('too many requests')
+  if (err instanceof ValidationError)
+    return new Error(err.message.replace(PATHLIKE, '[path]').slice(0, 200))
+  return new Error('request failed')
 }
 
 export type IpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -120,7 +180,7 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     x: unknown,
   ) => {
     const r = schema.safeParse(x)
-    if (!r.success) throw new Error('invalid request')
+    if (!r.success) throw new InvalidContextError('invalid request')
     return r.data as T
   }
 
@@ -203,6 +263,7 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     })
   }
   const { sessions, context } = p
+  if (p.projects) Object.assign(handlers, projectHandlers(p.projects, call, entry))
   if (!sessions || !context) return handlers
 
   return {
@@ -214,19 +275,33 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
       const a = parsed.data
       if (a.chrome && a.provider !== 'claude-code')
         return { ok: false, code: 'other', error: 'Chrome is only available for Claude Code' }
-      // A project repository (`repo`) can replace the picked folder; resolved by the projects wiring.
-      if (!a.folder) return { ok: false, code: 'folder', error: 'choose a folder' }
-      let start
+      if (!a.folder && !a.repo) return { ok: false, code: 'folder', error: 'choose a folder' }
+      if ((a.repo || a.context_memories?.length) && !a.projectId)
+        return { ok: false, code: 'other', error: 'choose a project' }
+      let start: StartSession
       try {
-        const folder = entry(a.folder, 'folder')
+        // A project repository (its directory stays in main) replaces the picked folder.
+        let cwd: string
+        let label: string
+        if (a.repo) {
+          const dir = p.projects?.repos.repoPath(a.projectId!, a.repo)
+          if (!dir) return { ok: false, code: 'folder', error: 'repository not found' }
+          cwd = dir
+          label = basename(dir)
+        } else {
+          const folder = entry(a.folder!, 'folder')
+          cwd = folder.path
+          label = folder.label
+        }
         const extra = a.extraFolders.map((ref) => entry(ref, 'folder'))
-        const missing = [folder, ...extra].some((f) => !context.exists(f.path))
+        const missing = !context.exists(cwd) || extra.some((f) => !context.exists(f.path))
         if (missing) return { ok: false, code: 'folder', error: 'folder not found' }
         start = {
           ...(a.provider !== 'claude-code' ? { provider: a.provider } : {}),
           ...(a.modeId ? { modeId: a.modeId } : {}),
-          cwd: folder.path,
-          name: a.name ?? folder.label,
+          ...(a.projectId ? { projectId: a.projectId } : {}),
+          cwd,
+          name: a.name ?? label,
           ...(a.model ? { model: a.model } : {}),
           mode: a.mode,
           extraDirs: extra.map((f) => f.path),
@@ -239,7 +314,12 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
         return { ok: false, code, error: err.message }
       }
       try {
-        return { ok: true, agentId: await sessions.start(start) }
+        const ids = a.context_memories
+        const agentId =
+          ids?.length && p.projects
+            ? await p.projects.handoffs.startWithContext({ ...start, projectId: a.projectId! }, ids)
+            : await sessions.start(start)
+        return { ok: true, agentId }
       } catch (err) {
         if (err instanceof SessionStartError)
           return { ok: false, code: err.code, error: err.message }
@@ -315,5 +395,150 @@ export function createPushBridge(
     stopWatching()
     cancelFlush?.()
     batch = []
+  }
+}
+
+type Call = <T>(schema: { safeParse(x: unknown): { success: boolean; data?: T } }, x: unknown) => T
+
+/** `prj:*` — every payload validated; `ctx_` folders resolved to paths here, never in core. */
+function projectHandlers(
+  prj: NonNullable<IpcPorts['projects']>,
+  call: Call,
+  entry: (ref: string, kind?: 'file' | 'folder') => ContextEntry,
+): Record<string, IpcHandler> {
+  const guard =
+    <R>(fn: (x: unknown) => R | Promise<R>) =>
+    async (x: unknown): Promise<R> => {
+      try {
+        return await fn(x)
+      } catch (err) {
+        throw safeError(err)
+      }
+    }
+  const h = <A>(
+    schema: { safeParse(x: unknown): { success: boolean; data?: A } },
+    fn: (a: A) => unknown,
+  ) => guard((x) => fn(call(schema, x)))
+  const folders = (refs: string[]) => refs.map((r) => entry(r, 'folder').path)
+  const ProjectCall = z.object({ projectId: ProjectIdSchema })
+  const AddRepos = ProjectCall.extend({ folders: NewProjectArgsSchema.shape.folders })
+  const RemoveRepo = ProjectCall.extend({ repo: RepoRefSchema })
+  const Inspect = z.object({ agentId: z.string().min(1).max(200) })
+  const Launch = z.object({ handoffId: HandoffIdSchema })
+  return {
+    [IPC.prjOverview]: guard(() => prj.workspace.overview()),
+    [IPC.prjList]: guard(() => prj.catalog.list()),
+    [IPC.prjDashboard]: h(ProjectCall, (a) => prj.workspace.dashboard(a.projectId)),
+    [IPC.prjCreate]: h(NewProjectArgsSchema, (a) =>
+      prj.catalog.create({ name: a.name, folders: folders(a.folders) }),
+    ),
+    [IPC.prjUpdate]: h(UpdateProjectArgsSchema, (a) => prj.catalog.update(a)),
+    [IPC.prjAddRepos]: h(AddRepos, (a) => prj.catalog.addRepos(a.projectId, folders(a.folders))),
+    [IPC.prjRemoveRepo]: h(RemoveRepo, (a) => prj.catalog.removeRepo(a.projectId, a.repo)),
+    [IPC.prjSessions]: h(SessionListArgsSchema, (a) => prj.sessions.list(a)),
+    [IPC.prjMessages]: h(SessionMessagesArgsSchema, (a) =>
+      prj.sessions.messages({
+        sessionId: a.sessionId,
+        limit: a.limit,
+        ...(a.before ? { before: a.before } : {}),
+      }),
+    ),
+    [IPC.prjAssign]: h(AssignSessionArgsSchema, (a) =>
+      prj.assignment.assign(a.sessionId, a.projectId),
+    ),
+    [IPC.prjMemories]: h(MemoryListArgsSchema, (a) => prj.memory.list(a)),
+    [IPC.prjMemoryCreate]: h(MemoryDraftSchema, (a) => prj.memory.create(a)),
+    [IPC.prjMemoryReview]: h(MemoryActionArgsSchema, (a) =>
+      prj.memory.review(a.memoryId, a.action),
+    ),
+    [IPC.prjMemoryEdit]: h(MemoryEditArgsSchema, (a) => prj.memory.edit(a)),
+    [IPC.prjMemorySupersede]: h(MemorySupersedeArgsSchema, (a) =>
+      prj.memory.supersede(a.memoryId, a.replacement),
+    ),
+    [IPC.prjMemoryMerge]: h(MemoryMergeArgsSchema, (a) => prj.memory.merge(a.memoryIds, a.into)),
+    [IPC.prjContextPreview]: h(ContextPreviewArgsSchema, (a) => prj.context.preview(a)),
+    [IPC.prjInspect]: h(Inspect, (a) => prj.context.inspect(a.agentId)),
+    [IPC.prjHandoffPrepare]: h(HandoffPrepareArgsSchema, (a) => prj.handoffs.prepare(a)),
+    [IPC.prjHandoffUpdate]: h(HandoffUpdateArgsSchema, (a) => prj.handoffs.update(a)),
+    [IPC.prjHandoffLaunch]: async (x: unknown): Promise<StartResult> => {
+      const a = call(Launch, x)
+      try {
+        return { ok: true, agentId: (await prj.handoffs.launch(a.handoffId)).agentId }
+      } catch (err) {
+        if (err instanceof SessionStartError)
+          return { ok: false, code: err.code, error: err.message }
+        throw safeError(err)
+      }
+    },
+    [IPC.prjTasks]: h(ProjectIdSchema, (id) => prj.tasks.list(id)),
+    [IPC.prjTaskCreate]: h(TaskCreateArgsSchema, (a) =>
+      prj.tasks.create(a.projectId, a.title, a.sessionId ? { sessionId: a.sessionId } : {}),
+    ),
+    // A state change, `confirm` (adds user-confirmed evidence), or both; one TaskView comes back.
+    [IPC.prjTaskUpdate]: h(TaskUpdateArgsSchema, async (a) => {
+      let view = a.state ? await prj.tasks.setState(a.taskId, a.state) : undefined
+      if (a.confirm) view = await prj.tasks.addEvidence(a.taskId, { level: 'user-confirmed' })
+      return view
+    }),
+    // Experimental: past Claude Code sessions become unassigned records (references only).
+    [IPC.prjImportHistory]: h(ImportHistoryArgsSchema, (a) => prj.history.importHistory(a)),
+    [IPC.prjResume]: async (x: unknown): Promise<StartResult> => {
+      const id = call(SessionIdSchema, x)
+      try {
+        return { ok: true, agentId: (await prj.history.resume(id)).agentId }
+      } catch (err) {
+        if (err instanceof SessionStartError)
+          return { ok: false, code: err.code, error: err.message }
+        throw safeError(err)
+      }
+    },
+    [IPC.prjSearch]: h(SearchArgsSchema, (a) => prj.search.search(a)),
+  }
+}
+
+/**
+ * Streams project messages to the renderer on `prj:push`, at most one flush per `windowMs`
+ * (default 250 ms = 4/s). Snapshots of the same thing collapse to the latest one.
+ */
+export function createProjectPushBridge(
+  source: Pick<Projects['workspace'], 'watch'>,
+  send: (channel: string, payload: ProjectMessage) => void,
+  scheduler: Scheduler,
+  windowMs = 250,
+): () => void {
+  const pending = new Map<string, ProjectMessage>()
+  let n = 0
+  let cancelFlush: (() => void) | undefined
+  const keyOf = (m: ProjectMessage): string => {
+    switch (m.type) {
+      case 'projects':
+      case 'vault':
+        return m.type
+      case 'session':
+        return `session:${m.session.id}`
+      case 'memory':
+        return `memory:${m.memory.id}`
+      case 'agent-project':
+        return `agent-project:${m.agentId}`
+      default:
+        return `${m.type}:${++n}` // activity and retrievals are events: keep each
+    }
+  }
+  const flush = () => {
+    cancelFlush = undefined
+    const out = [...pending.values()]
+    pending.clear()
+    for (const m of out) send(IPC.prjPush, m)
+  }
+  const stopWatching = source.watch((m) => {
+    const k = keyOf(m)
+    pending.delete(k)
+    pending.set(k, m)
+    cancelFlush ??= scheduler.after(windowMs, flush)
+  })
+  return () => {
+    stopWatching()
+    cancelFlush?.()
+    pending.clear()
   }
 }

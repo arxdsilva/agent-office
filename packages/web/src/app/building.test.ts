@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { fixtureManifest, fixtureManifestJson } from './__fixtures__/manifest.ts'
 import {
   BAY_LENGTH,
+  KIOSK_DISTANCE,
   WING_GRACE_MS,
   anchorId,
+  directoryFixture,
   hash32,
   parseAnchorId,
   planBuilding,
@@ -11,7 +13,7 @@ import {
   type ProviderDemand,
 } from './building.ts'
 import { parseManifest } from './manifest.ts'
-import type { BuildingLayout, ModulePlacement } from './office-types.ts'
+import type { BuildingLayout, ModulePlacement, WorldAnchor } from './office-types.ts'
 
 const m = fixtureManifest
 const d = (...pairs: [string, number][]): ProviderDemand[] =>
@@ -311,6 +313,42 @@ describe('ports', () => {
     )
     // Ports are not walk-to anchors.
     expect(l.anchors.has('wing:a:0/port:book:3')).toBe(false)
+  })
+})
+
+describe('directoryFixture (Project Directory pick proxy)', () => {
+  const anchor = (local: string, x: number, z: number, heading = 0) =>
+    ({
+      id: `atrium/${local}`,
+      placement: 'atrium',
+      local,
+      pos: { x, z },
+      heading,
+      pose: 'stand',
+      approach: { x, z },
+    }) as WorldAnchor
+
+  it('uses the kiosk, one kiosk-distance in front of the visitor spot', () => {
+    // A visitor at (-12.6, -14.5) faces -z (heading π): the kiosk stands 1.1 m ahead of them.
+    const f = directoryFixture([
+      anchor('spot:reception:0', 1, 1),
+      anchor('kiosk:project-directory', -12.6, -14.5, Math.PI),
+    ])!
+    expect(f.kiosk).toBe(true)
+    expect(f.x).toBeCloseTo(-12.6)
+    expect(f.z).toBeCloseTo(-14.5 - KIOSK_DISTANCE)
+    expect(f.labelY).toBeGreaterThan(f.proxyY)
+  })
+
+  it('falls back to the centre of the reception spots, then to nothing', () => {
+    const f = directoryFixture([
+      anchor('spot:reception:0', 0, -2),
+      anchor('spot:reception:1', 2, -4),
+      anchor('seat:cafe:0', 50, 50),
+    ])!
+    expect(f).toMatchObject({ x: 1, z: -3, kiosk: false })
+    expect(directoryFixture([anchor('seat:cafe:0', 1, 1)])).toBeNull()
+    expect(directoryFixture([])).toBeNull()
   })
 })
 

@@ -17,6 +17,24 @@ import type {
   SettingsPatch,
   SettingsResult,
   Snapshot,
+  ContextBundleView,
+  ContextInspection,
+  ContextPolicy,
+  GlobalOverview,
+  ImportResult,
+  HandoffView,
+  MemoryDraft,
+  MemoryKind,
+  MemoryScope,
+  MemoryState,
+  MemoryView,
+  ProjectDashboard,
+  ProjectDetail,
+  ProjectMessage,
+  ProjectSummary,
+  SearchHit,
+  SessionMessageView,
+  SessionSummary,
   UpdateState,
 } from '@agent-office/shared'
 
@@ -125,6 +143,10 @@ export interface StartSession {
   extraDirs: string[]
   chrome: boolean
   first: ComposedMessage
+  /** The project this session belongs to (docs/projects.md); mints an MCP token when allowed. */
+  projectId?: string
+  /** Experimental: the provider's own session id to resume natively (Claude Code only). */
+  resume?: string
 }
 
 /**
@@ -212,4 +234,99 @@ export interface McpToolResult {
   /** One text block, starting with the data preface (docs/projects.md §5). */
   text: string
   isError?: boolean
+}
+
+// Driving ports of the projects layer, one per actor. Callers are the user (IPC) unless stated;
+// every implementation authorizes first (core `authz.ts`). Folders are absolute directories the
+// composition root resolved from `ctx_` refs (core never resolves refs or reads the disk).
+
+export interface ProjectCatalog {
+  list(): ProjectSummary[]
+  get(projectId: string): ProjectDetail
+  create(o: { name: string; folders: string[] }): Promise<ProjectSummary>
+  update(o: {
+    projectId: string
+    name?: string
+    color?: string
+    policy?: ContextPolicy
+    archived?: boolean
+  }): Promise<ProjectSummary>
+  addRepos(projectId: string, folders: string[]): Promise<ProjectSummary>
+  removeRepo(projectId: string, repoId: string): Promise<ProjectSummary>
+}
+
+/** Main only: a project repository's directory (e.g. `NewSessionArgs.repo` → cwd). Never sent out. */
+export interface ProjectRepos {
+  repoPath(projectId: string, repoId: string): string | undefined
+}
+
+export interface SessionVault {
+  /** `scope`: a project id or 'unassigned'; all sessions without it. */
+  list(o: { scope?: string; query?: string }): SessionSummary[]
+  get(sessionId: string): SessionSummary
+  /** The provider transcript when one can be read (user only), else agent-office's chat. */
+  messages(o: {
+    sessionId: string
+    before?: string
+    limit: number
+  }): Promise<{ messages: SessionMessageView[]; more: boolean }>
+  archive(sessionId: string): Promise<SessionSummary>
+}
+
+export interface SessionAssignment {
+  /** null unassigns. The previous assignment stays in the record's history. */
+  assign(sessionId: string, projectId: string | null): Promise<SessionSummary>
+}
+
+export interface ProjectWorkspaceQuery {
+  overview(): GlobalOverview
+  dashboard(projectId: string): ProjectDashboard
+  watch(fn: (m: ProjectMessage) => void): () => void
+}
+
+export interface MemoryService {
+  list(o: { scope: string; states?: MemoryState[]; query?: string }): MemoryView[]
+  create(draft: MemoryDraft): Promise<MemoryView>
+  review(memoryId: string, action: 'approve' | 'reject'): Promise<MemoryView>
+  edit(o: {
+    memoryId: string
+    title?: string
+    body?: string
+    kind?: MemoryKind
+    scope?: MemoryScope
+  }): Promise<MemoryView>
+  supersede(memoryId: string, replacement: MemoryDraft): Promise<MemoryView>
+  merge(memoryIds: string[], into: MemoryDraft): Promise<MemoryView>
+  /** Every stored version of one lineage, oldest first. */
+  versions(memoryId: string): MemoryView[]
+}
+
+export interface ContextEngine {
+  preview(o: { projectId: string; objective?: string; provider?: ProviderId }): ContextBundleView
+  inspect(agentId: string): ContextInspection
+}
+
+export interface HandoffService {
+  prepare(o: { sessionId: string; toProvider: ProviderId; objective: string }): Promise<HandoffView>
+  update(o: { handoffId: string; note?: string; include?: string[] }): Promise<HandoffView>
+  /** Starts the target provider's managed session with the reviewed bundle. */
+  launch(handoffId: string): Promise<{ agentId: string }>
+  cancel(handoffId: string): Promise<HandoffView>
+  list(projectId?: string): HandoffView[]
+  /** New Agent with a reviewed bundle (`NewSessionArgs.context_memories`) in the first message. */
+  startWithContext(o: StartSession & { projectId: string }, memoryIds: string[]): Promise<string>
+}
+
+export interface GlobalSearch {
+  search(o: { query: string; projectId?: string; deep?: boolean }): Promise<SearchHit[]>
+}
+
+/** Experimental: import past provider sessions as unassigned records (references, never copies). */
+export interface HistoryImport {
+  importHistory(o: { limit: number }): Promise<ImportResult>
+}
+
+/** Experimental: continue a past Claude Code session natively as a managed session. */
+export interface SessionResume {
+  resume(sessionId: string): Promise<{ agentId: string }>
 }

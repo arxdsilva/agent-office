@@ -2,10 +2,36 @@ import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/c
 import { agentRunnerContract, MemoryLogger } from '@agent-office/core/testing'
 import type { AgentEvent } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
+import { createOffice } from '@agent-office/core'
+import {
+  FakeClaudeSettingsStore,
+  FakeHookRunner,
+  FakeSettingsRepository,
+  FakeWindow,
+  fakePlatform,
+  RecordingLoginItem,
+  RecordingNotifier,
+  RecordingTray,
+  ScriptedUpdater,
+} from '@agent-office/core/testing'
+import {
+  InMemoryAgentRepository,
+  InMemoryCapabilityRepository,
+  InMemoryEventBus,
+  InMemoryMessageRepository,
+} from '../memory/index.ts'
+import { RandomIds, SystemClock, TimerScheduler } from '../system/index.ts'
 import { AsyncQueue, ClaudeSdkRunner, type QueryFn } from './claude-sdk-runner.ts'
 
 /** A `query` double: the test plays the SDK by pushing messages; prompts and controls are recorded. */
-function sdkDouble(opts: { failWith?: Error; models?: unknown } = {}) {
+function sdkDouble(
+  opts: {
+    failWith?: Error
+    models?: unknown
+    /** Like Claude CLI 2.1.270: system/init (the session id) only after the first prompt. */
+    initOnFirstPrompt?: string
+  } = {},
+) {
   const out = new AsyncQueue<SDKMessage>()
   const prompts: string[] = []
   const controls: string[] = []
@@ -15,8 +41,15 @@ function sdkDouble(opts: { failWith?: Error; models?: unknown } = {}) {
     calls.push({ ...(options ? { options } : {}) })
     if (opts.failWith) throw opts.failWith
     void (async () => {
-      for await (const m of prompt as AsyncIterable<SDKUserMessage>)
+      for await (const m of prompt as AsyncIterable<SDKUserMessage>) {
         prompts.push(String(m.message.content))
+        if (opts.initOnFirstPrompt && prompts.length === 1)
+          out.push({
+            type: 'system',
+            subtype: 'init',
+            session_id: opts.initOnFirstPrompt,
+          } as unknown as SDKMessage)
+      }
       promptClosed = true
     })()
     const gen = (async function* () {
@@ -137,6 +170,39 @@ describe('ClaudeSdkRunner', () => {
     expect(o.extraArgs).toBeUndefined()
     expect(o.model).toBeUndefined()
     expect(o.pathToClaudeCodeExecutable).toBeUndefined()
+  })
+
+  it('MCP-1 passes RunnerStart.mcp as a stdio mcpServers entry', async () => {
+    const { sdk, runner } = make()
+    const mcp = {
+      name: 'agent-office',
+      command: '/u/mcp/agent-office-mcp.sh',
+      args: [],
+      env: { AGENT_OFFICE_MCP_URL: 'http://127.0.0.1:4317/mcp', AGENT_OFFICE_MCP_TOKEN: 'mcp_x' },
+    }
+    runner.start({ ...START, mcp })
+    await tick()
+    expect(sdk.options().mcpServers).toEqual({
+      'agent-office': { type: 'stdio', command: mcp.command, args: [], env: mcp.env },
+    })
+  })
+
+  it('MCP-2 without RunnerStart.mcp the options have no mcpServers key', async () => {
+    const { sdk, runner } = make()
+    runner.start(START)
+    await tick()
+    expect('mcpServers' in sdk.options()).toBe(false)
+  })
+
+  it('RES-1 passes RunnerStart.resume as the SDK resume option, and only then', async () => {
+    const { sdk, runner } = make()
+    runner.start({ ...START, resume: '0b7c-session' })
+    await tick()
+    expect(sdk.options().resume).toBe('0b7c-session')
+    const plain = make()
+    plain.runner.start(START)
+    await tick()
+    expect('resume' in plain.sdk.options()).toBe(false)
   })
 
   it('SDK-2 skips permissions only for bypass mode with allowBypass', async () => {
@@ -310,6 +376,47 @@ describe('ClaudeSdkRunner', () => {
       await tick()
       expect(exits).toEqual([{}])
     })
+  })
+})
+
+describe('ClaudeSdkRunner with the real core', () => {
+  it('SDK-9 starts a managed session when the CLI reports its id only after the first prompt', async () => {
+    const sdk = sdkDouble({ initOnFirstPrompt: 'sess-late' })
+    const runner = new ClaudeSdkRunner({ queryFn: sdk.queryFn, env: {}, log: new MemoryLogger() })
+    const scheduler = new TimerScheduler()
+    const office = createOffice({
+      agents: new InMemoryAgentRepository(),
+      capabilities: new InMemoryCapabilityRepository(),
+      messages: new InMemoryMessageRepository(),
+      bus: new InMemoryEventBus(),
+      clock: new SystemClock(),
+      ids: new RandomIds(),
+      scheduler,
+      settingsRepo: new FakeSettingsRepository(),
+      loginItem: new RecordingLoginItem(),
+      claudeSettings: new FakeClaudeSettingsStore(),
+      hookRunner: new FakeHookRunner(),
+      notifier: new RecordingNotifier(),
+      tray: new RecordingTray(),
+      window: new FakeWindow(),
+      updater: new ScriptedUpdater(),
+      platform: fakePlatform({ packaged: false }),
+      releaseUrl: 'https://example.invalid',
+      runner,
+    })
+    try {
+      const id = await office.sessions!.start({
+        ...START,
+        name: 'late-id',
+        first: { text: 'Hello there', context: [], use: [] },
+      })
+      expect(id).toBe('cc:sess-late')
+      // Pushed exactly once, before the id was known.
+      expect(sdk.prompts).toEqual(['Hello there'])
+      await office.sessions!.stop(id)
+    } finally {
+      scheduler.dispose()
+    }
   })
 })
 

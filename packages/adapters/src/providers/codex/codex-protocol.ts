@@ -64,6 +64,25 @@ export const FileChangeApprovalParams = z.looseObject({
   itemId: z.string(),
 })
 
+/**
+ * `mcpServer/elicitation/request`: an MCP server (or Codex itself, for an MCP tool approval) asks
+ * the user. A tool approval carries `_meta.codex_approval_kind: "mcp_tool_call"` and offers
+ * `_meta.persist` choices, which we never pick (one-time answers only).
+ */
+export const McpElicitationParams = z.looseObject({
+  threadId: z.string(),
+  turnId: z.string().nullish(),
+  serverName: z.string(),
+  mode: z.string().optional(),
+  message: z.string().optional(),
+  _meta: z.unknown().optional(),
+})
+/** Our answers: no `_meta`, so never a persisted ("session" / "always") approval. */
+export type McpElicitationResponse =
+  | { action: 'accept'; content: Record<string, never> }
+  | { action: 'decline' }
+  | { action: 'cancel' }
+
 export const ModelListResult = z.looseObject({
   data: z.array(
     z.looseObject({
@@ -93,6 +112,7 @@ export const M = {
   agentMessageDelta: 'item/agentMessage/delta',
   commandApproval: 'item/commandExecution/requestApproval',
   fileChangeApproval: 'item/fileChange/requestApproval',
+  mcpElicitation: 'mcpServer/elicitation/request',
 } as const
 
 /**
@@ -116,13 +136,14 @@ export const CODEX_RELIES_ON = {
     M.itemCompleted,
     M.agentMessageDelta,
   ],
-  serverRequests: [M.commandApproval, M.fileChangeApproval],
+  serverRequests: [M.commandApproval, M.fileChangeApproval, M.mcpElicitation],
   definitions: {
     InitializeParams: ['clientInfo'],
     ClientInfo: ['name', 'title', 'version'],
     GetAccountParams: ['refreshToken'],
     GetAccountResponse: ['requiresOpenaiAuth', 'account'],
-    ThreadStartParams: ['cwd', 'model', 'approvalPolicy', 'sandbox'],
+    // `config`: free-form config.toml overrides; carries `mcp_servers` (experimental, docs/projects.md §5).
+    ThreadStartParams: ['cwd', 'model', 'approvalPolicy', 'sandbox', 'config'],
     ThreadStartResponse: ['thread'],
     Thread: ['id'],
     TurnStartParams: ['threadId', 'input', 'model', 'approvalPolicy', 'sandboxPolicy'],
@@ -140,6 +161,8 @@ export const CODEX_RELIES_ON = {
     FileChangeRequestApprovalParams: ['threadId', 'turnId', 'itemId'],
     FileChangeRequestApprovalResponse: ['decision'],
     FileUpdateChange: ['path'],
+    McpServerElicitationRequestParams: ['threadId', 'turnId', 'serverName'],
+    McpServerElicitationRequestResponse: ['action', 'content', '_meta'],
     ModelListParams: ['includeHidden', 'cursor'],
     ModelListResponse: ['data', 'nextCursor'],
     Model: ['id', 'model', 'displayName', 'description', 'hidden'],
@@ -150,6 +173,7 @@ export const CODEX_RELIES_ON = {
     TurnStatus: ['completed', 'interrupted', 'failed', 'inProgress'],
     CommandExecutionApprovalDecision: ['accept', 'decline', 'cancel'],
     FileChangeApprovalDecision: ['accept', 'decline', 'cancel'],
+    McpServerElicitationAction: ['accept', 'decline', 'cancel'],
     UserInput: ['text'],
     SandboxPolicy: ['readOnly', 'workspaceWrite', 'dangerFullAccess'],
     ThreadItem: [

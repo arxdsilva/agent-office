@@ -70,6 +70,13 @@ export const FURNITURE_KINDS = [
   'sign',
   'rug',
   'tv',
+  // Project spaces (contract §4, additive)
+  'kiosk',
+  'context-core',
+  'console',
+  'handoff-pad',
+  'archive-alcove',
+  'lectern',
 ] as const
 export type FurnitureKind = (typeof FURNITURE_KINDS)[number]
 
@@ -137,7 +144,7 @@ export interface MapObject {
   /** Interactive objects: what E/click opens. */
   interact?:
     | { kind: 'capability'; ref: CapabilityRef }
-    | { kind: 'object'; object: 'elevator' | 'stats-board' | 'sign'; label?: string }
+    | { kind: 'object'; object: ObjectInteract; label?: string }
 }
 
 /** One wall run between openings, in map pixels (at least `WALL_PX` thick). */
@@ -223,13 +230,34 @@ export type PixelAnim = (typeof PIXEL_ANIMS)[number]
 export type StatusIcon = 'thinking' | 'tool' | 'waiting' | 'error' | null
 
 // ── Interaction and dialogue ──────────────────────────────────────────────────────────────────
+/** Fixed-object interactions. 'project-directory' (the reception desk) is additive. */
+export type ObjectInteract = 'elevator' | 'stats-board' | 'sign' | 'project-directory'
 export type InteractTarget =
   | { kind: 'agent'; id: string }
   | { kind: 'capability'; ref: CapabilityRef }
-  | { kind: 'object'; object: 'elevator' | 'stats-board' | 'sign'; label?: string }
+  | { kind: 'object'; object: ObjectInteract; label?: string }
 
+/**
+ * Dialogue actions. The project actions (additive) carry the project in `DialogueVM.actions[i]
+ * .projectId`: 'project-select' picks one project, 'project-all' clears the selection, and the
+ * rest (dashboard, memory, sessions, context, start-agent) open the same desktop panels; the
+ * controller routes them to the workspace controller. No RPG-specific logic.
+ */
 export type DialogueAction =
-  'talk' | 'details' | 'follow' | 'open' | 'open-library' | 'go-parent' | 'review'
+  | 'talk'
+  | 'details'
+  | 'follow'
+  | 'open'
+  | 'open-library'
+  | 'go-parent'
+  | 'review'
+  | 'project-select'
+  | 'project-all'
+  | 'project-dashboard'
+  | 'project-memory'
+  | 'project-sessions'
+  | 'context'
+  | 'start-agent'
 
 export interface DialogueVM {
   title: string
@@ -238,7 +266,7 @@ export interface DialogueVM {
   status?: { status: AgentStatus; label: string; color: string }
   /** One or two plain lines; never message or transcript content beyond existing snippets. */
   lines: string[]
-  actions: { id: DialogueAction; label: string }[]
+  actions: { id: DialogueAction; label: string; projectId?: string }[]
   /** For go-parent / talk / review / follow. */
   agentId?: string
   parentId?: string

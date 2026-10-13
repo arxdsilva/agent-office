@@ -185,6 +185,8 @@ export interface RunnerStart {
    * project policy allows this provider. A stdio command (the bridge wrapper) with its env.
    */
   mcp?: { name: string; command: string; args: string[]; env: Record<string, string> }
+  /** Experimental: the provider's own session id to resume natively (runners that support it). */
+  resume?: string
 }
 
 export type RunnerExit = { error?: 'auth' | 'runtime' | 'folder' | 'crash'; message?: string }
@@ -323,6 +325,25 @@ export interface TranscriptReader {
     o: { before?: string; limit: number },
   ): Promise<{ messages: TranscriptMessage[]; more: boolean }>
   search(ref: string, query: string, limit: number): Promise<{ uuid: string; snippet: string }[]>
+}
+
+/** One past provider session found on disk (experimental history import). Metadata only. */
+export interface PastSession {
+  provider: string
+  /** The provider's own session id (resume key); kept in main. */
+  providerSessionId: string
+  /** Opaque `tr_` ref registered with the TranscriptReader. */
+  transcriptRef: string
+  /** Where it ran; stays in main, used only for project matching. */
+  cwd?: string
+  title: string
+  startedAt: number
+  lastSeenAt: number
+}
+
+/** Lists past sessions of a provider (Claude Code: ~/.claude/projects). Newest first. */
+export interface HistorySource {
+  list(o: { limit: number }): Promise<PastSession[]>
 }
 
 export interface SearchDoc {

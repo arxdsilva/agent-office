@@ -120,7 +120,7 @@ export class ManifestError extends Error {
 }
 
 type Obj = Record<string, unknown>
-const ANCHOR_ID = /^(seat|spot|port):[a-z]+(:[A-Za-z0-9]+)*$/
+const ANCHOR_ID = /^(seat|spot|port|console):[a-z]+(:[A-Za-z0-9]+)*$|^kiosk:[a-z]+(-[a-z]+)*$/
 const JOIN_EPS = 0.05
 
 const key = (path: string, k: string) =>
@@ -206,7 +206,10 @@ function anchors(
   for (const [id, a] of Object.entries(o)) {
     const p = key(path, id)
     if (!ANCHOR_ID.test(id))
-      throw new ManifestError(p, 'anchor id must match <seat|spot|port>:<group>:<index>')
+      throw new ManifestError(
+        p,
+        'anchor id must match <seat|spot|port|console>:<group>:<index> or kiosk:<name>',
+      )
     if (id.startsWith('port:')) {
       const po = obj(a, p)
       ports[id] = { x: num(po, 'x', p), y: num(po, 'y', p), z: num(po, 'z', p) }

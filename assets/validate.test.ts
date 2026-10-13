@@ -118,6 +118,10 @@ function anchorsFor(kind: ModuleKind): Record<string, AnchorJson> {
               `spot:pingpong:${t}`,
               { pose: 'stand' },
             ]),
+            // Project spaces (contract §4): directory kiosk, context consoles, handoff pad spots.
+            ['kiosk:project-directory', { pose: 'stand', room: 'hub' }],
+            ...range(6).map((i): Spec => [`console:context:${i}`, { pose: 'stand', room: 'hub' }]),
+            ...range(2).map((i): Spec => [`spot:handoff:${i}`, { pose: 'stand', room: 'plaza' }]),
           ]
         : kind === 'garden'
           ? range(6).map((i): Spec => [`spot:garden:${i}`, { pose: 'stand' }])
@@ -131,7 +135,11 @@ function anchorsFor(kind: ModuleKind): Record<string, AnchorJson> {
       return [id, { x, y: 0, z, heading: 0, pose: 'sit', approach: { x, z: z + 0.6 }, ...extra }]
     }),
   )
-  return kind === 'wing' ? { ...placed, ...portsFor() } : placed
+  return kind === 'wing'
+    ? { ...placed, ...portsFor() }
+    : kind === 'atrium'
+      ? { ...placed, ...archivePorts() }
+      : placed
 }
 
 /** Link attach points (contract §4 `port` kind): 3D points, y ≠ 0, no heading/pose/approach. */
@@ -144,6 +152,13 @@ function portsFor(): Record<string, AnchorJson> {
     ...range(6).map((i) => [`port:board:${i}`, port(24.5 + i * 0.9, 1.6, 8.9)]),
     ...range(8).map((i) => [`port:notebook:${i}`, port(25 + i * 0.3, 1.1, 8.8)]),
   ])
+}
+
+/** Session Archive ports (contract §4): 12 alcove volumes in the atrium. */
+function archivePorts(): Record<string, AnchorJson> {
+  return Object.fromEntries(
+    range(12).map((i) => [`port:archive:${i}`, { x: -8 + i * 0.5, y: 1.2, z: -22 } as unknown as AnchorJson]),
+  )
 }
 
 /** A star graph: a hub at the first connector, one `ap:<id>` node per approach, other connectors. */
@@ -524,6 +539,28 @@ describe('asset validator: anchors and capacity', () => {
     expect(checkAnchorCounts('atrium', atrium)).toContain(
       'atrium: expected 2 ping-pong tables with sides A and B (spot:pingpong:<t>:A|B)',
     )
+  })
+
+  it('requires the project-space anchors on the atrium (contract §4, additive)', () => {
+    const atrium = anchorsFor('atrium')
+    expect(Object.keys(atrium).filter((k) => /^(kiosk|console|port:archive|spot:handoff)/.test(k))).toHaveLength(21)
+    delete atrium['kiosk:project-directory']
+    delete atrium['console:context:5']
+    delete atrium['port:archive:11']
+    delete atrium['spot:handoff:1']
+    expect(checkAnchorCounts('atrium', atrium)).toEqual([
+      'atrium: expected 1 "kiosk:project-directory*" anchors, found 0',
+      'atrium: expected 6 "console:context:*" anchors, found 5',
+      'atrium: expected 2 "spot:handoff:*" anchors, found 1',
+      'atrium: expected 12 "port:archive:*" anchors, found 11',
+    ])
+  })
+
+  it('accepts the kiosk and console ids and rejects a malformed kiosk', () => {
+    const a = { x: 1, y: 0, z: 2, heading: 0, pose: 'stand', approach: { x: 1, z: 2.6 } }
+    expect(checkAnchor('p', 'kiosk:project-directory', a)).toEqual([])
+    expect(checkAnchor('p', 'console:context:3', a)).toEqual([])
+    expect(checkAnchor('p', 'kiosk:Project_Directory', a)[0]).toContain('id must match')
   })
 
   it('checks the declared wing capacity against the anchors', () => {
