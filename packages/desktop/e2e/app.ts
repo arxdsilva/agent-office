@@ -64,7 +64,8 @@ export async function launch(
   win.on('pageerror', (e) => errors.push(String(e)))
   win.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
   if (opts.waitForAgents ?? true)
-    await win.locator('.tag').first().waitFor({ state: 'attached', timeout: 20_000 })
+    // 45 s: the first launch on a cold CI runner (Gatekeeper scanning Electron) can take > 20 s.
+    await win.locator('.tag').first().waitFor({ state: 'attached', timeout: 45_000 })
   else await win.locator('#loading').waitFor({ state: 'hidden', timeout: 30_000 })
   return { app, win, profile, errors }
 }

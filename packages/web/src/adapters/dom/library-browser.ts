@@ -25,7 +25,7 @@ export class DomLibrary implements LibraryView {
   /** Option elements in list order (shelf rows, then overflow) with their refs. */
   private options: { node: HTMLElement; ref: CapabilityRef }[] = []
   /** Row nodes by capability id, reused while the row's data is unchanged (agents update often). */
-  private rowCache = new Map<string, { key: string; node: HTMLElement }>()
+  private rowCache = new Map<string, { key: string; node: HTMLElement; ref: CapabilityRef }>()
   private overflowGroup: { key: string; node: HTMLElement } | null = null
   private tabsKey = ''
   /** Keyboard cursor: the active option's capability id. */
@@ -214,22 +214,45 @@ export class DomLibrary implements LibraryView {
   private row(r: LibraryRowVM, seen: Set<string>): HTMLElement {
     seen.add(r.ref.id)
     const key = JSON.stringify(r)
-    const hit = this.rowCache.get(r.ref.id)
-    const node = hit?.key === key ? hit.node : this.buildRow(r)
-    if (hit?.key !== key) this.rowCache.set(r.ref.id, { key, node })
+    let entry = this.rowCache.get(r.ref.id)
+    if (!entry) {
+      entry = { key: '', node: this.newRow(), ref: r.ref }
+      this.rowCache.set(r.ref.id, entry)
+    }
+    // A changed row (usage text ticks while agents work) is refilled in place: the element under
+    // the pointer stays the same one, so a click always lands.
+    if (entry.key !== key) {
+      entry.key = key
+      entry.ref = r.ref
+      this.fillRow(entry.node, r)
+    }
+    const node = entry.node
     node.id = `lib-opt-${this.options.length}`
     this.options.push({ node, ref: r.ref })
     return node
   }
 
-  private buildRow(r: LibraryRowVM): HTMLElement {
+  /** An empty row element; its click reads the current ref from the cache entry. */
+  private newRow(): HTMLElement {
     const node = el('div', undefined, 'lib-row')
     node.setAttribute('role', 'option')
     node.setAttribute('aria-selected', 'false')
     node.tabIndex = -1
+    node.addEventListener('click', () => {
+      const ref = this.rowCache.get(node.dataset.capabilityId ?? '')?.ref
+      if (!ref) return
+      this.active = ref.id
+      this.markActive(false)
+      this.pickFn(ref)
+    })
+    return node
+  }
+
+  private fillRow(node: HTMLElement, r: LibraryRowVM): void {
     node.dataset.capabilityId = r.ref.id
     node.dataset.provider = r.ref.provider
     if (r.slot !== undefined) node.dataset.slot = String(r.slot)
+    else delete node.dataset.slot
 
     const head = el('div', undefined, 'lib-row-head')
     const icon = el('span', r.icon, 'lib-icon')
@@ -237,19 +260,12 @@ export class DomLibrary implements LibraryView {
     head.append(icon, el('span', r.label, 'lib-label'))
     if (r.scope) head.append(el('span', LIB_COPY.scope[r.scope], `lib-scope ${r.scope}`))
     if (r.inUse) head.append(el('span', LIB_COPY.inUse, 'lib-inuse'))
-    node.append(head)
-    if (r.summary) node.append(el('p', r.summary, 'lib-summary'))
-    node.append(el('p', r.usage, 'lib-usage muted'))
+    const parts: HTMLElement[] = [head]
+    if (r.summary) parts.push(el('p', r.summary, 'lib-summary'))
+    parts.push(el('p', r.usage, 'lib-usage muted'))
     if (r.canSee?.length)
-      node.append(el('p', `${LIB_COPY.canSee}: ${r.canSee.join(' · ')}`, 'lib-cansee muted'))
-
-    const ref = r.ref
-    node.addEventListener('click', () => {
-      this.active = ref.id
-      this.markActive(false)
-      this.pickFn(ref)
-    })
-    return node
+      parts.push(el('p', `${LIB_COPY.canSee}: ${r.canSee.join(' · ')}`, 'lib-cansee muted'))
+    node.replaceChildren(...parts)
   }
 
   /** `vm.focus`: scroll to the overflow group or a row once per new focus request. */

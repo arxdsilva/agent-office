@@ -628,13 +628,21 @@ test('2D polish: walk in every view, the minimap, Main Street, meeting tables, k
     await blur(win)
     const s0 = await state(win)
     const before = s0.view!
-    expect(s0.zoom, 'the default zoom leaves room to zoom out').toBeGreaterThan(1)
-    // Two steps out: fewer device px per art px (crisp integer levels), and a much wider view
-    // (the view stops growing once the whole office fits, so ≥ 1.5×, not 2×).
     await win.keyboard.press('-')
     await win.keyboard.press('-')
-    await expect.poll(async () => (await state(win)).zoom!).toBeLessThan(s0.zoom!)
-    await expect.poll(async () => (await state(win)).view!.w / before.w).toBeGreaterThanOrEqual(1.5)
+    if (s0.zoom! > 1) {
+      // Two steps out: fewer device px per art px (crisp integer levels), and a much wider view
+      // (the view stops growing once the whole office fits, so ≥ 1.5×, not 2×).
+      await expect.poll(async () => (await state(win)).zoom!).toBeLessThan(s0.zoom!)
+      await expect
+        .poll(async () => (await state(win)).view!.w / before.w)
+        .toBeGreaterThanOrEqual(1.5)
+    } else {
+      // A small 1× screen (CI Macs are 1024×768) starts at 1 device px per art px, the smallest
+      // crisp level: - stays there rather than blurring the art.
+      await win.waitForTimeout(300)
+      expect((await state(win)).zoom).toBe(1)
+    }
     expect(await walkedSomewhere(win, 600)).toBeGreaterThan(0.2)
     // The HUD's ⌂ button returns to the default zoom.
     await win.locator('#pixel-zoom [data-zoom="0"]').click()
