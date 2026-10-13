@@ -16,6 +16,7 @@ import { DomViewBar } from './adapters/dom/view-bar.ts'
 import { DomDialogue } from './adapters/dom/dialogue.ts'
 import { DomModeToggle } from './adapters/dom/mode-toggle.ts'
 import { DomPixelHud } from './adapters/dom/pixel-hud.ts'
+import { createMinimalScene } from './adapters/minimal/scene.ts'
 import { PixelScene } from './adapters/pixel/scene.ts'
 import { SceneHost } from './adapters/scene-host.ts'
 import { preloadGateway } from './adapters/preload-gateway.ts'
@@ -54,7 +55,8 @@ async function startupSettings(
 ): Promise<{ powerPreference: PowerPreference | undefined; viewMode: ViewMode }> {
   try {
     const { graphicsQuality, viewMode } = await gateway.settings.get()
-    const mode: ViewMode = viewMode === 'pixel' || viewMode === 'special' ? viewMode : '3d'
+    const mode: ViewMode =
+      viewMode === 'pixel' || viewMode === 'special' || viewMode === 'minimal' ? viewMode : '3d'
     if (graphicsQuality === 'auto') return { powerPreference: undefined, viewMode: mode }
     const spec = PRESETS[graphicsQuality] as { powerPreference?: PowerPreference } | undefined
     return { powerPreference: spec?.powerPreference, viewMode: mode }
@@ -145,6 +147,8 @@ async function boot(): Promise<void> {
     switch (mode) {
       case 'pixel':
         return createPixelScene(clock)
+      case 'minimal':
+        return createMinimalScene(byId('stage'), byId('loading'))
       case 'special':
         throw new Error('Horizon loads asynchronously')
       case '3d':

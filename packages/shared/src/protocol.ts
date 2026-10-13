@@ -4,6 +4,10 @@ import type { ModeOption, SessionCap } from './providers.ts'
 export const AGENT_STATUSES = ['idle', 'thinking', 'tool', 'waiting', 'error', 'done'] as const
 export type AgentStatus = (typeof AGENT_STATUSES)[number]
 
+/** How an agent ended, as its producer reported it (docs/minimal-mode.md). Never inferred from silence. */
+export const AGENT_ENDINGS = ['completed', 'failed', 'cancelled', 'terminated'] as const
+export type AgentEnding = (typeof AGENT_ENDINGS)[number]
+
 export const MAX_MESSAGE_CHARS = 4000
 
 /** Claude Code permission modes (Agent SDK `PermissionMode`; hook input `permission_mode`). */
@@ -43,6 +47,10 @@ export const AgentEventSchema = z.object({
   tool: z.string().max(100).optional(),
   /** Short activity line. */
   text: z.string().max(500).optional(),
+  /** The objective the agent was given when it started (not its current activity). */
+  task: z.string().max(200).optional(),
+  /** How the agent ended, reported by its producer; sent with status 'done' or 'error'. */
+  ended: z.enum(AGENT_ENDINGS).optional(),
   /** Producer of the event: http, claude-code, mock, … */
   source: z.string().max(50).optional(),
   /** Epoch millis; defaults to receive time. */
@@ -96,6 +104,12 @@ export interface Agent {
   status: AgentStatus
   tool?: string
   text?: string
+  /** The objective the agent was given (absent = not reported). */
+  task?: string
+  /** How the agent ended, when its producer reported it. */
+  ended?: AgentEnding
+  /** First time `ended` was reported (set by core). */
+  endedAt?: number
   source: string
   since: number
   lastSeen: number

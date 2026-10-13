@@ -110,6 +110,18 @@ describe('POST /api/events', () => {
     expect(batch.json()).toEqual({ accepted: 2 })
   })
 
+  it('202 for task + ended; 400 for an unknown ending or a task over 200 chars', async () => {
+    const { app } = setup()
+    const post = (payload: object) =>
+      app.inject({ method: 'POST', url: '/api/events', headers: authed, payload })
+    expect(
+      (await post({ agentId: 'a', task: 'Map the auth flow', ended: 'completed' })).statusCode,
+    ).toBe(202)
+    expect((await post({ agentId: 'a', ended: 'bogus' })).statusCode).toBe(400)
+    expect((await post({ agentId: 'a', task: 'x'.repeat(201) })).statusCode).toBe(400)
+    expect((await post({ agentId: 'a' })).statusCode).toBe(202)
+  })
+
   it('400 with issues for invalid bodies', async () => {
     const { app } = setup()
     const r = await app.inject({

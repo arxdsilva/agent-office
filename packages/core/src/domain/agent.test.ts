@@ -172,3 +172,55 @@ describe('sweepAgent and capability use', () => {
     expect(next.capability).toBeUndefined()
   })
 })
+
+describe('task and ended (docs/minimal-mode.md)', () => {
+  it('keeps the task across tool events and replaces it on reassignment', () => {
+    let a = applyEvent(undefined, { agentId: 'a', task: 'Fix login' }, 1)!
+    for (let i = 0; i < 5; i++) {
+      a = applyEvent(a, { agentId: 'a', status: 'tool', tool: 'Read' }, 2 + i)!
+    }
+    expect(a.task).toBe('Fix login')
+    a = applyEvent(a, { agentId: 'a', task: 'Write docs' }, 10)!
+    expect(a.task).toBe('Write docs')
+  })
+
+  it('sets endedAt once, when ended is first reported', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'done', ended: 'completed' }, 5)!
+    expect(a).toMatchObject({ ended: 'completed', endedAt: 5 })
+    const b = applyEvent(a, { agentId: 'a', ended: 'failed' }, 9)!
+    expect(b).toMatchObject({ ended: 'failed', endedAt: 5 })
+  })
+
+  it('ended is sticky: later events without it, even thinking, keep it', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'done', ended: 'cancelled' }, 5)!
+    const b = applyEvent(a, { agentId: 'a', status: 'thinking' }, 8)!
+    expect(b).toMatchObject({ ended: 'cancelled', endedAt: 5, status: 'thinking' })
+  })
+
+  it('drops an older-ts ended event', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'thinking' }, 10)!
+    expect(applyEvent(a, { agentId: 'a', ended: 'completed', ts: 5 }, 20)).toBeNull()
+  })
+
+  it('treats ended and endedAt as visible, and a duplicate event as not visible', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'thinking' }, 1)!
+    const b = applyEvent(a, { agentId: 'a', ended: 'terminated' }, 2)!
+    expect(isVisibleChange(a, b)).toBe(true)
+    expect(isVisibleChange(a, { ...a, endedAt: 3 })).toBe(true)
+    const c = applyEvent(b, { agentId: 'a', ended: 'terminated' }, 3)!
+    expect(isVisibleChange(b, c)).toBe(false)
+  })
+
+  it('passes task, ended and endedAt through toDto', () => {
+    const a = applyEvent(undefined, { agentId: 'a', task: 't', ended: 'failed' }, 4)!
+    expect(toDto(a)).toMatchObject({ task: 't', ended: 'failed', endedAt: 4 })
+  })
+
+  it('a silent agent swept past idle never gets ended', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'thinking' }, 0)!
+    const r = sweepAgent(a, policy.idleAfterMs + 1, policy)
+    expect(r.kind).toBe('update')
+    if (r.kind === 'update') expect(r.agent.ended).toBeUndefined()
+    expect(sweepAgent(a, policy.expireAfterMs + 1, policy).kind).toBe('remove')
+  })
+})

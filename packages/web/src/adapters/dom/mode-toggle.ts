@@ -1,4 +1,4 @@
-// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG | Horizon` segmented
+// ModeToggleView port → `#mode-toggle` in #actions: the `3D Office | 2D RPG | Horizon | Minimal` segmented
 // switch (plan §9; Horizon is the optional, lazy-loaded light flavor of the 3D office). A
 // radiogroup with roving focus; arrow keys move and pick.
 import { PIXEL_COPY } from '../../app/pixel-copy.ts'
@@ -10,6 +10,7 @@ const MODES: { mode: ViewMode; label: string }[] = [
   { mode: '3d', label: PIXEL_COPY.mode.office3d },
   { mode: 'pixel', label: PIXEL_COPY.mode.rpg2d },
   { mode: 'special', label: PIXEL_COPY.mode.special },
+  { mode: 'minimal', label: PIXEL_COPY.mode.minimal },
 ]
 
 export class DomModeToggle implements ModeToggleView {

@@ -61,6 +61,11 @@ const msg = (over: Partial<ChatMessage>): ChatMessage => ({
 const stateWith = (agents: Agent[], messages: ChatMessage[] = []) =>
   applyMessage(emptyState(), { type: 'snapshot', agents, messages })
 
+const expectedClock = (ts: number) => {
+  const d = new Date(ts)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 describe('panelVM', () => {
   it('describes the agent, its activity and thread', () => {
     const s = stateWith(
@@ -86,6 +91,10 @@ describe('panelVM', () => {
       ['Activity', 'npm test'],
       ['Active', 'for 1m'],
       ['Last seen', '10s ago'],
+      ['Assigned task', 'Task not reported'],
+      ['Lifecycle', 'Tool use'],
+      ['Started', expectedClock(0)],
+      ['Duration', '1m 00s'],
     ])
     expect(vm.thread).toEqual([
       { id: 'm1', from: 'user', text: 'hi', stateLabel: '✓✓ replied' },
@@ -239,6 +248,39 @@ describe('panelVM activity', () => {
     expect(vm.activity).toBe('Waiting for you in booth 3')
     expect(vm.meta[2]).toEqual(['Now', 'Waiting for you in booth 3'])
     expect(panelVM(s, 'gone', 0, { activity: 'leaving' }).activity).toBeUndefined()
+  })
+})
+
+describe('panelVM hierarchy rows', () => {
+  it('shows the task, lifecycle, start and a frozen duration for an ended agent', () => {
+    const s = stateWith([
+      agent({ task: 'Audit login', status: 'done', ended: 'completed', endedAt: 125_000 }),
+    ])
+    const m = new Map(panelVM(s, 'a', 900_000).meta)
+    expect(m.get('Assigned task')).toBe('Audit login')
+    expect(m.get('Lifecycle')).toBe('Completed')
+    expect(m.get('Duration')).toBe('2m 05s')
+  })
+
+  it('formats short and long durations', () => {
+    const s = stateWith([agent({ since: 0 })])
+    expect(new Map(panelVM(s, 'a', 5_000).meta).get('Duration')).toBe('5s')
+    expect(new Map(panelVM(s, 'a', 3_725_000).meta).get('Duration')).toBe('1h 02m')
+  })
+
+  it('lists direct children in stable order and uses the depth for the pill', () => {
+    const s = stateWith([
+      agent(),
+      agent({ id: 'c2', name: 'C2', parentId: 'a', since: 5 }),
+      agent({ id: 'c1', name: 'C1', parentId: 'a', since: 5, status: 'thinking' }),
+      agent({ id: 'g', name: 'G', parentId: 'c1', since: 9 }),
+    ])
+    expect(panelVM(s, 'a', 0).children).toEqual([
+      { id: 'c1', name: 'C1', status: 'thinking' },
+      { id: 'c2', name: 'C2', status: 'tool' },
+    ])
+    expect(new Map(panelVM(s, 'c2', 0).meta).get('Lifecycle')).toBe('Working')
+    expect(panelVM(s, 'gone', 0).children).toEqual([])
   })
 })
 

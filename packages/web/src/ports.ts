@@ -9,6 +9,7 @@ import type {
   SettingsPatch,
 } from '@agent-office/shared'
 import type { Effective, GraphicsStats } from './app/graphics-types.ts'
+import type { RosterInput } from './app/hierarchy-types.ts'
 import type {
   DialogueAction,
   DialogueVM,
@@ -142,6 +143,11 @@ export interface SceneView {
    * counts (never titles). Null returns to the provider's capabilities. Replayed by the host.
    */
   setProjectLibrary?(vm: ProjectLibraryVM | null): void
+  /**
+   * Optional: the live roster for non-spatial views (Minimal mode, docs/minimal-mode.md). Called
+   * on every state change; the host caches the last one and replays it after a mode switch.
+   */
+  setRoster?(roster: RosterInput): void
 }
 
 export interface SceneSurfaces {

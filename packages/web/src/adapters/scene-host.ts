@@ -7,6 +7,7 @@ import type { Effective, GraphicsStats, HardwareInfo } from '../app/graphics-typ
 import type { ViewEntry } from '../app/library-types.ts'
 import type { AgentPlan, BuildingLayout, InteractionHit, Link } from '../app/office-types.ts'
 import type { InteractTarget, TileRect } from '../app/pixel/types.ts'
+import type { RosterInput } from '../app/hierarchy-types.ts'
 import type { ProjectLibraryVM } from '../app/project-library.ts'
 import type { CapabilityRef, SceneAssets, SceneSurfaces, SceneView } from '../ports.ts'
 
@@ -74,6 +75,7 @@ export class SceneHost implements SceneView {
   private suspended = false
   private focus: { ids: string[] | null; o: { dim: boolean; frame: boolean } } | null = null
   private projectLibrary: ProjectLibraryVM | null = null
+  private roster: RosterInput | null = null
   /** Sims-style wall mode (3D only; graphics contract §13). */
   private wallMode: WallMode | null = null
   private plans = new Map<string, AgentPlan>()
@@ -168,6 +170,7 @@ export class SceneHost implements SceneView {
     if (this.suspended) s.setInputSuspended?.(true)
     if (this.projectLibrary) s.setProjectLibrary?.(this.projectLibrary)
     if (this.wallMode) s.setWallMode?.(this.wallMode)
+    if (this.roster) s.setRoster?.(this.roster)
     const resynced = this.deps.resync()
     const plans = resynced.size ? resynced : this.cachedPlans()
     if (plans.size) s.direct(plans, [])
@@ -362,6 +365,11 @@ export class SceneHost implements SceneView {
   setWallMode(m: WallMode): void {
     this.wallMode = m
     this.scene.setWallMode?.(m)
+  }
+
+  setRoster(roster: RosterInput): void {
+    this.roster = roster
+    this.scene.setRoster?.(roster)
   }
 
   // ── Adapter-level extras (main.ts) ──

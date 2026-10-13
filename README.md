@@ -411,6 +411,10 @@ Low (left) and Ultra (right), same view:
 
 ![The same desk pod at the Low and Ultra presets](docs/screenshots/quality-compare.png)
 
+## Minimal mode
+
+**Minimal** (the mode switch, top right) is a calm, static view of who is working on what: one card per project, its main agents, and their subagents nested underneath. Each agent shows its **assigned task** and what it is **doing right now** as separate lines, with provider, model and status. Finished subagents move to a short **Recently finished** list under their parent. There's no 3D, no camera and no render loop: the page changes only when an agent does. Click any agent to open its chat panel. Details: [docs/minimal-mode.md](docs/minimal-mode.md).
+
 ## 2D RPG mode (optional)
 
 Prefer pixels? The **3D Office | 2D RPG** switch (top right) shows the **same live office** as a GBA-style, top-down pixel-art world. It's an extra view, not a replacement: the 3D office stays the default, and switching doesn't restart agents or lose chats, sessions or permissions.
@@ -575,6 +579,8 @@ You can POST a single event or an array of up to 500. Events are **partial updat
 | `target`     | string ≤100 |          | What the tool touched, in a short form: `host:github.com`, `cmd:git`, `skill:<name>`, `rule:project:<file>`, … ([capabilities](docs/capabilities.md#3-the-target-grammar-privacy)) |
 | `capability` | string ≤120 |          | Explicit capability id the tool uses, e.g. `mcp:postgres` (otherwise classified from `tool` and `target`)                                                                          |
 | `text`       | string ≤500 |          | Short activity line                                                                                                                                                                |
+| `task`       | string ≤200 |          | The objective the agent was given; kept while `text` changes ([Minimal mode](docs/minimal-mode.md))                                                                                |
+| `ended`      | enum        |          | `completed` · `failed` · `cancelled` · `terminated`, sent with `done` or `error`. Never inferred from silence.                                                                     |
 | `source`     | string ≤50  |          | Producer name                                                                                                                                                                      |
 | `ts`         | epoch ms    |          | Event time. Older events never overwrite newer state.                                                                                                                              |
 

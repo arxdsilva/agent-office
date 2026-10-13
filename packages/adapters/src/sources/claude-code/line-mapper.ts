@@ -133,6 +133,10 @@ function libraryTarget(
   return undefined
 }
 
+// eslint-disable-next-line no-control-regex
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f]+/g
+const TASK = 120
+const clean = (s: string) => s.replace(/\s+/g, ' ').replace(CONTROLS, '').trim().slice(0, TASK)
 const snippet = (s: unknown) => (typeof s === 'string' ? s.slice(0, SNIPPET) : '')
 
 /**
@@ -220,7 +224,15 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
     event.parentId = `cc:${sessionId}`
     event.name = (meta?.agentType ?? `sub·${d.agentId.slice(0, 6)}`).slice(0, 100)
     if (meta?.agentType) event.kind = meta.agentType.slice(0, 100)
-    if (!text && meta?.description) event.text = snippet(meta.description)
+    if (meta?.description) {
+      const task = clean(meta.description)
+      if (task) event.task = task
+    }
+    // A subagent that ends its turn is finished (it is not waiting for a human).
+    if (status === 'waiting') {
+      event.status = 'done'
+      event.ended = 'completed'
+    }
   } else if (d.type === 'user') {
     // Only the session's own prompts carry its permission mode (Shift+Tab); subagents never do.
     const mode = PermissionModeSchema.safeParse(d.permissionMode)

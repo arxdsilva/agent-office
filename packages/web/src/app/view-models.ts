@@ -44,6 +44,7 @@ import {
   type SnippetLang,
 } from './connect-types.ts'
 import { ago } from './format.ts'
+import { lifecycleOf } from './hierarchy.ts'
 import { GFX_COPY } from './graphics-copy.ts'
 import type { Effective, GraphicsStats, Preset, Tier } from './graphics-types.ts'
 import { PRESETS, resolvePreset } from './quality.ts'
@@ -188,6 +189,8 @@ export interface PanelVM {
   activity?: string
   meta: [string, string][]
   parent?: { id: string; name: string }
+  /** Direct subagents, in stable order (`since`, then id). */
+  children: { id: string; name: string; status: AgentStatus }[]
   hint: Hint | null
   thread: ThreadItemVM[]
   /** Connections, skills and rules this agent used this session (chips). */
@@ -226,6 +229,27 @@ export interface UsedChips {
   library: Chip[]
 }
 
+const pad2 = (n: number) => String(n).padStart(2, '0')
+/** Short local time, HH:MM. */
+const clock = (ts: number) => {
+  const d = new Date(ts)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+const duration = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${pad2(s % 60)}s`
+  return `${Math.floor(m / 60)}h ${pad2(m % 60)}m`
+}
+/** Number of known ancestors (bounded, so a cycle cannot loop). */
+const depthOf = (state: OfficeState, a: Agent) => {
+  let d = 0
+  for (let p = a.parentId; p && state.agents.has(p) && d < 50; p = state.agents.get(p)!.parentId)
+    d++
+  return d
+}
+
 export function panelVM(
   state: OfficeState,
   id: string,
@@ -254,6 +278,7 @@ export function panelVM(
       name: 'This agent has left the office',
       subtitle: '',
       meta: [],
+      children: [],
       hint: null,
       thread: [],
       session: null,
@@ -276,7 +301,15 @@ export function panelVM(
       ['Activity', a.text || '—'],
       ['Active', `for ${ago(a.since, now).replace(' ago', '')}`],
       ['Last seen', ago(a.lastSeen, now)],
+      ['Assigned task', a.task ?? 'Task not reported'],
+      ['Lifecycle', lifecycleOf(a, now, depthOf(state, a)).pill],
+      ['Started', clock(a.since)],
+      ['Duration', duration((a.endedAt ?? now) - a.since)],
     ],
+    children: [...state.agents.values()]
+      .filter((c) => c.parentId === id)
+      .sort((x, y) => x.since - y.since || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+      .map((c) => ({ id: c.id, name: c.name, status: c.status })),
     ...(a.parentId ? { parent: { id: a.parentId, name: parent?.name ?? a.parentId } } : {}),
     hint: hintFor(a, input.hook),
     ...(used && (used.adapters.length || used.library.length) ? { used } : {}),

@@ -66,6 +66,7 @@ function fakeScene(mode: ViewMode) {
           hardwareInfo: () => null,
           onFrameStats: on('onFrameStats'),
           setWallMode: rec('setWallMode'),
+          setRoster: rec('setRoster'),
         }),
   }
   const fire = (name: string, ...args: unknown[]) =>
@@ -380,6 +381,18 @@ describe('SceneHost: 2D camera, minimap base and travel (HS-6)', () => {
     host.travelTo({ pos: { x: 3, z: 4 } })
     expect(p.calls.find((c) => c.name === 'panTo')?.args).toEqual([{ x: 1, z: 2 }])
     expect(p.calls.find((c) => c.name === 'travelTo')?.args).toEqual([{ pos: { x: 3, z: 4 } }])
+  })
+})
+
+describe('SceneHost: roster', () => {
+  it('HS-12 forwards setRoster and replays the last one into a scene that supports it', async () => {
+    const { host, made } = setup()
+    await host.load('m.json')
+    const roster = { agents: [], projects: [], now: 1 }
+    host.setRoster(roster)
+    expect(made[0]!.calls.find((c) => c.name === 'setRoster')?.args).toEqual([roster])
+    await host.switchTo('pixel')
+    expect(() => host.setRoster(roster)).not.toThrow()
   })
 })
 

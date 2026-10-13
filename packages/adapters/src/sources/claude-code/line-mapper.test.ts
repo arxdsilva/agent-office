@@ -112,9 +112,78 @@ describe('lineToEvent', () => {
       parentId: 'cc:sess-1234abcd',
       name: 'Explore',
       kind: 'Explore',
-      text: 'Find the auth code',
+      task: 'Find the auth code',
+      text: '',
       status: 'tool',
     })
+  })
+
+  it('LM-task: every sidechain line carries the same task; tool lines change text/tool only', () => {
+    const ctx = newParseContext()
+    ctx.meta.set('a1', { agentType: 'Explore', description: 'Map the auth flow' })
+    const side = { isSidechain: true, agentId: 'a1' }
+    const first = lineToEvent(user('prompt', side), ctx)
+    const tool = lineToEvent(
+      assistant([{ type: 'tool_use', name: 'Grep', input: { description: 'Search login' } }], side),
+      ctx,
+    )
+    expect(first?.task).toBe('Map the auth flow')
+    expect(tool).toMatchObject({ task: 'Map the auth flow', tool: 'Grep', text: 'Search login' })
+  })
+
+  it('LM-task: cleans the description (control chars, whitespace) and caps it at 120', () => {
+    const ctx = newParseContext()
+    ctx.meta.set('a1', { description: `  a\u0000b\n\n  c\t${'x'.repeat(300)}` })
+    const e = lineToEvent(user('p', { isSidechain: true, agentId: 'a1' }), ctx)
+    expect(e?.task?.length).toBeLessThanOrEqual(120)
+    expect(e?.task?.startsWith('ab c x')).toBe(true)
+  })
+
+  it('LM-end: a sidechain end_turn / stop_sequence is done + completed; main sessions keep waiting', () => {
+    const side = { isSidechain: true, agentId: 'a1' }
+    for (const stop of ['end_turn', 'stop_sequence']) {
+      expect(
+        lineToEvent(assistant([{ type: 'text', text: 'ok' }], side, stop), newParseContext()),
+      ).toMatchObject({ status: 'done', ended: 'completed' })
+    }
+    const main = lineToEvent(
+      assistant([{ type: 'text', text: 'ok' }], {}, 'end_turn'),
+      newParseContext(),
+    )
+    expect(main?.status).toBe('waiting')
+    expect(main).not.toHaveProperty('ended')
+  })
+
+  it('LM-end: a sidechain tool_use or tool error never sets ended', () => {
+    const side = { isSidechain: true, agentId: 'a1' }
+    const ctx = newParseContext()
+    const tool = lineToEvent(
+      assistant([{ type: 'tool_use', name: 'Bash', input: {} }], side, 'end_turn'),
+      ctx,
+    )
+    expect(tool?.status).toBe('tool')
+    expect(tool).not.toHaveProperty('ended')
+    const err = lineToEvent(
+      user([{ type: 'tool_result', is_error: true, content: 'boom' }], side),
+      ctx,
+    )
+    expect(err?.text).toBe('tool error')
+    expect(err).not.toHaveProperty('ended')
+  })
+
+  it('LM-sentinel: the subagent prompt never reaches an event; the task is capped', () => {
+    const ctx = newParseContext()
+    ctx.meta.set('a1', { agentType: 'Explore', description: 'd'.repeat(300) })
+    const side = { isSidechain: true, agentId: 'a1' }
+    const events = [
+      lineToEvent(user('Please do SECRET_PROMPT_7f3a now', side), ctx),
+      lineToEvent(assistant([{ type: 'text', text: 'working' }], side), ctx),
+      lineToEvent(assistant([{ type: 'text', text: 'done' }], side, 'end_turn'), ctx),
+    ]
+    for (const e of events) {
+      expect(JSON.stringify(e)).not.toContain('SECRET_PROMPT_7f3a')
+      expect(e?.task?.length).toBeLessThanOrEqual(120)
+    }
   })
 
   it('names subagents without meta by a short id', () => {

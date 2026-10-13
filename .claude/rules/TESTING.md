@@ -20,7 +20,7 @@ Excluded from the threshold: thin shells covered by the Playwright Electron suit
 - `desktop/src/main/adapters/electron-*.ts`
 - `desktop/src/preload/**`
 - `web/src/main.ts`
-- `web/src/adapters/{three,dom,pixel}/**` (`pixel`: the 2D RPG mode's Canvas2D drawing; its logic lives in the covered `web/src/app/pixel/**`)
+- `web/src/adapters/{three,dom,pixel,minimal}/**` (`pixel`: the 2D RPG mode's Canvas2D drawing; its logic lives in the covered `web/src/app/pixel/**`; `minimal`: Minimal mode's DOM view, covered by `desktop/e2e/minimal.spec.ts`; its logic lives in the covered `web/src/app/{hierarchy,finished}.ts`)
 - the `scripts/*.mjs` helpers
 
 Do not widen this list without saying so in the PR.

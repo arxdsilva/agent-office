@@ -115,6 +115,27 @@ describe('ClaudeCodeTailer (node file system)', () => {
     })
   })
 
+  it('TL-task: a subagent carries its meta description as task and ends done when its turn ends', async () => {
+    const { project, store, src } = fixture()
+    const subDir = join(project, 'sess-1234abcd', 'subagents')
+    mkdirSync(subDir, { recursive: true })
+    writeFileSync(
+      join(subDir, 'agent-a1b2c3d4e5.meta.json'),
+      JSON.stringify({ agentType: 'Plan', description: 'Plan the refactor' }),
+    )
+    const sub = join(subDir, 'agent-a1b2c3d4e5.jsonl')
+    const side = { isSidechain: true, agentId: 'a1b2c3d4e5' }
+    writeFileSync(sub, user('go', side) + '\n')
+    await src.tick()
+    expect(store.agent('cc:a1b2c3d4e5')?.task).toBe('Plan the refactor')
+    appendFileSync(sub, assistant([{ type: 'text', text: 'ok' }], side, 'end_turn') + '\n')
+    await src.tick()
+    expect(store.agent('cc:a1b2c3d4e5')).toMatchObject({
+      status: 'done',
+      task: 'Plan the refactor',
+    })
+  })
+
   it('TL-skip skips the transcripts of managed sessions, subagents included', async () => {
     const { dir, project, file, office } = fixture()
     let managed = true

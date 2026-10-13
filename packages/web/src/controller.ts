@@ -352,11 +352,43 @@ export function createController(d: ControllerDeps) {
     if (pixelDeps) applyViewMode(s.viewMode ?? '3d')
   }
 
+  /** Minimal mode's roster (docs/minimal-mode.md): sent on every state change; the host caches it. */
+  const QUIET_MS = 60_000
+  const quietPushed = new Map<string, number>()
+  function pushRoster() {
+    if (!d.scene.setRoster) return
+    d.scene.setRoster({
+      agents: [...state.agents.values()],
+      projects:
+        d.workspace?.projectDirectory().entries.map((e) => ({
+          id: e.projectId,
+          name: e.name,
+          color: e.color,
+        })) ?? [],
+      now: d.clock.now(),
+    })
+  }
+
+  /** Silent idle agents turn "No recent activity" with no event: push once per agent when they do. */
+  function pushRosterOnQuiet() {
+    if (!d.scene.setRoster) return
+    const now = d.clock.now()
+    for (const a of state.agents.values()) {
+      if (a.status !== 'idle' || a.ended) continue
+      if (now - a.lastSeen <= QUIET_MS || quietPushed.get(a.id) === a.lastSeen) continue
+      quietPushed.set(a.id, a.lastSeen)
+      pushRoster()
+      return
+    }
+  }
+
   /** The first mode only renders (main built that scene); later changes switch the scene host. */
   function applyViewMode(mode: ViewMode) {
     if (mode === viewMode) return
     const first = viewMode === undefined
     viewMode = mode
+    // CSS hides the canvas host and the 3D/2D-only HUD while Minimal mode shows.
+    if (typeof document !== 'undefined') document.body.dataset.viewMode = mode
     d.modeToggle?.render(mode)
     d.pixelHud?.show(mode === 'pixel')
     if (mode !== 'pixel') {
@@ -1526,6 +1558,7 @@ export function createController(d: ControllerDeps) {
         d.gateway.onMessage((m) => {
           state = applyMessage(state, m)
           noteArrivals()
+          pushRoster()
           render()
           if (pendingSelect && state.agents.has(pendingSelect)) {
             const id = pendingSelect
@@ -1555,7 +1588,10 @@ export function createController(d: ControllerDeps) {
           applyGraphics()
         }),
         d.every(GFX_POLL_MS, pollGraphics),
-        d.every(1000, renderPanel),
+        d.every(1000, () => {
+          pushRosterOnQuiet()
+          renderPanel()
+        }),
         d.every(DIRECT_MS, () => {
           messageDirected = false
           direct()
@@ -1577,6 +1613,7 @@ export function createController(d: ControllerDeps) {
         .catch(() => {})
       state = applyMessage(state, { type: 'snapshot', ...snapshot })
       noteArrivals()
+      pushRoster()
       ready = true
       stops.push(
         d.after(EMPTY_GRACE_MS, () => {

@@ -251,6 +251,17 @@ export class DomPanel implements PanelView {
       dd.append(btn)
       rows.push(el('dt', 'Parent'), dd)
     }
+    if (vm.children?.length) {
+      const dd = el('dd', undefined, 'p-children')
+      for (const c of vm.children) {
+        const btn = el('button', c.name)
+        btn.type = 'button'
+        btn.dataset.agentId = c.id
+        btn.addEventListener('click', () => this.parentFn(c.id))
+        dd.append(btn)
+      }
+      rows.push(el('dt', 'Subagents'), dd)
+    }
     byId('p-meta').replaceChildren(...rows)
     renderChips(byId('p-used'), vm.used, panelProvider(vm), (ref) => this.pickCapFn(ref))
     this.renderHint(vm)

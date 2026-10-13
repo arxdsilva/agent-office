@@ -223,10 +223,10 @@ test('Horizon: intro, same rooms and seats, panel, calm and bright, mode round t
     for (let i = 0; i < rounds; i++) await roundTrip()
     await expect(win.locator('#stage canvas')).toHaveCount(1)
     const after = await settled()
-    expect(Math.abs(after.textureMB - base.textureMB)).toBeLessThanOrEqual(
-      Math.max(1, base.textureMB * 0.05),
-    )
-    expect(Math.abs(after.geometryMB - base.geometryMB)).toBeLessThanOrEqual(
+    // A leak is growth. Less memory after the round trips is fine: the baseline can still hold the
+    // previous scene's textures while they wait to be released.
+    expect(after.textureMB - base.textureMB).toBeLessThanOrEqual(Math.max(1, base.textureMB * 0.05))
+    expect(after.geometryMB - base.geometryMB).toBeLessThanOrEqual(
       Math.max(0.5, base.geometryMB * 0.05),
     )
   })

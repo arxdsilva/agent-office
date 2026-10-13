@@ -30,8 +30,10 @@ const MERGED = [
   'text',
   'permissionMode',
   'modeId',
+  'task',
+  'ended',
 ] as const
-const VISIBLE: (keyof Agent)[] = [...MERGED, 'interactive', 'unread']
+const VISIBLE: (keyof Agent)[] = [...MERGED, 'endedAt', 'interactive', 'unread']
 /** Internal fields whose change still matters to subscribers (a new capability use). */
 const USE = ['target', 'capability'] as const
 
@@ -64,6 +66,8 @@ export function applyEvent(
   for (const k of MERGED) {
     if (e[k] !== undefined) (next as unknown as Record<string, unknown>)[k] = e[k]
   }
+  // `ended` is sticky and endedAt records only the first report.
+  if (e.ended !== undefined && prev?.ended === undefined) next.endedAt = ts
   // A new tool call replaces the previous call's target/capability; otherwise they merge.
   for (const k of USE) {
     if (e[k] !== undefined) next[k] = e[k]

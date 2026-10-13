@@ -48,8 +48,11 @@ export const GraphicsAdvancedSchema = z.object({
   building: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 })
 export type GraphicsAdvanced = z.infer<typeof GraphicsAdvancedSchema>
-/** '3d' Classic, 'pixel' 2D RPG, 'special' Horizon (optional, lazy-loaded; docs/horizon). */
-export const VIEW_MODES = ['3d', 'pixel', 'special'] as const
+/**
+ * '3d' Classic, 'pixel' 2D RPG, 'special' Horizon (optional, lazy-loaded; docs/horizon),
+ * 'minimal' the static agent hierarchy (docs/minimal-mode.md).
+ */
+export const VIEW_MODES = ['3d', 'pixel', 'special', 'minimal'] as const
 export type ViewMode = (typeof VIEW_MODES)[number]
 /** Sims-style wall visibility in the 3D modes (graphics contract §13). */
 export const WALL_MODES = ['up', 'cutaway', 'down'] as const

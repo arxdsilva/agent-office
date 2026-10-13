@@ -248,6 +248,7 @@ function fakeViews() {
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & {
     wallModes: string[]
+    rosters: { agents: Agent[]; now: number }[]
     loads: string[]
     wentTo: string[]
     idleMs: number
@@ -281,6 +282,10 @@ function fakeViews() {
       this.graphics.push(e)
     },
     wallModes: [],
+    rosters: [],
+    setRoster(r) {
+      this.rosters.push(r)
+    },
     setWallMode(m) {
       this.wallModes.push(m)
     },
@@ -703,6 +708,29 @@ function fakePage() {
     },
   }
 }
+
+describe('controller: Minimal roster', () => {
+  it('pushes the roster after the snapshot and on every message', async () => {
+    const { scene, listeners } = await setup()
+    expect(scene.rosters.at(-1)!.agents.map((a) => a.id)).toEqual(['a'])
+    listeners.message[0]!({ type: 'upsert', agent: agent('b') })
+    expect(scene.rosters.at(-1)!.agents.map((a) => a.id)).toEqual(['a', 'b'])
+  })
+
+  it('pushes once when a silent idle agent crosses the 60 s quiet threshold', async () => {
+    const { scene, advance, tick } = await setup(undefined, undefined, {
+      agents: [agent('a', { status: 'idle', lastSeen: 0 })],
+    })
+    const before = scene.rosters.length
+    advance(30_000)
+    tick(1000)
+    expect(scene.rosters.length).toBe(before)
+    advance(40_000)
+    tick(1000)
+    tick(1000)
+    expect(scene.rosters.length).toBe(before + 1)
+  })
+})
 
 describe('controller', () => {
   it('loads the manifest after the snapshot, places the building and spawns present agents', async () => {

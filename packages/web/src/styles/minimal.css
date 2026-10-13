@@ -1,0 +1,253 @@
+/* Minimal mode (docs/minimal-mode.md): the static agent hierarchy. DOM only, no canvas.
+   Tokens come from styles.css (both themes); dark follows the reference: black page, hairline cards. */
+
+:root {
+  --mm-page: var(--bg);
+  --mm-card: var(--card-solid, #fff);
+  --mm-line: var(--border);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mm-page: #000;
+    --mm-card: rgba(255, 255, 255, 0.03);
+    --mm-line: rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* Hide the canvas host's content and the 3D/2D-only chrome while Minimal shows. */
+body[data-view-mode='minimal'] #stage > :not(#minimal-root),
+body[data-view-mode='minimal']
+  :is(
+    #actions,
+    #views,
+    #hud,
+    #pixel-hud,
+    #ph-selected,
+    #pixel-alerts,
+    #minimap,
+    #directory,
+    #dialogue,
+    #crosshair,
+    #walk-help,
+    #stats,
+    #wall-mode-btn
+  ) {
+  display: none !important;
+}
+
+#minimal-root {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--mm-page);
+  color: var(--text);
+  padding: 16px 20px 40px;
+}
+body:not([data-view-mode='minimal']) #minimal-root {
+  display: none;
+}
+
+.mm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.mm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mm-btn {
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--mm-line);
+  border-radius: 8px;
+  padding: 3px 10px;
+}
+.mm-zoom-label {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 4ch;
+  text-align: center;
+}
+.mm-empty {
+  color: var(--muted);
+}
+.mm-empty[hidden] {
+  display: none;
+}
+
+.mm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mm-project {
+  border: 1px solid var(--mm-line);
+  border-radius: 16px;
+  background: var(--mm-card);
+  padding: 16px;
+}
+.mm-project-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.mm-project-name {
+  font-size: 16px;
+  margin: 0;
+}
+.mm-meta {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 1;
+}
+.mm-roots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mm-agent {
+  border: 1px solid var(--mm-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.mm-agent[aria-selected='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.mm-sub[aria-selected='true'] > .mm-head {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mm-head {
+  cursor: pointer;
+  border-radius: 8px;
+}
+.mm-head:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.mm-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mm-name {
+  font-weight: 600;
+  flex: 1;
+}
+.mm-fork,
+.mm-depth {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c, var(--muted));
+}
+.mm-pill {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--c, var(--text));
+  background: color-mix(in srgb, var(--c, var(--muted)) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c, var(--muted)) 40%, transparent);
+  white-space: nowrap;
+}
+.mm-project-head .mm-pill {
+  --c: var(--muted);
+}
+.mm-project-head .mm-pill[data-active='true'] {
+  --c: var(--ok);
+}
+.mm-task {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.mm-muted {
+  color: var(--muted);
+}
+.mm-activity {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mm-toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 6px 0 0;
+  cursor: pointer;
+}
+ul.mm-children {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+ul.mm-children[hidden] {
+  display: none;
+}
+.mm-sub {
+  border-left: 2px solid color-mix(in srgb, var(--c, var(--muted)) 55%, transparent);
+  padding-left: 12px;
+}
+/* Indentation stops at depth 3: deeper rows only carry a "↳ depth N" label. */
+.mm-sub .mm-sub .mm-sub .mm-sub {
+  padding-left: 0;
+  border-left-width: 0;
+}
+.mm-finished {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mm-finished[hidden] {
+  display: none;
+}
+.mm-finished summary {
+  cursor: pointer;
+}
+.mm-unresolved {
+  margin-top: 12px;
+}
+.mm-unresolved[hidden] {
+  display: none;
+}
+.mm-unresolved-title {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* The one animation: a short fade as an agent moves to Recently finished. */
+.mm-finished .mm-sub {
+  animation: mm-fade 150ms ease-out;
+}
+@keyframes mm-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mm-finished .mm-sub {
+    animation: none;
+  }
+}
