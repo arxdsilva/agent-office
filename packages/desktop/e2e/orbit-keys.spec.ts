@@ -56,9 +56,13 @@ test('WASD pans the orbit camera, not while typing, and ends follow mode', async
   const start = await orbit(win)
   expect(start.following).toBeNull()
 
-  // Holding W for 1 s glides the orbit target across the floor (≥ 4 m/s, so well over 2 m).
-  await hold(win, 'KeyW', 1000)
-  expect(moved(start, await orbit(win))).toBeGreaterThan(2)
+  // Holding W glides the orbit target across the floor: over 2 m within about a second on a GPU
+  // (≥ 4 m/s). Keep it held while polling: on software GL each frame's step is capped, so it is slower.
+  await win.keyboard.down('KeyW')
+  await expect
+    .poll(async () => moved(start, await orbit(win)), { timeout: 8_000 })
+    .toBeGreaterThan(2)
+  await win.keyboard.up('KeyW')
 
   // Pick Ada (the same path as clicking her tag, which is culled at this height): her chat panel
   // opens and the camera follows her.

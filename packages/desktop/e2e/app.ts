@@ -30,15 +30,13 @@ export async function launch(
   profile: Profile = newProfile(),
   opts: LaunchOptions = {},
 ): Promise<{ app: ElectronApplication; win: Page; profile: Profile; errors: string[] }> {
-  // Software GL (headless Linux CI): Auto would pick Minimal, which hides far name tags. E2E runs on
-  // Low with every tag shown (TESTING.md), unless the spec saved its own settings (graphics specs do).
+  // Software GL (headless Linux CI): Auto picks Minimal there, which hides far name tags. Show every
+  // tag so specs can click them; the preset stays Auto (quality.spec checks that default). Specs that
+  // save their own settings (the graphics specs) are left alone.
   const settingsFile = join(profile.userData, 'settings.json')
   if (process.env.AGENT_OFFICE_FORCE_SOFTWARE_GL === '1' && !existsSync(settingsFile)) {
     mkdirSync(profile.userData, { recursive: true })
-    writeFileSync(
-      settingsFile,
-      JSON.stringify({ graphicsQuality: 'low', graphicsAdvanced: { labels: 'all' } }),
-    )
+    writeFileSync(settingsFile, JSON.stringify({ graphicsAdvanced: { labels: 'all' } }))
   }
   // Drop inherited ELECTRON_* vars (e.g. ELECTRON_RUN_AS_NODE from VS Code terminals would start plain Node).
   const env = Object.fromEntries(

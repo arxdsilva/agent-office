@@ -10,8 +10,26 @@ permissions:
   contents: write
 
 jobs:
+  # Never ship installers from a commit that fails the checks (format, typecheck, arch, coverage,
+  # backend E2E, build). The slower app-smoke job gates main in ci.yml: tag only a green commit.
+  verify:
+    name: verify (make check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # 3D assets (packages/web/public/assets) are Git LFS files
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: make install
+      - run: make check
+
   build:
     name: build (${{ matrix.os }})
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

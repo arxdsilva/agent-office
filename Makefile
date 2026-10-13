@@ -9,7 +9,8 @@ ELECTRON_ENV := env -u ELECTRON_RUN_AS_NODE
 # Local packaging is unsigned unless signing secrets are present.
 UNSIGNED := CSC_IDENTITY_AUTO_DISCOVERY=$${CSC_IDENTITY_AUTO_DISCOVERY:-$$([ -n "$$CSC_LINK" ] && echo true || echo false)}
 # Headless Linux (CI) needs a virtual display for Electron.
-XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null && echo "xvfb-run -a")
+# A fixed 1920×1080 screen: xvfb-run's default size differs between distros and can clamp the window.
+XVFB := $(shell [ "$$(uname)" = Linux ] && [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null && echo "xvfb-run -a -s '-screen 0 1920x1080x24'")
 # Headless Linux (CI) has no GPU, and Chromium no longer falls back to SwiftShader for WebGL on its own:
 # render on software GL there (TESTING.md: E2E runs on software GL in CI), or the office never loads.
 SOFTWARE_GL := $(if $(XVFB),AGENT_OFFICE_FORCE_SOFTWARE_GL=1,)
