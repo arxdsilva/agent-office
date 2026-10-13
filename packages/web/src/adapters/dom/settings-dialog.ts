@@ -9,6 +9,11 @@ import {
 } from '@agent-office/shared'
 import { COPY } from '../../app/connect-copy.ts'
 import { GFX_COPY } from '../../app/graphics-copy.ts'
+import {
+  autoImportOutcome,
+  autoImportToggled,
+  type AutoImportChoice,
+} from '../../app/auto-import-vm.ts'
 import { SESSION_COPY } from '../../app/session-copy.ts'
 import type { SettingsVM } from '../../app/view-models.ts'
 import type { SettingsView } from '../../ports.ts'
@@ -133,6 +138,12 @@ const ADVANCED: { key: AdvKey; label: string; help?: string; values: [string, st
 ]
 const AUTO_ADVANCED: GraphicsAdvanced = GraphicsAdvancedSchema.parse({})
 
+/** What the Settings dialog needs from the rest of the app beyond `onChange`. */
+export interface DomSettingsDeps {
+  /** "Also remove imported memory" (`projects.removeImported()`, all projects). */
+  removeImported?: () => Promise<unknown>
+}
+
 /** SettingsView port → the native <dialog> in index.html. */
 export class DomSettings implements SettingsView {
   private dialog = byId<HTMLDialogElement>('settings')
@@ -144,10 +155,13 @@ export class DomSettings implements SettingsView {
   private hookAction: 'install' | 'uninstall' = 'install'
   private updateAction: SettingsVM['update']['action'] = null
   private confirm = byId<HTMLDialogElement>('s-confirm')
+  private importOn = byId<HTMLDialogElement>('s-autoimport-confirm')
+  private importOff = byId<HTMLDialogElement>('s-autoimport-off')
 
-  constructor() {
+  constructor(private deps: DomSettingsDeps = {}) {
     this.bindAppearance()
     this.bindBypass()
+    this.bindAutoImport()
     for (const key of CHECKBOXES) {
       byId<HTMLInputElement>(`s-${key}`).addEventListener(
         'change',
@@ -333,6 +347,60 @@ export class DomSettings implements SettingsView {
     })
   }
 
+  /**
+   * Automatic import (docs/projects.md §8b). Checking opens a confirm and only OK saves `true`;
+   * unchecking asks whether to keep or also remove what was imported. The pure flow is in
+   * `app/auto-import-vm.ts`. Both dialogs are our own <dialog>s (never window.confirm).
+   */
+  private bindAutoImport(): void {
+    const C = SESSION_COPY.autoImport
+    const box = byId<HTMLInputElement>('s-autoImportHistory')
+    byId('s-autoimport-label').textContent = C.label
+    byId('s-autoimport-exp').textContent = `(${C.experimental})`
+    byId('s-autoimport-note').textContent = C.note
+    byId('s-autoimport-confirm-text').textContent = C.onConfirm
+    byId('s-autoimport-ok').textContent = C.turnOn
+    byId('s-autoimport-cancel').textContent = C.cancel
+    byId('s-autoimport-off-text').textContent = C.offConfirm
+    byId('s-autoimport-keep').textContent = C.keep
+    byId('s-autoimport-remove').textContent = C.remove
+
+    const finish = (choice: AutoImportChoice): void => {
+      this.importOn.close()
+      this.importOff.close()
+      const out = autoImportOutcome(choice)
+      box.checked = out.checked
+      void (async () => {
+        if (out.patch) await this.changeFn(out.patch)
+        if (out.removeImported) {
+          try {
+            await this.deps.removeImported?.()
+          } catch {
+            this.showError(C.removeFailed)
+          }
+        }
+      })()
+    }
+    box.addEventListener('change', () => {
+      const next = autoImportToggled(box.checked)
+      box.checked = next.checked
+      ;(next.dialog === 'confirm-on' ? this.importOn : this.importOff).showModal()
+    })
+    byId('s-autoimport-ok').addEventListener('click', () => finish('on-ok'))
+    byId('s-autoimport-cancel').addEventListener('click', () => finish('on-cancel'))
+    byId('s-autoimport-keep').addEventListener('click', () => finish('off-keep'))
+    byId('s-autoimport-remove').addEventListener('click', () => finish('off-remove'))
+    // Esc dismisses without choosing: the setting stays as it was.
+    this.importOn.addEventListener(
+      'cancel',
+      () => (box.checked = autoImportOutcome('on-cancel').checked),
+    )
+    this.importOff.addEventListener(
+      'cancel',
+      () => (box.checked = autoImportOutcome('off-dismiss').checked),
+    )
+  }
+
   onOpenConnect(fn: () => void) {
     this.connectFn = fn
   }
@@ -385,6 +453,9 @@ export class DomSettings implements SettingsView {
       byId<HTMLInputElement>('s-allowBypassPermissions').checked =
         vm.allowBypassPermissions ?? false
     for (const key of CHECKBOXES) byId<HTMLInputElement>(`s-${key}`).checked = vm[key]
+    // The setting is only changed through its confirm dialogs: don't flip the box under them.
+    if (!this.importOn.open && !this.importOff.open)
+      byId<HTMLInputElement>('s-autoImportHistory').checked = vm.autoImportHistory
     const port = byId<HTMLInputElement>('s-port')
     if (document.activeElement !== port) port.value = String(vm.port)
     this.hasNowLine = !!vm.graphics?.now

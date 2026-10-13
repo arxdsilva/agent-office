@@ -65,6 +65,13 @@ export const SettingsSchema = z.object({
    * titles; docs/capabilities.md §4). Only used with `claudeAdapter`. Needs a backend restart.
    */
   discoverCapabilities: z.boolean().default(true),
+  /**
+   * Import Claude Code sessions continuously; each session's summary becomes approved project
+   * memory (docs/projects.md §8b). Off by default; turned on only after the confirm dialog.
+   */
+  autoImportHistory: z.boolean().default(false),
+  /** When the user confirmed automatic import (set by main only; never accepted from the renderer). */
+  autoImportApprovedAt: z.number().int().nonnegative().optional(),
   /** Simulated agents (development and demos). */
   mock: z.boolean().default(false),
   /** 3D render quality preset. Applied live by the renderer (no backend restart). */
@@ -106,13 +113,14 @@ export type SettingsPatch = Partial<Settings>
  * fill every missing key with its default and silently reset all other settings on each change, so
  * the top-level defaults are removed first (nested objects such as `graphicsAdvanced` are sent whole).
  */
+/** Settings only main writes; a renderer patch carrying them is rejected (`.strict()`). */
+const MAIN_ONLY_SETTINGS: readonly string[] = ['autoImportApprovedAt']
 export const SettingsPatchSchema: z.ZodType<SettingsPatch> = z
   .object(
     Object.fromEntries(
-      Object.entries(SettingsSchema.shape).map(([k, v]) => [
-        k,
-        v instanceof z.ZodDefault ? v.removeDefault() : v,
-      ]),
+      Object.entries(SettingsSchema.shape)
+        .filter(([k]) => !MAIN_ONLY_SETTINGS.includes(k))
+        .map(([k, v]) => [k, v instanceof z.ZodDefault ? v.removeDefault() : v]),
     ) as unknown as typeof SettingsSchema.shape,
   )
   .partial()
@@ -354,6 +362,13 @@ export interface AgentOfficeApi {
     importHistory(args?: z.input<typeof P.ImportHistoryArgsSchema>): Promise<P.ImportResult>
     /** Experimental: resumes a Claude session natively as a managed session. */
     resumeSession(sessionId: string): Promise<StartResult>
+    /**
+     * Rejects every auto-imported memory item (`provenance.origin === 'session-import'`) of a
+     * project, or of all projects. Removed items are not recreated by later imports.
+     */
+    removeImported(projectId?: string): Promise<{ removed: number }>
+    /** Automatic import status for the Session Vault line. */
+    importStatus(): Promise<P.ImportStatus>
     onPush(cb: (m: P.ProjectMessage) => void): () => void
   }
   /** Provider integrations: status, enable/disable, models, observation hooks. */

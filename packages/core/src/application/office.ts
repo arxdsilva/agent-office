@@ -162,6 +162,7 @@ export function createOffice(d: OfficeDeps) {
         enabledProviders: async () => enabledProviders(await settings.get()),
         sessions: () => sessions,
         onRetrieval: (provider) => capabilities.declare(provider, [CONTEXT_HUB]),
+        scheduler: d.scheduler,
       })
     : undefined
   sessions = runtimes.size

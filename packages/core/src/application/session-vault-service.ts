@@ -40,7 +40,14 @@ export interface SessionVaultDeps {
   log: Logger
   repoIdentity?: RepoIdentity
   transcripts?: TranscriptReader
+  /** A session ended (its final summary is written): automatic knowledge import. */
+  onEnded?: (r: SessionRecord) => void
+  /** A session was (re)assigned: automatic knowledge import re-homes its item. */
+  onAssigned?: (r: SessionRecord) => void
 }
+
+/** Transcript messages read when a session ended without agent-office chat replies. */
+const END_TRANSCRIPT_PAGE = 40
 
 type Where = { cwd?: string; workspaceKey?: string; transcriptRef?: string }
 
@@ -229,10 +236,15 @@ export class SessionVaultService implements SessionVault, SessionAssignment, Ses
       )
     }
     await write
+    this.notify(this.d.onAssigned, next)
     return next
   }
 
-  /** Session ended: inactive, with the deterministic summary. */
+  /**
+   * Session ended: inactive, with the deterministic summary. Without agent-office chat replies
+   * (typical for observed sessions) the last agent replies of its transcript are used instead
+   * (read on demand; only the ≤ 2000-char summary is stored).
+   */
   end(r: SessionRecord): void {
     if (r.state !== 'active') return
     const ended = endSession(r, this.d.clock.now())
@@ -249,6 +261,46 @@ export class SessionVaultService implements SessionVault, SessionAssignment, Ses
       void this.d.activity.add(next.projectId, 'session.ended', r.provider, `Ended “${r.title}”`, {
         sessionId: r.id,
       })
+    if (replies.length || !next.transcriptRef || !this.d.transcripts) {
+      this.notify(this.d.onEnded, next)
+      return
+    }
+    void this.summaryFromTranscript(next).then((final) => this.notify(this.d.onEnded, final))
+  }
+
+  private async summaryFromTranscript(r: SessionRecord): Promise<SessionRecord> {
+    try {
+      const page = await this.d.transcripts!.page(r.transcriptRef!, { limit: END_TRANSCRIPT_PAGE })
+      const replies = page.messages
+        .filter((m) => m.role === 'assistant' && m.text.trim())
+        .map((m) => m.text)
+      const cur = this.d.store.sessions.get(r.id)
+      // Only while it is still the summary written at end (not reactivated or summarized since).
+      if (
+        !replies.length ||
+        !cur ||
+        cur.state === 'active' ||
+        cur.summary?.text !== r.summary?.text
+      )
+        return cur ?? r
+      const next: SessionRecord = {
+        ...cur,
+        summary: { text: deterministicSummary(cur, replies), source: 'last-replies' },
+      }
+      await this.d.store.putSession(next)
+      return next
+    } catch {
+      this.d.log.warn('transcript unreadable; summary from agent-office chat')
+      return this.d.store.sessions.get(r.id) ?? r
+    }
+  }
+
+  private notify(fn: ((r: SessionRecord) => void) | undefined, r: SessionRecord): void {
+    try {
+      fn?.(r)
+    } catch {
+      this.d.log.warn('session hook failed')
+    }
   }
 
   reactivate(r: SessionRecord): SessionRecord {
@@ -334,7 +386,14 @@ export class SessionVaultService implements SessionVault, SessionAssignment, Ses
   }
 
   private view(r: SessionRecord): SessionSummary {
-    return toSessionSummary(r, (id) => this.d.store.projects.get(id)?.name)
+    return toSessionSummary(
+      r,
+      (id) => this.d.store.projects.get(id)?.name,
+      (id) => {
+        const k = this.d.store.knowledgeOf(id)
+        return k?.state === 'approved' ? k.id : undefined
+      },
+    )
   }
 }
 

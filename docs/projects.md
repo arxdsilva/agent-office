@@ -163,11 +163,26 @@ Stored kinds: `session.started|ended|assigned`, `memory.proposed|approved|reject
   usual MCP policy. `SessionSummary.canResume` says when it is offered. The provider session id never
   leaves main.
 
+## 8b. Automatic knowledge import (experimental, opt-in)
+
+- Setting `autoImportHistory` (default off). Turning it on needs a confirm; main records
+  `autoImportApprovedAt` (renderer patches cannot set it).
+- While on, `KnowledgeImport` runs on enabling, at startup, every 10 minutes, when a Claude session
+  ends, and when a session is assigned: it imports new Claude sessions (`importHistory`, ≤ 500 per
+  run) and keeps **one approved `note` per Claude session** holding its deterministic summary
+  (§8; for imported sessions the last agent replies are read on demand through `TranscriptReader`).
+- Provenance `origin: 'session-import'`, `createdBy: 'auto-import'`, `reviewedAt` = the opt-in time.
+  Assigned sessions → `project` scope (agents of that project can retrieve it over MCP); unassigned →
+  `session` scope with no project (no agent can read it) until assigned, then re-homed as a new version.
+- Caps: ≤ 200 auto-imported items per project (oldest superseded); one run at a time.
+- `projects.removeImported(projectId?)` rejects them all (dropped from search) and they are never
+  recreated; turning the setting off offers the same. Agent proposals still wait for review.
+
 ## 9. IPC and UI contract
 
 IPC: `AgentOfficeApi.projects` (`packages/shared/src/desktop-api.ts`), channels `prj:*`, push
 `prj:push` (`ProjectMessage`); tasks `prj:tasks`, `prj:task-create`, `prj:task-update`; experimental
-`prj:import-history`, `prj:resume`. New sessions: `NewSessionArgs.projectId`, `repo`, `context_memories`.
+`prj:import-history`, `prj:resume`, `prj:remove-imported`, `prj:import-status`. New sessions: `NewSessionArgs.projectId`, `repo`, `context_memories`.
 
 Stable DOM ids (Playwright): shell `#sidebar` (`#sb-overview`, `#sb-office`, `#sb-projects`,
 `#sb-sessions`, `#sb-memory`, `#sb-project-list li[data-project-id]`, `.sb-count`, `#sb-new-project`),

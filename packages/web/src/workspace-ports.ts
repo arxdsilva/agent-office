@@ -96,6 +96,12 @@ export interface MemoryView {
   onSupersede(fn: (memoryId: string, replacement: MemoryDraftFields) => void): Off
   /** Merges the checked approved items into one new item. */
   onMerge(fn: (into: MemoryDraftFields) => void): Off
+  /** `#mem-remove-imported`: asks to remove the auto-imported items of the current scope. */
+  onRemoveImported(fn: () => void): Off
+  /** OK in `#mem-remove-confirm`. */
+  onRemoveImportedConfirm(fn: () => void): Off
+  /** Cancel (or Esc) in `#mem-remove-confirm`. */
+  onRemoveImportedCancel(fn: () => void): Off
 }
 
 export interface InspectorView {

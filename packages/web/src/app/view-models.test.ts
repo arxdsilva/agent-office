@@ -276,6 +276,14 @@ describe('settingsVM', () => {
     ).toBe(false)
   })
 
+  it('carries the automatic import switch (default off)', () => {
+    expect(settingsVM(base).autoImportHistory).toBe(false)
+    expect(
+      settingsVM({ ...base, settings: { ...DEFAULT_SETTINGS, autoImportHistory: true } })
+        .autoImportHistory,
+    ).toBe(true)
+  })
+
   it('offers the right hook action', () => {
     // Same mapping as the Connect panel (hookVM).
     expect(settingsVM(base).hook).toEqual({

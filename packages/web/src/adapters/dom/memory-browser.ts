@@ -21,6 +21,7 @@ import {
   badge,
   need,
   notice,
+  openDialog,
   setText,
   syncInput,
   textButton,
@@ -40,6 +41,9 @@ export class DomMemoryBrowser implements MemoryView {
   private edit = new Signal<[string, Partial<MemoryDraftFields>]>()
   private supersede = new Signal<[string, MemoryDraftFields]>()
   private merge = new Signal<[MemoryDraftFields]>()
+  private removeImp = new Signal()
+  private removeOk = new Signal()
+  private removeNo = new Signal()
 
   private root: HTMLElement
   private heading = el('h1', undefined, 'pane-title')
@@ -47,6 +51,9 @@ export class DomMemoryBrowser implements MemoryView {
   private scopes = el('div', undefined, 'filters')
   private filters = el('div', undefined, 'filters')
   private status = el('div', undefined, 'sv-status')
+  private noticeBox = el('div', undefined, 'sv-notice')
+  private removeBtn = el('button', undefined, 'btn small danger')
+  private confirmDlg: HTMLDialogElement
   private list = el('ul', undefined, 'rows mem-rows')
   private detail = el('div', undefined, 'mem-detail-body')
   private mode: Mode = 'view'
@@ -62,8 +69,27 @@ export class DomMemoryBrowser implements MemoryView {
     this.input.autocomplete = 'off'
     this.input.spellcheck = false
     this.input.addEventListener('input', () => this.search.emit(this.input.value))
+    this.noticeBox.id = 'mem-notice'
+    this.removeBtn.id = 'mem-remove-imported'
+    this.removeBtn.type = 'button'
+    this.removeBtn.addEventListener('click', () => this.removeImp.emit())
+    this.confirmDlg = need<HTMLDialogElement>(doc, 'mem-remove-confirm')
+    // Esc is a Cancel: the controller owns whether the confirm is open.
+    this.confirmDlg.addEventListener('cancel', (e) => {
+      e.preventDefault()
+      this.removeNo.emit()
+    })
     const left = el('aside', undefined, 'sv-left card')
-    left.append(this.heading, this.input, this.scopes, this.filters, this.status, this.list)
+    left.append(
+      this.heading,
+      this.input,
+      this.scopes,
+      this.filters,
+      this.removeBtn,
+      this.noticeBox,
+      this.status,
+      this.list,
+    )
     const right = el('section', undefined, 'sv-right card')
     right.append(this.detail)
     const inner = el('div', undefined, 'ws-inner split')
@@ -102,6 +128,37 @@ export class DomMemoryBrowser implements MemoryView {
     this.merge.on(fn)
   }
 
+  onRemoveImported(fn: () => void): void {
+    this.removeImp.on(fn)
+  }
+  onRemoveImportedConfirm(fn: () => void): void {
+    this.removeOk.on(fn)
+  }
+  onRemoveImportedCancel(fn: () => void): void {
+    this.removeNo.on(fn)
+  }
+
+  private renderRemove(vm: MemoryVM): void {
+    setText(this.removeBtn, vm.removeImported.label)
+    this.removeBtn.disabled = !vm.removeImported.enabled
+    this.removeBtn.title = vm.removeImported.hint ?? ''
+    this.noticeBox.replaceChildren(...(vm.notice ? [notice(vm.notice, 'info')] : []))
+    const c = vm.removeConfirm
+    if (c.open) {
+      const title = el('h2', c.title, 'dlg-title')
+      title.id = 'mem-remove-title'
+      const body = el('p', c.body, 'dlg-body')
+      body.id = 'mem-remove-text'
+      const actions = el('div', undefined, 'dlg-actions')
+      actions.append(
+        textButton(c.cancel, 'secondary', () => this.removeNo.emit(), 'mem-remove-cancel'),
+        textButton(c.ok, 'danger', () => this.removeOk.emit(), 'mem-remove-ok'),
+      )
+      this.confirmDlg.replaceChildren(title, body, actions)
+    }
+    openDialog(this.confirmDlg, c.open)
+  }
+
   render(vm: MemoryVM): void {
     setText(this.heading, vm.heading)
     this.input.placeholder = vm.searchPlaceholder
@@ -124,6 +181,7 @@ export class DomMemoryBrowser implements MemoryView {
     if (vm.error) st.push(notice(vm.error, 'error'))
     if (vm.loading) st.push(notice('Loading…', 'info'))
     this.status.replaceChildren(...st)
+    this.renderRemove(vm)
 
     if (!vm.rows.length) this.list.replaceChildren(el('li', vm.empty, 'sec-empty muted'))
     else this.list.replaceChildren(...vm.rows.map((r) => this.memRow(r)))

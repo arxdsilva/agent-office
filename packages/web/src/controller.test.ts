@@ -125,6 +125,8 @@ const projectsStub = (): AgentOfficeApi['projects'] => {
     updateTask: never,
     importHistory: never,
     resumeSession: never,
+    removeImported: never,
+    importStatus: vi.fn(async () => ({ on: false, imported: 0, added: 0 })),
     onPush: () => () => {},
   }
 }

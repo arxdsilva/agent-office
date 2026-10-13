@@ -5,6 +5,7 @@ import {
   assignSession,
   deterministicSummary,
   endSession,
+  hasAgentReplies,
   newSessionRecord,
   reactivateSession,
   toSessionSummary,
@@ -94,5 +95,30 @@ describe('session records', () => {
     expect(v.assignedBy).toBeUndefined()
     const unknown = toSessionSummary(r, () => undefined)
     expect(unknown.suggestions).toEqual([])
+  })
+
+  it('SR-replies: a last-replies summary counts only with agent reply lines; others always count', () => {
+    const e = { ...rec(), endedAt: 100 }
+    expect(hasAgentReplies({ text: deterministicSummary(e, []), source: 'last-replies' })).toBe(
+      false,
+    )
+    expect(
+      hasAgentReplies({ text: deterministicSummary(e, ['Done.']), source: 'last-replies' }),
+    ).toBe(true)
+    expect(hasAgentReplies({ text: 'My notes', source: 'user' })).toBe(true)
+    expect(hasAgentReplies(undefined)).toBe(false)
+  })
+
+  it('SR-view-knowledge: links the auto-imported memory item when there is one', () => {
+    const v = toSessionSummary(
+      rec(),
+      () => undefined,
+      () => 'mem_iiiiiiiiiiii',
+    )
+    expect(v.knowledgeMemoryId).toBe('mem_iiiiiiiiiiii')
+    expect(toSessionSummary(rec(), () => undefined).knowledgeMemoryId).toBeUndefined()
+    expect(
+      toSessionSummary({ ...rec(), knowledgeRemovedAt: 5 }, () => undefined),
+    ).not.toHaveProperty('knowledgeRemovedAt')
   })
 })

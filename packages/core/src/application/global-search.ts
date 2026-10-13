@@ -201,7 +201,9 @@ export class GlobalSearchService implements GlobalSearch {
       }
       case 'memory': {
         const m = s.memory.get(c.id)
-        if (m)
+        // Only live items are searchable: rejected (incl. removed imports) and superseded ones leave.
+        if (m && m.state !== 'approved' && m.state !== 'pending') ix.remove(m.id)
+        else if (m)
           ix.upsert({
             id: m.id,
             projectId: m.projectId,

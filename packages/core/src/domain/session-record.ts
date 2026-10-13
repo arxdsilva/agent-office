@@ -42,6 +42,8 @@ export interface SessionRecord {
   /** Tool names seen (≤ 20). */
   tools: string[]
   continuedFrom?: { handoffId: string; sessionId: string; provider: string }
+  /** The user removed its auto-imported memory then; not imported again until it ends again. */
+  knowledgeRemovedAt?: number
 }
 
 export function newSessionRecord(o: {
@@ -135,10 +137,18 @@ export function deterministicSummary(r: SessionRecord, agentReplies: string[]): 
   return clip(lines.join('\n'), 2000)
 }
 
+/** A summary worth importing: user/provider text, or last-replies text with at least one reply. */
+export function hasAgentReplies(summary: SessionRecord['summary']): boolean {
+  if (!summary) return false
+  return summary.source !== 'last-replies' || /^• /m.test(summary.text)
+}
+
 export function toSessionSummary(
   r: SessionRecord,
   projectName: (id: string) => string | undefined,
+  knowledgeOf?: (sessionId: string) => string | undefined,
 ): SessionSummary {
+  const knowledge = knowledgeOf?.(r.id)
   const suggestions = r.suggestions.flatMap((s) => {
     const name = projectName(s.projectId)
     return name ? [{ projectId: s.projectId, name, rule: s.rule, confidence: s.confidence }] : []
@@ -160,5 +170,6 @@ export function toSessionSummary(
     ...(r.continuedFrom ? { continuedFrom: { ...r.continuedFrom } } : {}),
     hasTranscript: !!r.transcriptRef,
     ...(canResume(r) ? { canResume: true } : {}),
+    ...(knowledge ? { knowledgeMemoryId: knowledge } : {}),
   }
 }

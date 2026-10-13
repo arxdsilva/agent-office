@@ -23,6 +23,7 @@ const GROUP: Record<ActivityKind, Exclude<ActivityFilter, 'all'>> = {
   'memory.approved': 'memory',
   'memory.rejected': 'memory',
   'memory.superseded': 'memory',
+  'memory.imported': 'memory',
   'context.delivered': 'memory',
   'mcp.retrieval': 'memory',
   'handoff.prepared': 'handoffs',

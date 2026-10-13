@@ -4,6 +4,7 @@ import type {
   ContextInspection,
   GlobalOverview,
   HandoffView,
+  ImportStatus,
   MemoryView,
   ProjectDashboard,
   ProjectMessage,
@@ -76,6 +77,10 @@ export interface WorkspaceState {
   error: string | null
   /** A one-line result shown in the Session Vault; cleared on navigation. */
   notice: string | null
+  /** Automatic import status (null until loaded); feeds the Session Vault line. */
+  importStatus: ImportStatus | null
+  /** The "Remove imported memory" confirm is open (acts on the current memory scope). */
+  removeImportedConfirm: boolean
 }
 
 export const initialState = (): WorkspaceState => ({
@@ -119,6 +124,8 @@ export const initialState = (): WorkspaceState => ({
   loading: false,
   error: null,
   notice: null,
+  importStatus: null,
+  removeImportedConfirm: false,
 })
 
 export type WorkspaceEvent =
@@ -127,6 +134,8 @@ export type WorkspaceEvent =
   | { type: 'loading'; on: boolean }
   | { type: 'error'; error: string | null }
   | { type: 'notice'; notice: string | null }
+  | { type: 'import-status'; status: ImportStatus }
+  | { type: 'remove-imported-confirm'; open: boolean }
   | { type: 'projects'; projects: ProjectSummary[] }
   | { type: 'providers'; providers: ProviderStatus[] }
   | { type: 'session-titles'; sessions: { id: string; title: string; provider: string }[] }
@@ -236,6 +245,7 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
         projectId,
         error: null,
         notice: null,
+        removeImportedConfirm: false,
         highlightMessageId: e.view === 'sessions' ? s.highlightMessageId : null,
         sessionScope: e.view === 'sessions' ? (projectId ?? SESSION_ALL) : s.sessionScope,
         memoryScope: e.view === 'memory' ? (projectId ?? MEMORY_ALL) : s.memoryScope,
@@ -252,6 +262,10 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
       return { ...s, error: e.error, loading: false }
     case 'notice':
       return { ...s, notice: e.notice }
+    case 'import-status':
+      return { ...s, importStatus: e.status }
+    case 'remove-imported-confirm':
+      return { ...s, removeImportedConfirm: e.open }
     case 'projects':
       return { ...s, projects: e.projects, projectsLoaded: true }
     case 'session-titles':

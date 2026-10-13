@@ -480,6 +480,22 @@ export function compose(o: ComposeOptions) {
   /** Env overrides (dev/test) win over saved settings for this run only. */
   const effective = (s: Settings): Settings => ({ ...s, ...env.overrides })
 
+  /**
+   * Automatic knowledge import (docs/projects.md §8b): on only with the user's opt-in AND the Claude
+   * adapter. The opt-in time is recorded by main the first time it turns on (the renderer's patch
+   * schema cannot carry it) and becomes every item's `reviewedAt`.
+   */
+  const applyAutoImport = async (saved: Settings): Promise<void> => {
+    if (!projects) return
+    let approvedAt = saved.autoImportApprovedAt
+    if (saved.autoImportHistory && approvedAt === undefined) {
+      approvedAt = Date.now()
+      await office.settings.update({ autoImportApprovedAt: approvedAt })
+    }
+    const s = effective(saved)
+    projects.knowledge.setEnabled(s.autoImportHistory && s.claudeAdapter, approvedAt ?? Date.now())
+  }
+
   let banner: Banner | null = null
   let vaultBanner: Banner | null = null
   /** The port banner wins; otherwise the vault warning stays visible. */
@@ -741,6 +757,9 @@ export function compose(o: ComposeOptions) {
         // Before IPC or MCP are served: rebuilds projects, sessions and memory from the vault.
         await projects.load()
         if (vault?.status() === 'memory-only') vaultBanner = VAULT_MEMORY_ONLY_BANNER
+        await applyAutoImport(await office.settings.get()).catch((err: Error) =>
+          logger.warn(`automatic import unavailable: ${err.message}`),
+        )
       }
 
       registerIpc(
@@ -791,6 +810,9 @@ export function compose(o: ComposeOptions) {
         office.settings.onChange(({ settings: s, restartRequired }) => {
           office.attention.setNotificationsEnabled(s.notifications)
           office.updates.setEnabled(s.autoUpdate)
+          void applyAutoImport(s).catch((err: Error) =>
+            logger.warn(`automatic import unavailable: ${err.message}`),
+          )
           if (restartRequired) void restartBackend()
           pushConnections()
         }),

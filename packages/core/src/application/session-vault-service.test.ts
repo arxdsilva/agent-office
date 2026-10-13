@@ -334,3 +334,85 @@ describe('SessionVault + SessionAssignment', () => {
     ).toEqual(['k0'])
   })
 })
+
+describe('SessionVaultService hooks (automatic knowledge import)', () => {
+  // The core has no host globals; tests may still yield one macrotask.
+  const settle = () =>
+    new Promise((r) =>
+      (globalThis as unknown as { setTimeout(f: () => void, ms: number): void }).setTimeout(
+        () => r(undefined),
+        0,
+      ),
+    )
+  const reply = (uuid: string, text: string) => ({
+    uuid,
+    role: 'assistant' as const,
+    text,
+    ts: 1,
+    tools: [],
+  })
+
+  async function observed(h: ReturnType<typeof harness>, id: string, ref?: string) {
+    h.putAgent({ id, name: 'obs', status: 'thinking' })
+    if (ref) await h.projects.observation.located(id, 'claude-code', { transcriptRef: ref })
+    return h.projects.store.sessionByAgent(id)!
+  }
+
+  it('VH-end: without chat replies the summary comes from the transcript, then onEnded fires', async () => {
+    const ended: string[] = []
+    const h = harness({})
+    await h.projects.load()
+    // Hook in through the service's own dependency (the projects wiring passes knowledge.sync).
+    const r = await observed(h, 'cc:t1', 'tr_t1')
+    h.transcripts.set('tr_t1', [
+      { uuid: 'u', role: 'user', text: 'invented prompt', ts: 1, tools: [] },
+      reply('a', 'Invented answer one'),
+    ])
+    const vault = h.projects.sessions as unknown as { d: { onEnded?: (x: { id: string }) => void } }
+    vault.d.onEnded = (x) => ended.push(x.id)
+    h.projects.sessions.end(h.projects.store.sessions.get(r.id)!)
+    // The chat-based summary is written at once; the transcript one replaces it.
+    expect(h.projects.store.sessions.get(r.id)!.summary!.text).not.toContain('Invented answer')
+    await settle()
+    const s = h.projects.store.sessions.get(r.id)!
+    expect(s.summary!.text).toContain('Invented answer one')
+    expect(s.summary!.text).not.toContain('invented prompt')
+    expect(ended).toEqual([r.id])
+  })
+
+  it('VH-end: a reactivated session or an unreadable transcript keeps the chat summary', async () => {
+    const h = harness()
+    await h.projects.load()
+    const r = await observed(h, 'cc:t2', 'tr_t2')
+    h.transcripts.set('tr_t2', [reply('a', 'Late reply')])
+    h.projects.sessions.end(h.projects.store.sessions.get(r.id)!)
+    h.projects.sessions.reactivate(h.projects.store.sessions.get(r.id)!)
+    await settle()
+    expect(h.projects.store.sessions.get(r.id)!.summary!.text).not.toContain('Late reply')
+
+    const r2 = await observed(h, 'cc:t3', 'tr_t3')
+    h.transcripts.fail = true
+    h.projects.sessions.end(h.projects.store.sessions.get(r2.id)!)
+    await settle()
+    expect(h.projects.store.sessions.get(r2.id)).toMatchObject({ state: 'inactive' })
+    expect(h.logger.lines.some((l) => l.includes('transcript unreadable'))).toBe(true)
+  })
+
+  it('VH-assign: onAssigned fires after a (re)assignment; a throwing hook is isolated', async () => {
+    const h = harness()
+    const prj = await withProject(h)
+    const r = await observed(h, 'cc:t4')
+    const seen: (string | null)[] = []
+    const vault = h.projects.sessions as unknown as {
+      d: { onAssigned?: (x: { projectId: string | null }) => void }
+    }
+    vault.d.onAssigned = (x) => {
+      seen.push(x.projectId)
+      throw new Error('boom')
+    }
+    await h.projects.assignment.assign(r.id, prj)
+    await h.projects.assignment.assign(r.id, null)
+    expect(seen).toEqual([prj, null])
+    expect(h.logger.lines.some((l) => l.includes('session hook failed'))).toBe(true)
+  })
+})

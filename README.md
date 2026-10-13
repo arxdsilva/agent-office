@@ -74,6 +74,8 @@ Memory items have a **scope** (`global`, `project`, `session`, and an experiment
 
 Every agent session becomes a **session record** that stays after the agent leaves. Its origin is **managed** (started in agent-office), **observed** (started elsewhere) or **imported** (past Claude Code history, experimental).
 
+**Automatic import into memory** (experimental, off by default): turn on _Settings → Import Claude sessions into memory automatically_ and confirm once. From then on, past and new Claude Code sessions are imported in the background, and each session's summary (its title, last replies, tools and duration; no model calls) becomes approved memory in its project, badged _auto-imported_, so your agents can retrieve it. Sessions not yet in a project stay private until you assign them. _Memory → Remove imported memory_ takes all of it back in one step. Agent proposals still wait for your review.
+
 - **Session Vault:** browse sessions by project, provider and state, read agent-office's chat for a session, and open an old Claude Code session by reading its own transcript on demand.
 - **Search:** deep search across sessions and memory.
 - **Save as memory:** turn any Session Vault message into a memory draft that keeps the session and message as provenance.
@@ -747,7 +749,7 @@ Office organization lives in one place, `byProviderAndTopic` in `packages/shared
 **Experimental**
 
 - Project MCP injection for ACP providers (Cursor, Gemini, Copilot), and for Claude Code and Codex versions other than the ones verified (`make verify-providers`)
-- Claude history import
+- Claude history import, and automatic import of session summaries into memory (opt-in)
 - Claude native resume
 - Provider-written summaries
 - The `workspace` memory scope

@@ -13,6 +13,7 @@ import {
   FakeRepoIdentity,
   FakeSearchIndex,
   FakeTranscriptReader,
+  ManualScheduler,
   MemoryLogger,
   SeqRandom,
 } from './fakes/index.ts'
@@ -50,6 +51,7 @@ export function harness(over: Partial<ProjectsDeps> = {}, log = new FakeRecordLo
   const history = new FakeHistorySource()
   const search = new FakeSearchIndex()
   const random = new SeqRandom()
+  const scheduler = new ManualScheduler()
   const started: Parameters<ManagedSessions['start']>[0][] = []
   let nextAgent = 0
   const sessions = {
@@ -79,6 +81,7 @@ export function harness(over: Partial<ProjectsDeps> = {}, log = new FakeRecordLo
     random,
     enabledProviders: async () => ['claude-code', 'codex'] as ProviderId[],
     sessions: () => sessions,
+    scheduler,
     ...over,
   }
   const projects = createProjects(deps)
@@ -119,6 +122,7 @@ export function harness(over: Partial<ProjectsDeps> = {}, log = new FakeRecordLo
     history,
     search,
     random,
+    scheduler,
     log,
     started,
     putAgent,

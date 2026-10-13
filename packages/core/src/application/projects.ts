@@ -9,6 +9,7 @@ import type {
   Logger,
   RecordLog,
   RepoIdentity,
+  Scheduler,
   SearchIndex,
   SecureRandom,
   TranscriptReader,
@@ -18,6 +19,7 @@ import { ActivityLog } from './activity-log.ts'
 import { ContextEngineService } from './context-engine.ts'
 import { GlobalSearchService } from './global-search.ts'
 import { HandoffManager } from './handoff-service.ts'
+import { KnowledgeImportService } from './knowledge-import-service.ts'
 import { McpMemoryAccessService } from './mcp-memory-access.ts'
 import { ProjectMemoryService } from './memory-service.ts'
 import { ProjectCatalogService } from './project-catalog.ts'
@@ -46,6 +48,8 @@ export interface ProjectsDeps {
   sessions?: () => ManagedSessions | undefined
   /** A real MCP retrieval happened (the composition root pulses the Context Hub). */
   onRetrieval?: (provider: string) => void
+  /** Timers for the automatic knowledge import (every 10 minutes while on). */
+  scheduler?: Scheduler
 }
 
 export type Projects = ReturnType<typeof createProjects>
@@ -58,6 +62,10 @@ export function createProjects(d: ProjectsDeps) {
     ...(d.random ? { random: d.random } : {}),
   })
   const activity = new ActivityLog({ store, clock: d.clock })
+  // Built after the vault service; its hooks resolve it lazily.
+  let knowledge: KnowledgeImportService | undefined
+  const syncKnowledge = (r: { id: string }) =>
+    void knowledge?.sync(r.id).catch(() => d.log.warn('knowledge import failed for a session'))
   const sessions = new SessionVaultService({
     store,
     activity,
@@ -67,6 +75,8 @@ export function createProjects(d: ProjectsDeps) {
     log: d.log,
     ...(d.repoIdentity ? { repoIdentity: d.repoIdentity } : {}),
     ...(d.transcripts ? { transcripts: d.transcripts } : {}),
+    onEnded: syncKnowledge,
+    onAssigned: syncKnowledge,
   })
   const catalog = new ProjectCatalogService({
     store,
@@ -101,6 +111,15 @@ export function createProjects(d: ProjectsDeps) {
     ...(d.history ? { history: d.history } : {}),
     ...(d.sessions ? { sessions: d.sessions } : {}),
   })
+  knowledge = new KnowledgeImportService({
+    store,
+    history,
+    activity,
+    clock: d.clock,
+    log: d.log,
+    ...(d.transcripts ? { transcripts: d.transcripts } : {}),
+    ...(d.scheduler ? { scheduler: d.scheduler } : {}),
+  })
   const tasks = new TaskService({ store, activity, clock: d.clock })
   const workspace = new WorkspaceQueryService({ store, agents: d.agents, handoffs })
   const search = new GlobalSearchService({
@@ -133,6 +152,8 @@ export function createProjects(d: ProjectsDeps) {
     tasks,
     /** Experimental: history import and native resume. */
     history,
+    /** Automatic knowledge import (opt-in; docs/projects.md §8b). User actions only. */
+    knowledge,
     workspace,
     search,
     /** Implements McpMemoryAccess (+ mint/bind/revoke for managed sessions). */

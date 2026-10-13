@@ -112,6 +112,13 @@ function setup(over: { settings?: Partial<Settings>; gateway?: Record<string, un
     updateTask: vi.fn(async () => ({})),
     importHistory: vi.fn(async () => ({ imported: 3, skipped: 1 })),
     resumeSession: vi.fn(async () => ({ ok: true as const, agentId: 'cc:77' })),
+    removeImported: vi.fn(async () => ({ removed: 2 })),
+    importStatus: vi.fn(async () => ({
+      on: true,
+      lastRunAt: NOW - 5 * 60_000,
+      imported: 4,
+      added: 3,
+    })),
     createMemory: vi.fn(async (d: { title: string }) =>
       memory({ id: 'mem_iiiiiiiiii', title: d.title }),
     ),
@@ -1115,5 +1122,181 @@ describe('stale shell', () => {
     t.unsub.mockClear()
     t.ctl.dispose()
     expect(t.unsub).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('automatic knowledge import', () => {
+  const imp = (over = {}) =>
+    memory({
+      id: 'mem_iiiiiiiiii',
+      kind: 'note',
+      title: 'Session: Fix the login bug',
+      provenance: {
+        origin: 'session-import',
+        provider: 'claude-code',
+        sessionId: 'ses_aaaaaaaaaa',
+        createdAt: NOW - 1000,
+        reviewedAt: NOW - 5000,
+      },
+      ...over,
+    })
+  const withImports = (t: ReturnType<typeof setup>): void => {
+    t.projects.memories.mockImplementation((async ({ scope }: { scope: string }) =>
+      scope === P1 ? [memory(), imp()] : []) as never)
+  }
+
+  it('the Session Vault loads the import status and shows the line', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-sessions' })
+    await flush()
+    expect(t.projects.importStatus).toHaveBeenCalled()
+    expect(t.v.sessions.last.importHistory).toMatchObject({
+      label: 'Automatic import is on',
+      enabled: false,
+    })
+    expect(t.v.sessions.last.importStatus).toBe('Last run 5m ago: 4 sessions, 3 summaries')
+  })
+
+  it('refreshes the status on memory and session pushes while the vault is open', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-sessions' })
+    await flush()
+    const n = t.projects.importStatus.mock.calls.length
+    t.projects.importStatus.mockResolvedValue({ on: true, lastRunAt: NOW, imported: 9, added: 8 })
+    t.push({ type: 'memory', memory: imp() })
+    await flush()
+    expect(t.projects.importStatus.mock.calls.length).toBe(n + 1)
+    expect(t.v.sessions.last.importStatus).toBe('Last run 0s ago: 9 sessions, 8 summaries')
+    t.push({ type: 'session', session: session() })
+    await flush()
+    expect(t.projects.importStatus.mock.calls.length).toBe(n + 2)
+  })
+
+  it('does not poll the status from other views', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory' })
+    const n = t.projects.importStatus.mock.calls.length
+    t.push({ type: 'memory', memory: imp() })
+    await flush()
+    expect(t.projects.importStatus.mock.calls.length).toBe(n)
+  })
+
+  it('a failing status call shows no error and leaves the one-shot button', async () => {
+    const t = setup()
+    t.projects.importStatus.mockRejectedValue(new Error('boom'))
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-sessions' })
+    await flush()
+    expect(t.v.sessions.last.error).toBeNull()
+    expect(t.v.sessions.last.importHistory.enabled).toBe(true)
+    expect(t.v.sessions.last.importStatus).toBeNull()
+  })
+
+  it('the button asks first; Cancel closes the confirm without calling', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory', projectId: P1 })
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    t.cb('memory', 'onRemoveImported')()
+    expect(t.v.memory.last.removeConfirm.open).toBe(true)
+    t.cb('memory', 'onRemoveImportedCancel')()
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    expect(t.projects.removeImported).not.toHaveBeenCalled()
+  })
+
+  it('confirming in a project removes that project\u2019s imports, refreshes and reports the count', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory', projectId: P1 })
+    const loads = t.projects.memories.mock.calls.length
+    t.cb('memory', 'onRemoveImported')()
+    t.projects.memories.mockImplementation((async () => [memory()]) as never)
+    await t.cb('memory', 'onRemoveImportedConfirm')()
+    await flush()
+    expect(t.projects.removeImported).toHaveBeenCalledWith(P1)
+    expect(t.projects.memories.mock.calls.length).toBeGreaterThan(loads)
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    expect(t.v.memory.last.notice).toBe('Removed 2 imported items')
+    expect(t.v.memory.last.rows.map((r: { id: string }) => r.id)).toEqual(['mem_aaaaaaaaaa'])
+  })
+
+  it('in All memory it removes every project\u2019s imports', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory' })
+    t.cb('memory', 'onRemoveImported')()
+    await t.cb('memory', 'onRemoveImportedConfirm')()
+    expect(t.projects.removeImported).toHaveBeenCalledWith(undefined)
+  })
+
+  it('never calls with a scope it cannot target (Global, Unassigned)', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory' })
+    t.cb('memory', 'onScope')('global')
+    t.cb('memory', 'onRemoveImported')()
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    await t.cb('memory', 'onRemoveImportedConfirm')()
+    expect(t.projects.removeImported).not.toHaveBeenCalled()
+  })
+
+  it('a failed removal closes the confirm and shows the error', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory', projectId: P1 })
+    t.projects.removeImported.mockRejectedValue(new Error('vault locked'))
+    t.cb('memory', 'onRemoveImported')()
+    await t.cb('memory', 'onRemoveImportedConfirm')()
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    expect(t.v.memory.last.error).toBe('vault locked')
+    expect(t.v.memory.last.notice).toBeNull()
+  })
+
+  it('the palette command opens Memory in the current scope and asks to confirm', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-project', projectId: P1 })
+    await t.ctl.perform({ type: 'remove-imported' })
+    expect(t.ctl.getState().view).toBe('memory')
+    expect(t.ctl.getState().memoryScope).toBe(P1)
+    expect(t.v.memory.last.removeConfirm.open).toBe(true)
+    expect(t.projects.removeImported).not.toHaveBeenCalled()
+  })
+
+  it('the palette command with nothing imported says so instead of asking', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'remove-imported' })
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    expect(t.v.memory.last.notice).toBe('There is no auto-imported memory here.')
+  })
+
+  it('Esc closes the confirm first', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory', projectId: P1 })
+    t.cb('memory', 'onRemoveImported')()
+    expect(t.ctl.escape()).toBe(true)
+    expect(t.v.memory.last.removeConfirm.open).toBe(false)
+    expect(t.ctl.escape()).toBe(false)
+  })
+
+  it('the Auto-imported chip filters the loaded list', async () => {
+    const t = setup()
+    withImports(t)
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-memory', projectId: P1 })
+    t.cb('memory', 'onFilter')('auto-imported')
+    expect(t.v.memory.last.rows.map((r: { id: string }) => r.id)).toEqual(['mem_iiiiiiiiii'])
   })
 })

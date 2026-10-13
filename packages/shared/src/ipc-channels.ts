@@ -62,6 +62,8 @@ export const IPC = {
   prjTaskUpdate: 'prj:task-update',
   prjImportHistory: 'prj:import-history',
   prjResume: 'prj:resume',
+  prjRemoveImported: 'prj:remove-imported',
+  prjImportStatus: 'prj:import-status',
   prjPush: 'prj:push',
   appPower: 'app:power',
   appPowerGet: 'app:power-get',

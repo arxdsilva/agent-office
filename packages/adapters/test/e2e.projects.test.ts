@@ -15,7 +15,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createOffice, type HistorySource } from '@agent-office/core'
+import { createOffice, type HistorySource, type TranscriptReader } from '@agent-office/core'
 import {
   FakeAgentRunner,
   FakeClaudeSettingsStore,
@@ -44,6 +44,7 @@ import { McpLauncher } from '../src/mcp/mcp-launcher.ts'
 import { CodexRunner } from '../src/providers/index.ts'
 import {
   ClaudeHistorySource,
+  ClaudeTranscriptReader,
   NodeTranscriptFiles,
   TranscriptRefs,
 } from '../src/sources/claude-code/index.ts'
@@ -106,7 +107,13 @@ const PENDING_TITLE = 'Deploy pending idea'
 const OTHER_TITLE = 'Deploy runbook of another project'
 
 /** One app run over a vault directory: real core + real API (with /mcp) + launcher + two runtimes. */
-async function boot(vaultDir: string, home: string, userData: string, history?: HistorySource) {
+async function boot(
+  vaultDir: string,
+  home: string,
+  userData: string,
+  history?: HistorySource,
+  transcripts?: TranscriptReader,
+) {
   const scheduler = new TimerScheduler()
   const claude = new FakeAgentRunner()
   const codex = new CodexRunner({
@@ -151,6 +158,7 @@ async function boot(vaultDir: string, home: string, userData: string, history?: 
     vault,
     repoIdentity: new GitRepoIdentity({ salt: loadOrCreateWorkspaceSalt(home) }),
     ...(history ? { history } : {}),
+    ...(transcripts ? { transcripts } : {}),
     searchIndex: new TextIndex(),
     random: { token: (n) => randomBytes(n).toString('hex') },
     mcpLaunch: (token) => launcher.launch(token),
@@ -449,5 +457,139 @@ describe('projects end to end', () => {
     const bytes = allBytes(vaultDir).toString('latin1')
     expect(bytes).not.toContain(SENTINEL)
     expect(bytes).not.toContain('secret prompt')
+  })
+
+  it('P3 automatic import: a Claude session summary becomes approved memory → Codex retrieves it → removed → restart', async () => {
+    const CODEWORD = 'TEAL-4410'
+    const dir = mkdtempSync(join(root, 'run-'))
+    const home = join(dir, 'home')
+    const userData = join(dir, 'userData')
+    const vaultDir = join(userData, 'vault')
+    mkdirSync(home, { recursive: true })
+    const repo = join(dir, 'shop-api')
+    mkdirSync(repo)
+    git(repo, 'init', '-q')
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+    mkdirSync(join(repo, 'src'))
+    const elsewhere = join(dir, 'elsewhere')
+    mkdirSync(elsewhere)
+    // A past Claude Code session working inside the project's repo (invented content, an old file):
+    // the agent's reply holds the sentinel; the user's prompt must never be stored.
+    const projectsDir = join(dir, 'claude', 'projects')
+    mkdirSync(join(projectsDir, '-shop'), { recursive: true })
+    const file = join(projectsDir, '-shop', 'past-know-1.jsonl')
+    writeFileSync(
+      file,
+      [
+        {
+          type: 'user',
+          uuid: 'u-1',
+          sessionId: 'past-know-1',
+          cwd: join(repo, 'src'),
+          timestamp: '2026-02-03T10:00:00.000Z',
+          message: { role: 'user', content: 'invented prompt PROMPT-ONLY-91' },
+        },
+        {
+          type: 'assistant',
+          uuid: 'a-1',
+          sessionId: 'past-know-1',
+          timestamp: '2026-02-03T10:02:00.000Z',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: `The release codeword is ${CODEWORD}.` }],
+          },
+        },
+        { type: 'ai-title', sessionId: 'past-know-1', aiTitle: 'Pick the release codeword' },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n',
+    )
+    const old = new Date(Date.now() - 5 * 86_400_000)
+    utimesSync(file, old, old)
+    const refs = new TranscriptRefs()
+    const files = new NodeTranscriptFiles()
+    const history = new ClaudeHistorySource({ dir: projectsDir, files, refs })
+    const transcripts = new ClaudeTranscriptReader({ refs, files })
+
+    const a = await boot(vaultDir, home, userData, history, transcripts)
+    let closed = false
+    cleanup.push(async () => {
+      if (!closed) await a.close()
+    })
+    const project = await a.projects.catalog.create({ name: 'Shop', folders: [repo] })
+    const other = await a.projects.catalog.create({ name: 'Other', folders: [] })
+
+    // The user opts in: the import runs and the session (assigned by its repo) feeds approved memory.
+    a.projects.knowledge.setEnabled(true, Date.now())
+    // Joins the run that enabling started (single flight), then one rerun that adds nothing new.
+    expect(await a.projects.knowledge.runAll()).toMatchObject({ added: 0 })
+    expect(a.projects.knowledge.status()).toMatchObject({ on: true })
+    const items = a.projects.memory.list({ scope: project.id, origin: 'session-import' })
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      state: 'approved',
+      scope: 'project',
+      title: 'Session: Pick the release codeword',
+      provenance: { origin: 'session-import', provider: 'claude-code' },
+    })
+    expect(items[0]!.body).toContain(CODEWORD)
+    expect(items[0]!.body).not.toContain('PROMPT-ONLY-91')
+    expect(a.projects.memory.list({ scope: other.id })).toEqual([])
+
+    /** A Codex session on `projectId` asks search_memory for the codeword (the user allows it). */
+    const ask = async (projectId: string, cwd: string) => {
+      const id = await a.office.sessions!.start({
+        provider: 'codex',
+        modeId: 'ask',
+        projectId,
+        cwd,
+        name: 'codex-know',
+        mode: 'default',
+        extraDirs: [],
+        chrome: false,
+        first: { text: '/mcp codeword', context: [], use: [] },
+      })
+      // The fake app-server reuses its thread id, so earlier runs' replies are in this agent's chat.
+      const replies = () =>
+        a.office.chat.history(id).filter((m) => m.from === 'agent' && m.text.startsWith('mcp:'))
+      const card = await until(() => a.office.sessions!.pending(id)[0])
+      const seen = replies().length
+      a.office.sessions!.answer(id, card.id, 'allow')
+      const reply = await until(() => replies().length > seen && replies().at(-1))
+      await a.office.sessions!.stop(id)
+      return reply.text
+    }
+    // The project's own Codex retrieves it over MCP; another project's Codex does not.
+    expect(await ask(project.id, repo)).toContain('Session: Pick the release codeword')
+    expect(await ask(other.id, elsewhere)).toBe('mcp: none')
+
+    // The vault holds no plaintext sentinel.
+    await a.projects.store.flush()
+    expect(allBytes(vaultDir).toString('latin1')).not.toContain(CODEWORD)
+
+    // The user removes imported memory: rejected, out of MCP and search.
+    expect(await a.projects.knowledge.removeImported(project.id)).toEqual({ removed: 1 })
+    expect(await ask(project.id, repo)).toBe('mcp: none')
+    expect(
+      (await a.projects.search.search({ query: CODEWORD })).filter((h) => h.kind === 'memory'),
+    ).toEqual([])
+
+    // Restart over the same vault with the import still on: the item stays removed.
+    await a.close()
+    closed = true
+    const b = await boot(vaultDir, home, userData, history, transcripts)
+    cleanup.push(() => b.close())
+    b.projects.knowledge.setEnabled(true, Date.now())
+    await b.projects.knowledge.runAll()
+    expect(
+      b.projects.memory.list({ scope: project.id, states: ['approved'], origin: 'session-import' }),
+    ).toEqual([])
+    expect(b.projects.memory.list({ scope: project.id, origin: 'session-import' })).toMatchObject([
+      { state: 'rejected' },
+    ])
+    await b.projects.store.flush()
+    const bytes = allBytes(vaultDir).toString('latin1')
+    expect(bytes).not.toContain(CODEWORD)
+    expect(bytes).not.toContain('PROMPT-ONLY-91')
   })
 })

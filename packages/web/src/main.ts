@@ -135,7 +135,7 @@ async function boot(): Promise<void> {
     return
   }
   document.body.dataset.mode = startup.viewMode
-  const settings = new DomSettings()
+  const settings = new DomSettings({ removeImported: () => gateway.projects.removeImported() })
   // Fallback FPS readout in Settings → Graphics until the controller pushes the full stats line.
   scene.onFrameStats((fps, preset) => settings.showFrameRate(fps, preset))
   const toast = new DomToast()

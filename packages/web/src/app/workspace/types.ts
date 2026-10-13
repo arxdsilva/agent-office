@@ -26,6 +26,8 @@ export type WorkspaceAction =
   | { type: 'switch-mode'; mode: '3d' | 'pixel' }
   /** Experimental: reads Claude Code's own history metadata (explicit user action). */
   | { type: 'import-history' }
+  /** Rejects every auto-imported memory item (asks first). Palette + `#mem-remove-imported`. */
+  | { type: 'remove-imported' }
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad'
 export interface ButtonVM {
@@ -228,12 +230,21 @@ export interface SessionsVM {
   detailEmpty: string
   /** Experimental: imports past Claude Code sessions (`#sv-import`). */
   importHistory: ButtonVM
+  /** `#sv-import-status` while automatic import is on: "Last run 5m ago: 4 sessions, 3 summaries". */
+  importStatus: string | null
   /** A one-line result ("Saved as memory", "Imported 3 sessions"); null hides it. */
   notice: string | null
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────────────────────
-export type MemoryFilterKey = 'all' | 'pending' | 'approved' | 'rejected' | 'superseded'
+export type MemoryFilterKey =
+  | 'all'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'superseded'
+  /** Approved items taken from sessions automatically (`provenance.origin === 'session-import'`). */
+  | 'auto-imported'
 export interface BadgeVM {
   label: string
   tone: Tone
@@ -278,6 +289,12 @@ export interface MemoryVM {
   empty: string
   detail: MemoryDetailVM | null
   detailEmpty: string
+  /** `#mem-remove-imported`: acts on the current project, or on all memory. */
+  removeImported: ButtonVM
+  /** `#mem-remove-confirm`; shown while `open`. */
+  removeConfirm: { open: boolean; title: string; body: string; ok: string; cancel: string }
+  /** A one-line result ("Removed 3 imported items"); null hides it. */
+  notice: string | null
 }
 
 // ── Context Inspector ─────────────────────────────────────────────────────────────────────────

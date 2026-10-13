@@ -3,13 +3,15 @@ import {
   MEMORY_KINDS,
   MEMORY_SCOPES,
   type MemoryKind,
+  type MemoryOrigin,
   type MemoryScope,
   type MemoryState,
   type MemoryView,
 } from '@agent-office/shared'
 import { ValidationError } from './errors.ts'
+import { cleanText } from './text.ts'
 
-export type MemoryOrigin = 'user' | 'agent-proposal' | 'session-summary' | 'handoff'
+export type { MemoryOrigin }
 export type DecisionStatus = 'proposed' | 'accepted' | 'deprecated'
 
 export interface Provenance {
@@ -195,6 +197,119 @@ export function mergeMemories(
     sources: items.map((i) => retire(i, into.id, now)),
   }
 }
+
+// ── Automatic knowledge import (docs/projects.md §8b) ──
+// A separate, explicit constructor: the user approved these summaries once, through the opt-in
+// (`approvedAt`). `createMemory`'s rule (only the user's own items are approved) is unchanged.
+
+export const IMPORT_ORIGIN = 'session-import'
+export const MAX_IMPORTED_BODY = 2000
+
+const importedTitle = (sessionTitle: string) =>
+  cleanText(`Session: ${sessionTitle.replace(/\s+/g, ' ').trim() || 'Untitled session'}`, MAX_TITLE)
+
+function importedBody(summary: string): string {
+  const s = cleanText(summary.trim(), MAX_IMPORTED_BODY)
+  if (!s) throw new ValidationError('an imported summary cannot be empty')
+  return s
+}
+
+function requireImported(m: MemoryItem): void {
+  if (m.provenance.origin !== IMPORT_ORIGIN) throw new ValidationError('not an auto-imported item')
+  if (m.state !== 'approved') throw new ValidationError(`cannot change a ${m.state} item`)
+}
+
+/** One session's summary as approved memory: project scope when assigned, else session scope. */
+export function createImportedMemory(o: {
+  id: string
+  session: { id: string; title: string }
+  summary: string
+  projectId: string | null
+  now: number
+  /** When the user opted in (recorded as `reviewedAt`). */
+  approvedAt: number
+}): MemoryItem {
+  return {
+    id: o.id,
+    version: 1,
+    projectId: o.projectId,
+    scope: o.projectId ? 'project' : 'session',
+    kind: 'note',
+    title: importedTitle(o.session.title),
+    body: importedBody(o.summary),
+    state: 'approved',
+    provenance: {
+      origin: IMPORT_ORIGIN,
+      provider: 'claude-code',
+      sessionId: o.session.id,
+      createdBy: 'auto-import',
+      createdAt: o.now,
+      reviewedAt: o.approvedAt,
+    },
+    updatedAt: o.now,
+  }
+}
+
+/** A new version with the new summary (and title); unchanged text returns `m` itself. */
+export function reviseImportedMemory(
+  m: MemoryItem,
+  summary: string,
+  now: number,
+  sessionTitle?: string,
+): MemoryItem {
+  requireImported(m)
+  const nextBody = importedBody(summary)
+  const nextTitle = sessionTitle === undefined ? m.title : importedTitle(sessionTitle)
+  if (nextBody === m.body && nextTitle === m.title) return m
+  return { ...m, version: m.version + 1, body: nextBody, title: nextTitle, updatedAt: now }
+}
+
+/** The session was (re)assigned: a new version in the new place; the same place returns `m`. */
+export function rehomeImportedMemory(
+  m: MemoryItem,
+  projectId: string | null,
+  now: number,
+): MemoryItem {
+  requireImported(m)
+  if (m.projectId === projectId) return m
+  return {
+    ...m,
+    version: m.version + 1,
+    projectId,
+    scope: projectId ? 'project' : 'session',
+    updatedAt: now,
+  }
+}
+
+/** The user removed it ("Remove imported memory"): approved → rejected, as a new version. */
+export function retractMemory(m: MemoryItem, now: number): MemoryItem {
+  if (m.state !== 'approved') throw new ValidationError(`cannot retract a ${m.state} item`)
+  return { ...m, version: m.version + 1, state: 'rejected', updatedAt: now }
+}
+
+/** Over the per-project cap: the oldest approved items are retired (`supersededBy: 'cap'`). */
+export function supersedeByCap(m: MemoryItem, now: number): MemoryItem {
+  if (m.state !== 'approved') throw new ValidationError('only approved items can be superseded')
+  return retire(m, 'cap', now)
+}
+
+/**
+ * The copy a cross-partition move leaves in the OLD partition: the moved version's number, marked
+ * superseded by itself. On load a live record of the same version always wins over it, so the
+ * lineage resolves to the newest place; if the new partition is gone, the item stays retired.
+ */
+export function moveTombstone(prev: MemoryItem, moved: MemoryItem): MemoryItem {
+  return {
+    ...prev,
+    version: moved.version,
+    state: 'superseded',
+    supersededBy: prev.id,
+    updatedAt: moved.updatedAt,
+  }
+}
+
+export const isMoveTombstone = (m: MemoryItem) =>
+  m.state === 'superseded' && m.supersededBy === m.id
 
 export function toMemoryView(m: MemoryItem): MemoryView {
   const p = m.provenance

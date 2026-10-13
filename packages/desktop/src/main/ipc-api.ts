@@ -137,6 +137,7 @@ export interface IpcPorts {
     | 'search'
     | 'tasks'
     | 'history'
+    | 'knowledge'
   >
 }
 
@@ -493,6 +494,11 @@ function projectHandlers(
       }
     },
     [IPC.prjSearch]: h(SearchArgsSchema, (a) => prj.search.search(a)),
+    // Automatic knowledge import: user actions; one project's items, or all when no id is given.
+    [IPC.prjRemoveImported]: h(ProjectIdSchema.optional(), (id) =>
+      prj.knowledge.removeImported(id),
+    ),
+    [IPC.prjImportStatus]: guard(() => prj.knowledge.status()),
   }
 }
 

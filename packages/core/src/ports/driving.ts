@@ -22,10 +22,12 @@ import type {
   ContextPolicy,
   GlobalOverview,
   ImportResult,
+  ImportStatus,
   HandoffView,
   MemoryDraft,
   MemoryKind,
   MemoryScope,
+  MemoryOrigin,
   MemoryState,
   MemoryView,
   ProjectDashboard,
@@ -285,7 +287,13 @@ export interface ProjectWorkspaceQuery {
 }
 
 export interface MemoryService {
-  list(o: { scope: string; states?: MemoryState[]; query?: string }): MemoryView[]
+  list(o: {
+    scope: string
+    states?: MemoryState[]
+    query?: string
+    /** Only items of this provenance origin (e.g. auto-imported). */
+    origin?: MemoryOrigin
+  }): MemoryView[]
   create(draft: MemoryDraft): Promise<MemoryView>
   review(memoryId: string, action: 'approve' | 'reject'): Promise<MemoryView>
   edit(o: {
@@ -324,6 +332,23 @@ export interface GlobalSearch {
 /** Experimental: import past provider sessions as unassigned records (references, never copies). */
 export interface HistoryImport {
   importHistory(o: { limit: number }): Promise<ImportResult>
+}
+
+/**
+ * Automatic knowledge import (docs/projects.md §8b): after the user's opt-in, Claude sessions are
+ * imported continuously and each session's deterministic summary becomes approved project memory
+ * (`provenance.origin: 'session-import'`). User actions only; agents never call this.
+ */
+export interface KnowledgeImport {
+  /** On: runs an import now and every 10 minutes; `approvedAt` is the opt-in time (reviewedAt). */
+  setEnabled(on: boolean, approvedAt: number): void
+  /** One full run (no-op when off): import new sessions, then sync every Claude session's item. */
+  runAll(): Promise<ImportResult & { added: number }>
+  /** Creates, revises or re-homes one session's item (no-op when off). */
+  sync(sessionId: string): Promise<void>
+  /** Rejects every auto-imported item (of one project, or all); they are not recreated. */
+  removeImported(projectId?: string): Promise<{ removed: number }>
+  status(): ImportStatus
 }
 
 /** Experimental: continue a past Claude Code session natively as a managed session. */

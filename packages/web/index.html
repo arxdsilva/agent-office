@@ -336,6 +336,11 @@
           Code config (MCP server names, skill descriptions, rule titles)</label
         >
         <label class="row"
+          ><input id="s-autoImportHistory" type="checkbox" /> <span id="s-autoimport-label"></span>
+          <strong id="s-autoimport-exp" class="muted small"></strong
+        ></label>
+        <p id="s-autoimport-note" class="muted small"></p>
+        <label class="row"
           ><input id="s-allowBypassPermissions" type="checkbox" /> <span id="s-bypass-label"></span
         ></label>
       </section>
@@ -410,6 +415,22 @@
           <button id="s-confirm-ok" class="btn danger" type="button">Allow</button>
         </p>
       </dialog>
+
+      <dialog id="s-autoimport-confirm" class="card" aria-labelledby="s-autoimport-confirm-text">
+        <p id="s-autoimport-confirm-text"></p>
+        <p class="row confirm-actions">
+          <button id="s-autoimport-cancel" class="btn" type="button"></button>
+          <button id="s-autoimport-ok" class="btn danger" type="button"></button>
+        </p>
+      </dialog>
+
+      <dialog id="s-autoimport-off" class="card" aria-labelledby="s-autoimport-off-text">
+        <p id="s-autoimport-off-text"></p>
+        <p class="row confirm-actions">
+          <button id="s-autoimport-keep" class="btn" type="button"></button>
+          <button id="s-autoimport-remove" class="btn danger" type="button"></button>
+        </p>
+      </dialog>
     </dialog>
     <!-- endregion:T1 settings -->
 
@@ -465,6 +486,12 @@
     <dialog id="palette" class="card ws-dialog" aria-label="Command palette"></dialog>
     <dialog id="np-dialog" class="card ws-dialog" aria-labelledby="np-title"></dialog>
     <dialog id="ho-dialog" class="card ws-dialog" aria-labelledby="ho-title"></dialog>
+    <dialog
+      id="mem-remove-confirm"
+      class="card ws-dialog"
+      aria-labelledby="mem-remove-title"
+      aria-describedby="mem-remove-text"
+    ></dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

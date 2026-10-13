@@ -965,4 +965,111 @@ describe('compose with a projects vault', () => {
     expect(dash.tasks.map((x) => x.id)).toEqual([t.id])
     expect(dash.completed[0]!.evidence).toBe('user-confirmed')
   })
+
+  /** A past Claude session with one agent reply (invented content), old enough for the tailer. */
+  function writeKnowledgeHistory(dir: string) {
+    const pdir = join(dir, 'claude', 'projects')
+    mkdirSync(join(pdir, '-work-know'), { recursive: true })
+    const file = join(pdir, '-work-know', 'sess-know-1.jsonl')
+    const lines = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        sessionId: 'sess-know-1',
+        cwd: '/work/nowhere-know',
+        timestamp: '2026-01-01T10:00:00.000Z',
+        message: { role: 'user', content: 'SENTINEL-prompt' },
+      },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        sessionId: 'sess-know-1',
+        timestamp: '2026-01-01T10:01:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Invented reply KNOW-77' }] },
+      },
+      { type: 'ai-title', sessionId: 'sess-know-1', aiTitle: 'Know the thing' },
+    ]
+    writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+    const old = new Date(Date.now() - 3 * 86_400_000)
+    utimesSync(file, old, old)
+    return pdir
+  }
+
+  async function until<T>(fn: () => Promise<T | undefined | false>, ms = 3000): Promise<T> {
+    const end = Date.now() + ms
+    for (;;) {
+      const v = await fn()
+      if (v) return v
+      if (Date.now() > end) throw new Error('timed out')
+      await wait(20)
+    }
+  }
+
+  type Status = { on: boolean; added: number; lastRunAt?: number }
+  type Mem = { id: string; state: string; title: string; provenance: { reviewedAt?: number } }
+
+  it('automatic import: opting in records the approval in main, imports, removes, turns off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-know-'))
+    const { app, call, handlers } = setup(
+      { AGENT_OFFICE_CLAUDE: '1', CLAUDE_PROJECTS_DIR: writeKnowledgeHistory(dir) },
+      { vault: new MemoryRecordLog() },
+    )
+    await app.start()
+    expect(await call(IPC.prjImportStatus)).toMatchObject({ on: false })
+    // The renderer can never set the approval time itself.
+    await expect(call(IPC.settingsSet, { autoImportApprovedAt: 1 })).rejects.toThrow(
+      /invalid settings/,
+    )
+    // The user confirms the opt-in: main records when, then the first run imports the session.
+    await call(IPC.settingsSet, { autoImportHistory: true })
+    const status = await until(async () => {
+      const s = (await call(IPC.prjImportStatus)) as Status
+      return s.on && s.lastRunAt !== undefined ? s : undefined
+    })
+    expect(status.added).toBe(1)
+    const settings = (await call(IPC.settingsGet)) as { autoImportApprovedAt?: number }
+    expect(settings.autoImportApprovedAt).toBeGreaterThan(0)
+    const items = (await call(IPC.prjMemories, {
+      scope: 'unassigned',
+      origin: 'session-import',
+    })) as Mem[]
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ state: 'approved', title: 'Session: Know the thing' })
+    expect(items[0]!.provenance.reviewedAt).toBe(settings.autoImportApprovedAt)
+    expect(JSON.stringify(items)).not.toContain('SENTINEL')
+    // Only the trusted renderer may remove them.
+    await expect(handlers.get(IPC.prjRemoveImported)!('https://evil.example')).rejects.toThrow(
+      /untrusted/,
+    )
+    expect(await call(IPC.prjRemoveImported)).toEqual({ removed: 1 })
+    // Turning it off stops the import; the approval time stays recorded.
+    await call(IPC.settingsSet, { autoImportHistory: false })
+    expect(await call(IPC.prjImportStatus)).toMatchObject({ on: false })
+    expect(
+      ((await call(IPC.settingsGet)) as { autoImportApprovedAt?: number }).autoImportApprovedAt,
+    ).toBe(settings.autoImportApprovedAt)
+  })
+
+  it('automatic import starts at launch when saved on, and stays off without the Claude adapter', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-know-'))
+    const on = setup(
+      { AGENT_OFFICE_CLAUDE: '1', CLAUDE_PROJECTS_DIR: writeKnowledgeHistory(dir) },
+      { vault: new MemoryRecordLog() },
+    )
+    await on.app.office.settings.update({ autoImportHistory: true, autoImportApprovedAt: 123 })
+    await on.app.start()
+    const items = await until(async () => {
+      const list = (await on.call(IPC.prjMemories, { scope: 'unassigned' })) as Mem[]
+      return list.length ? list : undefined
+    })
+    expect(items[0]!.provenance.reviewedAt).toBe(123)
+
+    const off = setup(
+      { AGENT_OFFICE_CLAUDE: '0', CLAUDE_PROJECTS_DIR: writeKnowledgeHistory(dir) },
+      { vault: new MemoryRecordLog() },
+    )
+    await off.app.office.settings.update({ autoImportHistory: true, autoImportApprovedAt: 123 })
+    await off.app.start()
+    expect(await off.call(IPC.prjImportStatus)).toMatchObject({ on: false })
+  })
 })

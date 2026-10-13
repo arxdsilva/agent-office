@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock, FakeRecordLog, MemoryLogger, SeqRandom } from '../../test/fakes/index.ts'
-import { createMemory } from '../domain/memory.ts'
+import {
+  createImportedMemory,
+  createMemory,
+  editMemory,
+  rehomeImportedMemory,
+  retractMemory,
+  supersedeByCap,
+} from '../domain/memory.ts'
 import { createProject } from '../domain/project.ts'
 import { newSessionRecord } from '../domain/session-record.ts'
 import { ProjectsStore } from './projects-store.ts'
@@ -149,5 +156,124 @@ describe('ProjectsStore', () => {
     const list = store.activityOf(P)
     expect(list.length).toBe(2000)
     expect(store.recentActivity(P, 2).map((a) => a.ts)).toEqual([2099, 2098])
+  })
+})
+
+describe('ProjectsStore: cross-partition moves and auto-imported knowledge', () => {
+  const Q = 'prj_bbbbbbbbbbbb'
+  const imported = (
+    projectId: string | null,
+    id = 'mem_iiiiiiiiiiii',
+    sessionId = 'ses_aaaaaaaaaaaa',
+  ) =>
+    createImportedMemory({
+      id,
+      session: { id: sessionId, title: 'Invented session' },
+      summary: 'Invented session\n• Did a thing.',
+      projectId,
+      now: 1,
+      approvedAt: 1,
+    })
+
+  it('PS-move: a re-home leaves a tombstone in the old partition; reload resolves the newest place', async () => {
+    const { store, log } = make()
+    const v1 = imported(null)
+    await store.putMemory(v1)
+    const v2 = rehomeImportedMemory(v1, P, 2)
+    await store.putMemory(v2)
+    const v3 = rehomeImportedMemory(v2, Q, 3)
+    await store.putMemory(v3)
+    expect(store.memory.get(v1.id)).toMatchObject({ version: 3, projectId: Q, state: 'approved' })
+    // The tombstones are on disk only, never a version in the history list.
+    expect(store.versions(v1.id).map((v) => v.version)).toEqual([1, 2, 3])
+    const catalog = log.storage.get('catalog')!.filter((r) => r.t === 'memory')
+    expect(catalog.map((r) => [r.data.version, r.data.state])).toEqual([
+      [1, 'approved'],
+      [2, 'superseded'],
+    ])
+    expect(log.storage.get(`p/${P}`)!.map((r) => [r.data.version, r.data.state])).toEqual([
+      [2, 'approved'],
+      [3, 'superseded'],
+    ])
+    await store.flush()
+
+    // Any load order resolves to the live record: reload, and reload with partitions reversed.
+    const a = make(log.reopen()).store
+    await a.load()
+    expect(a.memory.get(v1.id)).toMatchObject({ version: 3, projectId: Q, state: 'approved' })
+    expect(a.knowledgeOf('ses_aaaaaaaaaaaa')?.projectId).toBe(Q)
+    const reversed = log.reopen()
+    const parts = reversed.partitions.bind(reversed)
+    reversed.partitions = async (prefix: string) => (await parts(prefix)).reverse()
+    const b = make(reversed).store
+    await b.load()
+    expect(b.memory.get(v1.id)).toMatchObject({ version: 3, projectId: Q })
+
+    // The new partition is gone (project deleted): the moved item does not come back elsewhere.
+    log.storage.delete(`p/${Q}`)
+    const c = make(log.reopen()).store
+    await c.load()
+    expect(c.memory.get(v1.id)).toMatchObject({ state: 'superseded' })
+  })
+
+  it('PS-move: an edit that changes partition (project → global) is tombstoned too', async () => {
+    const { store, log } = make()
+    const m = createMemory({
+      id: 'mem_aaaaaaaaaaaa',
+      projectId: P,
+      scope: 'project',
+      kind: 'note',
+      title: 'T',
+      body: 'B',
+      origin: 'user',
+      createdBy: 'you',
+      now: 1,
+    })
+    await store.putMemory(m)
+    await store.putMemory(editMemory(m, { scope: 'global' }, 2))
+    await store.flush()
+    log.storage.delete('catalog')
+    const c = make(log.reopen()).store
+    await c.load()
+    expect(c.memory.get(m.id)?.state).toBe('superseded')
+  })
+
+  it('PS-knowledge: session → its auto-imported item (approved first, never rejected), rebuilt on load', async () => {
+    const { store, log } = make()
+    expect(store.knowledgeOf('ses_aaaaaaaaaaaa')).toBeUndefined()
+    const a = imported(P)
+    await store.putMemory(a)
+    expect(store.knowledgeOf('ses_aaaaaaaaaaaa')?.id).toBe(a.id)
+    // Removed: no longer the session's knowledge.
+    await store.putMemory(retractMemory(a, 2))
+    expect(store.knowledgeOf('ses_aaaaaaaaaaaa')).toBeUndefined()
+    // A new lineage for the same session; and a capped one for another session.
+    const b = imported(P, 'mem_jjjjjjjjjjjj')
+    await store.putMemory(b)
+    const c = imported(P, 'mem_kkkkkkkkkkkk', 'ses_bbbbbbbbbbbb')
+    await store.putMemory(supersedeByCap(c, 3))
+    expect(store.knowledgeOf('ses_aaaaaaaaaaaa')?.id).toBe(b.id)
+    // Capped items stay the session's knowledge (so they are not recreated).
+    expect(store.knowledgeOf('ses_bbbbbbbbbbbb')).toMatchObject({ id: c.id, state: 'superseded' })
+    await store.flush()
+    const r = make(log.reopen()).store
+    await r.load()
+    expect(r.knowledgeOf('ses_aaaaaaaaaaaa')?.id).toBe(b.id)
+    expect(r.knowledgeOf('ses_bbbbbbbbbbbb')?.id).toBe(c.id)
+    // User memory with a sessionId is not knowledge.
+    const own = createMemory({
+      id: 'mem_llllllllllll',
+      projectId: P,
+      scope: 'project',
+      kind: 'note',
+      title: 'Mine',
+      body: 'B',
+      origin: 'user',
+      createdBy: 'you',
+      sessionId: 'ses_cccccccccccc',
+      now: 1,
+    })
+    await r.putMemory(own)
+    expect(r.knowledgeOf('ses_cccccccccccc')).toBeUndefined()
   })
 })

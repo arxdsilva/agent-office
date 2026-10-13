@@ -89,6 +89,8 @@ export interface SessionSummary {
   hasTranscript: boolean
   /** Experimental: the provider can resume this session natively (Claude only, verified locally). */
   canResume?: boolean
+  /** The auto-imported memory item holding this session's summary (automatic import). */
+  knowledgeMemoryId?: string
 }
 
 export interface SessionMessageView {
@@ -104,8 +106,17 @@ export interface SessionMessageView {
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────────────────────
+export const MEMORY_ORIGINS = [
+  'user',
+  'agent-proposal',
+  'session-summary',
+  'handoff',
+  'session-import',
+] as const
+export type MemoryOrigin = (typeof MEMORY_ORIGINS)[number]
 export interface ProvenanceView {
-  origin: 'user' | 'agent-proposal' | 'session-summary' | 'handoff'
+  /** 'session-import': a session summary imported automatically (approved by the opt-in). */
+  origin: MemoryOrigin
   provider?: string
   sessionId?: string
   messageId?: string
@@ -175,6 +186,8 @@ export const ACTIVITY_KINDS = [
   'commit.detected',
   'permission.requested',
   'agent.error',
+  /** One aggregated entry per automatic import run and project (docs/projects.md §8b). */
+  'memory.imported',
 ] as const
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
 export interface ActivityView {
@@ -308,6 +321,8 @@ export const MemoryListArgsSchema = z.object({
   scope: z.union([ProjectIdSchema, z.literal('global'), z.literal(UNASSIGNED)]),
   states: z.array(z.enum(MEMORY_STATES)).max(4).optional(),
   query: z.string().max(200).optional(),
+  /** Only items of this provenance origin (e.g. the "Auto-imported" filter). */
+  origin: z.enum(MEMORY_ORIGINS).optional(),
 })
 export const MemoryActionArgsSchema = z.object({
   memoryId: MemoryIdSchema,
@@ -362,6 +377,14 @@ export const TaskUpdateArgsSchema = z
 export const ImportHistoryArgsSchema = z.object({
   limit: z.number().int().min(1).max(500).default(200),
 })
+/** Automatic knowledge import (docs/projects.md §8b). */
+export interface ImportStatus {
+  on: boolean
+  lastRunAt?: number
+  /** Sessions imported and summaries added to memory by the last run. */
+  imported: number
+  added: number
+}
 export interface ImportResult {
   imported: number
   /** Already known or unreadable. */

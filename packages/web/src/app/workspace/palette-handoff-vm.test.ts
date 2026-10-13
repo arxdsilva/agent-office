@@ -214,4 +214,11 @@ describe('palette deep search additions', () => {
     expect(cmd.action).toEqual({ type: 'import-history' })
     expect(cmd.label).toMatch(/experimental/i)
   })
+  it('has a Remove imported memory command', () => {
+    const cmd = paletteCommands({ projects: [], projectId: null }).find(
+      (c) => c.id === 'remove-imported',
+    )!
+    expect(cmd.label).toBe('Remove imported memory')
+    expect(cmd.action).toEqual({ type: 'remove-imported' })
+  })
 })

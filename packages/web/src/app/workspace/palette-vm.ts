@@ -68,6 +68,12 @@ export function paletteCommands(s: Pick<WorkspaceState, 'projects' | 'projectId'
       action: { type: 'import-history' },
     },
     {
+      id: 'remove-imported',
+      label: P.cmd.removeImported,
+      keywords: 'remove delete clear auto imported claude sessions memory',
+      action: { type: 'remove-imported' },
+    },
+    {
       id: 'mode-2d',
       label: P.cmd.to2d,
       keywords: 'pixel rpg switch view mode',

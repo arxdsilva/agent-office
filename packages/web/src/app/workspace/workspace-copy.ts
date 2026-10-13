@@ -119,6 +119,10 @@ export const WS_COPY = {
       'Experimental: reads Claude Code session metadata on this computer. Nothing is copied.',
     imported: (n: number, skipped: number) =>
       `Imported ${n} session${n === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`,
+    autoOn: 'Automatic import is on',
+    autoWaiting: 'Waiting for the first automatic run.',
+    lastRun: (when: string, sessions: number, summaries: number) =>
+      `Last run ${when}: ${sessions} session${sessions === 1 ? '' : 's'}, ${summaries} summar${summaries === 1 ? 'y' : 'ies'}`,
     continueWith: 'Continue with…',
     continueHint: 'Hand the work to another provider with a reviewed context bundle.',
     assign: (name: string) => `Assign to ${name}`,
@@ -152,6 +156,7 @@ export const WS_COPY = {
       approved: 'Approved',
       rejected: 'Rejected',
       superseded: 'Superseded',
+      'auto-imported': 'Auto-imported',
     },
     state: {
       pending: 'Pending review',
@@ -160,6 +165,23 @@ export const WS_COPY = {
       superseded: 'Superseded',
     } satisfies Record<MemoryState, string>,
     agentProposed: 'agent-proposed',
+    autoImported: 'auto-imported',
+    /** Provenance of an item taken from a session automatically (never an id). */
+    importedFrom: (title: string | undefined, provider: string | undefined): string =>
+      title
+        ? `Imported automatically from session \u201c${title}\u201d${provider ? ` (${provider})` : ''}`
+        : `Imported automatically from a session${provider ? ` (${provider})` : ''}`,
+    removeImported: 'Remove imported memory',
+    removeNeedScope: 'Pick a project or All memory to remove imported items.',
+    removeNothing: 'There is no auto-imported memory here.',
+    removeConfirm: {
+      title: 'Remove imported memory?',
+      body: (n: number, where: string) =>
+        `${n} auto-imported item${n === 1 ? '' : 's'} in \u201c${where}\u201d will be rejected: agents stop seeing them and they are not imported again.`,
+      ok: 'Remove',
+      cancel: 'Cancel',
+    },
+    removed: (n: number) => `Removed ${n} imported item${n === 1 ? '' : 's'}`,
     approve: 'Approve',
     reject: 'Reject',
     edit: 'Edit',
@@ -175,6 +197,7 @@ export const WS_COPY = {
       'agent-proposal': 'Proposed by an agent',
       'session-summary': 'Taken from a session summary',
       handoff: 'Created during a handoff',
+      'session-import': 'Imported automatically',
     },
     provider: (p: string) => `Provider: ${p}`,
     /** Never an id: the session's title and provider, or a generic fallback. */
@@ -223,6 +246,7 @@ export const WS_COPY = {
       inspect: 'Inspect context',
       continueWork: 'Continue work',
       importHistory: 'Import Claude history (experimental)',
+      removeImported: 'Remove imported memory',
       to2d: 'Switch to 2D',
       to3d: 'Switch to 3D',
       connect: 'Connect a provider',

@@ -43,6 +43,7 @@ export class DomSessionVault implements SessionVaultView {
   private detail = el('div', undefined, 'sv-detail-body')
   private status = el('div', undefined, 'sv-status')
   private importBtn = el('button', undefined, 'btn small')
+  private importLine = el('div', undefined, 'sv-notice muted small')
   private noticeBox = el('div', undefined, 'sv-notice')
   private lastHighlight = ''
 
@@ -60,12 +61,15 @@ export class DomSessionVault implements SessionVaultView {
     this.importBtn.id = 'sv-import'
     this.importBtn.type = 'button'
     this.importBtn.addEventListener('click', () => this.importer.emit())
+    this.importLine.id = 'sv-import-status'
+    this.importLine.setAttribute('role', 'status')
     this.noticeBox.id = 'sv-notice'
     left.append(
       this.heading,
       this.input,
       this.scopes,
       this.importBtn,
+      this.importLine,
       this.noticeBox,
       this.status,
       this.list,
@@ -126,6 +130,8 @@ export class DomSessionVault implements SessionVaultView {
     setText(this.importBtn, vm.importHistory.label)
     this.importBtn.disabled = !vm.importHistory.enabled
     this.importBtn.title = vm.importHistory.hint ?? ''
+    setText(this.importLine, vm.importStatus ?? '')
+    this.importLine.hidden = !vm.importStatus
     this.noticeBox.replaceChildren(...(vm.notice ? [notice(vm.notice, 'info')] : []))
     const st: Node[] = []
     if (vm.error) st.push(notice(vm.error, 'error'))

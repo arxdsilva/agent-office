@@ -2,6 +2,7 @@
 import type {
   MemoryDraft,
   MemoryKind,
+  MemoryOrigin,
   MemoryScope,
   MemoryState,
   MemoryView,
@@ -36,7 +37,7 @@ export class ProjectMemoryService implements MemoryService {
   constructor(private d: MemoryDeps) {}
 
   list(
-    o: { scope: string; states?: MemoryState[]; query?: string },
+    o: { scope: string; states?: MemoryState[]; query?: string; origin?: MemoryOrigin },
     as: Principal = USER,
   ): MemoryView[] {
     assertAuthorized(as, 'memory.review', USER_ONLY, undefined)
@@ -50,6 +51,7 @@ export class ProjectMemoryService implements MemoryService {
             : m.projectId === o.scope,
       )
       .filter((m) => !o.states || o.states.includes(m.state))
+      .filter((m) => !o.origin || m.provenance.origin === o.origin)
       .filter((m) => !q || `${m.title}\n${m.body}`.toLowerCase().includes(q))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(toMemoryView)

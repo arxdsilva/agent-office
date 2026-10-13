@@ -69,6 +69,8 @@ const api: AgentOfficeApi = {
     updateTask: (args) => ipcRenderer.invoke(IPC.prjTaskUpdate, args),
     importHistory: (args) => ipcRenderer.invoke(IPC.prjImportHistory, args ?? {}),
     resumeSession: (sessionId) => ipcRenderer.invoke(IPC.prjResume, sessionId),
+    removeImported: (projectId) => ipcRenderer.invoke(IPC.prjRemoveImported, projectId),
+    importStatus: () => ipcRenderer.invoke(IPC.prjImportStatus),
     onPush: (cb) => listen(IPC.prjPush, cb),
   },
   providers: {

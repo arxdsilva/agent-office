@@ -116,6 +116,21 @@ export const SESSION_COPY = {
     confirm:
       'Bypass mode lets a session run any command and edit any file without asking. Allow it?',
   },
+  autoImport: {
+    label: 'Import Claude sessions into memory automatically',
+    experimental: 'Experimental',
+    note: 'Each session summary becomes approved project memory. You can remove it at any time.',
+    onTitle: 'Import Claude sessions automatically?',
+    onConfirm:
+      "Claude Code sessions will be imported automatically. Each session's summary becomes approved memory in its project, which your agents can read. You can remove all imported memory at any time.",
+    turnOn: 'Turn on',
+    cancel: 'Cancel',
+    offTitle: 'Stop importing Claude sessions?',
+    offConfirm: 'Automatic import stops. Keep the memory it already added, or remove it too?',
+    keep: 'Keep imported memory',
+    remove: 'Also remove imported memory',
+    removeFailed: 'Could not remove the imported memory.',
+  },
   quit: {
     confirm: (n: number) => `${n} managed session${n === 1 ? '' : 's'} will stop. Quit anyway?`,
     quit: 'Quit',

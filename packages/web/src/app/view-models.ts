@@ -677,6 +677,8 @@ export interface SettingsVM {
   launchAtLogin: boolean
   claudeAdapter: boolean
   discoverCapabilities: boolean
+  /** Experimental: import Claude sessions into memory automatically (docs/projects.md §8b). */
+  autoImportHistory: boolean
   autoUpdate: boolean
   graphicsQuality: GraphicsQuality
   theme: Settings['theme']
@@ -714,6 +716,7 @@ export function settingsVM(i: {
     launchAtLogin: i.settings.launchAtLogin,
     claudeAdapter: i.settings.claudeAdapter,
     discoverCapabilities: i.settings.discoverCapabilities,
+    autoImportHistory: i.settings.autoImportHistory,
     autoUpdate: i.settings.autoUpdate,
     graphicsQuality: i.settings.graphicsQuality,
     theme: i.settings.theme,

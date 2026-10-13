@@ -4,7 +4,7 @@
 // activity), 's/<ses>' (agent-office chat for that session).
 import type { ActivityEvent } from '../domain/activity.ts'
 import type { Handoff } from '../domain/handoff.ts'
-import type { MemoryItem } from '../domain/memory.ts'
+import { IMPORT_ORIGIN, isMoveTombstone, moveTombstone, type MemoryItem } from '../domain/memory.ts'
 import { idFrom, type Project } from '../domain/project.ts'
 import type { SessionRecord } from '../domain/session-record.ts'
 import type { Task } from '../domain/task.ts'
@@ -63,6 +63,8 @@ export class ProjectsStore {
   readonly tasks = new Map<string, Task>()
   readonly handoffs = new Map<string, Handoff>()
   private memoryVersions = new Map<string, MemoryItem[]>()
+  /** Session id → the lineages auto-imported from it (docs/projects.md §8b), rebuilt on load. */
+  private knowledgeBySession = new Map<string, Set<string>>()
   private activity = new Map<string, ActivityEvent[]>()
   private chat = new Map<string, ChatRecord[]>()
   private byAgent = new Map<string, string>()
@@ -193,10 +195,20 @@ export class ProjectsStore {
     return this.write('catalog', 'session', r)
   }
 
+  /**
+   * Writes a version to its project's partition. When the lineage moves to another partition (a
+   * re-home, or an edit to global scope), a tombstone of the same version goes to the OLD one, so a
+   * reload resolves to the newest place whatever the partition order, and nothing resurfaces in the
+   * old place if the new partition is dropped.
+   */
   putMemory(m: MemoryItem): Promise<void> {
+    const prev = this.memory.get(m.id)
     this.indexMemory(m)
     this.emit({ type: 'memory', id: m.id })
-    return this.write(partitionOf(m.projectId), 'memory', m)
+    const to = partitionOf(m.projectId)
+    const written = this.write(to, 'memory', m)
+    if (!prev || partitionOf(prev.projectId) === to) return written
+    return this.write(partitionOf(prev.projectId), 'memory', moveTombstone(prev, m))
   }
 
   putTask(t: Task): Promise<void> {
@@ -231,6 +243,22 @@ export class ProjectsStore {
   sessionByAgent(agentId: string): SessionRecord | undefined {
     const id = this.byAgent.get(agentId)
     return id ? this.sessions.get(id) : undefined
+  }
+
+  /**
+   * The session's auto-imported item: its approved lineage, else a retired one (capped items are
+   * not recreated). Rejected ones (removed by the user) never count.
+   */
+  knowledgeOf(sessionId: string): MemoryItem | undefined {
+    let best: MemoryItem | undefined
+    for (const id of this.knowledgeBySession.get(sessionId) ?? []) {
+      const m = this.memory.get(id)
+      if (!m || m.state === 'rejected') continue
+      const rank = (x: MemoryItem) => (x.state === 'approved' ? 1 : 0)
+      if (!best || rank(m) > rank(best) || (rank(m) === rank(best) && m.updatedAt > best.updatedAt))
+        best = m
+    }
+    return best
   }
 
   versions(memoryId: string): MemoryItem[] {
@@ -276,11 +304,18 @@ export class ProjectsStore {
   }
 
   private indexMemory(m: MemoryItem): void {
-    const list = (this.memoryVersions.get(m.id) ?? []).filter((v) => v.version !== m.version)
+    const known = this.memoryVersions.get(m.id) ?? []
+    // A move tombstone never replaces the live record of the same version.
+    if (isMoveTombstone(m) && known.some((v) => v.version === m.version && !isMoveTombstone(v)))
+      return
+    const list = known.filter((v) => v.version !== m.version)
     list.push(m)
     list.sort((a, b) => a.version - b.version)
     this.memoryVersions.set(m.id, list)
     this.memory.set(m.id, list.at(-1)!)
+    const sid = m.provenance?.sessionId
+    if (m.provenance?.origin === IMPORT_ORIGIN && sid)
+      this.knowledgeBySession.set(sid, (this.knowledgeBySession.get(sid) ?? new Set()).add(m.id))
   }
 
   private indexActivity(e: ActivityEvent): void {

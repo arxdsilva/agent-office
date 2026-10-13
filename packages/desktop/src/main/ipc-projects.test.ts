@@ -53,6 +53,10 @@ function setup(over: { startWithContext?: () => Promise<string> } = {}) {
       importHistory: vi.fn(async () => ({ imported: 2, skipped: 1 })),
       resume: vi.fn(async () => ({ agentId: 'cc:resumed' })),
     },
+    knowledge: {
+      removeImported: vi.fn(async (_p?: string) => ({ removed: 3 })),
+      status: vi.fn(() => ({ on: true, lastRunAt: 5, imported: 2, added: 1 })),
+    },
   }
   const sessions = { start: vi.fn(async (_o: unknown) => 'cc:s1') }
   const context = {
@@ -240,6 +244,36 @@ describe('prj:* tasks, history import and resume', () => {
     await expect(h[IPC.prjResume]!(SES)).rejects.toThrow('not found')
     await expect(h[IPC.prjResume]!('nope')).rejects.toThrow('invalid request')
     await expect(h[IPC.prjResume]!({ sessionId: SES })).rejects.toThrow('invalid request')
+  })
+})
+
+describe('prj:* automatic knowledge import', () => {
+  it('remove-imported: one project or all; validates the id; maps errors', async () => {
+    const { h, projects } = setup()
+    expect(await h[IPC.prjRemoveImported]!(PRJ)).toEqual({ removed: 3 })
+    expect(projects.knowledge.removeImported).toHaveBeenLastCalledWith(PRJ)
+    expect(await h[IPC.prjRemoveImported]!()).toEqual({ removed: 3 })
+    expect(projects.knowledge.removeImported).toHaveBeenLastCalledWith(undefined)
+    for (const bad of ['nope', { projectId: PRJ }, 42, null])
+      await expect(h[IPC.prjRemoveImported]!(bad)).rejects.toThrow('invalid request')
+    expect(projects.knowledge.removeImported).toHaveBeenCalledTimes(2)
+    projects.knowledge.removeImported.mockRejectedValueOnce(new ForbiddenError())
+    await expect(h[IPC.prjRemoveImported]!(PRJ)).rejects.toThrow('forbidden')
+  })
+
+  it('import-status returns the status; memories pass the origin filter through', async () => {
+    const { h, projects } = setup()
+    expect(await h[IPC.prjImportStatus]!()).toEqual({
+      on: true,
+      lastRunAt: 5,
+      imported: 2,
+      added: 1,
+    })
+    await h[IPC.prjMemories]!({ scope: PRJ, origin: 'session-import' })
+    expect(projects.memory.list).toHaveBeenLastCalledWith({ scope: PRJ, origin: 'session-import' })
+    await expect(h[IPC.prjMemories]!({ scope: PRJ, origin: 'zap' })).rejects.toThrow(
+      'invalid request',
+    )
   })
 })
 

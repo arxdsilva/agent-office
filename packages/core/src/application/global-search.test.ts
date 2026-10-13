@@ -126,4 +126,45 @@ describe('GlobalSearchService', () => {
       'memory',
     ])
   })
+
+  it('GS-rejected and superseded memory leaves search; approved and pending stay', async () => {
+    const h = harness()
+    const prj = await withProject(h)
+    const m = await h.projects.memory.create({
+      projectId: prj,
+      scope: 'project',
+      kind: 'note',
+      title: 'Platypus',
+      body: 'b',
+    })
+    const hits = async () => (await h.projects.search.search({ query: 'platypus' })).length
+    expect(await hits()).toBe(1)
+    await h.projects.memory.supersede(m.id, {
+      projectId: prj,
+      scope: 'project',
+      kind: 'note',
+      title: 'Wombat',
+      body: 'b',
+    })
+    expect(await hits()).toBe(0)
+    const p = await h.projects.memory.propose(
+      {
+        kind: 'mcp',
+        projectId: prj,
+        sessionId: 'ses_x',
+        provider: 'codex',
+        tokenId: 't',
+        access: 'read-propose',
+      },
+      { kind: 'note', title: 'Platypus idea', body: 'b' },
+    )
+    expect(await hits()).toBe(1)
+    await h.projects.memory.review(p.id, 'reject')
+    expect(await hits()).toBe(0)
+    // And at load.
+    await h.projects.store.flush()
+    const h2 = harness({ searchIndex: undefined }, h.log.reopen())
+    await h2.projects.load()
+    expect(await h2.projects.search.search({ query: 'platypus' })).toEqual([])
+  })
 })

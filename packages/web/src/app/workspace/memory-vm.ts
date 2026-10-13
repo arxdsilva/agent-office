@@ -14,7 +14,19 @@ import type {
 import { WS_COPY } from './workspace-copy.ts'
 
 const M = WS_COPY.memory
-const FILTERS: readonly MemoryFilterKey[] = ['all', 'pending', 'approved', 'rejected', 'superseded']
+const FILTERS: readonly MemoryFilterKey[] = [
+  'all',
+  'pending',
+  'approved',
+  'rejected',
+  'superseded',
+  'auto-imported',
+]
+/** Auto-imported items that are still live (a removed one is rejected and drops out). */
+export const isActiveImport = (m: MemoryView): boolean =>
+  m.provenance.origin === 'session-import' && m.state === 'approved'
+const matchesFilter = (m: MemoryView, k: MemoryFilterKey): boolean =>
+  k === 'all' ? true : k === 'auto-imported' ? isActiveImport(m) : m.state === k
 const STATE_TONE = {
   pending: 'warn',
   approved: 'good',
@@ -25,6 +37,7 @@ const STATE_TONE = {
 export function memoryBadges(m: MemoryView): BadgeVM[] {
   const out: BadgeVM[] = [{ label: M.state[m.state], tone: STATE_TONE[m.state] }]
   if (m.provenance.origin === 'agent-proposal') out.push({ label: M.agentProposed, tone: 'warn' })
+  if (m.provenance.origin === 'session-import') out.push({ label: M.autoImported, tone: 'neutral' })
   return out
 }
 
@@ -52,7 +65,9 @@ export function provenanceLines(m: MemoryView, now: number, lookup?: ProvenanceL
   const lines: string[] = [M.prov[p.origin]]
   if (p.sessionId) {
     const found = lookup?.session(p.sessionId)
-    lines.push(M.session(found?.title, found?.provider ?? p.provider))
+    if (p.origin === 'session-import')
+      lines[0] = M.importedFrom(found?.title, found?.provider ?? p.provider)
+    else lines.push(M.session(found?.title, found?.provider ?? p.provider))
   } else if (p.provider) lines.push(M.provider(p.provider))
   if (p.messageId) lines.push(M.savedFromMessage)
   lines.push(M.created(ago(p.createdAt, now)))
@@ -66,7 +81,7 @@ export const memoryVisible = (s: WorkspaceState): MemoryView[] => {
   const q = s.memoryQuery.trim().toLowerCase()
   return s.memories
     .filter((m) => memoryInScope(m, s.memoryScope))
-    .filter((m) => s.memoryFilter === 'all' || m.state === s.memoryFilter)
+    .filter((m) => matchesFilter(m, s.memoryFilter))
     .filter((m) => !q || m.title.toLowerCase().includes(q) || m.body.toLowerCase().includes(q))
 }
 
@@ -79,8 +94,7 @@ const btn = (id: string, label: string, enabled: boolean, hint?: string): Button
 
 export function memoryVM(s: WorkspaceState, now: number): MemoryVM {
   const inScope = s.memories.filter((m) => memoryInScope(m, s.memoryScope))
-  const count = (k: MemoryFilterKey): number =>
-    k === 'all' ? inScope.length : inScope.filter((m) => m.state === k).length
+  const count = (k: MemoryFilterKey): number => inScope.filter((m) => matchesFilter(m, k)).length
   const rows: MemoryRowVM[] = memoryVisible(s).map((m) => ({
     id: m.id,
     title: m.title,
@@ -115,7 +129,34 @@ export function memoryVM(s: WorkspaceState, now: number): MemoryVM {
     empty: M.empty,
     detail: sel ? memoryDetailVM(s, sel, now) : null,
     detailEmpty: M.detailEmpty,
+    removeImported: removeImportedButton(s, inScope),
+    removeConfirm: {
+      open: s.removeImportedConfirm,
+      title: M.removeConfirm.title,
+      body: M.removeConfirm.body(
+        inScope.filter(isActiveImport).length,
+        scopes.find((x) => x.active)?.label ?? M.all,
+      ),
+      ok: M.removeConfirm.ok,
+      cancel: M.removeConfirm.cancel,
+    },
+    notice: s.notice,
   }
+}
+
+/** The scope `removeImported` acts on: undefined = every project; null = cannot be targeted. */
+export function removeImportedTarget(s: Pick<WorkspaceState, 'memoryScope' | 'projects'>): {
+  projectId?: string
+} | null {
+  if (s.memoryScope === MEMORY_ALL) return {}
+  if (s.projects.some((p) => p.id === s.memoryScope)) return { projectId: s.memoryScope }
+  return null // Global and Unassigned have no project id to target
+}
+
+function removeImportedButton(s: WorkspaceState, inScope: MemoryView[]): ButtonVM {
+  const id = 'remove-imported'
+  if (!removeImportedTarget(s)) return btn(id, M.removeImported, false, M.removeNeedScope)
+  return btn(id, M.removeImported, inScope.some(isActiveImport), M.removeNothing)
 }
 
 export function memoryDetailVM(s: WorkspaceState, m: MemoryView, now: number): MemoryDetailVM {

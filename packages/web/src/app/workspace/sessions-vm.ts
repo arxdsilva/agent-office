@@ -1,9 +1,10 @@
 // The Session Vault: sessions grouped by project, the selected session's history, suggestions.
-import type { SessionSummary } from '@agent-office/shared'
+import type { ImportStatus, SessionSummary } from '@agent-office/shared'
 import { UNASSIGNED } from '@agent-office/shared'
 import { ago } from '../format.ts'
 import { SESSION_ALL, type WorkspaceState } from './state.ts'
 import type {
+  ButtonVM,
   SessionDetailVM,
   SessionGroupVM,
   SessionMessageVM,
@@ -82,7 +83,8 @@ export function sessionsVM(s: WorkspaceState, now: number): SessionsVM {
     empty: S.empty,
     detail: sel ? sessionDetailVM(s, sel, now, nameOf(sel.projectId)) : null,
     detailEmpty: S.detailEmpty,
-    importHistory: { id: 'import', label: S.importHistory, enabled: true, hint: S.importHint },
+    importHistory: importButton(s.importStatus),
+    importStatus: importStatusLine(s.importStatus, now),
     notice: s.notice,
   }
 }
@@ -159,3 +161,16 @@ function sessionDetailVM(
     ],
   }
 }
+
+/** While automatic import is on the one-shot button is replaced by a disabled "is on" label. */
+const importButton = (st: ImportStatus | null): ButtonVM =>
+  st?.on
+    ? { id: 'import', label: S.autoOn, enabled: false }
+    : { id: 'import', label: S.importHistory, enabled: true, hint: S.importHint }
+
+const importStatusLine = (st: ImportStatus | null, now: number): string | null =>
+  !st?.on
+    ? null
+    : st.lastRunAt === undefined
+      ? S.autoWaiting
+      : S.lastRun(ago(st.lastRunAt, now), st.imported, st.added)

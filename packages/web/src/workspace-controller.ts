@@ -14,7 +14,7 @@ import { libraryCounts } from './app/workspace/library-counts.ts'
 import { projectLibraryVM } from './app/project-library.ts'
 import { handoffProviders, handoffVM } from './app/workspace/handoff-vm.ts'
 import { inspectorVM } from './app/workspace/inspector-vm.ts'
-import { memoryVM } from './app/workspace/memory-vm.ts'
+import { memoryVM, removeImportedTarget } from './app/workspace/memory-vm.ts'
 import { newProjectVM } from './app/workspace/new-project-vm.ts'
 import { overviewVM } from './app/workspace/overview-vm.ts'
 import { mergeHits, paletteItems, paletteVM } from './app/workspace/palette-vm.ts'
@@ -190,6 +190,15 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     dispatch({ type: 'memories', memories: all })
     await resolveSessionTitles(all)
   }
+  /** The automatic-import line of the Session Vault; a failure just hides it (not an error). */
+  async function loadImportStatus(): Promise<void> {
+    try {
+      const status = await api.importStatus()
+      if (!disposed) dispatch({ type: 'import-status', status })
+    } catch {
+      // keep whatever is shown; the line is decoration, not an error
+    }
+  }
   /** Provenance names its session by title; fetch the ones not loaded yet (ids are never shown). */
   async function resolveSessionTitles(
     mems: { provenance: { sessionId?: string } }[],
@@ -274,7 +283,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         if (state.projectId) await loadDashboard(state.projectId)
         break
       case 'sessions':
-        await loadSessions()
+        await Promise.all([loadSessions(), loadImportStatus()])
         break
       case 'memory':
         await loadMemories()
@@ -440,6 +449,26 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     dispatch({ type: 'notice', notice: WS_COPY.sessions.imported(r.imported, r.skipped) })
   }
 
+  // ── Remove imported memory ─────────────────────────────────────────────────────────────────
+  /** Opens the confirm, or says why there is nothing to remove in the current scope. */
+  function askRemoveImported(): void {
+    const btn = memoryVM(state, now()).removeImported
+    if (btn.enabled) dispatch({ type: 'remove-imported-confirm', open: true })
+    else dispatch({ type: 'notice', notice: btn.hint ?? null })
+  }
+
+  async function removeImported(): Promise<void> {
+    const target = removeImportedTarget(state)
+    dispatch({ type: 'remove-imported-confirm', open: false })
+    if (!target) return
+    const r = await guard(() => api.removeImported(target.projectId))
+    if (!r) return
+    await loadMemories()
+    void refreshOverview()
+    void refreshLibrary()
+    dispatch({ type: 'notice', notice: WS_COPY.memory.removed(r.removed) })
+  }
+
   // ── Tasks ───────────────────────────────────────────────────────────────────────────────────
   /** Runs a task write, then refreshes the dashboard so tasks, metrics and evidence agree. */
   async function changeTask(projectId: string, write: () => Promise<unknown>): Promise<void> {
@@ -577,6 +606,10 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         return
       case 'import-history':
         return importHistory()
+      case 'remove-imported':
+        if (state.view !== 'memory') await go('memory', state.projectId)
+        askRemoveImported()
+        return
       case 'inspect-context': {
         const pid = a.projectId ?? state.projectId
         let agentId = a.agentId
@@ -612,6 +645,9 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
       void refreshOverview()
     if (msg.type === 'projects' || msg.type === 'session' || msg.type === 'memory')
       void refreshLibrary()
+    // Automatic import adds sessions and memory in the background: keep its status line current.
+    if ((msg.type === 'session' || msg.type === 'memory') && state.view === 'sessions')
+      void loadImportStatus()
   }
 
   const v = views
@@ -682,6 +718,9 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   })
   v.memory.onFilter((filter) => dispatch({ type: 'memory-filter', filter }))
   v.memory.onSearch((query) => dispatch({ type: 'memory-query', query }))
+  v.memory.onRemoveImported(() => askRemoveImported())
+  v.memory.onRemoveImportedConfirm(() => removeImported())
+  v.memory.onRemoveImportedCancel(() => dispatch({ type: 'remove-imported-confirm', open: false }))
   v.memory.onToggleCheck((id) => dispatch({ type: 'toggle-memory-check', memoryId: id }))
   v.memory.onApprove((id) => void reviewMemory(id, 'approve'))
   v.memory.onReject((id) => void reviewMemory(id, 'reject'))
@@ -798,6 +837,10 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     escape() {
       if (state.palette.open) {
         ctl.closePalette()
+        return true
+      }
+      if (state.removeImportedConfirm) {
+        dispatch({ type: 'remove-imported-confirm', open: false })
         return true
       }
       if (state.handoff.open) {
