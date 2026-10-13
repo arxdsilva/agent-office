@@ -26,7 +26,7 @@ jobs:
           - os: macos-latest
             node: 22
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true # 3D assets (packages/web/public/assets) are Git LFS files
       - uses: pnpm/action-setup@v4
@@ -63,7 +63,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true # 3D assets (packages/web/public/assets) are Git LFS files
       - uses: pnpm/action-setup@v4
