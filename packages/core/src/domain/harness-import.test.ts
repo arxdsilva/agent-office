@@ -226,3 +226,50 @@ describe('gate lines', () => {
     expect(g[0]!.rejected).toBeDefined()
   })
 })
+
+describe('step suggestions', () => {
+  it('lists ordered items under workflow-like headings, in order, capped', () => {
+    const md = [
+      '# Rules',
+      '1. Always write a failing test first.',
+      '',
+      '## Release process',
+      '1. Run the full test suite before anything else',
+      '   and read the report.',
+      '   - nested detail is not a step',
+      '2. [ ] Update the changelog',
+      '- Tag the release',
+      '',
+      '```',
+      '1. not a step inside a fence',
+      '```',
+      '## Style',
+      '- Use tabs',
+      '### Onboarding checklist',
+      `- ${'x'.repeat(120)}`,
+    ].join('\n')
+    const r = parseRuleFile('agents-md', md, src)
+    expect(r.steps.map((s) => s.name)).toEqual([
+      'Run the full test suite before anything else and read the report.',
+      'Update the changelog',
+      'Tag the release',
+      'x'.repeat(80),
+    ])
+    expect(r.steps.map((s) => s.index)).toEqual([0, 1, 2, 3])
+    expect(r.steps[0]).toMatchObject({
+      goal: 'Run the full test suite before anything else and read the report.',
+      source: src,
+    })
+    expect(r.steps[3]!.goal).toBe('x'.repeat(120))
+    // Candidates are unchanged by step detection.
+    expect(r.candidates.some((c) => c.text === 'Update the changelog')).toBe(true)
+  })
+
+  it('has no steps without such headings, and none for makefiles', () => {
+    expect(parseRuleFile('agents-md', '# Rules\n1. Do a thing properly', src).steps).toEqual([])
+    expect(parseRuleFile('makefile', 'check:\n\tmake', src).steps).toEqual([])
+    expect(parseRuleFile('cursorrules', '# Workflow\n1. Plan the change first', src).steps).toEqual(
+      [],
+    )
+  })
+})

@@ -11,6 +11,7 @@ import type {
   HistorySources,
   Logger,
   RecordLog,
+  RepoFiles,
   RepoIdentity,
   RuleSourceReader,
   Scheduler,
@@ -27,6 +28,7 @@ import {
   type FormatOf,
   type ParseRuleFile,
 } from './harness-import-service.ts'
+import { HarnessFlowService } from './harness-flow-service.ts'
 import { HarnessPolicyService } from './harness-policy-service.ts'
 import { HarnessService } from './harness-service.ts'
 import { HarnessValidationService } from './harness-validation-service.ts'
@@ -71,6 +73,8 @@ export interface ProjectsDeps {
   platform?: string
   /** What each managed runtime can enforce (runner declarations). */
   enforcementOf?: (provider: ProviderId) => EnforcementDecl | undefined
+  /** Read-only artifact checks for flow steps; without it artifact checks stay pending. */
+  repoFiles?: RepoFiles
   /** Defaults to domain/harness-import.ts. */
   parseRuleFile?: ParseRuleFile
   formatOf?: FormatOf
@@ -120,11 +124,14 @@ export function createProjects(d: ProjectsDeps) {
     clock: d.clock,
     ...(d.sessions ? { sessions: d.sessions } : {}),
   })
+  // Built with the harness services below; the MCP server resolves it lazily.
+  let flow: HarnessFlowService | undefined
   const mcp = new McpMemoryAccessService({
     store,
     memory,
     context,
     clock: d.clock,
+    flow: () => flow,
     ...(d.random ? { random: d.random } : {}),
     ...(d.onRetrieval ? { onRetrieval: d.onRetrieval } : {}),
   })
@@ -145,7 +152,12 @@ export function createProjects(d: ProjectsDeps) {
     ...(d.scheduler ? { scheduler: d.scheduler } : {}),
   })
   const tasks = new TaskService({ store, activity, clock: d.clock })
-  const workspace = new WorkspaceQueryService({ store, agents: d.agents, handoffs })
+  const workspace = new WorkspaceQueryService({
+    store,
+    agents: d.agents,
+    handoffs,
+    flow: () => flow,
+  })
   const search = new GlobalSearchService({
     store,
     agents: d.agents,
@@ -175,7 +187,19 @@ export function createProjects(d: ProjectsDeps) {
     clock: d.clock,
     ...(d.enforcementOf ? { enforcementOf: d.enforcementOf } : {}),
     ...(d.platform ? { platform: d.platform } : {}),
+    repoAccess: !!d.repoFiles,
   })
+  flow = new HarnessFlowService({
+    store,
+    clock: d.clock,
+    policy,
+    repos: catalog,
+    agents: d.agents,
+    log: d.log,
+    ...(d.repoFiles ? { repoFiles: d.repoFiles } : {}),
+    ...(d.sessions ? { sessions: d.sessions } : {}),
+  })
+  const harnessFlow = flow
   const validation = new HarnessValidationService({
     store,
     activity,
@@ -183,13 +207,18 @@ export function createProjects(d: ProjectsDeps) {
     policy,
     repos: catalog,
     log: d.log,
+    flow: harnessFlow,
     ...(d.gateRunner ? { runner: d.gateRunner } : {}),
     ...(d.sessions ? { sessions: d.sessions } : {}),
     ...(d.platform ? { platform: d.platform } : {}),
   })
   policy.connect({
-    turnEnded: (id, r) => validation.turnEnded(id, r),
+    turnEnded: (id, r) => {
+      validation.turnEnded(id, r)
+      void harnessFlow.refreshChecks(id).catch(() => d.log.warn('flow checks failed'))
+    },
     ended: (id) => validation.ended(id),
+    wrote: (id) => harnessFlow.wrote(id),
   })
   let loaded: Promise<void> | undefined
 
@@ -222,6 +251,8 @@ export function createProjects(d: ProjectsDeps) {
     policy,
     /** HarnessValidation: gates through the trusted runner. */
     validation,
+    /** HarnessFlow: user actions on a session's flow steps (agents report through MCP only). */
+    flow: harnessFlow,
     /** Rebuilds state from the vault, refreshes workspace keys, backfills live agents. Idempotent. */
     load(): Promise<void> {
       loaded ??= (async () => {

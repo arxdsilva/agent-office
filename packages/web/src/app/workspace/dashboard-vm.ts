@@ -187,7 +187,13 @@ export function dashboardVM(s: WorkspaceState, projectId: string, now: number): 
   ): DashboardSectionVM => ({ id, heading, rows, empty })
 
   return {
-    harness: harnessSection(s, projectId, s.activity[projectId] ?? d.activity, now),
+    harness: harnessSection(
+      s,
+      projectId,
+      s.activity[projectId] ?? d.activity,
+      now,
+      d.active.map((a) => a.agentId),
+    ),
     projectId,
     name: p.name,
     color: p.color,
@@ -245,16 +251,25 @@ function harnessSection(
   projectId: string,
   activity: ActivityView[],
   now: number,
+  agentIds: string[] = [],
 ): DashboardSectionVM {
   const open: WorkspaceAction = { type: 'open-harnesses', projectId }
-  const attached = s.harness.list.filter((h) => h.projectIds.includes(projectId))
+  // Applied order (ProjectSummary.harnessIds) when main sends it; else the library's own order.
+  const order = s.projects.find((p) => p.id === projectId)?.harnessIds
+  const listed = s.harness.list.filter((h) => h.projectIds.includes(projectId))
+  const attached = order
+    ? order.flatMap((id) => {
+        const h = s.harness.list.find((x) => x.id === id)
+        return h ? [h] : []
+      })
+    : listed
   const rows: DashboardRowVM[] = attached.map((h) => ({
     id: h.id,
     title: h.name,
-    detail: `v${h.version} · ${H.library.rules(h.ruleCount)} · ${H.library.gates(h.gateCount)}`,
+    detail: `v${h.version} · ${h.stepCount ? `${H.dashboard.flowChip(h.stepCount)} · ` : ''}${H.library.rules(h.ruleCount)} · ${H.library.gates(h.gateCount)}`,
     badge: H.status[h.status],
     tone: h.status === 'published' ? 'good' : 'warn',
-    action: open,
+    action: { type: 'harness-edit', harnessId: h.id },
   }))
   if (attached.length) {
     const last = activity.filter((a) => a.kind in VALIDATION_WORD).sort((a, b) => b.ts - a.ts)[0]
@@ -290,8 +305,27 @@ function harnessSection(
       tone: blocked ? 'warn' : 'neutral',
       action: open,
     })
+    const agents = new Set(agentIds)
+    const inFlow = s.harness.badges.filter((b) => agents.has(b.agentId) && b.step).length
+    const waiting = (s.overview?.flowApprovals ?? []).filter(
+      (a) => a.projectId === projectId,
+    ).length
+    if (inFlow || waiting)
+      rows.push({
+        id: 'flows',
+        title: H.dashboard.flows(inFlow, waiting),
+        detail: '',
+        tone: waiting ? 'warn' : 'neutral',
+        action: { type: 'open-overview' },
+      })
   }
-  return { id: 'harness', heading: H.dashboard.heading, rows, empty: H.dashboard.empty }
+  return {
+    id: 'harness',
+    heading: H.dashboard.heading,
+    rows,
+    empty: H.dashboard.empty,
+    action: { id: 'manage-harnesses', label: H.dashboard.open, enabled: true, action: open },
+  }
 }
 
 function dashboardActions(

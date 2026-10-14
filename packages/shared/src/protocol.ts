@@ -26,6 +26,33 @@ export const PermissionModeSchema = z.enum(PERMISSION_MODES)
  * Public contract for `POST /api/events`: a partial update keyed by `agentId`.
  * Missing fields keep their previous value. Changes must be additive (see ARCHITECTURE rule).
  */
+/**
+ * A question an agent asks the user (Claude Code `AskUserQuestion`). The one bounded exception to the
+ * 80-char snippet rule: the user must read it to answer. Shown live only; never written to the vault.
+ */
+export const QuestionSchema = z.object({
+  prompts: z
+    .array(
+      z.object({
+        question: z.string().min(1).max(300),
+        header: z.string().max(40).default(''),
+        options: z
+          .array(
+            z.object({
+              label: z.string().min(1).max(80),
+              description: z.string().max(200).default(''),
+            }),
+          )
+          .max(4)
+          .default([]),
+        multiSelect: z.boolean().default(false),
+      }),
+    )
+    .min(1)
+    .max(4),
+})
+export type Question = z.infer<typeof QuestionSchema>
+
 export const AgentEventSchema = z.object({
   agentId: z.string().min(1).max(200),
   /** Label shown above the agent's head. */
@@ -42,6 +69,8 @@ export const AgentEventSchema = z.object({
   kind: z.string().max(100).optional(),
   /** Agent that spawned this one; subagents sit next to their parent. */
   parentId: z.string().max(200).optional(),
+  /** The agent is asking the user something; `null` clears it (answered or abandoned). */
+  question: QuestionSchema.nullable().optional(),
   status: z.enum(AGENT_STATUSES).optional(),
   /** Tool currently in use. */
   tool: z.string().max(100).optional(),
@@ -101,6 +130,8 @@ export interface Agent {
   modelProvider?: string
   kind?: string
   parentId?: string
+  /** A pending question to the user (observed sessions show it read-only). */
+  question?: Question
   status: AgentStatus
   tool?: string
   text?: string
@@ -167,6 +198,8 @@ export interface PermissionRequestVM {
   where?: string
   /** Set when a harness rule turned this into a question (docs/harness.md): its id and name. */
   rule?: { id: string; name: string }
+  /** An `AskUserQuestion` card: the user picks answers instead of allow/deny. */
+  question?: Question
 }
 
 /** Present only on agents whose session agent-office started (any provider with a managed runtime). */

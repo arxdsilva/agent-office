@@ -2,8 +2,9 @@
 // view models each DOM view renders. Pure data; every string is drawn as plain text (textContent).
 import type { ProjectScope } from './state-types.ts'
 
-export type WorkspaceView = 'overview' | 'office' | 'project' | 'sessions' | 'memory' | 'context'
-export type SidebarTarget = 'overview' | 'office' | 'sessions' | 'memory'
+export type WorkspaceView =
+  'overview' | 'office' | 'project' | 'sessions' | 'memory' | 'context' | 'harness'
+export type SidebarTarget = 'overview' | 'office' | 'sessions' | 'memory' | 'harness'
 
 /** Everything a card, button or palette entry can ask the controller to do. */
 export type WorkspaceAction =
@@ -21,19 +22,27 @@ export type WorkspaceAction =
   | { type: 'open-session'; sessionId: string; messageId?: string }
   | { type: 'inspect-context'; agentId?: string; projectId?: string }
   | { type: 'search-history'; projectId?: string }
-  | { type: 'focus-agent'; agentId: string }
+  /** `tab: 'harness'` opens Agent Details on its Harness tab (Overview approval "Open"). */
+  | { type: 'focus-agent'; agentId: string; tab?: 'harness' }
   | { type: 'connect-provider' }
   | { type: 'switch-mode'; mode: '3d' | 'pixel' }
   /** Experimental: reads Claude Code's own history metadata (explicit user action). */
   | { type: 'import-history' }
   /** Rejects every auto-imported memory item (asks first). Palette + `#mem-remove-imported`. */
   | { type: 'remove-imported' }
-  /** Harness Builder (docs/harness.md): the dialog on the library, or on a project's rules. */
+  /** The Harnesses pane (docs/harness.md §7), scoped to a project when given. */
   | { type: 'open-harnesses'; projectId?: string }
+  /** "New harness": creates a draft and opens it in the editor. */
+  | { type: 'harness-new' }
   | { type: 'harness-edit'; harnessId: string }
   /** The import flow for a project's rule files (read-only; creates a draft). */
   | { type: 'harness-import'; projectId: string }
   | { type: 'harness-attach'; projectId: string; harnessId: string }
+  // Flow steps (docs/harness.md §2a): user actions on a session's flow progress.
+  | { type: 'flow-approve'; agentId: string; stepId: string; checkIndex: number }
+  | { type: 'flow-mark-done'; agentId: string; stepId: string }
+  | { type: 'flow-skip'; agentId: string; stepId: string; confirmed: boolean }
+  | { type: 'flow-reopen'; agentId: string; stepId: string }
   /** Runs the agent's validation gates through the trusted runner. */
   | { type: 'run-gates'; agentId: string }
 
@@ -64,6 +73,12 @@ export interface SidebarProjectVM {
   /** Active agents (`.sb-count`). */
   count: number
   pending: number
+  /** While a harness is dragged: whether this row accepts it (the adapter's dragover decision). */
+  dropTarget?: 'ok' | 'reject'
+  /** The dragged harness is over this row (`.drop-target` / `.drop-reject`). */
+  dropHover?: boolean
+  /** A harness was just dropped here (`.just-dropped`, 600 ms). */
+  justDropped?: boolean
 }
 export interface ShellVM {
   view: WorkspaceView
@@ -141,6 +156,8 @@ export interface DashboardSectionVM {
   heading: string
   rows: DashboardRowVM[]
   empty: string
+  /** A section-level button ("Manage harnesses"). */
+  action?: ButtonVM
 }
 export interface DashboardMetrics {
   activeAgents: number

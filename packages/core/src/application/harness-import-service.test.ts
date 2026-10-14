@@ -184,3 +184,64 @@ describe('HarnessImportService', () => {
     await expect(imp.detect('prj_unknown00000')).rejects.toBeInstanceOf(NotFoundError)
   })
 })
+
+describe('HarnessImportService — step suggestions', () => {
+  const MD =
+    '# Rules\n\n- Always run the tests\n\n## Release workflow\n\n1. Run the full check\n2. Update the changelog\n3. Tag the release\n'
+  class MdReader implements RuleSourceReader {
+    async detect(): Promise<RuleSourceFile[]> {
+      return [{ path: 'AGENTS.md', format: 'agents-md', bytes: MD.length, hash: 'h' }]
+    }
+    async read() {
+      return { text: MD, hash: 'h' }
+    }
+  }
+
+  async function stepSetup() {
+    const h = harness({ ruleSources: new MdReader() })
+    const prj = await withProject(h)
+    return { h, prj, imp: h.projects.harnessImport }
+  }
+
+  it('HI-steps: preview lists ordered steps with cand_ ids; commit creates them with the chosen check', async () => {
+    const { h, prj, imp } = await stepSetup()
+    const p = await imp.preview({ projectId: prj })
+    expect(p.steps!.map((s) => [s.tempId, s.index, s.name])).toEqual([
+      ['cand_s1', 0, 'Run the full check'],
+      ['cand_s2', 1, 'Update the changelog'],
+      ['cand_s3', 2, 'Tag the release'],
+    ])
+    expect(p.steps![0]!.source).toMatchObject({ path: 'AGENTS.md', repoLabel: 'shop' })
+    await expect(
+      imp.commit({
+        previewId: p.previewId,
+        name: 'X',
+        selected: [],
+        steps: [{ tempId: 'cand_s1', check: 'gate' }],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    await expect(
+      imp.commit({
+        previewId: p.previewId,
+        name: 'X',
+        selected: [],
+        steps: [{ tempId: 'cand_s9' }],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    const d = await imp.commit({
+      previewId: p.previewId,
+      name: 'Release',
+      selected: [],
+      steps: [{ tempId: 'cand_s3' }, { tempId: 'cand_s1', check: 'approval' }],
+    })
+    expect(d.status).toBe('draft')
+    expect(d.steps!.map((s) => [s.name, s.exit])).toEqual([
+      ['Tag the release', [{ kind: 'report', label: 'The agent reports it done' }]],
+      [
+        'Run the full check',
+        [{ kind: 'approval', label: 'Run the full check', prompt: 'Run the full check' }],
+      ],
+    ])
+    expect(h.projects.store.harness(d.id)!.steps![0]!.goal).toBe('Tag the release')
+  })
+})

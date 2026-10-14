@@ -61,13 +61,20 @@ describe('HarnessService', () => {
     await expect(svc.attach('prj_unknown00000', d.id)).rejects.toBeInstanceOf(NotFoundError)
   })
 
-  it('HS-templates: one custom template; unknown ids refused', async () => {
+  it('HS-templates: the flow and engineering templates plus custom; unknown ids refused', async () => {
     const h = harness()
     await h.projects.load()
-    expect(h.projects.harness.templates()).toEqual([
+    const list = h.projects.harness.templates()
+    expect(list).toHaveLength(11)
+    expect(list.at(-1)).toEqual(
       expect.objectContaining({ id: 'custom', ruleCount: 0, gateCount: 0 }),
-    ])
+    )
+    expect(list[0]).not.toHaveProperty('draft')
     expect((await h.projects.harness.createFromTemplate('custom')).ruleCount).toBe(0)
+    const flow = await h.projects.harness.createFromTemplate('release-checklist')
+    expect(flow).toMatchObject({ stepCount: 4, flowMode: 'sequential', status: 'draft' })
+    expect(flow.steps![0]!.exit[0]).toMatchObject({ kind: 'gate', gateId: flow.gates[0]!.id })
+    expect((await h.projects.harness.publish(flow.id)).status).toBe('published')
     await expect(h.projects.harness.createFromTemplate('nope')).rejects.toBeInstanceOf(
       NotFoundError,
     )

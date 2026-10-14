@@ -25,6 +25,7 @@ const MERGED = [
   'modelProvider',
   'kind',
   'parentId',
+  'question',
   'status',
   'tool',
   'text',
@@ -66,6 +67,8 @@ export function applyEvent(
   for (const k of MERGED) {
     if (e[k] !== undefined) (next as unknown as Record<string, unknown>)[k] = e[k]
   }
+  // An explicit `null` clears a pending question (answered or abandoned); absent keeps it.
+  if (e.question === null) delete next.question
   // `ended` is sticky and endedAt records only the first report.
   if (e.ended !== undefined && prev?.ended === undefined) next.endedAt = ts
   // A new tool call replaces the previous call's target/capability; otherwise they merge.

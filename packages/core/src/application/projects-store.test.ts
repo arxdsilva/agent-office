@@ -391,4 +391,33 @@ describe('ProjectsStore: cross-partition moves and auto-imported knowledge', () 
       expect(JSON.stringify(rec)).not.toContain('ARGV-SENTINEL')
     expect(log.dump()).toContain('RULE-SENTINEL') // the fake stores plaintext; the real vault encrypts
   })
+
+  it('PS-flow: flow progress per session persists in s/<ses>, replaces in place and reloads', async () => {
+    const { store, log } = make()
+    const changes: unknown[] = []
+    store.onChange((c) => changes.push(c))
+    const S = 'ses_bbbbbbbbbbbb'
+    const fp = {
+      id: 'fpg_aaaaaaaaaa',
+      sessionId: S,
+      agentId: 'cc:2',
+      projectId: P,
+      harnessVersion: 'hrn_aaaaaaaaaa@1',
+      mode: 'sequential' as const,
+      current: 'stp_aaaaaaaa',
+      steps: [{ stepId: 'stp_aaaaaaaa', state: 'active' as const, checks: ['pending' as const] }],
+      updatedAt: 1,
+    }
+    await store.putFlowProgress(fp)
+    await store.putFlowProgress({ ...fp, current: null, updatedAt: 2 })
+    expect(store.flowOf(S)).toMatchObject({ current: null, updatedAt: 2 })
+    expect(store.flowOf('ses_nothing0000')).toBeUndefined()
+    expect(store.allFlows().map((f) => f.id)).toEqual(['fpg_aaaaaaaaaa'])
+    expect(changes).toContainEqual({ type: 'harness', agentId: 'cc:2', projectId: P })
+    await store.flush()
+    expect([...log.storage.keys()]).toContain(`s/${S}`)
+    const r = make(log.reopen()).store
+    await r.load()
+    expect(r.flowOf(S)).toMatchObject({ id: 'fpg_aaaaaaaaaa', current: null })
+  })
 })

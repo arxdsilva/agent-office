@@ -247,4 +247,61 @@ describe('HarnessPolicyService', () => {
     expect(() => policy.badges(runtime)).toThrow(ForbiddenError)
     expect(() => policy.inspect('cc:x', runtime)).toThrow(ForbiddenError)
   })
+
+  it('HP-flow: bind starts the flow; step policies apply while their step is current; inspect and badges show it', async () => {
+    const FLOW: HarnessDraft = {
+      name: 'Pipeline',
+      rules: [{ name: 'Tone', text: 'Be clear', category: 'content', enforcement: 'instruction' }],
+      steps: [
+        {
+          name: 'Draft',
+          goal: 'A draft exists',
+          exit: [{ kind: 'report' }],
+          policies: [{ effect: 'deny', tools: ['class:write'], paths: ['published/**'] }],
+        },
+        { name: 'Review', goal: 'Approved', exit: [{ kind: 'approval', prompt: 'Looks good' }] },
+      ],
+    }
+    const { h, prj, policy } = await setup(FLOW)
+    const ap = (await policy.prepare(START(prj)))!
+    expect(ap.interceptAll).toBe(true)
+    expect(ap.native.denyPaths).toEqual([]) // step policies are dynamic, never native
+    const write = {
+      tool: 'Write',
+      input: { file_path: '/work/shop/published/a.md' },
+      cwd: '/work/shop',
+    }
+    // Before bind the first step is current (from the action's stepId).
+    const stepId = h.projects.store.allHarnesses()[0]!.steps![0]!.id
+    expect(ap.evaluate({ ...write, stepId }).action).toBe('deny')
+    h.putAgent({ id: 'cc:f1', projectId: prj })
+    policy.bind({ agentId: 'cc:f1', sessionId: 'f1', projectId: prj, policy: ap })
+    const sid = policy.sessionOf('cc:f1')!
+    expect(h.projects.store.flowOf(sid)).toMatchObject({ current: stepId, agentId: 'cc:f1' })
+    const started = h.projects.store.harnessEventsOf(sid).filter((e) => e.kind === 'step-started')
+    expect(started.map((e) => e.detail.summary)).toEqual(['Draft'])
+    const d = policy.evaluate('cc:f1', write)
+    expect(d).toMatchObject({ action: 'deny', ruleIds: [stepId] })
+    expect(d.reason).toContain('Draft')
+    expect(policy.inspect('cc:f1').flow).toMatchObject({ current: stepId, done: 0, total: 2 })
+    expect(policy.inspect('cc:f1').verification).toBe('not-run')
+    expect(policy.badges()[0]!.step).toEqual({ index: 1, total: 2, name: 'Draft' })
+
+    await h.projects.flow.markDone({ agentId: 'cc:f1', stepId })
+    expect(policy.evaluate('cc:f1', write).action).toBe('allow')
+    expect(policy.badges()[0]!.step).toEqual({ index: 2, total: 2, name: 'Review' })
+    const review = h.projects.store.allHarnesses()[0]!.steps![1]!.id
+    await h.projects.flow.approve({ agentId: 'cc:f1', stepId: review, checkIndex: 0 })
+    expect(policy.inspect('cc:f1').verification).toBe('verified')
+    expect(policy.badges()[0]!.step).toBeUndefined()
+  })
+
+  it('HP-flow: a harness without steps starts no flow', async () => {
+    const { h, prj, policy } = await setup()
+    const ap = (await policy.prepare(START(prj)))!
+    h.putAgent({ id: 'cc:s9', projectId: prj })
+    policy.bind({ agentId: 'cc:s9', sessionId: 's9', projectId: prj, policy: ap })
+    expect(h.projects.store.flowOf(policy.sessionOf('cc:s9')!)).toBeUndefined()
+    expect(policy.inspect('cc:s9').flow).toBeUndefined()
+  })
 })

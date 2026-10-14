@@ -56,8 +56,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export interface MinimalViewOptions {
   /** Toolbar changed a hierarchy option. */
   onOpts: (opts: HierarchyOpts) => void
-  /** A row was clicked (id) or the background (null). */
-  onPick: (id: string | null) => void
+  /** A row was clicked (id) or the background (null); `tab: 'harness'` when the harness pill was clicked: the panel opens on its Harness tab. */
+  onPick: (id: string | null, tab?: 'harness') => void
 }
 
 export class MinimalView {
@@ -104,7 +104,9 @@ export class MinimalView {
       const t = e.target as Element | null
       if (!t || this.toolbar.contains(t) || t.closest('summary, button')) return
       const row = t.closest<HTMLElement>('[data-agent-id]')
-      this.cb.onPick(row ? row.dataset.agentId! : null)
+      // The pill is a span (the card has no other interactive elements): it only changes the tab.
+      if (row && t.closest('.mm-harness')) this.cb.onPick(row.dataset.agentId!, 'harness')
+      else this.cb.onPick(row ? row.dataset.agentId! : null)
     }
     this.onKey = (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return
@@ -324,6 +326,7 @@ export class MinimalView {
       h.dataset.verification = n.harness.verification
       h.dataset.coverage = n.harness.coverage
       h.dataset.completion = n.harness.completion
+      if (n.harness.step) h.dataset.step = String(n.harness.step.index)
       h.title = n.harness.title
       top.append(h)
     }

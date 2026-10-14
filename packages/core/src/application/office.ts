@@ -10,6 +10,7 @@ import type {
   EventPublisher,
   EventSubscriber,
   GateRunner,
+  RepoFiles,
   HookRunner,
   IdGenerator,
   LoginItem,
@@ -104,6 +105,8 @@ export interface OfficeDeps {
   ruleSources?: RuleSourceReader
   /** The trusted validation-gate runner. */
   gateRunner?: GateRunner
+  /** Read-only artifact checks for flow steps (docs/harness.md §2a). */
+  repoFiles?: RepoFiles
 }
 
 /** The project MCP server's capability (the Context Hub station). */
@@ -172,6 +175,7 @@ export function createOffice(d: OfficeDeps) {
         scheduler: d.scheduler,
         ...(d.ruleSources ? { ruleSources: d.ruleSources } : {}),
         ...(d.gateRunner ? { gateRunner: d.gateRunner } : {}),
+        ...(d.repoFiles ? { repoFiles: d.repoFiles } : {}),
         ...(d.platform?.platform ? { platform: d.platform.platform } : {}),
         enforcementOf: (p: ProviderId) => {
           const r = runtimes.get(p)

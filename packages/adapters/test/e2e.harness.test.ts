@@ -28,6 +28,9 @@ import type { HarnessDetail, HarnessDraft } from '@agent-office/shared'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { ScriptedAgentRunner } from '../src/agents/index.ts'
 import { GitRepoIdentity, loadOrCreateWorkspaceSalt } from '../src/git/index.ts'
+import { createAuth } from '../src/http/auth.ts'
+import { buildHttpApi } from '../src/http/http-api.ts'
+import { startHttpServer } from '../src/http/server.ts'
 import { ProcessGateRunner } from '../src/harness/index.ts'
 import { FsRuleSourceReader } from '../src/harness/importers/index.ts'
 import {
@@ -106,6 +109,8 @@ interface BootOpts {
   gateRunner?: GateRunner
   log?: FakeRecordLog
   home: string
+  /** Receives the MCP token of every managed session (a stand-in for the stdio bridge launch). */
+  onMcpToken?: (token: string) => void
 }
 
 /** One app run: real core on a vault `log`; `reopen()` of the same log is a restart. */
@@ -137,6 +142,14 @@ async function boot(o: BootOpts) {
     ruleSources: new FsRuleSourceReader(),
     random: { token: (n) => randomBytes(n).toString('hex') },
     ...(o.gateRunner ? { gateRunner: o.gateRunner } : {}),
+    ...(o.onMcpToken
+      ? {
+          mcpLaunch: (token: string) => {
+            o.onMcpToken!(token)
+            return { name: 'agent-office', command: 'node', args: [], env: {} }
+          },
+        }
+      : {}),
   })
   const projects = office.projects!
   await projects.load()
@@ -466,5 +479,146 @@ export TOKEN=${SENTINEL}`,
     const names = projects.mcp.tools(mcp).map((t) => t.name)
     expect(names.length).toBeGreaterThan(0)
     expect(names.filter((n) => n.toLowerCase().includes('harness'))).toEqual([])
+  })
+  it('H5 content-pipeline flow: report_step over POST /mcp, approval in the overview, scoped to the session, question options never stored', async () => {
+    const { home, repo } = makeRepo()
+    const tokens: string[] = []
+    const a = await boot({ home, onMcpToken: (t) => tokens.push(t) })
+    cleanup.push(() => a.close())
+    const { office, projects } = a
+    const project = await projects.catalog.create({ name: 'Shop', folders: [repo] })
+    const other = await projects.catalog.create({ name: 'Plain', folders: [repo] })
+    const cwd = projects.repos.repoPath(project.id, project.repos[0]!.id)!
+
+    // The real HTTP route in front of the real MCP access service (the same wiring as the desktop app).
+    const API_TOKEN = 'e'.repeat(64)
+    let auth = createAuth({ token: API_TOKEN, port: 0 })
+    const app = buildHttpApi(
+      {
+        activity: office.activity,
+        inbox: office.inbox,
+        chat: office.chat,
+        query: office.query,
+        mcp: projects.mcp,
+      },
+      {
+        token: API_TOKEN,
+        hostAllowed: (h) => auth.hostAllowed(h),
+        originAllowed: (o) => auth.originAllowed(o),
+        bearerOk: (h) => auth.bearerOk(h),
+        tokenOk: (t) => auth.tokenOk(t),
+      },
+    )
+    const server = await startHttpServer(app, { host: '127.0.0.1', port: 0 })
+    auth = createAuth({ token: API_TOKEN, port: server.port })
+    cleanup.push(() => server.close())
+    let rpcId = 0
+    const rpc = async (token: string, method: string, params?: object) => {
+      const res = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
+      })
+      return { status: res.status, body: (await res.json()) as Record<string, any> }
+    }
+    const toolNames = async (token: string) =>
+      ((await rpc(token, 'tools/list')).body.result.tools as { name: string }[]).map((t) => t.name)
+
+    // The template becomes a harness with five steps; publish it and attach it to the project.
+    const h = await projects.harness.createFromTemplate('content-pipeline')
+    expect(h.steps).toHaveLength(5)
+    await projects.harness.publish(h.id)
+    await projects.harness.attach(project.id, h.id)
+
+    // Two sessions on the flow project and one on a project without a flow.
+    const agentA = await office.sessions!.start(startArgs(project.id, cwd))
+    const agentB = await office.sessions!.start(startArgs(project.id, cwd))
+    const agentC = await office.sessions!.start(startArgs(other.id, cwd))
+    expect(tokens).toHaveLength(3)
+    const [tokA, tokB, tokC] = tokens as [string, string, string]
+    await until(() => projects.flow.progress(agentA) && projects.flow.progress(agentB))
+    const progA = projects.flow.progress(agentA)!
+    const [s1, s2, s3] = progA.steps
+    expect(progA.steps.map((s) => s.state)).toEqual([
+      'active',
+      'pending',
+      'pending',
+      'pending',
+      'pending',
+    ])
+
+    // Step 1 is a report check: the agent reports it through report_step with its own token.
+    expect(await toolNames(tokA)).toContain('report_step')
+    const done = await rpc(tokA, 'tools/call', {
+      name: 'report_step',
+      arguments: { stepId: s1!.stepId },
+    })
+    expect(done.body.error).toBeUndefined()
+    expect(done.body.result.isError).toBeFalsy()
+    let p = projects.flow.progress(agentA)!
+    expect(p.current).toBe(s2!.stepId)
+    expect(p.steps[0]!.state).toBe('done')
+    expect(p.steps[1]!.state).toBe('active')
+    expect(p.steps[1]!.checks[0]!.state).toBe('waiting-user')
+
+    // Step 2 is an approval: the overview lists it for the user, and only the user can pass it.
+    const overview = projects.workspace.overview()
+    expect(overview.flowApprovals).toMatchObject([
+      { projectId: project.id, agentId: agentA, stepId: s2!.stepId },
+    ])
+    const early = await rpc(tokA, 'tools/call', {
+      name: 'report_step',
+      arguments: { stepId: s2!.stepId },
+    })
+    // The agent cannot approve its own step: the approval stays pending.
+    expect(early.body.error).toMatchObject({ code: -32602 })
+    expect(projects.flow.progress(agentA)!.steps[1]!.state).toBe('active')
+    await projects.flow.approve({ agentId: agentA, stepId: s2!.stepId, checkIndex: 0 })
+    p = projects.flow.progress(agentA)!
+    expect(p.current).toBe(s3!.stepId)
+    expect(p.steps[1]!.state).toBe('done')
+    expect(projects.workspace.overview().flowApprovals).toEqual([])
+
+    // Another session's token only ever touches that session's own progress.
+    const bProgress = projects.flow.progress(agentB)!
+    expect(bProgress.steps[0]!.state).toBe('active')
+    const cross = await rpc(tokB, 'tools/call', {
+      name: 'report_step',
+      arguments: { stepId: s3!.stepId },
+    })
+    expect(cross.body.error).toMatchObject({ code: -32602 })
+    expect(projects.flow.progress(agentA)!.current).toBe(s3!.stepId)
+    // B's own step 1 is untouched by A's work and A's step 3 untouched by B's call.
+    expect(projects.flow.progress(agentB)!.steps[0]!.state).toBe('active')
+    // Direct service call: a principal of the flow-less project is forbidden.
+    const principalC = projects.mcp.principal(tokC)!
+    await expect(projects.flow.reportStep(principalC, s1!.stepId)).rejects.toBeInstanceOf(
+      ForbiddenError,
+    )
+
+    // A session without a flow does not even see the tool, and cannot call it.
+    expect(await toolNames(tokC)).not.toContain('report_step')
+    const refused = await rpc(tokC, 'tools/call', {
+      name: 'report_step',
+      arguments: { stepId: s1!.stepId },
+    })
+    expect(refused.body.error).toMatchObject({ code: -32602 })
+    expect(agentC).toBeTruthy()
+
+    // A question asked through the scripted runner's /ask never reaches the vault: the answer does.
+    await office.compose.send(agentB, { text: '/ask', context: [], use: [] })
+    const ask = await until(() => office.sessions!.pending(agentB).find((r) => r.question))
+    expect(ask.question!.prompts[0]!.question).toBe('Which colour?')
+    office.sessions!.answer(agentB, ask.id, 'allow', { 'Which colour?': 'Green' })
+    await until(() =>
+      office.chat.history(agentB).find((m) => m.from === 'agent' && m.text === 'chose: Green'),
+    )
+    await projects.store.flush()
+    const vault = a.log.dump()
+    // Only the one-line summary (the first question, by design) is kept in the harness events; the
+    // options and their descriptions never are.
+    expect(vault).not.toContain('Blue')
+    expect(vault).not.toContain('Calm and familiar')
+    expect(vault).not.toContain('Fresh and bright')
   })
 })

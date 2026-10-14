@@ -224,3 +224,27 @@ describe('task and ended (docs/minimal-mode.md)', () => {
     expect(sweepAgent(a, policy.expireAfterMs + 1, policy).kind).toBe('remove')
   })
 })
+
+describe('question', () => {
+  const q = {
+    prompts: [{ question: 'Which colour?', header: 'Colour', options: [], multiSelect: false }],
+  }
+
+  it('merges a question, keeps it when absent, clears it on null, and exposes it in toDto', () => {
+    const a = applyEvent(undefined, { agentId: 'a', status: 'waiting', question: q }, 1)!
+    expect(toDto(a).question).toEqual(q)
+    const b = applyEvent(a, { agentId: 'a', text: 'still asking' }, 2)!
+    expect(b.question).toEqual(q)
+    expect(isVisibleChange(a, b)).toBe(true)
+    const c = applyEvent(b, { agentId: 'a', question: null, status: 'thinking' }, 3)!
+    expect('question' in c).toBe(false)
+    expect(isVisibleChange(b, c)).toBe(true)
+    expect(toDto(c).question).toBeUndefined()
+  })
+
+  it('a new question is a visible change', () => {
+    const a = applyEvent(undefined, { agentId: 'a' }, 1)!
+    const b = applyEvent(a, { agentId: 'a', question: q }, 2)!
+    expect(isVisibleChange(a, b)).toBe(true)
+  })
+})

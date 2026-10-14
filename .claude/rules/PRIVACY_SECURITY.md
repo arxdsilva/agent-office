@@ -4,11 +4,12 @@ The UI can inject text into live agent sessions. Treat the server like a remote 
 
 ## Transcripts (Claude Code adapter)
 
-| Do                                                                   | Don't                                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Extract only status, tool name, title, model, and snippets ≤80 chars | Log raw transcript lines or message text                                                                                   |
-| Allow up to 4000 chars only for an agent's **reply to a UI message** | Copy provider transcripts into agent-office's storage, or persist messages anywhere but the encrypted vault (see Projects) |
-| Skip unreadable files/lines silently (log the path once)             | Send transcript data anywhere except the local WebSocket                                                                   |
+| Do                                                                                                                                                     | Don't                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Extract only status, tool name, title, model, and snippets ≤80 chars                                                                                   | Log raw transcript lines or message text                                                                                   |
+| Carry an `AskUserQuestion` as `AgentEvent.question` (≤ 4 prompts × 300 chars, labels ≤ 80, descriptions ≤ 200), shown live only (`docs/harness.md` §8) | Persist question text, or read any other field of a tool input                                                             |
+| Allow up to 4000 chars only for an agent's **reply to a UI message**                                                                                   | Copy provider transcripts into agent-office's storage, or persist messages anywhere but the encrypted vault (see Projects) |
+| Skip unreadable files/lines silently (log the path once)                                                                                               | Send transcript data anywhere except the local WebSocket                                                                   |
 
 ## Capabilities (adapters, skills, rules; `docs/capabilities.md`)
 
@@ -103,15 +104,15 @@ Render API-provided text with `textContent` and elements built with `document.cr
 
 ## Harnesses (`docs/harness.md`)
 
-| Do                                                                                                                                                     | Don't                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Decide in core (`harness-policy.ts`) and the runners (PreToolUse hook, approval channel); deny beats ask beats allow; an engine error is a deny        | Let the renderer, an agent message or a memory item decide or change a policy                 |
-| Record harness events with the tool name and a ≤ 120-char `summarizeToolRequest` summary; redact gate output (`redactOutput`) before storing ≤ 8 KB    | Store raw tool input, commands, env values or absolute paths in events, activity, IPC or logs |
-| Run gates only from the published harness version in the vault, as argv with `shell: false`, a scrubbed env and a process-tree timeout                 | Execute anything discovered during import, or re-read gate commands from the repository       |
-| Report coverage from each runner's `EnforcementDecl`: `enforced` only behind a trusted boundary; command rules at most `partial` without an OS sandbox | Call an instruction "enforced", or silently turn a hard restriction into a prompt             |
-| Keep `harness.read`/`harness.manage` user-only in `authz.ts`; no MCP tool touches harnesses; `propose_memory` only ever creates pending memory         | Give agents or subagents any path to weaken their own (or a parent's) harness                 |
-| Import read-only: no symlinks, ≤ 256 KB per file, ≤ 64 KB parsed, repo-relative paths; the result is always a draft the user reviews and publishes     | Auto-publish imported rules, write provider files, or follow links out of the repository      |
-| Prove it with sentinels: a `SECRET` in tool input never appears in events or views; gate stderr with a token is masked; vault bytes hold no plaintext  | Ship a new runner compiler, importer source or gate path without a no-leak test               |
+| Do                                                                                                                                                                                              | Don't                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Decide in core (`harness-policy.ts`) and the runners (PreToolUse hook, approval channel); deny beats ask beats allow; an engine error is a deny                                                 | Let the renderer, an agent message or a memory item decide or change a policy                                                           |
+| Record harness events with the tool name and a ≤ 120-char `summarizeToolRequest` summary; redact gate output (`redactOutput`) before storing ≤ 8 KB                                             | Store raw tool input, commands, env values or absolute paths in events, activity, IPC or logs                                           |
+| Run gates only from the published harness version in the vault, as argv with `shell: false`, a scrubbed env and a process-tree timeout                                                          | Execute anything discovered during import, or re-read gate commands from the repository                                                 |
+| Report coverage from each runner's `EnforcementDecl`: `enforced` only behind a trusted boundary; command rules at most `partial` without an OS sandbox                                          | Call an instruction "enforced", or silently turn a hard restriction into a prompt                                                       |
+| Keep `harness.read`/`harness.manage` user-only in `authz.ts`; the only harness MCP tool is `report_step` (own session, `report` checks only); `propose_memory` only ever creates pending memory | Give agents or subagents any path to weaken their own (or a parent's) harness, approve their own steps, or touch another session's flow |
+| Import read-only: no symlinks, ≤ 256 KB per file, ≤ 64 KB parsed, repo-relative paths; the result is always a draft the user reviews and publishes                                              | Auto-publish imported rules, write provider files, or follow links out of the repository                                                |
+| Prove it with sentinels: a `SECRET` in tool input never appears in events or views; gate stderr with a token is masked; vault bytes hold no plaintext                                           | Ship a new runner compiler, importer source or gate path without a no-leak test                                                         |
 
 ## Hook
 

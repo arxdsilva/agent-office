@@ -237,7 +237,8 @@ async function boot(): Promise<void> {
     clock: { now: () => Date.now() },
     settings: () => settingsNow,
     scene: {
-      select: (agentId) => office?.select(agentId),
+      // The office controller opens the Harness tab for `tab: 'harness'` once its select takes it.
+      select: (agentId, tab) => office?.select(agentId, tab),
       focusAgents: (ids) => scene.focusAgents?.(ids, { dim: true, frame: ids !== null }),
       setOfficeVisible: (on) => {
         if (stage) stage.hidden = !on
@@ -253,7 +254,6 @@ async function boot(): Promise<void> {
       openConnect: () => office?.openConnect(),
       setProjectLibrary: (vm) => scene.setProjectLibrary?.(vm),
       selectedAgentId: () => office?.selectedAgentId() ?? null,
-      setModalOpen: (open) => office?.setExternalModal(open),
     },
   })
   gateway.settings

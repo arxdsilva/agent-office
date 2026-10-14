@@ -79,6 +79,7 @@ export {
   MCP_ITEM_BODY,
   MCP_PROPOSALS_PER_HOUR,
   MCP_RESULT_CHARS,
+  REPORT_STEP_TOOL,
 } from './application/mcp-memory-access.ts'
 export { InMemorySearchIndex } from './application/global-search.ts'
 export { basenameOnly } from './application/managed-session-service.ts'
@@ -111,6 +112,36 @@ export {
 } from './application/harness-import-service.ts'
 export { HarnessPolicyService } from './application/harness-policy-service.ts'
 export {
+  HarnessFlowService,
+  REPORTS_PER_MIN,
+  MAX_STEP_MESSAGE,
+  type FlowContext,
+  type McpFlow,
+} from './application/harness-flow-service.ts'
+export {
+  startFlow,
+  applyCheck,
+  advance,
+  report as reportStep,
+  markDone as markStepDone,
+  approve as approveStep,
+  skip as skipStep,
+  reopen as reopenStep,
+  voidGateChecks,
+  gateChecksFor,
+  artifactChecks,
+  stepPolicies,
+  policiesOfStep,
+  toFlowView,
+  currentStepBadge,
+  pendingApprovals as pendingFlowApprovals,
+  transitions as flowTransitions,
+  isStale as isFlowStale,
+  NO_REPO_ACCESS,
+} from './domain/harness-flow.ts'
+export { HARNESS_TEMPLATES, type HarnessTemplate } from './domain/harness-templates.ts'
+export { checkLabel, toStepView, REPORT_LABEL } from './domain/harness.ts'
+export {
   CancelController,
   HarnessValidationService,
 } from './application/harness-validation-service.ts'
@@ -130,18 +161,28 @@ export {
   HARNESS_OPEN,
   HARNESS_CLOSE,
   HARNESS_PREFACE,
+  REPORT_STEP_LINE,
+  checkInWords,
+  stepsForRole,
   renderHarnessBlock,
 } from './domain/harness-instructions.ts'
 export { redactSummary } from './domain/harness-events.ts'
 export { detectConflicts, normalizeRuleText } from './domain/harness-conflicts.ts'
 export { resolveEffective, versionKey } from './domain/harness-resolve.ts'
-export { gateFeedback, verificationState, completionState } from './domain/harness-verification.ts'
+export {
+  gateFeedback,
+  verificationState,
+  completionState,
+  flowComplete,
+} from './domain/harness-verification.ts'
 export {
   formatOf,
   parseRuleFile,
   classifyCategory,
   RULE_FILE_RULES,
+  stepSuggestions,
   type RawCandidate,
   type RawGate,
+  type RawStep,
   type ParsedRuleFile,
 } from './domain/harness-import.ts'

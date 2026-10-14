@@ -62,6 +62,57 @@ describe('ScriptedAgentRunner (AGENT_OFFICE_FAKE_RUNNER)', () => {
     expect(results).toEqual(['denied'])
   })
 
+  it('/ask asks one two-option question and replies with the chosen label', async () => {
+    const { s, events, results } = started()
+    const asked: { tool: string; input: Record<string, unknown> }[] = []
+    s.onPermission(async (r) => {
+      asked.push(r)
+      return {
+        behavior: 'allow',
+        updatedInput: { ...r.input, answers: { 'Which colour?': 'Green' } },
+      }
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    s.push('/ask')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(asked[0]).toMatchObject({
+      tool: 'AskUserQuestion',
+      input: {
+        questions: [
+          {
+            question: 'Which colour?',
+            options: [{ label: 'Blue' }, { label: 'Green' }],
+            multiSelect: false,
+          },
+        ],
+      },
+    })
+    const q = events.findIndex((e) => e.question)
+    expect(events[q]).toMatchObject({
+      status: 'waiting',
+      tool: 'AskUserQuestion',
+      question: { prompts: [{ question: 'Which colour?' }] },
+    })
+    expect(events.slice(q + 1).some((e) => e.question === null)).toBe(true)
+    expect(results).toEqual(['chose: Green'])
+  })
+
+  it('/ask declined (or allowed without answers) replies "declined"', async () => {
+    const { s, events, results } = started()
+    s.onPermission(async () => ({ behavior: 'deny', message: 'no' }))
+    await vi.advanceTimersByTimeAsync(10)
+    s.push('/ask')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(results).toEqual(['declined'])
+    expect(events.some((e) => e.question === null)).toBe(true)
+    const b = started()
+    b.s.onPermission(async () => ({ behavior: 'allow' }))
+    await vi.advanceTimersByTimeAsync(10)
+    b.s.push('/ask')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(b.results).toEqual(['declined'])
+  })
+
   it('/slow stays busy until interrupted', async () => {
     const { s, events, results } = started()
     await vi.advanceTimersByTimeAsync(10)

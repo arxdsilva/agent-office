@@ -3,15 +3,19 @@
 // controller owns every decision. The lead folds this file into ports.ts later.
 import type { ProjectLibraryVM } from './app/project-library.ts'
 import type {
+  Enforcement,
   HarnessDraft,
+  HarnessStatus,
   MemoryKind,
   MemoryScope,
   RuleCategory,
+  StepCheckKind,
   TaskView,
 } from '@agent-office/shared'
 import type { HarnessBuilderVM } from './app/workspace/harness-builder-vm.ts'
-import type { EditorTab } from './app/workspace/harness-vm.ts'
-import type { HarnessDialogTab } from './app/workspace/state.ts'
+import type { DragSource, DropTarget } from './app/workspace/harness-dnd.ts'
+import type { EditorTab, StepForm } from './app/workspace/harness-vm.ts'
+import type { HarnessPaneTab } from './app/workspace/state.ts'
 
 export type TaskState = TaskView['state']
 import type {
@@ -47,6 +51,10 @@ export interface ShellView {
   onHealth(fn: () => void): Off
   /** The sidebar collapse toggle; the controller persists it. */
   onCollapse(fn: (collapsed: boolean) => void): Off
+  /** A harness card was dropped on a project row (`ShellVM.projects[].dropTarget === 'ok'`). */
+  onDropHarness(fn: (projectId: string, harnessId: string) => void): Off
+  /** A harness drag entered a project row (`null` = left the list). */
+  onDragOverProject(fn: (projectId: string | null) => void): Off
 }
 
 export interface OverviewView {
@@ -151,30 +159,74 @@ export interface HandoffView {
   onCancel(fn: () => void): Off
 }
 
-/** The Harness Builder dialog (`<dialog id="harness">`, docs/harness.md). */
+export type HarnessCardAction = 'edit' | 'publish' | 'archive' | 'attach' | 'detach' | 'select'
+
+/** The Harnesses pane (`#ws-harness`, docs/harness.md §7). */
 export interface HarnessView {
   render(vm: HarnessBuilderVM): void
-  onClose(fn: () => void): Off
-  onTab(fn: (tab: HarnessDialogTab) => void): Off
+  onTab(fn: (tab: HarnessPaneTab) => void): Off
   onEditorTab(fn: (tab: EditorTab) => void): Off
   /** "New harness". */
   onCreate(fn: () => void): Off
   onTemplate(fn: (templateId: string) => void): Off
-  /** A card button: edit, publish, archive, attach or detach. */
-  onCard(
-    fn: (harnessId: string, action: 'edit' | 'publish' | 'archive' | 'attach' | 'detach') => void,
-  ): Off
-  /** The nested confirm (`#hb-confirm`). */
+  /** A card button (edit, publish, archive, attach, detach) or a click on the card (select). */
+  onCard(fn: (harnessId: string, action: HarnessCardAction) => void): Off
+  /** `#hb-confirm`. */
   onConfirm(fn: () => void): Off
   onConfirmCancel(fn: () => void): Off
-  /** "Save changes" in the editor. */
+  /** "Save changes" (and Cmd/Ctrl+S) in the editor. */
   onSave(fn: (harnessId: string, draft: HarnessDraft) => void): Off
-  /** "Import rules from project…" (library and editor). */
+  /** Any editor change: the draft with it (unsaved until Save). */
+  onDraft(fn: (draft: HarnessDraft) => void): Off
+  onDiscard(fn: () => void): Off
+  /** The "changed elsewhere" notice. */
+  onStale(fn: (choice: 'reload' | 'keep') => void): Off
+  /** History: view an older version read-only (`null` = back to the current one). */
+  onVersion(fn: (version: number | null) => void): Off
+  /** `#hb-scope`. */
+  onScope(fn: (projectId: string | null) => void): Off
+  /** `#hb-search`. */
+  onSearch(fn: (query: string) => void): Off
+  /** `dragstart` (a card or an Applied row) and `dragend`/`drop` (`null`). */
+  onDrag(
+    fn: (drag: { harnessId: string; source: DragSource; status: HarnessStatus } | null) => void,
+  ): Off
+  /** The drop target under the pointer changed (`null` = none). */
+  onDragOver(fn: (target: DropTarget | null) => void): Off
+  /** Drop → attach; `ids` = the Applied order wanted when dropped on a row. */
+  onAttachTo(fn: (harnessId: string, projectId: string, ids?: string[]) => void): Off
+  onReorderApplied(fn: (projectId: string, harnessIds: string[]) => void): Off
+  /** ↑/↓ on an Applied row. */
+  onMoveApplied(fn: (projectId: string, harnessId: string, dir: 'up' | 'down') => void): Off
+  onReorderLibrary(fn: (harnessIds: string[]) => void): Off
+  /** Flow tab: open the step form for a new step (`null`) or an existing one. */
+  onStepEdit(fn: (index: number | null) => void): Off
+  /** A step form field changed (`null` closes the form). */
+  onStepForm(fn: (patch: Partial<StepForm> | null) => void): Off
+  onStepSubmit(fn: () => void): Off
+  onStepRemove(fn: (index: number) => void): Off
+  onStepMove(fn: (index: number, toIndex: number) => void): Off
+  onRuleEdit(fn: (ruleId: string | null) => void): Off
+  onRuleRemove(fn: (index: number) => void): Off
+  /** `#hb-undo` after a removal. */
+  onUndo(fn: () => void): Off
+  /** "Go to rule" on a conflict. */
+  onGoToRule(fn: (ruleId: string) => void): Off
+  /** Coverage: "Start a session with this harness". */
+  onStartSession(fn: (provider: string) => void): Off
+  /** "Import rules from project…" (header and editor). */
   onImportStart(fn: () => void): Off
   onDetect(fn: () => void): Off
   onPreview(fn: () => void): Off
+  onToggleSource(fn: (path: string, include: boolean) => void): Off
   onToggleCandidate(fn: (tempId: string, on: boolean) => void): Off
+  /** "Select all / none" of one source's candidates. */
+  onSelectGroup(fn: (sourcePath: string, on: boolean) => void): Off
+  onImportFilter(fn: (category: RuleCategory | null) => void): Off
   onToggleGate(fn: (tempId: string, on: boolean) => void): Off
+  onToggleStep(fn: (tempId: string, on: boolean) => void): Off
+  onStepCheck(fn: (tempId: string, kind: StepCheckKind) => void): Off
+  onMoveImportStep(fn: (tempId: string, toIndex: number) => void): Off
   onEditCandidate(
     fn: (
       tempId: string,
@@ -183,6 +235,7 @@ export interface HarnessView {
         text?: string
         category?: RuleCategory
         severity?: 'required' | 'recommended'
+        enforcement?: Enforcement
       },
     ) => void,
   ): Off
@@ -193,7 +246,8 @@ export interface HarnessView {
 
 /** What the workspace asks of the office scene and the rest of the app. */
 export interface WorkspaceSceneHooks {
-  select(agentId: string): void
+  /** Selects an agent; `tab: 'harness'` opens Agent Details on the Harness tab. */
+  select(agentId: string, tab?: 'harness'): void
   /** Dims every agent outside the list; `null` clears the focus. */
   focusAgents?(ids: string[] | null): void
   /** Shows or hides the stage; hidden also pauses rendering. */
@@ -204,8 +258,6 @@ export interface WorkspaceSceneHooks {
   /** The selected project's Library collections for the scene; `null` clears them. */
   /** The agent selected in the Office, if any (default for the Context Inspector). */
   selectedAgentId?(): string | null
-  /** The Harness Builder opened or closed: the scene pauses its input meanwhile. */
-  setModalOpen?(open: boolean): void
   setProjectLibrary?(vm: ProjectLibraryVM | null): void
 }
 
@@ -219,6 +271,5 @@ export interface WorkspaceViews {
   palette: PaletteView
   newProject: NewProjectView
   handoff: HandoffView
-  /** Optional: shells without the Harness Builder (and older tests) leave it out. */
-  harness?: HarnessView
+  harness: HarnessView
 }

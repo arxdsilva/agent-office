@@ -1,5 +1,6 @@
 import type {
   AgentInbox,
+  HarnessFlow,
   McpMemoryAccess,
   OfficeQuery,
   ReportActivity,
@@ -33,6 +34,22 @@ export interface HttpApiPorts {
   mock?: MockControl
   /** agent-office's project MCP server (`POST /mcp`, docs/projects.md §5); route only when given. */
   mcp?: McpMemoryAccess
+  /** The active flow step of an agent, shown to the hook as one metadata-only line. */
+  flow?: Pick<HarnessFlow, 'progress'>
+}
+
+const MAX_STEP_NAME = 80
+const MAX_STEP_GOAL = 200
+
+/** The active step's name and goal only (capped); fail-open: any error means no step. */
+function activeStep(flow: HttpApiPorts['flow'], agentId: string) {
+  try {
+    const view = flow?.progress(agentId)
+    const s = view?.steps.find((x) => x.stepId === view.current)
+    return s ? { name: s.name.slice(0, MAX_STEP_NAME), goal: s.goal.slice(0, MAX_STEP_GOAL) } : null
+  } catch {
+    return null
+  }
 }
 
 const MAX_WAIT_SEC = 25
@@ -107,7 +124,9 @@ export function buildHttpApi(ports: HttpApiPorts, auth: Auth) {
         await ports.inbox.waitForMessages(id, wait * 1000, ac.signal)
       }
       const claim = req.query.claim === '1' || req.query.claim === 'true'
-      return { messages: claim ? ports.inbox.claim(id) : ports.inbox.peek(id) }
+      const messages = claim ? ports.inbox.claim(id) : ports.inbox.peek(id)
+      const step = activeStep(ports.flow, id)
+      return step ? { messages, step } : { messages }
     },
   )
 

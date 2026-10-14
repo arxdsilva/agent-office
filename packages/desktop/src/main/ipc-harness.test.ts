@@ -24,6 +24,16 @@ function setup(startImpl?: () => Promise<string>) {
     attached: vi.fn(() => []),
     templates: vi.fn(() => []),
     createFromTemplate: vi.fn(async (_t: string) => ({ id: HRN })),
+    reorder: vi.fn(async (_p: string, _ids: string[]) => []),
+  }
+  const view = { current: 'stp_aaaaaaaa', steps: [] }
+  const flow = {
+    progress: vi.fn((_a: string) => view as unknown),
+    approve: vi.fn(async (_o: unknown) => view),
+    markDone: vi.fn(async (_o: unknown) => view),
+    skip: vi.fn(async (_o: unknown) => view),
+    reopen: vi.fn(async (_o: unknown) => view),
+    pendingApprovals: vi.fn(() => []),
   }
   const harnessImport = {
     detect: vi.fn(async (_p: string) => []),
@@ -41,6 +51,7 @@ function setup(startImpl?: () => Promise<string>) {
     results: vi.fn(() => []),
   }
   const sessions = {
+    answer: vi.fn(),
     start: vi.fn(
       startImpl ??
         (async () => {
@@ -73,9 +84,9 @@ function setup(startImpl?: () => Promise<string>) {
     onReady: () => {},
     sessions,
     context,
-    projects: { harness, harnessImport, policy, validation },
+    projects: { harness, harnessImport, policy, validation, flow },
   } as unknown as IpcPorts
-  return { h: createIpcHandlers(ports), harness, harnessImport, policy, validation }
+  return { h: createIpcHandlers(ports), harness, harnessImport, policy, validation, flow, sessions }
 }
 
 describe('hrn:* handlers', () => {
@@ -200,5 +211,80 @@ describe('project push bridge and harness messages', () => {
     emit(m)
     scheduler.fireTimers()
     expect(sent).toEqual([m])
+  })
+})
+
+describe('reorder, flow and answers', () => {
+  const STP = 'stp_abcdefgh'
+  it('routes reorder and the flow channels with validated args', async () => {
+    const { h, harness, flow } = setup()
+    await h[IPC.hrnReorder]!({ projectId: PRJ, harnessIds: [HRN] })
+    await h[IPC.hrnFlow]!({ agentId: 'cc:1' })
+    await h[IPC.hrnFlowApprove]!({ agentId: 'cc:1', stepId: STP, checkIndex: 1 })
+    await h[IPC.hrnFlowMarkDone]!({ agentId: 'cc:1', stepId: STP })
+    await h[IPC.hrnFlowSkip]!({ agentId: 'cc:1', stepId: STP, confirmed: true })
+    await h[IPC.hrnFlowSkip]!({ agentId: 'cc:1', stepId: STP })
+    await h[IPC.hrnFlowReopen]!({ agentId: 'cc:1', stepId: STP })
+    expect(harness.reorder).toHaveBeenCalledWith(PRJ, [HRN])
+    expect(flow.progress).toHaveBeenCalledWith('cc:1')
+    expect(flow.approve).toHaveBeenCalledWith({ agentId: 'cc:1', stepId: STP, checkIndex: 1 })
+    expect(flow.markDone).toHaveBeenCalledWith({ agentId: 'cc:1', stepId: STP })
+    expect(flow.skip).toHaveBeenNthCalledWith(1, { agentId: 'cc:1', stepId: STP, confirmed: true })
+    expect(flow.skip).toHaveBeenNthCalledWith(2, { agentId: 'cc:1', stepId: STP, confirmed: false })
+    expect(flow.reopen).toHaveBeenCalledWith({ agentId: 'cc:1', stepId: STP })
+  })
+
+  it('rejects bad reorder and flow args before any service', async () => {
+    const { h, harness, flow } = setup()
+    const bad: [string, unknown][] = [
+      [IPC.hrnReorder, {}],
+      [IPC.hrnReorder, { projectId: PRJ, harnessIds: [] }],
+      [IPC.hrnReorder, { projectId: PRJ, harnessIds: ['nope'] }],
+      [IPC.hrnReorder, { projectId: 'x', harnessIds: [HRN] }],
+      [IPC.hrnReorder, { projectId: PRJ, harnessIds: Array(17).fill(HRN) }],
+      [IPC.hrnFlow, {}],
+      [IPC.hrnFlow, { agentId: '' }],
+      [IPC.hrnFlowApprove, { agentId: 'cc:1', stepId: 'nope', checkIndex: 0 }],
+      [IPC.hrnFlowApprove, { agentId: 'cc:1', stepId: STP, checkIndex: -1 }],
+      [IPC.hrnFlowApprove, { agentId: 'cc:1', stepId: STP, checkIndex: 1.5 }],
+      [IPC.hrnFlowMarkDone, { agentId: '', stepId: STP }],
+      [IPC.hrnFlowMarkDone, { agentId: 'cc:1' }],
+      [IPC.hrnFlowSkip, { agentId: 'cc:1', stepId: STP, confirmed: 'yes' }],
+      [IPC.hrnFlowSkip, null],
+      [IPC.hrnFlowReopen, { stepId: STP }],
+      [IPC.hrnFlowReopen, 'x'],
+    ]
+    for (const [channel, args] of bad)
+      await expect(h[channel]!(args), channel).rejects.toThrow('invalid request')
+    expect(harness.reorder).not.toHaveBeenCalled()
+    for (const fn of Object.values(flow)) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('approve without checkIndex is a safe validation error', async () => {
+    const { h, flow } = setup()
+    await expect(h[IPC.hrnFlowApprove]!({ agentId: 'cc:1', stepId: STP })).rejects.toThrow(
+      'checkIndex required',
+    )
+    expect(flow.approve).not.toHaveBeenCalled()
+  })
+
+  it('maps flow errors to safe messages', async () => {
+    const { h, flow } = setup()
+    flow.markDone.mockRejectedValue(new Error(`boom ${SECRET} /Users/me/x`))
+    await expect(h[IPC.hrnFlowMarkDone]!({ agentId: 'cc:1', stepId: STP })).rejects.toThrow(
+      'request failed',
+    )
+  })
+
+  it('passes question answers through sess:answer', async () => {
+    const { h, sessions } = setup()
+    const answers = { 'Which db?': 'Postgres, SQLite' }
+    await h[IPC.sessAnswer]!({
+      agentId: 'cc:1',
+      requestId: 'perm_abcdefghij',
+      decision: 'allow',
+      answers,
+    })
+    expect(sessions.answer).toHaveBeenCalledWith('cc:1', 'perm_abcdefghij', 'allow', answers)
   })
 })

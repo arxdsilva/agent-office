@@ -1,11 +1,22 @@
-/* Harness Builder and Compliance Inspector (docs/harness.md). Only the existing palette variables. */
-.harness-dialog {
-  width: min(960px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  flex-direction: column;
-}
-.harness-dialog[open] {
+/* Harnesses pane and Compliance Inspector (docs/harness.md). Only the existing palette variables. */
+#ws-harness:not([hidden]) {
   display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  box-sizing: border-box;
+}
+#ws-harness > .panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+#hb-title {
+  margin: 0;
+}
+#hb-title:focus {
+  outline: none;
 }
 .harness-body {
   display: flex;
@@ -18,6 +29,224 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
+}
+#hb-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+#hb-tabs .tab-badge {
+  margin-left: 6px;
+  color: var(--accent);
+}
+.hb-panel {
+  overflow: auto;
+}
+.hb-lib-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+.hb-library,
+.hb-applied {
+  min-width: 0;
+  border-radius: 8px;
+  padding: 4px;
+}
+.hb-applied {
+  border: 1px solid var(--border);
+  padding: 10px;
+}
+.hb-applied-list,
+.hb-steps,
+.hb-step-cands,
+.hb-versions {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hb-applied-row,
+.hb-step,
+.hb-step-cand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+.hb-step {
+  flex-direction: column;
+  align-items: stretch;
+}
+.hb-step-top,
+.hb-template-top,
+.hb-step-checks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hb-pos {
+  font-weight: 600;
+  min-width: 1.5em;
+  color: var(--muted);
+}
+.hb-grip {
+  cursor: grab;
+  color: var(--muted);
+  user-select: none;
+}
+.hb-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.hb-card.selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.hb-card.archived {
+  opacity: 0.6;
+}
+.hb-card-summary {
+  margin: 6px 0;
+  font-size: 13px;
+}
+.hb-applied-row.fresh,
+.hb-rule.highlight,
+.hb-cand.highlight {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.hb-applied-note,
+.hb-flow-order {
+  margin: 6px 0;
+}
+.link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+.hb-loading {
+  margin: 12px 0;
+}
+.hb-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.hb-radios {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hb-field-error {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+.hb-count {
+  align-self: flex-end;
+}
+.hb-s-checks,
+.hb-s-policies {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hb-s-check,
+.hb-policy-fields {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.hb-policy-fields[hidden] {
+  display: none;
+}
+.hb-flow-preview pre {
+  white-space: pre-wrap;
+  font-size: 12px;
+  background: var(--loading-bg);
+  padding: 8px;
+  border-radius: 6px;
+}
+.hb-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.hb-filter {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.hb-filter.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hb-report.disabled {
+  opacity: 0.55;
+}
+.hb-legend {
+  margin-top: 12px;
+}
+
+/* Drag and drop states (classes come from the view model, so a re-render keeps them). */
+.hb-card[draggable='true'] {
+  cursor: grab;
+}
+.hb-card.dragging,
+.hb-applied-row.dragging,
+.hb-step.dragging,
+.hb-step-cand.dragging {
+  opacity: 0.55;
+}
+.hb-applied.drag-over,
+.hb-dropzone.drag-over,
+.hb-library.drag-over {
+  outline: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.hb-dropzone.hb-drop-reject,
+.hb-drop-reject {
+  outline: 2px dashed var(--error);
+  outline-color: var(--error);
+}
+.hb-drop-before {
+  box-shadow: 0 -2px 0 0 var(--accent);
+}
+.hb-drop-after {
+  box-shadow: 0 2px 0 0 var(--accent);
 }
 .hb-panel[hidden] {
   display: none;
@@ -124,17 +353,17 @@
 .hb-cov-label {
   min-width: 140px;
 }
-.harness-dialog .tone-good,
+#ws-harness .tone-good,
 .harness-tab .tone-good,
 .ns-harness .tone-good {
   color: var(--ok);
 }
-.harness-dialog .tone-warn,
+#ws-harness .tone-warn,
 .harness-tab .tone-warn,
 .ns-harness .tone-warn {
   color: var(--warn);
 }
-.harness-dialog .tone-bad,
+#ws-harness .tone-bad,
 .harness-tab .tone-bad,
 .ns-harness .tone-bad {
   color: var(--error);
@@ -243,10 +472,19 @@
   --c: var(--error);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 960px) {
+  .hb-lib-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .harness-body {
     flex-direction: column;
   }
+  #hb-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 640px) {
   .hb-form {
     grid-template-columns: 1fr;
   }

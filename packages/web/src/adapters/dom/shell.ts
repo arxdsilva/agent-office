@@ -1,5 +1,6 @@
 // ShellView port → `#sidebar` (navigation, project list, management) and `#topbar` (search,
 // project switcher, notifications, health), plus which workspace pane is visible.
+import { HARNESS_MIME } from '../../app/workspace/harness-dnd.ts'
 import type { ShellVM, SidebarTarget, WorkspaceView } from '../../app/workspace/types.ts'
 import type { ShellView } from '../../workspace-ports.ts'
 import { el } from './el.ts'
@@ -12,13 +13,15 @@ const PANE: Record<WorkspaceView, string | null> = {
   sessions: 'ws-sessions',
   memory: 'ws-memory',
   context: 'ws-context',
+  harness: 'ws-harness',
 }
-const PANES = ['ws-overview', 'ws-project', 'ws-sessions', 'ws-memory', 'ws-context']
+const PANES = ['ws-overview', 'ws-project', 'ws-sessions', 'ws-memory', 'ws-context', 'ws-harness']
 const ICON: Record<SidebarTarget, string> = {
   overview: '▣',
   office: '⌂',
   sessions: '☰',
   memory: '✦',
+  harness: '⚖',
 }
 
 export class DomShell implements ShellView {
@@ -30,6 +33,10 @@ export class DomShell implements ShellView {
   private notify = new Signal()
   private health = new Signal()
   private collapse = new Signal<[boolean]>()
+  private dropHarness = new Signal<[string, string]>()
+  private dragOverProject = new Signal<[string | null]>()
+  private vm: ShellVM | null = null
+  private overProject: string | null = null
 
   private nav: HTMLElement
   private actions: HTMLElement
@@ -78,6 +85,7 @@ export class DomShell implements ShellView {
         this.toggleMenu(true)
       }
     })
+    this.installDrop()
     const collapse = need<HTMLButtonElement>(doc, 'sb-collapse')
     collapse.addEventListener('click', () => this.collapse.emit(!this.isCollapsed()))
   }
@@ -106,8 +114,55 @@ export class DomShell implements ShellView {
   onHealth(fn: () => void): void {
     this.health.on(fn)
   }
+  onDropHarness(fn: (projectId: string, harnessId: string) => void): void {
+    this.dropHarness.on(fn)
+  }
+  onDragOverProject(fn: (projectId: string | null) => void): void {
+    this.dragOverProject.on(fn)
+  }
+
+  /**
+   * Delegated drop handling on `#sb-project-list` (rows are rebuilt on every render). Only the
+   * harness MIME type is considered; the VM says which rows accept the dragged card, so the
+   * decision is synchronous on the first dragover.
+   */
+  private installDrop(): void {
+    const rowOf = (e: DragEvent): HTMLElement | null =>
+      (e.target as Element | null)?.closest?.<HTMLElement>('li.sb-proj[data-project-id]') ?? null
+    const ours = (e: DragEvent): boolean => !!e.dataTransfer?.types.includes(HARNESS_MIME)
+    const hover = (id: string | null): void => {
+      if (id === this.overProject) return
+      this.overProject = id
+      this.dragOverProject.emit(id)
+    }
+    this.list.addEventListener('dragover', (e) => {
+      if (!ours(e)) return
+      const row = rowOf(e)
+      const id = row?.dataset.projectId ?? null
+      hover(id)
+      const ok = this.vm?.projects.find((p) => p.projectId === id)?.dropTarget === 'ok'
+      if (e.dataTransfer) e.dataTransfer.dropEffect = ok ? 'copy' : 'none'
+      if (ok) e.preventDefault()
+    })
+    this.list.addEventListener('dragleave', (e) => {
+      if (!ours(e)) return
+      const to = e.relatedTarget as Node | null
+      if (!to || !this.list.contains(to)) hover(null)
+    })
+    this.list.addEventListener('drop', (e) => {
+      if (!ours(e)) return
+      const id = rowOf(e)?.dataset.projectId
+      const harnessId = e.dataTransfer?.getData(HARNESS_MIME)
+      e.preventDefault()
+      this.overProject = null
+      if (id && harnessId && this.vm?.projects.find((p) => p.projectId === id)?.dropTarget === 'ok')
+        this.dropHarness.emit(id, harnessId)
+    })
+  }
 
   render(vm: ShellVM): void {
+    this.vm = vm
+    if (!vm.projects.some((p) => p.dropTarget)) this.overProject = null
     this.buildOnce(vm)
     this.setCollapsed(vm.layout.sidebarCollapsed)
     const body = this.doc.body
@@ -203,6 +258,9 @@ export class DomShell implements ShellView {
     const items = vm.projects.map((p) => {
       const li = el('li', undefined, `sb-proj${p.active ? ' active' : ''}`)
       li.dataset.projectId = p.projectId
+      if (p.dropHover) li.classList.add(p.dropTarget === 'ok' ? 'drop-target' : 'drop-reject')
+      if (p.justDropped) li.classList.add('just-dropped')
+      if (p.dropTarget) li.dataset.drop = p.dropTarget
       const b = el('button', undefined, 'sb-item')
       b.type = 'button'
       b.title = p.name

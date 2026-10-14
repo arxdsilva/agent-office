@@ -165,7 +165,7 @@ class SdkSession implements RunnerSession {
       const agent = agentId ? { agent: { id: agentId, ...(type ? { type } : {}) } } : {}
       const d = await this.permissionFn({ tool, input, cwd: s.cwd, ...agent })
       return d.behavior === 'allow'
-        ? { behavior: 'allow', updatedInput: input }
+        ? { behavior: 'allow', updatedInput: d.updatedInput ?? input }
         : { behavior: 'deny', message: d.message }
     }
     return {

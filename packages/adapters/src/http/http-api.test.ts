@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeOffice } from '../../test/support.ts'
 import { createAuth } from './auth.ts'
-import { buildHttpApi, type MockControl } from './http-api.ts'
+import { buildHttpApi, type HttpApiPorts, type MockControl } from './http-api.ts'
 
 const TOKEN = 'a'.repeat(64)
 const HOST = 'localhost:4317'
@@ -14,7 +14,9 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c()
 })
 
-function setup(opts: { rateLimitPerSec?: number; mock?: MockControl } = {}) {
+function setup(
+  opts: { rateLimitPerSec?: number; mock?: MockControl; flow?: HttpApiPorts['flow'] } = {},
+) {
   const { office, scheduler } = makeOffice(opts)
   const app = buildHttpApi(
     {
@@ -24,6 +26,7 @@ function setup(opts: { rateLimitPerSec?: number; mock?: MockControl } = {}) {
       query: office.query,
       capabilities: office.capabilities,
       ...(opts.mock ? { mock: opts.mock } : {}),
+      ...(opts.flow ? { flow: opts.flow } : {}),
     },
     createAuth({ token: TOKEN, port: 4317 }),
   )
@@ -312,5 +315,57 @@ describe('POST /api/providers/:provider/capabilities', () => {
     )
     const res = await app.inject({ method: 'POST', url, headers: authed, payload: [] })
     expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('inbox flow step', () => {
+  const view = (current: string | null) => ({
+    current,
+    steps: [
+      { stepId: 'stp_aaaaaaaa', name: 'Plan', goal: 'Write the plan', secret: '/Users/me/x' },
+      { stepId: 'stp_bbbbbbbb', name: 'Build', goal: 'Make it' },
+    ],
+  })
+  const inbox = (app: ReturnType<typeof setup>['app'], q = '') =>
+    app.inject({ url: `/api/agents/a/inbox${q}`, headers: bearerOnly })
+
+  it('adds only the active step name and goal', async () => {
+    const progress = vi.fn((_id: string) => view('stp_aaaaaaaa') as never)
+    const { app } = setup({ flow: { progress } })
+    const body = (await inbox(app, '?claim=1')).json()
+    expect(body.step).toEqual({ name: 'Plan', goal: 'Write the plan' })
+    expect(JSON.stringify(body)).not.toContain('/Users')
+    expect(progress).toHaveBeenCalledWith('a')
+  })
+
+  it('caps name at 80 and goal at 200 characters', async () => {
+    const v = {
+      current: 's',
+      steps: [{ stepId: 's', name: 'n'.repeat(300), goal: 'g'.repeat(300) }],
+    }
+    const { app } = setup({ flow: { progress: () => v as never } })
+    const { step } = (await inbox(app)).json()
+    expect([step.name.length, step.goal.length]).toEqual([80, 200])
+  })
+
+  it('omits step when there is no flow, no progress or no active step', async () => {
+    expect((await inbox(setup().app)).json()).not.toHaveProperty('step')
+    for (const v of [null, view(null), view('stp_zzzzzzzz')])
+      expect(
+        (await inbox(setup({ flow: { progress: () => v as never } }).app)).json(),
+      ).not.toHaveProperty('step')
+  })
+
+  it('fails open when progress throws', async () => {
+    const { app } = setup({
+      flow: {
+        progress: () => {
+          throw new Error('boom /Users/me')
+        },
+      },
+    })
+    const r = await inbox(app, '?claim=1')
+    expect(r.statusCode).toBe(200)
+    expect(r.json()).toEqual({ messages: [] })
   })
 })

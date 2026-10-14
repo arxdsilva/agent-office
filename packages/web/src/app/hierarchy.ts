@@ -1,5 +1,6 @@
 // Minimal mode's hierarchy builder (docs/minimal-mode.md). Pure: time comes in, nothing is stored.
 import { STATUS_COLORS, type Agent, type HarnessBadge } from '@agent-office/shared'
+import { SESSION_COPY } from './session-copy.ts'
 import { harnessBadgeVM } from './harness-inspector-vm.ts'
 import type {
   AgentNodeVM,
@@ -64,7 +65,7 @@ const sanitize = (s: string) =>
     .trim()
     .slice(0, MAX_ACTIVITY)
 
-function toolPhrase(tool: string | undefined): string {
+export function toolPhrase(tool: string | undefined): string {
   switch (tool) {
     case 'Read':
       return 'Reading files'
@@ -89,9 +90,29 @@ function toolPhrase(tool: string | undefined): string {
   }
 }
 
-function activityOf(a: Agent): string {
+const MAX_QUESTION = 80
+const clip = (s: string) => {
+  const t = sanitize(s)
+  return t.length > MAX_QUESTION ? `${t.slice(0, MAX_QUESTION - 1)}…` : t
+}
+
+/**
+ * What the card says the agent does now. A question or an approval it waits on beats everything
+ * (Part 3/4 copy); the flow step fills in only when the agent reported no text of its own.
+ */
+export function activityOf(
+  a: Agent,
+  attention?: { kind: 'asked' | 'approval'; text: string },
+  step?: HarnessBadge['step'],
+): string {
+  const q = SESSION_COPY.question
+  const asking = a.question?.prompts[0]?.question
+  if (asking) return q.minimalAsking(clip(asking))
+  if (attention?.kind === 'approval') return q.nowApproval(clip(attention.text))
+  if (attention?.kind === 'asked') return q.nowAsked(clip(attention.text))
   const t = a.text ? sanitize(a.text) : ''
   if (t) return t
+  if (step) return q.nowStep(step.index, step.total, step.name)
   if (a.status === 'tool') return toolPhrase(a.tool)
   if (a.status === 'thinking') return 'Thinking…'
   if (a.status === 'waiting') return 'Waiting for you'
@@ -112,12 +133,13 @@ function nodeOf(
   finished: AgentNodeVM[],
   activeChildren: number,
   badge?: HarnessBadge,
+  attention?: { kind: 'asked' | 'approval'; text: string },
 ): AgentNodeVM {
   const { lifecycle, pill, color } = lifecycleOf(a, now, depth)
   const task =
     a.task ??
     (depth === 0 && a.topic && a.topic !== a.name && a.topic !== 'untitled' ? a.topic : null)
-  const activity = activityOf(a)
+  const activity = activityOf(a, attention, badge?.step)
   const harness = badge ? harnessBadgeVM(badge) : undefined
   const hash = [
     a.name,
@@ -212,7 +234,8 @@ export function buildHierarchy(
       else stored.set(p, [e.agent])
     }
 
-  const flat = (a: Agent, depth: number) => nodeOf(a, depth, now, [], [], 0, badges.get(a.id))
+  const flat = (a: Agent, depth: number) =>
+    nodeOf(a, depth, now, [], [], 0, badges.get(a.id), input.attention?.[a.id])
 
   const build = (a: Agent, depth: number): AgentNodeVM => {
     const children: AgentNodeVM[] = []
@@ -231,7 +254,16 @@ export function buildHierarchy(
           .sort(byNewest)
           .slice(0, MAX_FINISHED)
           .map((k) => flat(k, depth + 1))
-    return nodeOf(a, depth, now, children, fin, activeChildren, badges.get(a.id))
+    return nodeOf(
+      a,
+      depth,
+      now,
+      children,
+      fin,
+      activeChildren,
+      badges.get(a.id),
+      input.attention?.[a.id],
+    )
   }
 
   const countActive = (n: AgentNodeVM, live: Map<string, Agent>, acc: Count, root: boolean) => {

@@ -19,6 +19,17 @@ const MAX_REPLY_CHARS = 4000
 /** Claude Code permission modes; mirrors PERMISSION_MODES in shared (plain Node can't import it). */
 const MODES = new Set(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
 
+/** One line, whitespace collapsed, capped. */
+const oneLine = (v, max) => v.replace(/\s+/g, ' ').trim().slice(0, max)
+
+/** `Current flow step: <name> — <goal>` from the inbox response's metadata-only `step`, or ''. */
+function stepLineOf(step) {
+  if (!step || typeof step.name !== 'string' || typeof step.goal !== 'string') return ''
+  const name = oneLine(step.name, 80)
+  if (!name) return ''
+  return `Current flow step: ${name} — ${oneLine(step.goal, 200)}`
+}
+
 /**
  * @param {{hook_event_name?: string, session_id?: string, last_assistant_message?: string, permission_mode?: unknown}} input
  * @param {{url: string, token: string, fetch: typeof fetch, timeoutMs: number, env?: Record<string, string | undefined>}} deps
@@ -69,8 +80,9 @@ export async function handle(input, deps) {
 
     const res = await deps.fetch(`${agent}/inbox?claim=1`, { headers, signal })
     if (!res.ok) return ''
-    const { messages } = await res.json()
-    if (!Array.isArray(messages) || messages.length === 0) return ''
+    const { messages, step } = await res.json()
+    const stepLine = event === 'UserPromptSubmit' ? stepLineOf(step) : ''
+    if (!Array.isArray(messages) || (messages.length === 0 && !stepLine)) return ''
     const list = messages.map((m) => `- ${String(m.text)}`).join('\n')
 
     if (event === 'Stop') {
@@ -79,10 +91,14 @@ export async function handle(input, deps) {
         reason: `📨 Message(s) from the agent-office UI:\n${list}\nRespond to them, then continue.`,
       })
     }
+    const parts = []
+    if (messages.length > 0)
+      parts.push(`📨 Messages from the agent-office UI (sent while you were idle):\n${list}`)
+    if (stepLine) parts.push(stepLine)
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
-        additionalContext: `📨 Messages from the agent-office UI (sent while you were idle):\n${list}`,
+        additionalContext: parts.join('\n'),
       },
     })
   } catch {

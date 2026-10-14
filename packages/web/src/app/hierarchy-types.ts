@@ -10,6 +10,11 @@ export interface RosterInput {
   now: number
   /** Per-agent harness state (docs/harness.md), from `projects.harness.badges()`. */
   harness?: HarnessBadge[]
+  /**
+   * What an agent waits on, by agent id: a harness rule that asked ("approval") or a question in its
+   * last reply ("asked"). Computed by the controller from permissions and messages.
+   */
+  attention?: Record<string, { kind: 'asked' | 'approval'; text: string }>
 }
 
 /** The lifecycle a node shows (the table in docs/minimal-mode.md). */

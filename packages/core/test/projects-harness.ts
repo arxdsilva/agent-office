@@ -1,5 +1,6 @@
 // Builds the projects layer over fakes for use-case tests.
-import type { Agent, ProviderId } from '@agent-office/shared'
+import type { Agent, HarnessDraft, ProviderId } from '@agent-office/shared'
+import type { EnforcementDecl } from '../src/domain/harness-types.ts'
 import type { AgentState } from '../src/domain/agent.ts'
 import { createProjects, type ProjectsDeps } from '../src/application/projects.ts'
 import type { RepoIdentityInfo } from '../src/ports/driven.ts'
@@ -138,4 +139,31 @@ export async function withProject(
   await h.projects.load()
   const p = await h.projects.catalog.create({ name, folders })
   return p.id
+}
+
+/**
+ * Publishes and attaches `draft` to `projectId`, then starts a bound harness session for `agentId`
+ * (a flow starts when the draft has steps). Returns the harness id and the vault session id.
+ */
+export async function withHarnessSession(
+  h: ReturnType<typeof harness>,
+  projectId: string,
+  draft: HarnessDraft,
+  o: { agentId?: string; provider?: ProviderId; enforcement?: EnforcementDecl } = {},
+) {
+  const agentId = o.agentId ?? 'cc:flow-1'
+  const d = await h.projects.harness.create(draft)
+  await h.projects.harness.publish(d.id)
+  await h.projects.harness.attach(projectId, d.id)
+  const policy = await h.projects.policy.prepare({
+    projectId,
+    provider: o.provider ?? 'claude-code',
+    cwd: '/work/shop',
+    mode: 'default',
+    ...(o.enforcement ? { enforcement: o.enforcement } : {}),
+  })
+  if (!policy) throw new Error('no harness applies')
+  h.putAgent({ id: agentId, projectId, provider: o.provider ?? 'claude-code' })
+  h.projects.policy.bind({ agentId, sessionId: agentId, projectId, policy })
+  return { harnessId: d.id, sessionId: h.projects.policy.sessionOf(agentId)!, policy }
 }

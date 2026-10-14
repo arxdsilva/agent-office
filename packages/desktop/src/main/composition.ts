@@ -46,6 +46,7 @@ import {
   FsRuleSourceReader,
   GitRepoIdentity,
   ProcessGateRunner,
+  FsRepoFiles,
   InMemoryAgentRepository,
   InMemoryCapabilityRepository,
   InMemoryEventBus,
@@ -591,6 +592,7 @@ export function compose(o: ComposeOptions) {
           // Harness Builder (docs/harness.md): rule-file import and the trusted gate runner.
           ruleSources: new FsRuleSourceReader(),
           gateRunner: new ProcessGateRunner(),
+          repoFiles: new FsRepoFiles(),
           ...(mcpLauncher ? { mcpLaunch: (token: string) => mcpLauncher.launch(token) } : {}),
         }
       : {}),
@@ -809,7 +811,7 @@ export function compose(o: ComposeOptions) {
         chat: office.chat,
         query: office.query,
         capabilities: office.capabilities,
-        ...(projects ? { mcp: projects.mcp } : {}),
+        ...(projects ? { mcp: projects.mcp, flow: projects.flow } : {}),
         ...(mock ? { mock } : {}),
       },
       // Port getter: with port 0 (tests) the Host allowlist must follow the real port.

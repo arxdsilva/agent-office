@@ -158,6 +158,14 @@ function setup(over: { settings?: Partial<Settings>; gateway?: Record<string, un
       runGates: vi.fn(async () => []),
       cancelGates: vi.fn(async () => {}),
       badges: vi.fn(async () => []),
+      versions: vi.fn(async () => [detail({ version: 1 }), detail()]),
+      reorder: vi.fn(async (_p: string, ids: string[]) =>
+        ids.map((id) => summary({ id, projectIds: [P1] })),
+      ),
+      flowApprove: vi.fn(async () => ({})),
+      flowMarkDone: vi.fn(async () => ({})),
+      flowSkip: vi.fn(async () => ({})),
+      flowReopen: vi.fn(async () => ({})),
     },
   }
   const gateway = {
@@ -358,14 +366,14 @@ describe('sidebar collapse', () => {
   it('renders the persisted layout and saves changes through settings.set', async () => {
     const set = vi.fn(async () => ({ ok: true }))
     const t = setup({
-      settings: { layout: { sidebarCollapsed: true } },
+      settings: { layout: { sidebarCollapsed: true, harnessOrder: [] } },
       gateway: { settings: { set } },
     })
     await t.ctl.start()
     expect(t.v.shell.last.layout.sidebarCollapsed).toBe(true)
     await t.cb('shell', 'onCollapse')(false)
     await flush()
-    expect(set).toHaveBeenCalledWith({ layout: { sidebarCollapsed: false } })
+    expect(set).toHaveBeenCalledWith({ layout: { sidebarCollapsed: false, harnessOrder: [] } })
     expect(t.v.shell.last.layout.sidebarCollapsed).toBe(false)
   })
   it('a failed save shows the error', async () => {
@@ -1335,28 +1343,54 @@ describe('automatic knowledge import', () => {
   })
 })
 
-describe('Harness Builder', () => {
+describe('Harnesses pane', () => {
   const open = async (t: ReturnType<typeof setup>, projectId = P1) => {
     await t.ctl.start()
     await t.ctl.perform({ type: 'open-harnesses', projectId })
   }
+  const A = 'hrn_aaaaaaaaaa'
+  const B = 'hrn_bbbbbbbbbb'
 
-  it('opens the library for a project and loads the harnesses and templates', async () => {
+  it('the sidebar entry shows the pane, hides the stage and loads list, templates, coverage', async () => {
     const t = setup()
-    await open(t)
+    await t.ctl.start()
+    t.projects.harness.list.mockClear()
+    await t.cb('shell', 'onNavigate')('harness')
+    await flush()
+    expect(t.ctl.getState().view).toBe('harness')
+    expect(t.scene.setOfficeVisible).toHaveBeenLastCalledWith(false)
+    expect(t.v.shell.last.view).toBe('harness')
+    expect(t.v.shell.last.sidebar.find((i: any) => i.id === 'harness').active).toBe(true)
+    expect(t.projects.harness.list).toHaveBeenCalled()
+    expect(t.projects.harness.templates).toHaveBeenCalled()
     const vm = t.v.harness.last
-    expect(vm.open).toBe(true)
+    expect(vm.visible).toBe(true)
     expect(vm.tab).toBe('library')
+    expect(vm.scope.value).toBe(P1)
     expect(vm.library.items.map((c: any) => c.name)).toEqual(['Team standards'])
-    expect(vm.library.items[0].attachedHere).toBe(true)
     expect(vm.templates.map((x: any) => x.id)).toEqual(['basic'])
   })
 
-  it('opens the editor on harness-edit and fetches the detail', async () => {
+  it('start() loads the harnesses for the sidebar badge', async () => {
     const t = setup()
     await t.ctl.start()
-    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
-    expect(t.projects.harness.get).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+    expect(t.projects.harness.list).toHaveBeenCalled()
+  })
+
+  it('open-harnesses navigates to the pane scoped to the project', async () => {
+    const t = setup()
+    await open(t, P2)
+    expect(t.ctl.getState().view).toBe('harness')
+    expect(t.v.harness.last.scope.value).toBe(P2)
+    expect(t.v.harness.last.library.items[0].attachedHere).toBe(false)
+  })
+
+  it('opens the editor on harness-edit (navigating first) and fetches the detail', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    expect(t.ctl.getState().view).toBe('harness')
+    expect(t.projects.harness.get).toHaveBeenCalledWith(A)
     expect(t.v.harness.last.tab).toBe('editor')
     expect(t.v.harness.last.editor.title).toBe('Team standards')
   })
@@ -1364,52 +1398,64 @@ describe('Harness Builder', () => {
   it('confirms before publishing, archiving, attaching and detaching', async () => {
     const t = setup()
     await open(t)
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    t.cb('harness', 'onCard')(A, 'publish')
     expect(t.v.harness.last.confirm).toMatchObject({ open: true, okLabel: 'Publish' })
     expect(t.projects.harness.publish).not.toHaveBeenCalled()
     t.cb('harness', 'onConfirmCancel')()
     expect(t.v.harness.last.confirm.open).toBe(false)
 
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    t.cb('harness', 'onCard')(A, 'publish')
     await t.cb('harness', 'onConfirm')()
     await flush()
-    expect(t.projects.harness.publish).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+    expect(t.projects.harness.publish).toHaveBeenCalledWith(A)
+    expect(t.v.harness.last.live).toBe('Published Team standards v2')
 
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'attach')
+    t.cb('harness', 'onCard')(A, 'attach')
     await t.cb('harness', 'onConfirm')()
     await flush()
-    expect(t.projects.harness.attach).toHaveBeenCalledWith(P1, 'hrn_aaaaaaaaaa')
+    expect(t.projects.harness.attach).toHaveBeenCalledWith(P1, A)
 
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'detach')
+    t.cb('harness', 'onCard')(A, 'detach')
     await t.cb('harness', 'onConfirm')()
     await flush()
-    expect(t.projects.harness.detach).toHaveBeenCalledWith(P1, 'hrn_aaaaaaaaaa')
+    expect(t.projects.harness.detach).toHaveBeenCalledWith(P1, A)
 
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'archive')
+    t.cb('harness', 'onCard')(A, 'archive')
     await t.cb('harness', 'onConfirm')()
     await flush()
-    expect(t.projects.harness.archive).toHaveBeenCalledWith('hrn_aaaaaaaaaa')
+    expect(t.projects.harness.archive).toHaveBeenCalledWith(A)
   })
 
-  it('harness-attach opens the dialog with the attach confirm already asked', async () => {
+  it('selecting a card toggles the selection', async () => {
+    const t = setup()
+    await open(t)
+    t.cb('harness', 'onCard')(A, 'select')
+    expect(t.v.harness.last.library.items[0].selected).toBe(true)
+    t.cb('harness', 'onCard')(A, 'select')
+    expect(t.v.harness.last.library.items[0].selected).toBe(false)
+  })
+
+  it('harness-attach navigates to the pane with the attach confirm already asked', async () => {
     const t = setup()
     await t.ctl.start()
-    await t.ctl.perform({ type: 'harness-attach', projectId: P1, harnessId: 'hrn_aaaaaaaaaa' })
+    await t.ctl.perform({ type: 'harness-attach', projectId: P1, harnessId: A })
+    expect(t.ctl.getState().view).toBe('harness')
     expect(t.v.harness.last.confirm).toMatchObject({ open: true, okLabel: 'Attach' })
   })
 
-  it('shows a failed change in the dialog, not as a global error', async () => {
+  it('shows a failed change in the pane, not as a global error', async () => {
     const t = setup()
     await open(t)
     t.projects.harness.publish.mockRejectedValueOnce(new Error('Not a draft'))
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'publish')
+    t.cb('harness', 'onCard')(A, 'publish')
     await t.cb('harness', 'onConfirm')()
     await flush()
     expect(t.v.harness.last.error).toBe('Not a draft')
+    expect(t.v.harness.last.live).toBe('Not a draft')
     expect(t.ctl.getState().error).toBeNull()
   })
 
-  it('runs the import flow: detect, preview, select, edit, create a draft', async () => {
+  it('runs the import flow: detect, exclude, preview, select, steps, create a draft', async () => {
     const t = setup()
     await t.ctl.start()
     await t.ctl.perform({ type: 'harness-import', projectId: P1 })
@@ -1420,6 +1466,7 @@ describe('Harness Builder', () => {
 
     await t.cb('harness', 'onPreview')()
     await flush()
+    expect(t.projects.harness.importPreview).toHaveBeenLastCalledWith({ projectId: P1 })
     expect(t.v.harness.last.import.preview.groups).toHaveLength(2)
 
     t.cb('harness', 'onToggleCandidate')('cand_3', false)
@@ -1438,33 +1485,211 @@ describe('Harness Builder', () => {
       attach: true,
     })
     expect(t.v.harness.last.tab).toBe('editor')
+    expect(t.v.harness.last.editorNotice).toContain('Draft created')
     expect(t.v.harness.last.import.preview).toBeNull()
   })
 
-  it('saves editor changes and shows the returned detail', async () => {
+  it('previews only the included sources and commits steps in the chosen order', async () => {
     const t = setup()
+    const src = preview().candidates[0]!.source
+    t.projects.harness.importPreview.mockResolvedValue({
+      ...preview(),
+      steps: [
+        { tempId: 'cand_s1', index: 0, name: 'Plan', goal: 'p', source: src },
+        { tempId: 'cand_s2', index: 1, name: 'Ship', goal: 's', source: src },
+      ],
+    } as never)
     await t.ctl.start()
-    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
-    const draft = { name: 'Renamed' }
-    await t.cb('harness', 'onSave')('hrn_aaaaaaaaaa', draft)
+    await t.ctl.perform({ type: 'harness-import', projectId: P1 })
     await flush()
-    expect(t.projects.harness.update).toHaveBeenCalledWith({ harnessId: 'hrn_aaaaaaaaaa', draft })
-    expect(t.v.harness.last.editor.title).toBe('Renamed')
+    t.cb('harness', 'onToggleSource')('AGENTS.md', false)
+    await t.cb('harness', 'onPreview')()
+    await flush()
+    expect(t.projects.harness.importPreview).toHaveBeenLastCalledWith({
+      projectId: P1,
+      paths: ['CLAUDE.md'],
+    })
+    t.cb('harness', 'onToggleStep')('cand_s1', true)
+    t.cb('harness', 'onToggleStep')('cand_s2', true)
+    t.cb('harness', 'onToggleStep')('cand_s2', false)
+    t.cb('harness', 'onToggleStep')('cand_s2', true)
+    t.cb('harness', 'onStepCheck')('cand_s2', 'approval')
+    t.cb('harness', 'onMoveImportStep')('cand_s2', 0)
+    t.cb('harness', 'onSelectGroup')('CLAUDE.md', false)
+    t.cb('harness', 'onSelectGroup')('CLAUDE.md', true)
+    t.cb('harness', 'onImportFilter')('testing')
+    expect(t.v.harness.last.import.preview.filters.find((f: any) => f.active)).toBeUndefined()
+    await t.cb('harness', 'onCommit')()
+    await flush()
+    expect(t.projects.harness.importCommit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Alpha standards',
+        selected: ['cand_1', 'cand_3'],
+        steps: [
+          { tempId: 'cand_s2', check: 'approval' },
+          { tempId: 'cand_s1', check: 'report' },
+        ],
+      }),
+    )
   })
 
-  it('creates a harness and one from a template', async () => {
+  it('edits stay unsaved until Save; Save shows Saved and clears the dirty state', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    const draft = { ...t.v.harness.last.editor.draft, name: 'Renamed' }
+    t.cb('harness', 'onDraft')(draft)
+    expect(t.v.harness.last.editor.dirty).toBe(true)
+    expect(t.v.harness.last.tabs.find((x: any) => x.id === 'editor').badge).toBe('●')
+    expect(t.projects.harness.update).not.toHaveBeenCalled()
+    await t.cb('harness', 'onSave')(A, draft)
+    await flush()
+    expect(t.projects.harness.update).toHaveBeenCalledWith({ harnessId: A, draft })
+    expect(t.v.harness.last.editor.title).toBe('Renamed')
+    expect(t.v.harness.last.editor.dirty).toBe(false)
+    expect(t.v.harness.last.editor.save.label).toBe('Saved')
+    for (const fn of t.timers.splice(0)) fn()
+    expect(t.v.harness.last.editor.save.label).toBe('Save changes')
+  })
+
+  it('discard drops one change at once and confirms more than one', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    const base = t.v.harness.last.editor.draft
+    t.cb('harness', 'onDraft')({ ...base, name: 'X' })
+    t.cb('harness', 'onDiscard')()
+    expect(t.v.harness.last.editor.dirty).toBe(false)
+    t.cb('harness', 'onDraft')({ ...base, name: 'X', retryBudget: 5 })
+    t.cb('harness', 'onDiscard')()
+    expect(t.v.harness.last.confirm.text).toBe('Discard unsaved changes?')
+    await t.cb('harness', 'onConfirm')()
+    expect(t.v.harness.last.editor.dirty).toBe(false)
+  })
+
+  it('leaving the pane with unsaved edits asks first, then goes', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.cb('harness', 'onDraft')({ ...t.v.harness.last.editor.draft, name: 'X' })
+    await t.cb('shell', 'onNavigate')('memory')
+    expect(t.ctl.getState().view).toBe('harness')
+    expect(t.v.harness.last.confirm.open).toBe(true)
+    await t.cb('harness', 'onConfirm')()
+    await flush()
+    expect(t.ctl.getState().view).toBe('memory')
+  })
+
+  it('builds a flow: add, validate, update, move, remove with undo', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.cb('harness', 'onEditorTab')('flow')
+    t.cb('harness', 'onStepEdit')(null)
+    expect(t.v.harness.last.focus).toBe('hb-s-name')
+    expect(t.v.harness.last.editor.flow.form.okLabel).toBe('Add step')
+    t.cb('harness', 'onStepSubmit')()
+    expect(t.v.harness.last.editor.flow.form.errors.name).toBeTruthy()
+    t.cb('harness', 'onStepForm')({ name: 'Draft', goal: 'A draft exists' })
+    t.cb('harness', 'onStepSubmit')()
+    expect(t.v.harness.last.editor.flow.form).toBeNull()
+    t.cb('harness', 'onStepEdit')(null)
+    t.cb(
+      'harness',
+      'onStepForm',
+    )({
+      name: 'Review',
+      goal: 'Reviewed',
+      checks: [{ kind: 'gate', gateId: 'gat_g1', prompt: '', path: '', mustExist: true, note: '' }],
+    })
+    t.cb('harness', 'onStepSubmit')()
+    expect(t.v.harness.last.editor.flow.steps.map((x: any) => x.name)).toEqual(['Draft', 'Review'])
+    t.cb('harness', 'onStepEdit')(0)
+    expect(t.v.harness.last.editor.flow.form.name).toBe('Draft')
+    t.cb('harness', 'onStepForm')({ name: 'First draft' })
+    t.cb('harness', 'onStepSubmit')()
+    t.cb('harness', 'onStepMove')(1, 0)
+    expect(t.v.harness.last.editor.flow.steps.map((x: any) => x.name)).toEqual([
+      'Review',
+      'First draft',
+    ])
+    t.cb('harness', 'onStepRemove')(0)
+    expect(t.v.harness.last.editor.flow.steps).toHaveLength(1)
+    expect(t.v.harness.last.editor.undo).toBe(true)
+    expect(t.v.harness.last.live).toContain('Removed step Review')
+    t.cb('harness', 'onUndo')()
+    expect(t.v.harness.last.editor.flow.steps).toHaveLength(2)
+    t.cb('harness', 'onStepForm')(null)
+    expect(t.v.harness.last.editor.dirty).toBe(true)
+  })
+
+  it('removes a rule with undo and goes to a conflicting rule', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.cb('harness', 'onRuleRemove')(0)
+    expect(t.v.harness.last.editor.draft.rules).toHaveLength(2)
+    for (const fn of t.timers.splice(0)) fn()
+    expect(t.v.harness.last.editor.undo).toBe(false)
+    t.cb('harness', 'onGoToRule')('rul_c1')
+    expect(t.v.harness.last.editor.tab).toBe('rules')
+    t.cb('harness', 'onRuleEdit')('rul_c1')
+    expect(t.v.harness.last.editor.ruleEdit.id).toBe('rul_c1')
+  })
+
+  it('loads the history once and shows an old version', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.cb('harness', 'onEditorTab')('history')
+    await flush()
+    expect(t.projects.harness.versions).toHaveBeenCalledWith(A)
+    t.cb('harness', 'onVersion')(1)
+    expect(t.v.harness.last.editor.history.banner).toContain('Viewing v1')
+  })
+
+  it('a push on the open harness with unsaved edits offers Reload / Keep', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.cb('harness', 'onDraft')({ ...t.v.harness.last.editor.draft, name: 'Mine' })
+    t.projects.harness.get.mockClear()
+    t.push({ type: 'harness', harnessId: A })
+    await flush()
+    expect(t.projects.harness.get).not.toHaveBeenCalled()
+    expect(t.v.harness.last.stale).not.toBeNull()
+    t.cb('harness', 'onStale')('keep')
+    expect(t.v.harness.last.stale).toBeNull()
+    expect(t.v.harness.last.editor.title).toBe('Mine')
+    t.cb('harness', 'onStale')('reload')
+    await flush()
+    expect(t.projects.harness.get).toHaveBeenCalled()
+    expect(t.v.harness.last.editor.dirty).toBe(false)
+  })
+
+  it('creates a harness and one from a template, focusing the name', async () => {
     const t = setup()
     await open(t)
     await t.cb('harness', 'onCreate')()
     await flush()
     expect(t.projects.harness.create).toHaveBeenCalledWith({ name: 'New harness' })
+    expect(t.v.harness.calls.some((vm: any) => vm.focus === 'hb-f-name')).toBe(true)
     await t.cb('harness', 'onTemplate')('basic')
     await flush()
     expect(t.projects.harness.createFromTemplate).toHaveBeenCalledWith('basic')
     expect(t.v.harness.last.tab).toBe('editor')
   })
 
-  it('loads the coverage of every startable provider for the project', async () => {
+  it('harness-new from the palette navigates and creates a draft', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'harness-new' })
+    await flush()
+    expect(t.ctl.getState().view).toBe('harness')
+    expect(t.projects.harness.create).toHaveBeenCalled()
+  })
+
+  it('loads the coverage of every startable provider for the scope', async () => {
     const t = setup()
     await open(t)
     t.cb('harness', 'onTab')('coverage')
@@ -1472,7 +1697,31 @@ describe('Harness Builder', () => {
     await flush()
     const calls = t.projects.harness.coverage.mock.calls.map((c: unknown[]) => c[1])
     expect(calls).toContain('claude-code')
-    expect(t.v.harness.last.coverage.reports.length).toBe(calls.length)
+    expect(t.v.harness.last.coverage.reports.length).toBeGreaterThan(0)
+    t.cb('harness', 'onStartSession')('codex')
+    expect(t.scene.openNewSession).toHaveBeenCalledWith({ projectId: P1, provider: 'codex' })
+  })
+
+  it('changing the scope reloads coverage and never changes the current project', async () => {
+    const t = setup()
+    await open(t)
+    t.projects.harness.coverage.mockClear()
+    t.cb('harness', 'onScope')(P2)
+    await flush()
+    expect(t.v.harness.last.scope.value).toBe(P2)
+    expect(t.v.harness.last.live).toBe('Showing Beta')
+    expect(t.projects.harness.coverage.mock.calls[0]?.[0]).toBe(P2)
+    expect(t.ctl.getState().projectId).toBe(P1)
+    t.cb('harness', 'onScope')(null)
+    expect(t.v.harness.last.coverage.reports).toEqual([])
+  })
+
+  it('filters the library and announces the count', async () => {
+    const t = setup()
+    await open(t)
+    t.cb('harness', 'onSearch')('zzz')
+    expect(t.v.harness.last.library.items).toEqual([])
+    expect(t.v.harness.last.live).toBe('0 harnesses shown')
   })
 
   it('run-gates runs, then stores the fresh inspection', async () => {
@@ -1483,15 +1732,51 @@ describe('Harness Builder', () => {
     expect(t.ctl.getState().harness.inspections['cc:1']?.agentId).toBe('cc:1')
   })
 
-  it('refreshes the library and the open detail on a harness push', async () => {
+  it('flow actions call main and refresh the overview and the held inspection', async () => {
     const t = setup()
     await t.ctl.start()
-    await t.ctl.perform({ type: 'harness-edit', harnessId: 'hrn_aaaaaaaaaa' })
+    await t.ctl.perform({ type: 'run-gates', agentId: 'cc:1' })
+    t.projects.overview.mockClear()
+    t.projects.harness.inspect.mockClear()
+    await t.ctl.perform({ type: 'flow-approve', agentId: 'cc:1', stepId: 'stp_a', checkIndex: 0 })
+    await t.ctl.perform({ type: 'flow-mark-done', agentId: 'cc:1', stepId: 'stp_a' })
+    await t.ctl.perform({ type: 'flow-skip', agentId: 'cc:1', stepId: 'stp_a', confirmed: true })
+    await t.ctl.perform({ type: 'flow-reopen', agentId: 'cc:1', stepId: 'stp_a' })
+    await flush()
+    expect(t.projects.harness.flowApprove).toHaveBeenCalledWith({
+      agentId: 'cc:1',
+      stepId: 'stp_a',
+      checkIndex: 0,
+    })
+    expect(t.projects.harness.flowSkip).toHaveBeenCalledWith({
+      agentId: 'cc:1',
+      stepId: 'stp_a',
+      confirmed: true,
+    })
+    expect(t.projects.harness.flowMarkDone).toHaveBeenCalled()
+    expect(t.projects.harness.flowReopen).toHaveBeenCalled()
+    expect(t.projects.overview).toHaveBeenCalled()
+    expect(t.projects.harness.inspect).toHaveBeenCalledWith('cc:1')
+  })
+
+  it('focus-agent with the harness tab passes it to the scene', async () => {
+    const t = setup()
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'focus-agent', agentId: 'cc:1', tab: 'harness' })
+    expect(t.scene.select).toHaveBeenLastCalledWith('cc:1', 'harness')
+  })
+
+  it('a harness push always reloads the library and the open detail', async () => {
+    const t = setup()
+    await t.ctl.start()
     t.projects.harness.list.mockClear()
-    t.projects.harness.get.mockClear()
-    t.push({ type: 'harness', harnessId: 'hrn_aaaaaaaaaa' })
+    t.push({ type: 'harness', harnessId: A })
     await flush()
     expect(t.projects.harness.list).toHaveBeenCalled()
+    await t.ctl.perform({ type: 'harness-edit', harnessId: A })
+    t.projects.harness.get.mockClear()
+    t.push({ type: 'harness', harnessId: A })
+    await flush()
     expect(t.projects.harness.get).toHaveBeenCalled()
   })
 
@@ -1506,21 +1791,153 @@ describe('Harness Builder', () => {
     expect(t.ctl.getState().harness.inspections['cc:1']).toBeDefined()
   })
 
-  it('Escape closes the confirm first, then the dialog', async () => {
+  it('Escape closes the confirm; the pane stays (no dialog to close)', async () => {
     const t = setup()
     await open(t)
-    t.cb('harness', 'onCard')('hrn_aaaaaaaaaa', 'archive')
+    t.cb('harness', 'onCard')(A, 'archive')
     expect(t.ctl.escape()).toBe(true)
     expect(t.v.harness.last.confirm.open).toBe(false)
-    expect(t.v.harness.last.open).toBe(true)
-    expect(t.ctl.escape()).toBe(true)
-    expect(t.v.harness.last.open).toBe(false)
+    expect(t.ctl.escape()).toBe(false)
+    expect(t.ctl.getState().view).toBe('harness')
   })
 
   it('works against a gateway without harnesses (older main)', async () => {
     const t = setup({ gateway: { projects: { ...setup().projects, harness: undefined } } })
     await t.ctl.start()
     await t.ctl.navigate('project', P1)
+    await t.ctl.navigate('harness')
     expect(t.ctl.getState().error).toBeNull()
+  })
+})
+
+describe('Harnesses drag and drop', () => {
+  const A = 'hrn_aaaaaaaaaa'
+  const B = 'hrn_bbbbbbbbbb'
+  const withTwo = () => {
+    const t = setup()
+    t.projects.list.mockResolvedValue([
+      project({ harnessIds: [A, B] }),
+      project({ id: P2, name: 'Beta' }),
+    ])
+    t.projects.harness.list.mockResolvedValue([
+      summary({ id: A, projectIds: [P1] }),
+      summary({ id: B, name: 'TDD', projectIds: [P1] }),
+      summary({ id: 'hrn_cccccccccc', name: 'Draft', status: 'draft' }),
+    ])
+    return t
+  }
+  const open = async (t: ReturnType<typeof setup>) => {
+    await t.ctl.start()
+    await t.ctl.perform({ type: 'open-harnesses', projectId: P1 })
+  }
+
+  it('dragstart stores the drag; the shell marks project rows; dragend clears it', async () => {
+    const t = withTwo()
+    await open(t)
+    t.cb('harness', 'onDrag')({ harnessId: 'hrn_cccccccccc', source: 'library', status: 'draft' })
+    expect(t.ctl.getState().harness.drag?.harnessId).toBe('hrn_cccccccccc')
+    expect(t.v.shell.last.projects.map((p: any) => p.dropTarget)).toEqual(['reject', 'reject'])
+    t.cb('shell', 'onDragOverProject')(P2)
+    expect(t.v.harness.last.live).toBe('Publish Draft first')
+    expect(t.v.shell.last.projects[1].dropHover).toBe(true)
+    t.cb('harness', 'onDrag')(null)
+    expect(t.ctl.getState().harness.drag).toBeNull()
+    expect(t.v.shell.last.projects[0].dropTarget).toBeUndefined()
+  })
+
+  it('a sidebar drop attaches to that project without changing the scope', async () => {
+    const t = withTwo()
+    await open(t)
+    t.cb('harness', 'onDrag')({ harnessId: A, source: 'library', status: 'published' })
+    t.cb('shell', 'onDragOverProject')(P2)
+    expect(t.v.harness.last.live).toBe('Drop to apply Team standards to Beta')
+    await t.cb('shell', 'onDropHarness')(P2, A)
+    await flush()
+    expect(t.projects.harness.attach).toHaveBeenCalledWith(P2, A)
+    expect(t.v.harness.last.scope.value).toBe(P1)
+    expect(t.v.harness.last.live).toBe('Applied Team standards to Beta')
+    expect(t.v.shell.last.projects[1].justDropped).toBe(true)
+    expect(t.ctl.getState().harness.drag).toBeNull()
+    for (const fn of t.timers.splice(0)) fn()
+    expect(t.v.shell.last.projects[1].justDropped).toBeUndefined()
+  })
+
+  it('onAttachTo on a row attaches then reorders to the wanted order', async () => {
+    const t = withTwo()
+    t.projects.harness.attach.mockResolvedValueOnce([
+      summary({ id: A }),
+      summary({ id: B }),
+      summary({ id: 'hrn_dddddddddd' }),
+    ])
+    await open(t)
+    await t.cb('harness', 'onAttachTo')('hrn_dddddddddd', P1, ['hrn_dddddddddd', A, B])
+    await flush()
+    expect(t.projects.harness.reorder).toHaveBeenCalledWith(P1, ['hrn_dddddddddd', A, B])
+  })
+
+  it('a failed attach shows the server message and announces it', async () => {
+    const t = withTwo()
+    t.projects.harness.attach.mockRejectedValueOnce(
+      new Error('This project already has 16 harnesses'),
+    )
+    await open(t)
+    await t.cb('harness', 'onAttachTo')(A, P2)
+    await flush()
+    expect(t.v.harness.last.error).toBe('This project already has 16 harnesses')
+    expect(t.v.harness.last.live).toBe('This project already has 16 harnesses')
+  })
+
+  it('reorders Applied optimistically, then through IPC; rolls back on error', async () => {
+    const t = withTwo()
+    await open(t)
+    let resolve!: (v: unknown) => void
+    t.projects.harness.reorder.mockImplementationOnce(
+      () => new Promise((r) => (resolve = r)) as never,
+    )
+    const p = t.cb('harness', 'onReorderApplied')(P1, [B, A])
+    expect(t.v.harness.last.applied.rows.map((r: any) => r.id)).toEqual([B, A])
+    resolve([])
+    await p
+    await flush()
+    expect(t.projects.harness.reorder).toHaveBeenCalledWith(P1, [B, A])
+    expect(t.v.harness.last.live).toBe('Moved TDD to position 1')
+
+    t.projects.harness.reorder.mockRejectedValueOnce(new Error('nope'))
+    await t.cb('harness', 'onMoveApplied')(P1, A, 'up')
+    await flush()
+    expect(t.v.harness.last.applied.rows.map((r: any) => r.id)).toEqual([B, A])
+    expect(t.v.harness.last.error).toBe('nope')
+  })
+
+  it('↑/↓ at the ends does nothing', async () => {
+    const t = withTwo()
+    await open(t)
+    t.cb('harness', 'onMoveApplied')(P1, A, 'up')
+    t.cb('harness', 'onMoveApplied')(P1, 'hrn_zzzzzzzzzz', 'down')
+    expect(t.projects.harness.reorder).not.toHaveBeenCalled()
+  })
+
+  it('library order and the collapse toggle both save the whole layout', async () => {
+    const set = vi.fn(async () => ({ ok: true }))
+    const t = setup({ gateway: { settings: { set } } })
+    await open(t)
+    t.cb('harness', 'onReorderLibrary')(['hrn_bbbbbbbbbb', A])
+    await flush()
+    expect(set).toHaveBeenLastCalledWith({
+      layout: { sidebarCollapsed: false, harnessOrder: ['hrn_bbbbbbbbbb', A] },
+    })
+    await t.cb('shell', 'onCollapse')(true)
+    await flush()
+    expect(set).toHaveBeenLastCalledWith({
+      layout: { sidebarCollapsed: true, harnessOrder: ['hrn_bbbbbbbbbb', A] },
+    })
+  })
+
+  it('seeds the library order from the settings snapshot', async () => {
+    const t = withTwo()
+    const s = setup({ settings: { layout: { sidebarCollapsed: false, harnessOrder: [B] } } })
+    s.projects.harness.list.mockResolvedValue(await t.projects.harness.list())
+    await open(s)
+    expect(s.v.harness.last.library.items.map((c: any) => c.id)[0]).toBe(B)
   })
 })

@@ -13,6 +13,7 @@ import { cleanText, oneLine } from '../domain/text.ts'
 import type { Clock, SecureRandom } from '../ports/driven.ts'
 import type { McpMemoryAccess, McpPrincipal, McpToolDecl, McpToolResult } from '../ports/driving.ts'
 import type { ContextEngineService } from './context-engine.ts'
+import type { McpFlow } from './harness-flow-service.ts'
 import type { ProjectMemoryService } from './memory-service.ts'
 import type { ProjectsStore } from './projects-store.ts'
 
@@ -37,6 +38,27 @@ const ProposeArgs = z.object({
   body: z.string().trim().min(1).max(MCP_ITEM_BODY),
   rationale: z.string().trim().max(500).optional(),
 })
+
+const ReportArgs = z.object({
+  stepId: z.string().regex(/^stp_[a-z0-9]{6,24}$/),
+  note: z.string().max(500).optional(),
+})
+
+/** Declared only to a session that has a flow (docs/harness.md §2a). */
+export const REPORT_STEP_TOOL: McpToolDecl = {
+  name: 'report_step',
+  description:
+    "Report that a step of this session's flow is done. Only marks the step's report check; approvals, gates and files are checked by agent-office.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      stepId: { type: 'string', pattern: '^stp_[a-z0-9]{6,24}$' },
+      note: { type: 'string', maxLength: 500 },
+    },
+    required: ['stepId'],
+    additionalProperties: false,
+  },
+}
 
 const TOOLS: McpToolDecl[] = [
   {
@@ -111,6 +133,8 @@ export interface McpDeps {
   random?: SecureRandom
   /** A real retrieval happened (pulses the Context Hub capability). */
   onRetrieval?: (provider: string) => void
+  /** The session's flow (report_step, the flow block of get_project_context); resolved lazily. */
+  flow?: () => McpFlow | undefined
 }
 
 function parse<T>(schema: z.ZodType<T>, args: unknown): T {
@@ -201,7 +225,9 @@ export class McpMemoryAccessService implements McpMemoryAccess {
       { kind: 'memory', projectId: p.projectId, scope: 'project', state: 'pending' },
       project,
     ).ok
-    return TOOLS.filter((t) => t.name !== 'propose_memory' || canPropose).map((t) => ({ ...t }))
+    const tools = TOOLS.filter((t) => t.name !== 'propose_memory' || canPropose)
+    if (this.flowContext(p)) tools.push(REPORT_STEP_TOOL)
+    return tools.map((t) => ({ ...t }))
   }
 
   async call(principal: McpPrincipal, tool: string, args: unknown): Promise<McpToolResult> {
@@ -238,9 +264,15 @@ export class McpMemoryAccessService implements McpMemoryAccess {
           .filter((i) => i.included && i.ref.kind === 'memory')
           .map((i) => this.d.store.memory.get(i.ref.id))
           .filter((m): m is MemoryItem => !!m)
-        return this.items(p, e, tool, a.objective, items, {
+        const flow = this.flowContext(p)
+        const r = this.items(p, e, tool, a.objective, items, {
           project: { id: project!.id, name: project!.name },
+          ...(flow ? { flow } : {}),
         })
+        const cur = flow?.steps.find((s) => s.id === flow.current)
+        if (cur)
+          r.text += `\n\nCurrent flow step: ${oneLine(cur.name, 80)} (${cur.id}) — ${oneLine(cur.goal, 600)} Exit: ${cur.exit.join('; ')}.`
+        return r
       }
       case 'list_decisions': {
         const a = parse(DecisionArgs, args)
@@ -272,9 +304,28 @@ export class McpMemoryAccessService implements McpMemoryAccess {
           text: `${DATA_PREFACE}\n\nProposed ${m.id}. It waits for the user's review and is not visible to agents until approved.`,
         }
       }
+      case 'report_step': {
+        const flow = this.d.flow?.()
+        if (!flow || !this.flowContext(p)) throw new ValidationError('unknown tool')
+        const a = parse(ReportArgs, args)
+        // Scoped by the token's own session (never an argument); report checks only.
+        const v = await flow.reportStep(p, a.stepId, a.note)
+        const step = v.steps.find((s) => s.stepId === a.stepId)
+        return {
+          structured: { stepId: a.stepId, state: step?.state ?? 'pending', current: v.current },
+          text:
+            step?.state === 'done'
+              ? `Step ${a.stepId} is done.${v.current ? ` Next: ${v.current}.` : ''}`
+              : `Reported ${a.stepId}; it still waits for other checks (approval, gate or files).`,
+        }
+      }
       default:
         throw new ValidationError('unknown tool')
     }
+  }
+
+  private flowContext(p: McpPrincipal) {
+    return p.sessionId ? (this.d.flow?.()?.contextFor(p.sessionId) ?? null) : null
   }
 
   private entry(p: McpPrincipal): TokenEntry | undefined {

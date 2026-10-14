@@ -155,6 +155,28 @@ describe('summarizeToolRequest', () => {
   })
 })
 
+describe('summarizeToolRequest AskUserQuestion', () => {
+  it('SR-7 shows the first question, capped at 120, never the options', () => {
+    const input = {
+      questions: [
+        {
+          question: 'Which colour should the button be?',
+          header: 'Colour',
+          options: [{ label: 'SENTINEL-OPTION', description: 'd' }],
+          multiSelect: false,
+        },
+      ],
+    }
+    expect(summarizeToolRequest('AskUserQuestion', input, '/u')).toEqual({
+      tool: 'AskUserQuestion',
+      summary: 'Which colour should the button be?',
+    })
+    const long = { questions: [{ question: 'q'.repeat(300), options: [] }] }
+    expect(summarizeToolRequest('AskUserQuestion', long, '/u').summary).toHaveLength(120)
+    expect(summarizeToolRequest('AskUserQuestion', {}, '/u').summary).toBe('')
+  })
+})
+
 describe('modeOf', () => {
   it('narrows only known modes', () => {
     expect(modeOf('plan')).toBe('plan')

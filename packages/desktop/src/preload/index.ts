@@ -35,8 +35,13 @@ const api: AgentOfficeApi = {
     models: (agentId) => ipcRenderer.invoke(IPC.sessModels, agentId),
     interrupt: (agentId) => ipcRenderer.invoke(IPC.sessInterrupt, { agentId }),
     stop: (agentId) => ipcRenderer.invoke(IPC.sessStop, { agentId }),
-    answer: (agentId, requestId, decision) =>
-      ipcRenderer.invoke(IPC.sessAnswer, { agentId, requestId, decision }),
+    answer: (agentId, requestId, decision, answers) =>
+      ipcRenderer.invoke(IPC.sessAnswer, {
+        agentId,
+        requestId,
+        decision,
+        ...(answers ? { answers } : {}),
+      }),
     setModeId: (agentId, modeId) => ipcRenderer.invoke(IPC.sessModeId, { agentId, modeId }),
   },
   projects: {
@@ -93,6 +98,13 @@ const api: AgentOfficeApi = {
       runGates: (args) => ipcRenderer.invoke(IPC.hrnRunGates, args),
       cancelGates: (agentId) => ipcRenderer.invoke(IPC.hrnCancelGates, { agentId }),
       badges: () => ipcRenderer.invoke(IPC.hrnBadges),
+      reorder: (projectId, harnessIds) =>
+        ipcRenderer.invoke(IPC.hrnReorder, { projectId, harnessIds }),
+      flow: (agentId) => ipcRenderer.invoke(IPC.hrnFlow, { agentId }),
+      flowApprove: (args) => ipcRenderer.invoke(IPC.hrnFlowApprove, args),
+      flowMarkDone: (args) => ipcRenderer.invoke(IPC.hrnFlowMarkDone, args),
+      flowSkip: (args) => ipcRenderer.invoke(IPC.hrnFlowSkip, args),
+      flowReopen: (args) => ipcRenderer.invoke(IPC.hrnFlowReopen, args),
     },
   },
   providers: {

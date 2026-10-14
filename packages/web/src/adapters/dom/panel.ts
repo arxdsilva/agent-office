@@ -5,6 +5,7 @@ import {
   type PermissionMode,
 } from '@agent-office/shared'
 import { COPY } from '../../app/connect-copy.ts'
+import { INSPECTOR_COPY } from '../../app/harness-inspector-copy.ts'
 import { SESSION_COPY } from '../../app/session-copy.ts'
 import {
   CHROME_ID,
@@ -15,8 +16,15 @@ import {
   type UseMenuVM,
 } from '../../app/session-types.ts'
 import { HARNESS_COPY } from '../../app/workspace/harness-copy.ts'
-import type { HarnessTabVM } from '../../app/harness-inspector-vm.ts'
-import type { PanelVM } from '../../app/view-models.ts'
+import type { FlowButtonVM, HarnessTabVM } from '../../app/harness-inspector-vm.ts'
+import {
+  answersOf,
+  emptySelection,
+  type PanelVM,
+  type QuestionPromptVM,
+  type QuestionSelection,
+  type QuestionVM,
+} from '../../app/view-models.ts'
 import type { CapabilityRef, PanelView } from '../../ports.ts'
 import { byId, el } from './el.ts'
 import { openMenu, type MenuGroup } from './menu.ts'
@@ -112,8 +120,18 @@ export class DomPanel implements PanelView {
   private toggleUseFn: (id: string) => void = () => {}
   private draftFn: (text: string) => void = () => {}
   private tabFn: (tab: 'details' | 'harness') => void = () => {}
-  private harnessFn: (a: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void = () => {}
+  private harnessFn: (
+    a: 'run-gates' | 'cancel-gates' | 'open-harnesses' | 'toggle-denied',
+  ) => void = () => {}
   private renderedHarness = ''
+  private renderedQuestion = ''
+  private questionRequest = ''
+  private renderedLive = ''
+  private questionFn: (id: string, answers: Record<string, string>) => void | Promise<void> =
+    () => {}
+  private flowFn: NonNullable<Parameters<NonNullable<PanelView['onFlowAction']>>[0]> = () => {}
+  private stepDialog = byId<HTMLDialogElement>('p-step-confirm')
+  private pendingSkip: string | null = null
 
   constructor() {
     byId('p-close').addEventListener('click', () => this.closeFn())
@@ -162,6 +180,19 @@ export class DomPanel implements PanelView {
       void this.stopFn()
     })
     this.stopDialog.addEventListener('keydown', (e) => e.stopPropagation())
+    const f = INSPECTOR_COPY.flow
+    byId('p-step-ok').textContent = f.confirmOk
+    byId('p-step-cancel').textContent = f.confirmCancel
+    byId('p-step-cancel').addEventListener('click', () => this.stepDialog.close())
+    byId('p-step-ok').addEventListener('click', () => {
+      const stepId = this.pendingSkip
+      this.stepDialog.close()
+      if (stepId) this.runFlow({ action: 'skip', stepId, confirmed: true })
+    })
+    this.stepDialog.addEventListener('close', () => {
+      this.pendingSkip = null
+    })
+    this.stepDialog.addEventListener('keydown', (e) => e.stopPropagation())
   }
 
   onSend(fn: (text: string) => void | Promise<void>) {
@@ -212,8 +243,16 @@ export class DomPanel implements PanelView {
   onTab(fn: (tab: 'details' | 'harness') => void) {
     this.tabFn = fn
   }
-  onHarnessAction(fn: (a: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void) {
+  onHarnessAction(
+    fn: (a: 'run-gates' | 'cancel-gates' | 'open-harnesses' | 'toggle-denied') => void,
+  ) {
     this.harnessFn = fn
+  }
+  onAnswerQuestion(fn: (id: string, answers: Record<string, string>) => void | Promise<void>) {
+    this.questionFn = fn
+  }
+  onFlowAction(fn: NonNullable<Parameters<NonNullable<PanelView['onFlowAction']>>[0]>) {
+    this.flowFn = fn
   }
   private pickCapFn: (ref: CapabilityRef) => void = () => {}
   onPickCapability(fn: (ref: CapabilityRef) => void) {
@@ -226,11 +265,16 @@ export class DomPanel implements PanelView {
     this.renderedSession = ''
     this.renderedPerm = ''
     this.renderedChips = ''
+    this.renderedQuestion = ''
+    this.questionRequest = ''
+    this.renderedLive = ''
+    this.renderedHarness = ''
     this.error.textContent = ''
     this.input.value = vm.draftText
     this.updateCounter()
     this.render(vm)
-    if (!vm.composer.disabled) this.input.focus()
+    // A waiting question gets focus (renderQuestion); otherwise the composer does.
+    if (!vm.composer.disabled && !vm.question) this.input.focus()
   }
 
   close(): void {
@@ -282,9 +326,213 @@ export class DomPanel implements PanelView {
     this.renderTabs(vm)
     this.renderHint(vm)
     this.renderSession(vm.session)
+    this.renderQuestion(vm.question)
     this.renderPermission(vm.permission)
     this.renderComposer(vm.composer)
     this.renderThread(vm)
+    this.announce(vm.live)
+  }
+
+  /** `#p-live`: says what changed for a screen reader; repeats are not re-announced. */
+  private announce(text: string, force = false): void {
+    if (!force && text === this.renderedLive) return
+    if (!force) this.renderedLive = text
+    if (text || force) byId('p-live').textContent = text
+  }
+
+  /** The agent is asking: managed sessions answer here, observed ones only read. */
+  private renderQuestion(q: QuestionVM | null): void {
+    const card = byId('p-question')
+    const key = JSON.stringify(q)
+    if (key === this.renderedQuestion) return
+    this.renderedQuestion = key
+    card.hidden = !q
+    if (!q) {
+      this.questionRequest = ''
+      return card.replaceChildren()
+    }
+    card.dataset.source = q.source
+    const fresh = (q.requestId ?? 'observed') !== this.questionRequest
+    this.questionRequest = q.requestId ?? 'observed'
+    const title = el('h3', q.title, 'pq-title')
+    title.id = 'p-question-title'
+    const rows: HTMLElement[] = [title]
+    if (q.counter) rows.push(el('span', q.counter, 'muted pq-counter'))
+    const controls = q.source === 'managed'
+    const sel = emptySelection(q.prompts)
+    const refresh = () => {
+      const ok = answersOf(q.prompts, sel) !== null
+      const btn = card.querySelector<HTMLButtonElement>('#pq-answer')
+      if (btn) btn.disabled = !ok
+    }
+    for (const p of q.prompts) rows.push(this.promptBlock(p, controls, sel[p.index]!, refresh, q))
+    if (q.hint) rows.push(el('p', q.hint, 'muted pq-hint'))
+    if (controls) {
+      const actions = el('div', undefined, 'pq-actions')
+      const answer = el('button', q.labels.answer, 'btn small primary')
+      answer.type = 'button'
+      answer.id = 'pq-answer'
+      answer.disabled = true
+      answer.addEventListener('click', () => this.submitQuestion(q, sel))
+      const decline = el('button', q.labels.decline, 'btn small danger')
+      decline.type = 'button'
+      decline.id = 'pq-decline'
+      decline.addEventListener('click', () => {
+        if (q.requestId) void this.answerFn(q.requestId, 'deny')
+        this.announce(INSPECTOR_COPY.live.declined, true)
+        this.input.focus()
+      })
+      actions.append(answer, decline)
+      rows.push(actions)
+      // Enter answers once every prompt has a choice (not while typing a newline-free field is fine).
+      card.onkeydown = (e) => {
+        e.stopPropagation()
+        if (
+          e.key === 'Enter' &&
+          answer &&
+          !answer.disabled &&
+          !(e.target instanceof HTMLButtonElement)
+        ) {
+          e.preventDefault()
+          this.submitQuestion(q, sel)
+        }
+      }
+    } else card.onkeydown = null
+    card.replaceChildren(...rows)
+    if (controls && fresh)
+      card.querySelector<HTMLInputElement>('input[type=radio], input[type=checkbox]')?.focus()
+  }
+
+  private promptBlock(
+    p: QuestionPromptVM,
+    controls: boolean,
+    sel: QuestionSelection,
+    refresh: () => void,
+    q: QuestionVM,
+  ): HTMLElement {
+    const box = el('div', undefined, 'pq-prompt')
+    box.dataset.index = String(p.index)
+    box.setAttribute('role', 'group')
+    const qid = `pq-q-${p.index}`
+    box.setAttribute('aria-labelledby', qid)
+    const head = el('div', undefined, 'pq-head')
+    if (p.header) head.append(el('span', p.header, 'chip pq-header'))
+    const text = el('p', p.question, 'pq-question')
+    text.id = qid
+    head.append(text)
+    box.append(head)
+    if (p.multi) box.append(el('p', q.labels.multi, 'muted small pq-multi'))
+    const list = el('ul', undefined, 'pq-options')
+    const type = p.multi ? 'checkbox' : 'radio'
+    const inputs: HTMLInputElement[] = []
+    const mk = (label: string, desc: string, value: string, other: boolean): HTMLInputElement => {
+      const li = el('li', undefined, 'pq-option')
+      const lab = el('label')
+      const input = document.createElement('input')
+      input.type = type
+      input.name = p.name
+      input.value = value
+      input.disabled = !controls
+      if (other) input.dataset.other = 'true'
+      lab.append(input, el('span', label, 'pq-label'))
+      if (desc) lab.append(el('span', desc, 'muted small pq-desc'))
+      li.append(lab)
+      list.append(li)
+      inputs.push(input)
+      return input
+    }
+    for (const o of p.options) mk(o.label, o.description, o.label, false)
+    let otherField: HTMLInputElement | null = null
+    if (controls) {
+      const otherInput = mk(q.labels.other, '', '__other__', true)
+      const field = document.createElement('input')
+      field.type = 'text'
+      field.id = p.otherId
+      field.maxLength = 500
+      field.placeholder = q.labels.otherPlaceholder
+      field.setAttribute('aria-label', q.labels.other)
+      otherInput.closest('label')!.after(field)
+      otherField = field
+      field.addEventListener('input', () => {
+        // Typing selects "Other…".
+        if (!otherInput.checked) {
+          otherInput.checked = true
+          otherInput.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+        sel.other = field.value
+        refresh()
+      })
+    }
+    const sync = () => {
+      sel.picked = inputs.filter((i) => i.checked && !i.dataset.other).map((i) => i.value)
+      sel.otherOn = inputs.some((i) => i.checked && i.dataset.other)
+      if (otherField) sel.other = otherField.value
+      // Selecting "Other…" moves focus to its text field.
+      refresh()
+    }
+    for (const i of inputs)
+      i.addEventListener('change', () => {
+        sync()
+        if (i.dataset.other && i.checked && document.activeElement !== otherField)
+          otherField?.focus()
+      })
+    box.append(list)
+    return box
+  }
+
+  private submitQuestion(q: QuestionVM, sel: QuestionSelection[]): void {
+    const answers = answersOf(q.prompts, sel)
+    if (!answers || !q.requestId) return
+    const id = q.requestId
+    byId<HTMLButtonElement>('pq-answer').disabled = true
+    this.announce(INSPECTOR_COPY.live.answered, true)
+    void Promise.resolve(this.questionFn(id, answers))
+    // After Answer the composer takes focus (plan §5.16).
+    this.input.focus()
+  }
+
+  private runFlow(a: Parameters<typeof this.flowFn>[0]): void {
+    const L = INSPECTOR_COPY.live
+    const ok =
+      a.action === 'approve'
+        ? L.approved
+        : a.action === 'mark-done'
+          ? L.markedDone
+          : a.action === 'skip'
+            ? L.skipped
+            : L.reopened
+    Promise.resolve(this.flowFn(a)).then(
+      () => this.announce(ok, true),
+      () => {
+        this.announce(L.failed, true)
+        this.showError(L.failed)
+      },
+    )
+  }
+
+  private flowButton(stepId: string, name: string, b: FlowButtonVM): HTMLButtonElement {
+    const btn = el('button', b.label, `btn small${b.primary ? ' primary' : ''}`)
+    btn.type = 'button'
+    btn.dataset.action = b.action
+    btn.dataset.stepId = stepId
+    if (b.checkIndex !== undefined) btn.dataset.checkIndex = String(b.checkIndex)
+    btn.addEventListener('click', () => {
+      if (b.action === 'skip' && b.confirm) {
+        // A required step: ask first (focus starts on Cancel).
+        this.pendingSkip = stepId
+        byId('p-step-text').textContent = b.confirm
+        this.stepDialog.showModal()
+        byId('p-step-cancel').focus()
+        return
+      }
+      this.runFlow({
+        action: b.action,
+        stepId,
+        ...(b.checkIndex !== undefined && { checkIndex: b.checkIndex }),
+      })
+    })
+    btn.setAttribute('aria-label', `${b.label}: ${name}`)
+    return btn
   }
 
   /** Details | Harness: the strip, the active tab (CSS hides the details column) and the Inspector. */
@@ -306,7 +554,15 @@ export class DomPanel implements PanelView {
     const key = JSON.stringify(vm.harness)
     if (key === this.renderedHarness) return
     this.renderedHarness = key
+    // Pushes re-render the tab in place: keep the output the user opened.
+    const open = new Set(
+      [...sec.querySelectorAll<HTMLElement>('.ih-gate[data-gate-id] details[open]')].map(
+        (d) => d.closest<HTMLElement>('.ih-gate')!.dataset.gateId,
+      ),
+    )
     sec.replaceChildren(...this.harnessBlocks(vm.harness!))
+    for (const g of sec.querySelectorAll<HTMLElement>('.ih-gate[data-gate-id]'))
+      if (open.has(g.dataset.gateId)) g.querySelector('details')?.setAttribute('open', '')
   }
 
   private harnessBlocks(h: HarnessTabVM): HTMLElement[] {
@@ -316,6 +572,7 @@ export class DomPanel implements PanelView {
     manage.addEventListener('click', () => this.harnessFn('open-harnesses'))
     if (h.state !== 'ready') return [el('p', h.message, 'muted hb-empty'), manage]
     const out: HTMLElement[] = []
+    if (h.flow) out.push(this.flowBlock(h.flow))
     const applied = el('div', undefined, 'ih-applied')
     applied.append(el('h3', h.labels.applied))
     const names = el('ul', undefined, 'chips')
@@ -348,7 +605,37 @@ export class DomPanel implements PanelView {
     const counts = el('p', h.countsLine, 'ih-counts')
     counts.dataset.role = 'counts'
     out.push(el('h3', h.labels.activity), counts)
+    if (h.pending.length) {
+      const pend = el('section', undefined, 'ih-pending')
+      pend.append(el('h3', h.labels.pending))
+      const ul = el('ul', undefined, 'ih-asks')
+      for (const a of h.pending) {
+        const li = el('li', undefined, 'ih-ask')
+        li.dataset.requestId = a.requestId
+        li.append(el('strong', a.tool), el('span', ` ${a.summary}`), el('p', a.text, 'muted small'))
+        const acts = el('div', undefined, 'perm-actions')
+        for (const [label, decision, cls] of [
+          [h.labels.allow, 'allow', 'primary'],
+          [h.labels.deny, 'deny', 'danger'],
+        ] as const) {
+          const b = el('button', label, `btn small ${cls}`)
+          b.type = 'button'
+          b.dataset.decision = decision
+          b.addEventListener('click', () => void this.answerFn(a.requestId, decision))
+          acts.append(b)
+        }
+        li.append(acts)
+        ul.append(li)
+      }
+      pend.append(ul)
+      out.push(pend)
+    }
     out.push(el('h3', h.labels.gates))
+    if (h.runningLine) {
+      const r = el('p', h.runningLine, 'ih-running muted')
+      r.setAttribute('role', 'status')
+      out.push(r)
+    }
     if (!h.gates.length) out.push(el('p', h.gatesEmpty, 'muted'))
     const gl = el('ul', undefined, 'ih-gates')
     for (const g of h.gates) {
@@ -362,7 +649,7 @@ export class DomPanel implements PanelView {
       )
       if (g.tail) {
         const d = el('details')
-        d.append(el('summary', 'Output'), el('pre', g.tail))
+        d.append(el('summary', h.labels.showOutput), el('pre', g.tail))
         li.append(d)
       }
       gl.append(li)
@@ -393,8 +680,64 @@ export class DomPanel implements PanelView {
       )
       dl.append(li)
     }
-    out.push(dl, manage)
+    out.push(dl)
+    if (h.deniedMore > 0 || h.denied.length > 10) {
+      const more = el(
+        'button',
+        h.deniedMore > 0 ? h.labels.showMore : h.labels.showLess,
+        'btn small ih-more',
+      )
+      more.type = 'button'
+      more.dataset.action = 'toggle-denied'
+      more.addEventListener('click', () => this.harnessFn('toggle-denied'))
+      out.push(more)
+    }
+    out.push(manage)
     return out
+  }
+
+  /** The flow stepper: `ol.ih-steps > li.ih-step`, one tab stop per button. */
+  private flowBlock(f: NonNullable<HarnessTabVM['flow']>): HTMLElement {
+    const box = el('section', undefined, 'ih-flow')
+    const head = el('h3', f.heading)
+    head.append(el('span', ` ${f.progress}`, 'muted small ih-progress'))
+    box.append(head)
+    const ol = el('ol', undefined, 'ih-steps')
+    for (const st of f.steps) {
+      const li = el('li', undefined, 'ih-step')
+      li.dataset.stepId = st.id
+      li.dataset.state = st.state
+      if (st.current) li.setAttribute('aria-current', 'step')
+      const top = el('div', undefined, 'ih-step-head')
+      top.append(
+        el('span', String(st.index), 'ih-step-num'),
+        el('strong', st.name),
+        el('span', st.stateLabel, `badge-t ih-step-state`),
+      )
+      if (st.optional) top.append(el('span', INSPECTOR_COPY.flow.optional, 'muted small'))
+      li.append(top, el('p', st.goal, 'muted small ih-goal'))
+      const checks = el('ul', undefined, 'ih-checks')
+      for (const c of st.checks) {
+        const ci = el('li', undefined, 'ih-check')
+        ci.dataset.kind = c.kind
+        ci.dataset.state = c.state
+        ci.append(
+          el('span', `${c.kindLabel}: `, 'muted small'),
+          el('span', c.label),
+          el('span', ` ${c.stateLabel}`, 'muted small'),
+        )
+        checks.append(ci)
+      }
+      li.append(checks)
+      if (st.buttons.length) {
+        const acts = el('div', undefined, 'ih-step-actions')
+        for (const b of st.buttons) acts.append(this.flowButton(st.id, st.name, b))
+        li.append(acts)
+      }
+      ol.append(li)
+    }
+    box.append(ol)
+    return box
   }
 
   private renderHint(vm: PanelVM): void {
@@ -535,11 +878,10 @@ export class DomPanel implements PanelView {
       b.addEventListener('click', () => void this.answerFn(p.request.id, d))
       return b
     }
-    actions.append(
-      button(c.allowOnce, 'allow', 'primary'),
-      button(p.allowSessionLabel, 'allow-session', ''),
-      button(c.deny, 'deny', 'danger'),
-    )
+    actions.append(button(c.allowOnce, 'allow', 'primary'))
+    // A harness `ask` is one-off: no session-wide allow.
+    if (p.allowSessionLabel) actions.append(button(p.allowSessionLabel, 'allow-session', ''))
+    actions.append(button(c.deny, 'deny', 'danger'))
     if (p.counter) actions.append(el('span', p.counter, 'muted perm-counter'))
     rows.push(actions)
     card.replaceChildren(...rows)
@@ -558,7 +900,9 @@ export class DomPanel implements PanelView {
   }
 
   private renderThread(vm: PanelVM): void {
-    const key = JSON.stringify(vm.thread.map((m) => [m.id, m.from, m.stateLabel, m.context]))
+    const key = JSON.stringify(
+      vm.thread.map((m) => [m.id, m.from, m.stateLabel, m.context, m.text]),
+    )
     if (key === this.renderedThread) return
     this.renderedThread = key
     const list = byId('p-thread')
@@ -568,7 +912,8 @@ export class DomPanel implements PanelView {
     }
     list.replaceChildren(
       ...vm.thread.map((m) => {
-        const li = el('li', m.text, m.from)
+        const li = el('li', m.text, m.local ? `${m.from} local` : m.from)
+        if (m.local) li.dataset.local = 'true'
         if (m.stateLabel) li.append(el('span', m.stateLabel, 'state'))
         if (m.context?.length) {
           const chips = el('ul', undefined, 'msg-chips')

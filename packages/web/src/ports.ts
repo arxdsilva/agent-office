@@ -77,8 +77,8 @@ export interface SceneView {
   select(id: string | null): void
   /** Apply a render quality preset live (`auto` lets the scene's FPS governor pick). */
   setQuality(q: GraphicsQuality): void
-  /** The user clicked an agent (id) or empty space (null). */
-  onPick(fn: (id: string | null) => void): void
+  /** The user clicked an agent (id) or empty space (null); `tab: 'harness'`: Minimal's harness pill was clicked, so open the panel on the Harness tab. */
+  onPick(fn: (id: string | null, tab?: 'harness') => void): void
   /** Ease the camera to a bookmark by id (same ids as the view bar: 'wing:<provider>:0', 'atrium', …). */
   goTo(viewId: string): void
   /** Milliseconds since the user last moved the camera (orbit, zoom, walk, view button). */
@@ -207,7 +207,22 @@ export interface PanelView {
   /** The Details | Harness tab strip (only shown for agents in a project). */
   onTab?(fn: (tab: 'details' | 'harness') => void): void
   /** The Compliance Inspector's buttons (`data-action`). */
-  onHarnessAction?(fn: (action: 'run-gates' | 'cancel-gates' | 'open-harnesses') => void): void
+  onHarnessAction?(
+    fn: (action: 'run-gates' | 'cancel-gates' | 'open-harnesses' | 'toggle-denied') => void,
+  ): void
+  /** Answer sent from the question card (`answers`: question text → chosen labels or free text). */
+  onAnswerQuestion?(
+    fn: (requestId: string, answers: Record<string, string>) => void | Promise<void>,
+  ): void
+  /** A flow stepper button (Approve, Mark done, Skip, Re-open); `confirmed` for a required skip. */
+  onFlowAction?(
+    fn: (a: {
+      action: 'approve' | 'mark-done' | 'skip' | 'reopen'
+      stepId: string
+      checkIndex?: number
+      confirmed?: boolean
+    }) => void | Promise<void>,
+  ): void
 }
 
 /** The new-session dialog (`<dialog id="new-session">`), plan §2.4. */

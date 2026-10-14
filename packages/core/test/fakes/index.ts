@@ -20,6 +20,7 @@ import type {
   EventSubscriber,
   GateRunner,
   HookRunner,
+  RepoFiles,
   IdGenerator,
   JsonConfigStore,
   LoginItem,
@@ -416,5 +417,35 @@ export class FakeGateRunner implements GateRunner {
       ...(next?.pinChanged !== undefined ? { pinChanged: next.pinChanged } : {}),
       ...(next?.spawnError !== undefined ? { spawnError: next.spawnError } : {}),
     }
+  }
+}
+
+/** A glob (`**`, `*`, `?`) over repo-relative '/' paths, as a regular expression. */
+function globToRegExp(glob: string): RegExp {
+  let out = ''
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]!
+    if (c === '*' && glob[i + 1] === '*') {
+      i++
+      if (glob[i + 1] === '/') {
+        i++
+        out += '(?:.*/)?'
+      } else out += '.*'
+    } else if (c === '*') out += '[^/]*'
+    else if (c === '?') out += '[^/]'
+    else out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  return new RegExp(`^${out}$`)
+}
+
+/** In-memory `RepoFiles`: a set of repo-relative file paths (the same for every repo path). */
+export class FakeRepoFiles implements RepoFiles {
+  constructor(private readonly files: Iterable<string> = []) {}
+  async exists(_repoPath: string, relGlob: string): Promise<boolean> {
+    if (!relGlob || relGlob.startsWith('/') || /^[A-Za-z]:|\\/.test(relGlob)) return false
+    if (relGlob.split('/').includes('..')) return false
+    const re = globToRegExp(relGlob)
+    for (const f of this.files) if (re.test(f)) return true
+    return false
   }
 }

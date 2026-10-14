@@ -7,7 +7,11 @@ import { HookService } from '@agent-office/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ClaudeSettingsFile } from '../src/fs/claude-settings-store.ts'
 import { FsHookRunner } from '../src/fs/hook-runner.ts'
+import { createAuth } from '../src/http/auth.ts'
+import { buildHttpApi } from '../src/http/http-api.ts'
+import { startHttpServer } from '../src/http/server.ts'
 import { startServer, TOKEN } from './helpers.ts'
+import { makeOffice } from './support.ts'
 
 const HOOK = fileURLToPath(new URL('../../../hooks/agent-office-hook.mjs', import.meta.url))
 
@@ -104,4 +108,86 @@ describe('hook wrapper follows the API port (E2E)', () => {
       expect(stop2.reason).toContain('second port message')
     },
   )
+})
+
+describe('hook adds the current flow step (E2E)', () => {
+  /** The fake office behind a real HTTP server, with a stubbed flow for agent `cc:sess-flow`. */
+  async function serverWithFlow(progress: (id: string) => unknown) {
+    const { office, scheduler } = makeOffice({})
+    let current = createAuth({ token: TOKEN, port: 0 })
+    const auth = { ...current, hostAllowed: (h: string | undefined) => current.hostAllowed(h) }
+    const app = buildHttpApi(
+      {
+        activity: office.activity,
+        inbox: office.inbox,
+        chat: office.chat,
+        query: office.query,
+        flow: { progress: progress as never },
+      },
+      {
+        ...auth,
+        originAllowed: (o) => current.originAllowed(o),
+        bearerOk: (h) => current.bearerOk(h),
+      },
+    )
+    const server = await startHttpServer(app, { host: '127.0.0.1', port: 0 })
+    current = createAuth({ token: TOKEN, port: server.port })
+    cleanup.push(async () => {
+      await server.close()
+      scheduler.dispose()
+    })
+    return `http://127.0.0.1:${server.port}`
+  }
+
+  const run = (wrapper: string, tokenFile: string) =>
+    runWrapper(wrapper, { hook_event_name: 'UserPromptSubmit', session_id: 'sess-flow' }, tokenFile)
+
+  async function install(url: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'ao-e2e-flow-'))
+    const tokenFile = join(dir, 'token')
+    writeFileSync(tokenFile, TOKEN)
+    const runner = new FsHookRunner({
+      dir: join(dir, 'hook'),
+      execPath: process.execPath,
+      script: HOOK,
+      platform: process.platform,
+      runAsNode: false,
+      url: () => url,
+    })
+    await new HookService({
+      claude: new ClaudeSettingsFile(join(dir, 'claude', 'settings.json')),
+      runner,
+    }).install()
+    return { wrapper: runner.wrapperPath, tokenFile }
+  }
+
+  it.skipIf(process.platform === 'win32')(
+    'puts the active step on the UserPromptSubmit context, metadata only',
+    async () => {
+      const url = await serverWithFlow(() => ({
+        current: 'stp_aaaaaaaa',
+        steps: [
+          {
+            stepId: 'stp_aaaaaaaa',
+            name: 'Plan',
+            goal: 'Write the plan',
+            checks: [{ label: 'SECRET' }],
+          },
+        ],
+      }))
+      const { wrapper, tokenFile } = await install(url)
+      const out = JSON.parse(await run(wrapper, tokenFile))
+      expect(out.hookSpecificOutput.additionalContext).toBe(
+        'Current flow step: Plan — Write the plan',
+      )
+    },
+  )
+
+  it.skipIf(process.platform === 'win32')('prints nothing when the flow throws', async () => {
+    const url = await serverWithFlow(() => {
+      throw new Error('boom')
+    })
+    const { wrapper, tokenFile } = await install(url)
+    expect(await run(wrapper, tokenFile)).toBe('')
+  })
 })

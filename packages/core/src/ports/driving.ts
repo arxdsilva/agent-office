@@ -46,6 +46,8 @@ import type {
   HarnessPreview,
   HarnessSummary,
   HarnessTemplateView,
+  FlowProgressView,
+  QuestionAnswers,
   ImportCommitArgs,
   ImportPreview,
   ImportSourceView,
@@ -175,7 +177,13 @@ export interface ManagedSessions {
   models(agentId?: string): Promise<ModelOption[]>
   interrupt(agentId: string): Promise<void>
   stop(agentId: string): Promise<void>
-  answer(agentId: string, requestId: string, decision: PermissionDecision): void
+  /** `answers`: the user's picks for a question card (`PermissionRequestVM.question`). */
+  answer(
+    agentId: string,
+    requestId: string,
+    decision: PermissionDecision,
+    answers?: QuestionAnswers,
+  ): void
   pending(agentId: string): PermissionRequestVM[]
   isManaged(agentId: string): boolean
   /** By Claude session id (the transcript tailer skips these). */
@@ -385,6 +393,8 @@ export interface HarnessManagement {
   attach(projectId: string, harnessId: string): Promise<HarnessSummary[]>
   detach(projectId: string, harnessId: string): Promise<HarnessSummary[]>
   attached(projectId: string): HarnessSummary[]
+  /** Sets the Applied order; `harnessIds` must be a permutation of the attached ids. */
+  reorder(projectId: string, harnessIds: string[]): Promise<HarnessSummary[]>
   templates(): HarnessTemplateView[]
   createFromTemplate(templateId: string): Promise<HarnessDetail>
 }
@@ -410,4 +420,18 @@ export interface HarnessValidation {
   run(o: { agentId: string; gateIds?: string[] }): Promise<GateResultView[]>
   cancel(agentId: string): void
   results(agentId: string): GateResultView[]
+}
+
+/** A session's flow (docs/harness.md §2a): user actions on steps. Agents report through MCP only. */
+export interface HarnessFlow {
+  progress(agentId: string): FlowProgressView | null
+  /** Passes an `approval` check of the step. */
+  approve(o: { agentId: string; stepId: string; checkIndex: number }): Promise<FlowProgressView>
+  /** Marks a step done by the user (passes its `report` checks; other checks must already pass). */
+  markDone(o: { agentId: string; stepId: string }): Promise<FlowProgressView>
+  /** Skips a step; a non-optional step needs `confirmed`. */
+  skip(o: { agentId: string; stepId: string; confirmed: boolean }): Promise<FlowProgressView>
+  reopen(o: { agentId: string; stepId: string }): Promise<FlowProgressView>
+  /** Every approval check waiting on the user, for the Overview and notifications. */
+  pendingApprovals(projectId?: string): import('@agent-office/shared').FlowApprovalView[]
 }

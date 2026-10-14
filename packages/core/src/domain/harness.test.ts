@@ -153,6 +153,7 @@ describe('harness entity', () => {
       launchPolicy: 'advisory',
       ruleCount: 2,
       gateCount: 1,
+      stepCount: 0,
       enforcement: { instruction: 1, 'runtime-policy': 0, 'validation-gate': 1 },
       projectIds: ['prj_1'],
       createdAt: 1,
@@ -167,5 +168,114 @@ describe('harness entity', () => {
     })
     expect(det.rules[0]).toEqual(h.rules[0])
     expect(det.gates[0]).toEqual(h.gates[0])
+  })
+})
+
+describe('harness flow steps', () => {
+  const STEP = {
+    name: 'Draft',
+    goal: 'A first version exists',
+    exit: [{ kind: 'report' as const }],
+  }
+
+  it('creates steps with fresh stp_ ids, keeps flowMode, and remaps template gate ids in gate checks', () => {
+    const h = make({
+      name: 'x',
+      gates: [{ ...GATE, id: 'gat_tmplcheck' }],
+      steps: [
+        { ...STEP, id: 'stp_fromdraft' },
+        { name: 'Tests', goal: 'Green', exit: [{ kind: 'gate', gateId: 'gat_tmplcheck' }] },
+      ],
+      flowMode: 'free',
+    })
+    expect(h.flowMode).toBe('free')
+    expect(h.steps).toHaveLength(2)
+    for (const s of h.steps!) expect(s.id).toMatch(/^stp_/)
+    expect(h.steps![0]!.id).not.toBe('stp_fromdraft')
+    expect(h.steps![0]).toMatchObject({ name: 'Draft', optional: false })
+    expect(h.steps![1]!.exit).toEqual([{ kind: 'gate', gateId: h.gates[0]!.id }])
+    expect(h.gates[0]!.id).not.toBe('gat_tmplcheck')
+  })
+
+  it('a harness without steps carries no steps field', () => {
+    expect(make({ name: 'x', rules: [RULE] }).steps).toBeUndefined()
+  })
+
+  it('revise keeps existing step ids and assigns new ones', () => {
+    const h = make({ name: 'x', steps: [STEP] })
+    const id = h.steps![0]!.id
+    const v = reviseHarness(
+      h,
+      {
+        name: 'x',
+        steps: [
+          { ...STEP, id },
+          { ...STEP, name: 'Review', id: 'stp_unknown01' },
+        ],
+      },
+      2,
+      newId,
+    )
+    expect(v.steps![0]!.id).toBe(id)
+    expect(v.steps![1]!.id).not.toBe('stp_unknown01')
+  })
+
+  it('publish accepts a steps-only harness, refuses a gate check on an unknown gate', () => {
+    expect(publishHarness(make({ name: 'x', steps: [STEP] }), 2).status).toBe('published')
+    const bad = make({
+      name: 'x',
+      steps: [{ ...STEP, exit: [{ kind: 'gate', gateId: 'gat_nowhere1' }] }],
+    })
+    expect(() => publishHarness(bad, 2)).toThrow(/gate/)
+  })
+
+  it('summary counts steps; detail has step views with index and check labels', () => {
+    const h = make({
+      name: 'x',
+      gates: [{ ...GATE, id: 'gat_tmplcheck' }],
+      steps: [
+        {
+          ...STEP,
+          instructions: 'Write it',
+          roles: ['main'],
+          optional: true,
+          policies: [{ effect: 'deny', paths: ['published/**'] }],
+          exit: [
+            { kind: 'approval', prompt: 'Outline approved' },
+            { kind: 'gate', gateId: 'gat_tmplcheck' },
+            { kind: 'artifact', path: 'drafts/**' },
+            { kind: 'report', note: 'Say when done' },
+            { kind: 'report' },
+          ],
+        },
+      ],
+    })
+    expect(toHarnessSummary(h, []).stepCount).toBe(1)
+    const d = toHarnessDetail(h, [], [])
+    expect(d.flowMode).toBe('sequential')
+    expect(d.steps![0]).toMatchObject({
+      id: h.steps![0]!.id,
+      index: 0,
+      name: 'Draft',
+      goal: 'A first version exists',
+      instructions: 'Write it',
+      roles: ['main'],
+      optional: true,
+      policies: [{ effect: 'deny', paths: ['published/**'] }],
+    })
+    expect(d.steps![0]!.exit.map((c) => c.label)).toEqual([
+      'Outline approved',
+      'Check',
+      'drafts/**',
+      'Say when done',
+      'The agent reports it done',
+    ])
+    expect(d.steps![0]!.exit[1]).toMatchObject({ kind: 'gate', gateId: h.gates[0]!.id })
+    expect(d.steps![0]!.exit[2]).toMatchObject({
+      kind: 'artifact',
+      path: 'drafts/**',
+      mustExist: true,
+    })
+    expect(d.steps![0]!.exit[0]).toMatchObject({ kind: 'approval', prompt: 'Outline approved' })
   })
 })

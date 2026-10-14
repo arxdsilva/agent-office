@@ -8,6 +8,7 @@ import {
   type HarnessInspection,
   type HarnessPreview,
   type HookStatus,
+  questionInReply,
   type ModelOption,
   type ProviderId,
   type Settings,
@@ -57,6 +58,8 @@ import {
 } from './app/connect-types.ts'
 import {
   FALLBACK_MODELS,
+  answeredLine,
+  type AnsweredLine,
   addContext,
   connectVM,
   emptyPhase,
@@ -227,6 +230,9 @@ export const DIRECT_MS = 250
 export const PIXEL_HUD_MS = 500
 
 /** Renderer use cases: state → director (building, behavior) → views, and user intents → gateway calls. */
+/** Provider changes in the New Session dialog look up harness coverage after this quiet period. */
+const NS_HARNESS_DEBOUNCE_MS = 150
+
 export function createController(d: ControllerDeps) {
   let state: OfficeState = emptyState()
   let director: Director | null = null
@@ -298,6 +304,13 @@ export function createController(d: ControllerDeps) {
   const inspections = new Map<string, HarnessInspection>()
   const inspecting = new Set<string>()
   const inspectAgain = new Set<string>()
+  /** `counts.denied` when the panel opened on an agent: the tab badge counts only newer blocks. */
+  const deniedBaseline = new Map<string, number>()
+  /** Agents whose blocked-actions list is expanded past 10 rows. */
+  const deniedExpanded = new Set<string>()
+  /** "You answered: …" lines per agent (renderer-only; never sent to the agent). */
+  const answeredLines = new Map<string, AnsweredLine[]>()
+  let answeredSeq = 0
   let harnessBadges: HarnessBadge[] = []
   let badgesKey = '[]'
   let badgesBusy = false
@@ -390,7 +403,26 @@ export function createController(d: ControllerDeps) {
         })) ?? [],
       now: d.clock.now(),
       harness: harnessBadges,
+      attention: attentionOf(),
     })
+  }
+
+  /** What each agent waits on besides a protocol question: a harness `ask` or a question in its reply. */
+  function attentionOf(): Record<string, { kind: 'asked' | 'approval'; text: string }> {
+    const out: Record<string, { kind: 'asked' | 'approval'; text: string }> = {}
+    for (const a of state.agents.values()) {
+      const rule = (state.permissions?.get(a.id) ?? []).find((r) => r.rule && !r.question)?.rule
+      if (rule) {
+        out[a.id] = { kind: 'approval', text: rule.name }
+        continue
+      }
+      if (a.question || (a.status !== 'waiting' && a.status !== 'idle')) continue
+      const msgs = state.messages.get(a.id) ?? []
+      const last = msgs[msgs.length - 1]
+      const sentence = last?.from === 'agent' ? questionInReply(last.text) : undefined
+      if (sentence) out[a.id] = { kind: 'asked', text: sentence }
+    }
+    return out
   }
 
   /** Per-agent harness badges for Minimal mode; pushes the roster only when they changed. */
@@ -435,7 +467,9 @@ export function createController(d: ControllerDeps) {
       do {
         inspectAgain.delete(id)
         try {
-          inspections.set(id, await h.inspect(id))
+          const ins = await h.inspect(id)
+          inspections.set(id, ins)
+          if (!deniedBaseline.has(id)) deniedBaseline.set(id, ins.counts.denied)
         } catch {
           // keep the last inspection
         }
@@ -568,13 +602,34 @@ export function createController(d: ControllerDeps) {
         ...(connInfo?.providers && { providers: connInfo.providers }),
         ...(models && { models }),
         ...(drafts.has(id) && { draft: drafts.get(id)! }),
+        ...(answeredLines.has(id) && { answered: answeredLines.get(id)! }),
+        ...(stepOf(id) && { step: stepOf(id)! }),
       },
     )
     // Details | Harness tabs only for agents that work on a project.
     const agent = state.agents.get(id) ?? plans.get(id)?.agent
     if (!agent?.projectId || !d.gateway.projects?.harness) return base
     const ins = inspections.get(id) ?? null
-    return { ...base, tabs: panelTabsVM(panelTab, ins), harness: harnessTabVM(ins) }
+    const requests = state.permissions?.get(id) ?? []
+    return {
+      ...base,
+      tabs: panelTabsVM(panelTab, ins, {
+        baselineDenied: deniedBaseline.get(id) ?? 0,
+        pendingAsks: requests.filter((r) => r.rule && !r.question).length,
+      }),
+      harness: harnessTabVM(ins, {
+        now: d.clock.now(),
+        requests,
+        showAllDenied: deniedExpanded.has(id),
+      }),
+    }
+  }
+  /** The active flow step ("Step 3/5: Review"): the open inspection, else the roster badge. */
+  const stepOf = (id: string) => {
+    const f = inspections.get(id)?.flow
+    const st = f?.current ? f.steps.find((x) => x.stepId === f.current) : undefined
+    if (f && st) return { index: st.index + 1, total: f.total, name: st.name }
+    return harnessBadges.find((b) => b.agentId === id)?.step
   }
 
   /** A managed session's model list, fetched once; the alias fallback when it can't be listed. */
@@ -757,7 +812,14 @@ export function createController(d: ControllerDeps) {
   const select = (id: string | null) => {
     // Agents walking out (removed from state, still planned) stay selectable while they leave.
     const next = id && (state.agents.has(id) || plans.has(id)) ? id : null
-    if (next !== selected) panelTab = 'details'
+    if (next !== selected) {
+      panelTab = 'details'
+      // A new panel session: blocked actions count from now, and lists start collapsed.
+      if (selected) {
+        deniedBaseline.delete(selected)
+        deniedExpanded.delete(selected)
+      }
+    }
     selected = next
     d.scene.select(selected)
     if (!selected) {
@@ -1107,7 +1169,16 @@ export function createController(d: ControllerDeps) {
   }
 
   // View intents
-  d.scene.onPick(select)
+  /** Select an agent; `tab: 'harness'` opens the panel on the Harness tab (agents in a project only). */
+  const selectWithTab = (id: string | null, tab?: 'harness') => {
+    select(id)
+    if (tab === 'harness' && id && selected === id && vmFor(id).tabs) {
+      panelTab = 'harness'
+      void fetchInspection(id)
+      renderPanel()
+    }
+  }
+  d.scene.onPick(selectWithTab)
   d.scene.onContextLost(contextLost)
   d.scene.onContextRestored(contextRestored)
   d.scene.onViews((views) => d.viewBar.render(views))
@@ -1244,8 +1315,27 @@ export function createController(d: ControllerDeps) {
   d.panel.onInterrupt(inSession((id) => d.gateway.sessions.interrupt(id)))
   d.panel.onStop(inSession((id) => d.gateway.sessions.stop(id)))
   d.panel.onAnswer((requestId, decision) =>
-    inSession((id) => d.gateway.sessions.answer(id, requestId, decision))(),
+    inSession(async (id) => {
+      const isQuestion = (state.permissions?.get(id) ?? []).some(
+        (r) => r.id === requestId && r.question,
+      )
+      await d.gateway.sessions.answer(id, requestId, decision)
+      if (isQuestion && decision === 'deny') addAnswered(id, SESSION_COPY.question.declined)
+    })(),
   )
+  /** Question card: the chosen labels go with the decision; the thread keeps a local line. */
+  d.panel.onAnswerQuestion?.((requestId, answers) =>
+    inSession(async (id) => {
+      await d.gateway.sessions.answer(id, requestId, 'allow', answers)
+      addAnswered(id, answeredLine(answers))
+    })(),
+  )
+  function addAnswered(id: string, text: string) {
+    const list = answeredLines.get(id) ?? []
+    list.push({ id: `answered-${++answeredSeq}`, ts: d.clock.now(), text })
+    answeredLines.set(id, list.slice(-20))
+    renderPanel()
+  }
 
   // Details | Harness tabs and the Compliance Inspector's buttons (docs/harness.md)
   d.panel.onTab?.((tab) => {
@@ -1257,7 +1347,10 @@ export function createController(d: ControllerDeps) {
     const id = selected
     if (!id) return
     const projectId = (state.agents.get(id) ?? plans.get(id)?.agent)?.projectId
-    if (action === 'open-harnesses') {
+    if (action === 'toggle-denied') {
+      if (!deniedExpanded.delete(id)) deniedExpanded.add(id)
+      renderPanel()
+    } else if (action === 'open-harnesses') {
       void d.workspace?.perform({ type: 'open-harnesses', ...(projectId && { projectId }) })
     } else if (action === 'run-gates') {
       // The call returns when the gates finished; pushes refresh the running state meanwhile.
@@ -1269,6 +1362,24 @@ export function createController(d: ControllerDeps) {
         .catch(() => {})
         .then(() => fetchInspection(id))
     }
+  })
+
+  /** Stepper buttons: the user's side of the flow. Rejects on failure; the panel words the error. */
+  d.panel.onFlowAction?.(async (a) => {
+    const id = selected
+    const h = d.gateway.projects?.harness
+    if (!id || !h) return
+    if (a.action === 'approve') {
+      await h.flowApprove({
+        agentId: id,
+        stepId: a.stepId,
+        ...(a.checkIndex !== undefined && { checkIndex: a.checkIndex }),
+      })
+    } else if (a.action === 'mark-done') await h.flowMarkDone({ agentId: id, stepId: a.stepId })
+    else if (a.action === 'skip')
+      await h.flowSkip({ agentId: id, stepId: a.stepId, confirmed: !!a.confirmed })
+    else await h.flowReopen({ agentId: id, stepId: a.stepId })
+    await fetchInspection(id)
   })
 
   // New session dialog (plan §2.4)
@@ -1298,6 +1409,7 @@ export function createController(d: ControllerDeps) {
         }),
       },
     )
+  let stopNsHarnessTimer: (() => void) | null = null
   const harnessKey = () => `${form.projectId ?? ''}|${form.provider}`
   /** What the attached harnesses mean for the picked provider on the picked project. */
   const loadNsHarness = async () => {
@@ -1352,6 +1464,8 @@ export function createController(d: ControllerDeps) {
   }
   d.hud.onNewSession(() => void openNewSession())
   d.newSession.onClose(() => {
+    stopNsHarnessTimer?.()
+    stopNsHarnessTimer = null
     nsError = undefined
   })
   d.newSession.onPickFolder(async () => {
@@ -1413,7 +1527,15 @@ export function createController(d: ControllerDeps) {
       void loadProviderModels(form.provider)
     }
     renderNewSession()
-    if (switched || patch.projectId !== undefined) void loadNsHarness()
+    if (patch.projectId !== undefined) void loadNsHarness()
+    // Provider changes arrive in bursts (menu arrowing): look up coverage once it settles.
+    else if (switched) {
+      stopNsHarnessTimer?.()
+      stopNsHarnessTimer = d.after(NS_HARNESS_DEBOUNCE_MS, () => {
+        stopNsHarnessTimer = null
+        void loadNsHarness()
+      })
+    }
   })
   d.newSession.onInspectHarness?.(() => {
     const projectId = form.projectId
@@ -1790,6 +1912,6 @@ export function createController(d: ControllerDeps) {
       for (const s of stops.splice(0)) s()
     },
 
-    select,
+    select: selectWithTab,
   }
 }

@@ -194,6 +194,15 @@ export class DomDashboard implements DashboardView {
     h.id = `pd-${s.id}-h`
     head.append(h)
     if (s.rows.length) head.append(el('span', String(s.rows.length), 'sec-count'))
+    if (s.action)
+      head.append(
+        vmButton(
+          s.action,
+          'secondary',
+          (a) => a && this.action.emit(a),
+          `pd-${s.id}-${s.action.id}`,
+        ),
+      )
     sec.append(head)
     if (s.id === 'activity') sec.append(this.filters(vm))
     if (s.id === 'tasks') sec.append(this.taskForm(vm))

@@ -35,7 +35,7 @@ test('harness: import, publish, attach, coverage, denied action, failing gate, M
     waitForAgents: false,
   })
   await stubDialogs(app, repo)
-  const dialog = win.locator('#harness')
+  const pane = win.locator('#ws-harness')
   const card = win.locator('.hb-card[data-harness-id]')
   const thread = win.locator('#p-thread')
 
@@ -56,12 +56,18 @@ test('harness: import, publish, attach, coverage, denied action, failing gate, M
     await expect(win.locator('#ws-project')).toBeVisible()
   })
 
-  await test.step('H-2: the palette command "Harnesses…" opens the Harness Builder', async () => {
+  await test.step('H-2: the sidebar entry and the palette command "Harnesses…" open the Harnesses pane', async () => {
+    // The sidebar entry opens the pane (it is a pane now, not a dialog).
+    await win.locator('#sb-harness').click()
+    await expect(pane).toBeVisible()
+    // Leave and come back through the palette command, which must land on the same pane.
+    await win.locator('#sb-overview').click()
+    await expect(pane).toBeHidden()
     await win.keyboard.press('ControlOrMeta+k')
     await win.locator('#pal-input').fill('Harnesses')
     await expect(win.locator('#pal-list')).toContainText('Harnesses…')
     await win.keyboard.press('Enter')
-    await expect(dialog).toBeVisible()
+    await expect(pane).toBeVisible()
     // Nothing exists yet.
     await expect(card).toHaveCount(0)
   })
@@ -149,14 +155,16 @@ test('harness: import, publish, attach, coverage, denied action, failing gate, M
     await expect(card.first()).toHaveAttribute('data-status', 'published', { timeout: 15_000 })
   })
 
-  await test.step('H-5: Attach to this project', async () => {
-    await card.first().locator('button[data-action="attach"]').click()
-    await win.locator('#hb-confirm-ok').click()
-    await expect(card.first().locator('.hb-attached')).toContainText('Shop API', {
-      timeout: 15_000,
-    })
-    await win.locator('#hb-close').click()
-    await expect(dialog).toBeHidden()
+  await test.step('H-5: drag the published card onto the Applied drop zone to attach it', async () => {
+    // The Applied section is for the project the pane is scoped to (the open one). Dragging the card
+    // onto its drop zone attaches the harness; the attach needs no confirmation.
+    await expect(win.locator('.hb-applied-row')).toHaveCount(0)
+    await card.first().dragTo(win.locator('.hb-dropzone'))
+    await expect(win.locator('.hb-applied-row')).toHaveCount(1, { timeout: 15_000 })
+    await expect(card.first().locator('.hb-attached')).toContainText('Shop API')
+    // Back on the project: the pane is not a dialog, so go through the sidebar's project row.
+    await win.locator('#sb-project-list li[data-project-id] button').first().click()
+    await expect(win.locator('#ws-project')).toBeVisible()
   })
 
   await test.step('H-6: New Session shows what Claude Code really enforces for this harness', async () => {

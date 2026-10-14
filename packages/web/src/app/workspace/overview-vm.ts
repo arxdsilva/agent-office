@@ -3,10 +3,22 @@ import type { ProviderStatus } from '@agent-office/shared'
 import { ago } from '../format.ts'
 import { healthVM } from './shell-vm.ts'
 import type { WorkspaceState } from './state.ts'
-import type { OverviewCardVM, OverviewSectionVM, OverviewVM } from './types.ts'
+import { INSPECTOR_COPY } from '../harness-inspector-copy.ts'
+import type { OverviewCardVM, OverviewSectionVM, OverviewVM, WorkspaceAction } from './types.ts'
 import { WS_COPY } from './workspace-copy.ts'
 
 const C = WS_COPY.overview
+
+/** A flow approval card (`.ov-approval`): Approve in one click, Open to see the step. */
+export interface OverviewApprovalVM extends OverviewCardVM {
+  agentId: string
+  stepId: string
+  approve: { label: string; action: WorkspaceAction }
+}
+
+/** How many flow approvals wait (the sidebar's Overview badge counts these plus memory approvals). */
+export const flowApprovalCount = (s: WorkspaceState): number =>
+  s.overview?.flowApprovals?.length ?? 0
 
 export function overviewVM(s: WorkspaceState, now: number): OverviewVM {
   const o = s.overview
@@ -78,19 +90,41 @@ export function overviewVM(s: WorkspaceState, now: number): OverviewVM {
     actionLabel: C.open,
   }))
 
-  const approvals: OverviewCardVM[] =
-    o && o.pendingApprovals > 0
+  const flowApprovals: OverviewApprovalVM[] = (o?.flowApprovals ?? []).map((f) => ({
+    id: `flow:${f.agentId}:${f.stepId}:${f.checkIndex}`,
+    agentId: f.agentId,
+    stepId: f.stepId,
+    title: INSPECTOR_COPY.overview.approvalTitle(f.projectName, f.agentName, f.stepName, f.prompt),
+    detail: INSPECTOR_COPY.overview.approvalDetail,
+    tone: 'warn' as const,
+    approve: {
+      label: INSPECTOR_COPY.overview.approve,
+      action: {
+        type: 'flow-approve' as const,
+        agentId: f.agentId,
+        stepId: f.stepId,
+        checkIndex: f.checkIndex,
+      },
+    },
+    // Open selects the agent; its panel shows the Harness tab with the same step.
+    action: { type: 'focus-agent' as const, agentId: f.agentId },
+    actionLabel: INSPECTOR_COPY.overview.open,
+  }))
+  const approvals: OverviewCardVM[] = [
+    ...flowApprovals,
+    ...(o && o.pendingApprovals > 0
       ? [
           {
             id: 'approvals',
             title: C.approvalsCount(o.pendingApprovals),
             detail: 'Agent proposals stay pending until you approve them.',
-            tone: 'warn',
-            action: { type: 'review-approvals' },
+            tone: 'warn' as const,
+            action: { type: 'review-approvals' as const },
             actionLabel: C.review,
           },
         ]
-      : []
+      : []),
+  ]
 
   const handoffs: OverviewCardVM[] = (o?.unfinishedHandoffs ?? []).map((h) => ({
     id: h.id,

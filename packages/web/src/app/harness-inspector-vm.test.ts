@@ -6,7 +6,12 @@ import {
   panelTabsVM,
 } from './harness-inspector-vm.ts'
 import { badge, effective, inspection, report } from './workspace/__fixtures__/harness.ts'
-import type { GateResultView, HarnessEventView } from '@agent-office/shared'
+import type {
+  FlowProgressView,
+  GateResultView,
+  HarnessEventView,
+  PermissionRequestVM,
+} from '@agent-office/shared'
 
 const gate = (over: Partial<GateResultView> = {}): GateResultView => ({
   id: 'gtr_1',
@@ -165,7 +170,7 @@ describe('harnessBadgeVM', () => {
   it('builds the Minimal pill and its tooltip', () => {
     const vm = harnessBadgeVM(badge())
     expect(vm).toMatchObject({
-      text: 'Harness: verified',
+      text: '2 blocked',
       coverage: 'partial',
       verification: 'verified',
       completion: 'harness-verified',
@@ -173,6 +178,17 @@ describe('harnessBadgeVM', () => {
     expect(vm.title).toBe(
       'Team standards · 3 rules · Partially enforced · Verified against the harness · 2 blocked',
     )
+  })
+
+  it('shows verification when nothing is blocked and no flow runs', () => {
+    expect(harnessBadgeVM(badge({ denied: 0 })).text).toBe('Harness: verified')
+  })
+
+  it('puts the active flow step before blocked actions and verification', () => {
+    const vm = harnessBadgeVM(badge({ step: { index: 3, total: 5, name: 'Review' } }))
+    expect(vm.text).toBe('Step 3/5 · Review')
+    expect(vm.step).toEqual({ index: 3, total: 5, name: 'Review' })
+    expect(vm.title).toContain('Step 3/5 · Review')
   })
 
   it('omits the blocked count when nothing was blocked', () => {
@@ -239,5 +255,204 @@ describe('newSessionHarnessVM', () => {
       },
     })
     expect(blocked.warning).toMatchObject({ blocked: true, reasons: ['Needs a sandbox'] })
+  })
+})
+
+const flow = (over: Partial<FlowProgressView> = {}): FlowProgressView => ({
+  harnessVersion: 'hrn_aaaaaaaaaa@2',
+  mode: 'sequential',
+  current: 'stp_outline',
+  done: 1,
+  total: 4,
+  steps: [
+    {
+      stepId: 'stp_research',
+      index: 0,
+      name: 'Research',
+      goal: 'Sources gathered',
+      state: 'done',
+      optional: false,
+      checks: [{ index: 0, kind: 'report', label: 'Agent reports', state: 'pass' }],
+    },
+    {
+      stepId: 'stp_outline',
+      index: 1,
+      name: 'Outline',
+      goal: 'Outline agreed',
+      state: 'active',
+      optional: false,
+      checks: [
+        { index: 0, kind: 'approval', label: 'Outline approved?', state: 'waiting-user' },
+        { index: 1, kind: 'report', label: 'Agent reports', state: 'pending' },
+      ],
+    },
+    {
+      stepId: 'stp_draft',
+      index: 2,
+      name: 'Draft',
+      goal: 'First draft written',
+      state: 'pending',
+      optional: true,
+      checks: [{ index: 0, kind: 'artifact', label: 'drafts/**', state: 'pending' }],
+    },
+    {
+      stepId: 'stp_publish',
+      index: 3,
+      name: 'Publish',
+      goal: 'Live',
+      state: 'skipped',
+      optional: true,
+      checks: [{ index: 0, kind: 'gate', label: 'make check', state: 'fail' }],
+    },
+  ],
+  ...over,
+})
+
+describe('harnessTabVM: flow stepper', () => {
+  const rows = () => harnessTabVM(inspection({ flow: flow() })).flow!.steps
+  it('has no stepper without a flow', () => {
+    expect(harnessTabVM(inspection()).flow).toBeUndefined()
+  })
+
+  it('numbers the steps from 1, marks the active one and words the states', () => {
+    const vm = harnessTabVM(inspection({ flow: flow() })).flow!
+    expect(vm.progress).toBe('1 of 4 steps done')
+    expect(rows().map((r) => [r.index, r.state, r.current])).toEqual([
+      [1, 'done', false],
+      [2, 'active', true],
+      [3, 'pending', false],
+      [4, 'skipped', false],
+    ])
+    expect(rows()[1]!.checks[0]).toMatchObject({
+      kind: 'approval',
+      state: 'waiting-user',
+      stateLabel: 'Waiting for you',
+    })
+  })
+
+  it('offers Approve (primary) only for an approval waiting on the user', () => {
+    const outline = rows()[1]!
+    expect(outline.buttons.filter((b) => b.action === 'approve')).toEqual([
+      { action: 'approve', label: 'Approve', primary: true, checkIndex: 0 },
+    ])
+    expect(rows()[2]!.buttons).toEqual([]) // pending in sequential mode: nothing to click
+    const pass = flow()
+    pass.steps[1]!.checks[0]!.state = 'pass'
+    const again = harnessTabVM(inspection({ flow: pass })).flow!.steps[1]!
+    expect(again.buttons.some((b) => b.action === 'approve')).toBe(false)
+  })
+
+  it('offers Mark done for a pending report check and Skip with a confirm on required steps', () => {
+    const outline = rows()[1]!
+    expect(outline.buttons.map((b) => b.action)).toEqual(['approve', 'mark-done', 'skip'])
+    expect(outline.buttons.find((b) => b.action === 'skip')!.confirm).toContain('required step')
+  })
+
+  it('skips an optional step without a confirm, in free mode from pending', () => {
+    const free = flow({ mode: 'free', current: null })
+    const draft = harnessTabVM(inspection({ flow: free })).flow!.steps[2]!
+    expect(draft.buttons).toEqual([{ action: 'skip', label: 'Skip', primary: false }])
+  })
+
+  it('offers Re-open on done and skipped steps', () => {
+    expect(rows()[0]!.buttons.map((b) => b.action)).toEqual(['reopen'])
+    expect(rows()[3]!.buttons.map((b) => b.action)).toEqual(['reopen'])
+  })
+})
+
+describe('harnessTabVM: pending asks, gate output, running line, denied rows', () => {
+  const ask = (over: Partial<PermissionRequestVM> = {}): PermissionRequestVM => ({
+    id: 'perm_aaaaaaaaaa',
+    tool: 'Bash',
+    summary: 'git push',
+    rule: { id: 'rul_b1', name: 'No pushes' },
+    ...over,
+  })
+
+  it('lists harness ask cards with the rule that asked, never plain permissions or questions', () => {
+    const vm = harnessTabVM(inspection(), {
+      requests: [
+        ask(),
+        ask({ id: 'perm_bbbbbbbbbb', rule: undefined }),
+        ask({
+          id: 'perm_cccccccccc',
+          question: { prompts: [{ question: 'Q?', header: '', options: [], multiSelect: false }] },
+        }),
+      ],
+    })
+    expect(vm.pending).toEqual([
+      {
+        requestId: 'perm_aaaaaaaaaa',
+        tool: 'Bash',
+        summary: 'git push',
+        ruleName: 'No pushes',
+        text: 'Asked because of the harness rule "No pushes"',
+      },
+    ])
+  })
+
+  it('keeps the redacted output of every finished gate behind "Show output"', () => {
+    const vm = harnessTabVM(inspection({ gates: [gate({ outputTail: 'all green' })] }))
+    expect(vm.gates[0]!.tail).toBe('all green')
+    expect(vm.labels.showOutput).toBe('Show output')
+  })
+
+  it('writes a running line with the elapsed time', () => {
+    const vm = harnessTabVM(inspection({ gates: [gate({ status: 'running', startedAt: 1000 })] }), {
+      now: 13_000,
+    })
+    expect(vm.runningLine).toBe('Running Check… (12s)')
+    expect(harnessTabVM(inspection()).runningLine).toBeUndefined()
+  })
+
+  it('shows 10 denied rows and a Show more count until expanded', () => {
+    const events = Array.from({ length: 13 }, (_, i) => denied({ id: `hev_${i}`, ts: i }))
+    const collapsed = harnessTabVM(inspection({ events }))
+    expect(collapsed.denied).toHaveLength(10)
+    expect(collapsed.deniedMore).toBe(3)
+    expect(collapsed.labels.showMore).toBe('Show 3 more')
+    const open = harnessTabVM(inspection({ events }), { showAllDenied: true })
+    expect(open.denied).toHaveLength(13)
+    expect(open.deniedMore).toBe(0)
+  })
+})
+
+describe('panelTabsVM: badge', () => {
+  it('adds pending asks, pending approvals and blocks since the panel opened', () => {
+    const ins = inspection({ flow: flow() }) // 2 blocked, 1 approval waiting
+    expect(panelTabsVM('details', ins, { baselineDenied: 0, pendingAsks: 2 }).badge).toBe('5')
+    expect(panelTabsVM('details', ins, { baselineDenied: 2 }).badge).toBe('1')
+    expect(
+      panelTabsVM('details', inspection({ counts: { allowed: 0, denied: 2, asked: 0 } }), {
+        baselineDenied: 2,
+      }).badge,
+    ).toBeUndefined()
+  })
+})
+
+describe('newSessionHarnessVM: flow line', () => {
+  it('names the flow and its first step', () => {
+    const eff = {
+      ...effective(),
+      steps: [
+        { id: 'stp_1', index: 0, name: 'Research', goal: 'g', exit: [], optional: false },
+        { id: 'stp_2', index: 1, name: 'Draft', goal: 'g', exit: [], optional: false },
+      ],
+    }
+    const vm = newSessionHarnessVM({
+      projectId: 'prj_1',
+      status: 'ready',
+      preview: { effective: eff, report: report() },
+    })
+    expect(vm.flow).toEqual({
+      line: 'Flow: Team standards · 2 steps',
+      first: 'Starts with: Research',
+    })
+    const none = newSessionHarnessVM({
+      projectId: 'prj_1',
+      status: 'ready',
+      preview: { effective: effective(), report: report() },
+    })
+    expect(none.flow).toBeUndefined()
   })
 })

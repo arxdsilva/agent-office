@@ -1,6 +1,6 @@
 // The effective harness of one project for one runtime (docs/harness.md §2). Pure: the caller
 // passes the attached, published versions (latest per lineage).
-import type { FsIsolation, ProviderId } from '@agent-office/shared'
+import type { FlowMode, FsIsolation, ProviderId } from '@agent-office/shared'
 import { detectConflicts } from './harness-conflicts.ts'
 import { renderHarnessBlock } from './harness-instructions.ts'
 import type { EffectiveHarness, Harness, HarnessRule, PolicyRule } from './harness-types.ts'
@@ -49,6 +49,12 @@ export function resolveEffective(o: {
   const policies = rules.map(toPolicyRule).filter((p): p is PolicyRule => !!p)
   const seen = new Set<string>()
   const gates = hs.flatMap((h) => h.gates).filter((g) => !seen.has(g.id) && !!seen.add(g.id))
+  // Flows run in Applied order (the project's attachment order), not by scope.
+  const applied = o.harnesses.filter((h) => h.status === 'published')
+  const steps = applied.flatMap((h) => h.steps ?? [])
+  const withSteps = applied.filter((h) => h.steps?.length)
+  const flowMode: FlowMode =
+    withSteps.length && withSteps.every((h) => h.flowMode === 'free') ? 'free' : 'sequential'
   return {
     projectId: o.project.id,
     provider: o.provider,
@@ -56,7 +62,13 @@ export function resolveEffective(o: {
     rules,
     policies,
     gates,
-    instructions: renderHarnessBlock({ rules, gates }),
+    steps,
+    flowMode,
+    instructions: renderHarnessBlock(
+      { rules, gates, steps, flowMode },
+      // Delivered at session start: in sequential mode the first step is the current one.
+      { flow: { current: flowMode === 'sequential' ? (steps[0]?.id ?? null) : null } },
+    ),
     conflicts: detectConflicts(rules),
     launchPolicy: hs.some((h) => h.launchPolicy === 'strict') ? 'strict' : 'advisory',
     gateTrigger: hs.some((h) => h.gateTrigger === 'turn-end') ? 'turn-end' : 'manual',

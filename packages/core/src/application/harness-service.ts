@@ -17,24 +17,14 @@ import {
   toHarnessSummary,
 } from '../domain/harness.ts'
 import { detectConflicts } from '../domain/harness-conflicts.ts'
+import { HARNESS_TEMPLATES as TEMPLATES } from '../domain/harness-templates.ts'
 import type { Harness, RuleSource } from '../domain/harness-types.ts'
-import { attachHarness, detachHarness } from '../domain/project.ts'
+import { attachHarness, reorderHarnesses, detachHarness } from '../domain/project.ts'
 import type { Clock } from '../ports/driven.ts'
 import type { HarnessManagement } from '../ports/driving.ts'
 import type { ActivityLog } from './activity-log.ts'
 import { requireProject } from './project-views.ts'
 import type { ProjectsStore } from './projects-store.ts'
-
-const TEMPLATES: (HarnessTemplateView & { draft: HarnessDraft })[] = [
-  {
-    id: 'custom',
-    name: 'Custom',
-    description: 'Start from an empty harness and add your own rules and gates.',
-    ruleCount: 0,
-    gateCount: 0,
-    draft: { name: 'Custom harness' },
-  },
-]
 
 const ANY = { kind: 'harness', projectId: null } as const
 
@@ -145,6 +135,21 @@ export class HarnessService implements HarnessManagement {
     return this.attached(projectId, as)
   }
 
+  async reorder(
+    projectId: string,
+    harnessIds: string[],
+    as: Principal = USER,
+  ): Promise<HarnessSummary[]> {
+    const p = requireProject(this.d.store, projectId)
+    assertAuthorized(as, 'harness.manage', { kind: 'harness', projectId }, p)
+    const next = reorderHarnesses(p, harnessIds)
+    if (next !== p) {
+      await this.d.store.putProject(next)
+      this.d.store.emit({ type: 'harness', projectId })
+    }
+    return this.attached(projectId, as)
+  }
+
   attached(projectId: string, as: Principal = USER): HarnessSummary[] {
     const p = requireProject(this.d.store, projectId)
     assertAuthorized(as, 'harness.read', { kind: 'harness', projectId }, p)
@@ -156,7 +161,7 @@ export class HarnessService implements HarnessManagement {
 
   templates(as: Principal = USER): HarnessTemplateView[] {
     assertAuthorized(as, 'harness.read', ANY, undefined)
-    return TEMPLATES.map(({ draft: _d, ...t }) => t)
+    return TEMPLATES.map(({ draft: _d, version: _v, ...t }) => t)
   }
 
   async createFromTemplate(templateId: string, as: Principal = USER): Promise<HarnessDetail> {

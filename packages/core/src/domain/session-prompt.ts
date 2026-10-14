@@ -118,11 +118,21 @@ export function summarizeToolRequest(
     case 'WebSearch':
       summary = str('query')
       break
+    case 'AskUserQuestion': {
+      // The first question only; options and answers stay on the question card.
+      const qs = Array.isArray(o.questions) ? (o.questions as unknown[]) : []
+      const first = qs[0] && typeof qs[0] === 'object' ? (qs[0] as Record<string, unknown>) : {}
+      summary = typeof first.question === 'string' ? first.question.trim() : ''
+      break
+    }
   }
   return { tool: name, summary: clean(summary) }
 }
 
-/** "Always allow this session" key: Bash by its first word, everything else by tool name. */
+/**
+ * "Always allow this session" key: Bash by its first word, everything else by tool name. Never used for
+ * question cards (`AskUserQuestion`): the session service skips the allow-set for them.
+ */
 export function allowKey(tool: string, input: unknown): string {
   if (tool !== 'Bash') return tool
   const o = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}

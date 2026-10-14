@@ -18,6 +18,13 @@ export interface AttentionContext {
 
 export const THROTTLE_MS = 30_000
 const BODY_CHARS = 120
+const QUESTION_CHARS = 80
+
+const firstQuestion = (a: Agent): string | undefined => {
+  const q = a.question?.prompts[0]?.question
+  if (!q) return undefined
+  return q.length > QUESTION_CHARS ? `${q.slice(0, QUESTION_CHARS - 1)}…` : q
+}
 
 const quiet = (agentId: string, ctx: AttentionContext) =>
   !ctx.enabled || ctx.focused || ctx.now - (ctx.lastSentAt.get(agentId) ?? -Infinity) < THROTTLE_MS
@@ -30,10 +37,11 @@ export function noteForAgentChange(
 ): Note | null {
   if (!prev || quiet(next.id, ctx)) return null
   if (next.status === 'waiting' && (prev.status === 'thinking' || prev.status === 'tool')) {
+    const asks = firstQuestion(next)
     return {
       kind: 'waiting',
       agentId: next.id,
-      title: `${next.name} is waiting for you`,
+      title: asks ? `${next.name} asks: ${asks}` : `${next.name} is waiting for you`,
       body: next.topic,
     }
   }

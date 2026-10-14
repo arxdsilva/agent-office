@@ -6,7 +6,10 @@ import type {
   PermissionMode,
   PermissionRequestVM,
   ProviderId,
+  Question,
+  QuestionAnswers,
 } from '@agent-office/shared'
+import { answersToInput, questionFromToolInput } from '@agent-office/shared'
 import type { AgentState } from '../domain/agent.ts'
 import {
   NotAllowedError,
@@ -76,6 +79,7 @@ const SYSTEM = {
   ended: 'Session ended',
   crashed: 'Session ended unexpectedly',
   needsApproval: 'Needs approval',
+  asking: 'Asking you a question',
   denied: 'The user denied this request.',
 }
 
@@ -133,6 +137,11 @@ interface Pending {
   resolve: (d: RunnerDecision) => void
   /** A harness rule asked: answered once, never remembered for the session. */
   harness?: boolean
+  /**
+   * A question card (`AskUserQuestion`): answered with `answers`, never remembered for the session.
+   * `input` is the raw tool input, kept here only to build `updatedInput`; it never reaches the VM.
+   */
+  question?: { input: Record<string, unknown> }
 }
 
 interface Session {
@@ -443,18 +452,26 @@ export class ManagedSessionService implements ManagedSessions {
     await this.end(s, 'stopped')
   }
 
-  answer(agentId: string, requestId: string, decision: PermissionDecision): void {
+  answer(
+    agentId: string,
+    requestId: string,
+    decision: PermissionDecision,
+    answers?: QuestionAnswers,
+  ): void {
     const s = this.require(agentId)
     this.limit(agentId)
     const p = s.pending.get(requestId)
     if (!p) return
     s.pending.delete(requestId)
     if (decision === 'deny') p.resolve({ behavior: 'deny', message: SYSTEM.denied })
+    else if (p.question && answers)
+      p.resolve({ behavior: 'allow', updatedInput: answersToInput(p.question.input, answers) })
     else p.resolve({ behavior: 'allow' })
-    if (decision === 'allow-session' && !p.harness) {
+    // A question is never remembered: 'allow-session' on it behaves as 'allow'.
+    if (decision === 'allow-session' && !p.harness && !p.question) {
       s.allow.add(p.key)
       for (const [id, other] of s.pending)
-        if (other.key === p.key) {
+        if (other.key === p.key && !other.question) {
           s.pending.delete(id)
           other.resolve({ behavior: 'allow' })
         }
@@ -519,17 +536,28 @@ export class ManagedSessionService implements ManagedSessions {
       if (d.action === 'deny') return Promise.resolve({ behavior: 'deny', message: d.reason })
       if (d.action === 'ask') rule = { id: d.ruleIds[0] ?? 'harness', name: ruleNameOf(d.reason) }
     }
+    const question: Question | undefined =
+      r.tool === 'AskUserQuestion' ? questionFromToolInput(r.input) : undefined
     const key = allowKey(r.tool, r.input)
-    if (!rule && s.allow.has(key)) return Promise.resolve({ behavior: 'allow' })
+    // The allow-set is never consulted (nor updated) for a question: the user must answer it.
+    if (!rule && !question && s.allow.has(key)) return Promise.resolve({ behavior: 'allow' })
     return new Promise((resolve) => {
       const id = (this.d.permId ?? randomPermId)()
       const { tool, summary } = summarizeToolRequest(r.tool, r.input, r.cwd)
       const where = (this.d.displayPath ?? basenameOnly)(r.cwd)
       s.pending.set(id, {
-        vm: { id, tool, summary, where, ...(rule ? { rule } : {}) },
+        vm: {
+          id,
+          tool,
+          summary,
+          where,
+          ...(rule ? { rule } : {}),
+          ...(question ? { question } : {}),
+        },
         key,
         resolve,
         ...(rule ? { harness: true } : {}),
+        ...(question ? { question: { input: r.input } } : {}),
       })
       this.pendingChanged(s)
     })
@@ -723,17 +751,21 @@ export class ManagedSessionService implements ManagedSessions {
     const all = [...s.pending.values()]
     s.pending.clear()
     for (const p of all) p.resolve({ behavior: 'deny', message })
+    if (all.some((p) => p.question)) this.report([{ agentId: s.agentId, question: null }])
     this.patch(s.agentId, (a) => (a.managed ? { ...a, managed: { ...a.managed, pending: 0 } } : a))
     this.d.bus.publish({ type: 'permission.changed', agentId: s.agentId })
   }
 
   private pendingChanged(s: Session): void {
     const n = s.pending.size
+    // The first pending question is shown on the agent; none left → `null` clears it.
+    const asking = [...s.pending.values()].find((p) => p.vm.question)?.vm.question
     this.report([
       {
         agentId: s.agentId,
         status: n ? 'waiting' : 'thinking',
-        text: n ? SYSTEM.needsApproval : '',
+        text: asking ? SYSTEM.asking : n ? SYSTEM.needsApproval : '',
+        question: asking ?? null,
       },
     ])
     this.patch(s.agentId, (a) => (a.managed ? { ...a, managed: { ...a.managed, pending: n } } : a))

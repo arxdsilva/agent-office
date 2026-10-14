@@ -235,7 +235,10 @@ The renderer's three decisions map to each protocol. We **never** send `allow_al
 
 Adapters normalize tool kinds before core sees them (Bash, Edit, Read, Grep, WebFetch, …), so the
 shared `summarizeToolRequest` produces the ≤ 120-char card text. Raw tool titles and inputs never reach
-the renderer.
+the renderer. The one bounded exception is a Claude Code `AskUserQuestion`: its prompts and options
+(`Question`, docs/harness.md §8) are shown as a question card, and the answer goes back as
+`PermissionResult.updatedInput.answers` (never through "allow for this session"). Codex and ACP have no
+question mechanism today; their requests stay plain permission cards.
 
 ### 5.4 Event mapping (managed)
 

@@ -10,10 +10,12 @@ import {
   type ImportGateSuggestion,
   type ImportPreview,
   type ImportSourceView,
+  type ImportStepSuggestion,
   type RuleCategory,
   type RuleDraft,
   type RuleSourceFormat,
   type RuleSourceView,
+  type StepDraft,
 } from '@agent-office/shared'
 import { assertAuthorized, USER, type Principal } from '../domain/authz.ts'
 import { NotFoundError, ValidationError } from '../domain/errors.ts'
@@ -33,6 +35,8 @@ export type ParseRuleFile = (
 ) => {
   candidates: Omit<ImportCandidateView, 'tempId' | 'duplicateOf' | 'conflictsWith'>[]
   gates: Omit<ImportGateSuggestion, 'tempId'>[]
+  /** Flow step suggestions (absent from parsers that do not detect them). */
+  steps?: Omit<ImportStepSuggestion, 'tempId'>[]
 }
 export type FormatOf = (relPath: string) => RuleSourceFormat | undefined
 
@@ -55,6 +59,7 @@ interface Cached {
 }
 
 const MAX_CANDIDATES = 200
+const MAX_STEPS = 24
 const isRelative = (p: string) =>
   !!p &&
   !p.startsWith('/') &&
@@ -85,6 +90,7 @@ export class HarnessImportService implements HarnessImport {
     if (o.paths) sources = sources.filter((s) => o.paths!.includes(s.path))
     const candidates: ImportCandidateView[] = []
     const gates: ImportGateSuggestion[] = []
+    const steps: ImportStepSuggestion[] = []
     for (const s of sources) {
       const root = this.d.repos.repoPath(o.projectId, s.repoId)
       if (!root) continue
@@ -110,6 +116,14 @@ export class HarnessImportService implements HarnessImport {
       }
       for (const g of parsed.gates)
         gates.push({ ...g, tempId: `cand_g${(gates.length + 1).toString(36)}` })
+      for (const st of parsed.steps ?? []) {
+        if (steps.length >= MAX_STEPS) break
+        steps.push({
+          ...st,
+          index: steps.length,
+          tempId: `cand_s${(steps.length + 1).toString(36)}`,
+        })
+      }
     }
     this.markDuplicates(o.projectId, candidates)
     const conflicts = detectConflicts(
@@ -136,6 +150,7 @@ export class HarnessImportService implements HarnessImport {
       sources: sources.map(({ repoId: _r, ...v }) => v),
       candidates,
       gates,
+      ...(steps.length ? { steps } : {}),
       conflicts,
       totals: { rules: candidates.length, byCategory, conflicts: conflicts.length },
     }
@@ -177,11 +192,28 @@ export class HarnessImportService implements HarnessImport {
       if (g.rejected) throw new ValidationError('this command cannot be a gate')
       return { name: g.name.slice(0, 80), argv: [...g.argv] }
     })
+    const steps = a.steps.map(({ tempId, check }): StepDraft => {
+      const st = preview.steps?.find((x) => x.tempId === tempId)
+      if (!st) throw new ValidationError('unknown step suggestion')
+      // Gates and artifacts need ids and paths the importer cannot know: add them in the editor.
+      if (check === 'gate' || check === 'artifact')
+        throw new ValidationError('choose an approval or a report check for imported steps')
+      return {
+        name: st.name.slice(0, 80),
+        goal: st.goal.slice(0, 600),
+        exit: [
+          check === 'approval'
+            ? { kind: 'approval', prompt: st.goal.slice(0, 200) }
+            : { kind: 'report' },
+        ],
+      }
+    })
     const draft = {
       name: a.name,
       ...(a.description ? { description: a.description } : {}),
       rules,
       gates,
+      ...(steps.length ? { steps } : {}),
     }
     const created = await this.d.harness.createWith(draft, sources, as)
     this.previews.delete(preview.projectId)

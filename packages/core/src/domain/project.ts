@@ -150,6 +150,22 @@ export function attachHarness(p: Project, harnessId: string, now: number): Proje
   return { ...p, harnesses: [...list, { harnessId, attachedAt: now }] }
 }
 
+/** Sets the Applied order; `harnessIds` must be a permutation of the attached ids. Same object when unchanged. */
+export function reorderHarnesses(p: Project, harnessIds: string[]): Project {
+  const list = p.harnesses ?? []
+  const have = new Set(list.map((h) => h.harnessId))
+  const want = new Set(harnessIds)
+  if (
+    want.size !== harnessIds.length ||
+    have.size !== want.size ||
+    [...want].some((id) => !have.has(id))
+  )
+    throw new ValidationError('harnessIds must list every attached harness once')
+  if (list.every((h, i) => h.harnessId === harnessIds[i])) return p
+  const byId = new Map(list.map((h) => [h.harnessId, h]))
+  return { ...p, harnesses: harnessIds.map((id) => byId.get(id)!) }
+}
+
 export function detachHarness(p: Project, harnessId: string): Project {
   const list = p.harnesses ?? []
   if (!list.some((h) => h.harnessId === harnessId))

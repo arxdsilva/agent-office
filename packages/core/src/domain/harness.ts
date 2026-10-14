@@ -7,10 +7,13 @@ import {
   type HarnessDetail,
   type HarnessDraft,
   type HarnessSummary,
+  type StepCheck,
+  type StepCheckView,
+  type StepView,
 } from '@agent-office/shared'
 import { ValidationError } from './errors.ts'
 import { detectConflicts } from './harness-conflicts.ts'
-import type { Harness, HarnessRule, RuleSource, ValidationGate } from './harness-types.ts'
+import type { FlowStep, Harness, HarnessRule, RuleSource, ValidationGate } from './harness-types.ts'
 
 export type NewId = (prefix: string) => string
 
@@ -49,9 +52,23 @@ function buildRules(
   })
 }
 
-function buildGates(d: Parsed, newId: NewId, known: Set<string>): ValidationGate[] {
-  return d.gates.map((g) => ({
-    id: g.id && known.has(g.id) ? g.id : newId('gat'),
+/** Builds gates; `remap` collects draft gate ids that got a fresh id (template or unknown ids). */
+function buildGates(
+  d: Parsed,
+  newId: NewId,
+  known: Set<string>,
+  remap: Map<string, string>,
+): ValidationGate[] {
+  return d.gates.map((g) => {
+    const id = g.id && known.has(g.id) ? g.id : newId('gat')
+    if (g.id && g.id !== id) remap.set(g.id, id)
+    return gateOf(g, id)
+  })
+}
+
+function gateOf(g: Parsed['gates'][number], id: string): ValidationGate {
+  return {
+    id,
     name: g.name,
     argv: [...g.argv],
     ...(g.subdir ? { subdir: g.subdir } : {}),
@@ -59,7 +76,36 @@ function buildGates(d: Parsed, newId: NewId, known: Set<string>): ValidationGate
     required: g.required,
     ...(g.platforms ? { platforms: [...g.platforms] } : {}),
     ...(g.pinFiles ? { pinFiles: [...g.pinFiles] } : {}),
+  }
+}
+
+/** Steps keep known ids; gate checks follow the gate id remap (a template's gate gets a fresh id). */
+function buildSteps(
+  d: Parsed,
+  newId: NewId,
+  known: Set<string>,
+  remap: Map<string, string>,
+): FlowStep[] {
+  return d.steps.map((s) => ({
+    id: s.id && known.has(s.id) ? s.id : newId('stp'),
+    name: s.name,
+    goal: s.goal,
+    ...(s.instructions ? { instructions: s.instructions } : {}),
+    ...(s.roles?.length ? { roles: [...s.roles] } : {}),
+    exit: s.exit.map((c): StepCheck => {
+      if (c.kind === 'gate') return { kind: 'gate', gateId: remap.get(c.gateId) ?? c.gateId }
+      if (c.kind === 'artifact') return { kind: 'artifact', path: c.path, mustExist: c.mustExist }
+      if (c.kind === 'report') return c.note ? { kind: 'report', note: c.note } : { kind: 'report' }
+      return { kind: 'approval', prompt: c.prompt }
+    }),
+    ...(s.policies?.length ? { policies: s.policies.map((p) => ({ ...p })) } : {}),
+    optional: s.optional,
   }))
+}
+
+/** `steps`/`flowMode` only when the draft has steps (older records stay unchanged). */
+function flowOf(steps: FlowStep[], d: Parsed): Pick<Harness, 'steps' | 'flowMode'> {
+  return steps.length ? { steps, flowMode: d.flowMode } : {}
 }
 
 function fields(d: Parsed) {
@@ -83,13 +129,16 @@ export function createHarness(
   o: { id: string; now: number; newId: NewId; sources?: ReadonlyMap<string, RuleSource> },
 ): Harness {
   const d = parse(draft)
+  const remap = new Map<string, string>()
+  const gates = buildGates(d, o.newId, new Set(), remap)
   return {
     id: o.id,
     version: 1,
     ...fields(d),
     status: 'draft',
     rules: buildRules(d, o.newId, new Map(), o.sources),
-    gates: buildGates(d, o.newId, new Set()),
+    gates,
+    ...flowOf(buildSteps(d, o.newId, new Set(), remap), d),
     createdAt: o.now,
     updatedAt: o.now,
   }
@@ -100,7 +149,9 @@ export function reviseHarness(h: Harness, draft: HarnessDraft, now: number, newI
   if (h.status === 'archived') throw new ValidationError('this harness is archived')
   const d = parse(draft)
   const rules = buildRules(d, newId, new Map(h.rules.map((r) => [r.id, r])))
-  const gates = buildGates(d, newId, new Set(h.gates.map((g) => g.id)))
+  const remap = new Map<string, string>()
+  const gates = buildGates(d, newId, new Set(h.gates.map((g) => g.id)), remap)
+  const steps = buildSteps(d, newId, new Set((h.steps ?? []).map((s) => s.id)), remap)
   return {
     id: h.id,
     version: h.status === 'published' ? h.version + 1 : h.version,
@@ -108,6 +159,7 @@ export function reviseHarness(h: Harness, draft: HarnessDraft, now: number, newI
     status: 'draft',
     rules,
     gates,
+    ...flowOf(steps, d),
     createdAt: h.createdAt,
     updatedAt: now,
   }
@@ -115,8 +167,12 @@ export function reviseHarness(h: Harness, draft: HarnessDraft, now: number, newI
 
 export function publishHarness(h: Harness, now: number): Harness {
   if (h.status !== 'draft') throw new ValidationError(`this harness is ${h.status}`)
-  if (!h.rules.length && !h.gates.length)
-    throw new ValidationError('a harness needs at least one rule or gate')
+  if (!h.rules.length && !h.gates.length && !h.steps?.length)
+    throw new ValidationError('a harness needs at least one rule, gate or step')
+  const gateIds = new Set(h.gates.map((g) => g.id))
+  for (const s of h.steps ?? [])
+    if (s.exit.some((c) => c.kind === 'gate' && !gateIds.has(c.gateId)))
+      throw new ValidationError(`step “${s.name.slice(0, 60)}” checks a gate this harness lacks`)
   if (detectConflicts(h.rules).some((c) => c.kind === 'policy-opposite'))
     throw new ValidationError('resolve the policy conflicts before publishing')
   return { ...h, status: 'published', publishedAt: now, updatedAt: now }
@@ -144,6 +200,7 @@ export function toHarnessSummary(h: Harness, projectIds: string[]): HarnessSumma
     launchPolicy: h.launchPolicy,
     ruleCount: h.rules.length,
     gateCount: h.gates.length,
+    stepCount: h.steps?.length ?? 0,
     enforcement,
     projectIds: [...projectIds],
     createdAt: h.createdAt,
@@ -165,5 +222,52 @@ export function toHarnessDetail(
     rules: h.rules.map((r) => ({ ...r, ...(r.source ? { source: { ...r.source } } : {}) })),
     gates: h.gates.map((g) => ({ ...g, argv: [...g.argv] })),
     conflicts,
+    ...(h.steps?.length
+      ? {
+          steps: h.steps.map((s, i) => toStepView(s, i, h.gates)),
+          flowMode: h.flowMode ?? 'sequential',
+        }
+      : {}),
+  }
+}
+
+export const REPORT_LABEL = 'The agent reports it done'
+
+/** One line per exit check: the prompt, the gate name, the path, or the note. */
+export function checkLabel(c: StepCheck, gates: Pick<ValidationGate, 'id' | 'name'>[]): string {
+  switch (c.kind) {
+    case 'approval':
+      return c.prompt
+    case 'gate':
+      return gates.find((g) => g.id === c.gateId)?.name ?? c.gateId
+    case 'artifact':
+      return c.mustExist === false ? `${c.path} (must not exist)` : c.path
+    case 'report':
+      return c.note || REPORT_LABEL
+  }
+}
+
+export function toStepView(
+  s: FlowStep,
+  index: number,
+  gates: Pick<ValidationGate, 'id' | 'name'>[],
+): StepView {
+  return {
+    id: s.id,
+    index,
+    name: s.name,
+    goal: s.goal,
+    ...(s.instructions ? { instructions: s.instructions } : {}),
+    ...(s.roles?.length ? { roles: [...s.roles] } : {}),
+    exit: s.exit.map((c): StepCheckView => {
+      const label = checkLabel(c, gates)
+      if (c.kind === 'gate') return { kind: c.kind, label, gateId: c.gateId }
+      if (c.kind === 'artifact')
+        return { kind: c.kind, label, path: c.path, mustExist: c.mustExist !== false }
+      if (c.kind === 'approval') return { kind: c.kind, label, prompt: c.prompt }
+      return { kind: c.kind, label }
+    }),
+    ...(s.policies?.length ? { policies: s.policies.map((p) => ({ ...p })) } : {}),
+    optional: s.optional,
   }
 }

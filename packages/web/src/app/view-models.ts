@@ -7,6 +7,7 @@ import {
   GRAPHICS_QUALITIES,
   PERMISSION_MODES,
   STATUS_COLORS,
+  questionInReply,
   type Agent,
   type AgentStatus,
   type Capability,
@@ -25,6 +26,7 @@ import {
   type SessionCap,
   type PermissionMode,
   type PermissionRequestVM,
+  type Question,
   type Settings,
   type StartResult,
   type TestEventResult,
@@ -200,8 +202,12 @@ export interface PanelVM {
   /** Mode/model pills and session controls (Claude Code and agents that report a mode). */
   session: SessionHeaderVM | null
   composer: ComposerVM
-  /** The first pending permission request of a managed session. */
+  /** The first pending permission request of a managed session (never a question). */
   permission: PermissionCardVM | null
+  /** The question card: managed (answerable) or observed (read-only); null when none. */
+  question: QuestionVM | null
+  /** What a screen reader hears when it changes ("The agent is asking you: …"); '' when quiet. */
+  live: string
   /** Draft text for this agent (restored into the input when the panel opens on it). */
   draftText: string
   /** Details | Harness tabs: only on agents that work on a project (docs/harness.md). */
@@ -212,6 +218,8 @@ export interface PanelVM {
 
 export interface ThreadItemVM {
   id: string
+  /** Local lines ("You answered: …") never reach the agent. */
+  local?: true
   from: ChatMessage['from']
   text: string
   stateLabel?: string
@@ -228,6 +236,16 @@ export interface PanelInput {
   draft?: Draft
   /** Provider statuses (labels for the observation-only copy). */
   providers?: ProviderStatus[]
+  /** Lines the renderer adds after a question was answered ("You answered: …"). */
+  answered?: AnsweredLine[]
+  /** The active flow step of this session (from its Harness inspection). */
+  step?: { index: number; total: number; name: string }
+}
+
+export interface AnsweredLine {
+  id: string
+  ts: number
+  text: string
 }
 
 export interface UsedChips {
@@ -289,10 +307,30 @@ export function panelVM(
       thread: [],
       session: null,
       permission: null,
+      question: null,
+      live: '',
       ...session,
     }
   const parent = a.parentId ? state.agents.get(a.parentId) : undefined
-  const activity = info ? activityLabel(info.activity, info) : undefined
+  const answerable = !!a.managed && (!a.caps || a.caps.includes('approve-tools'))
+  const requests = answerable ? (state.permissions?.get(id) ?? []) : []
+  const question = questionVM(requests, a.managed ? undefined : a.question)
+  const approvalRule = requests.find((r) => r.rule && !r.question)?.rule?.name
+  const msgs = state.messages.get(id) ?? []
+  const last = msgs[msgs.length - 1]
+  const asked =
+    !question && last?.from === 'agent' && (a.status === 'waiting' || a.status === 'idle')
+      ? questionInReply(last.text)
+      : undefined
+  const base = info ? activityLabel(info.activity, info) : undefined
+  const activity = nowLine({
+    base,
+    room: info?.room,
+    question: !!question,
+    asked,
+    approvalRule,
+    step: input.step,
+  })
   return {
     id,
     provider: a.provider,
@@ -319,21 +357,185 @@ export function panelVM(
     ...(a.parentId ? { parent: { id: a.parentId, name: parent?.name ?? a.parentId } } : {}),
     hint: hintFor(a, input.hook),
     ...(used && (used.adapters.length || used.library.length) ? { used } : {}),
-    thread: (state.messages.get(id) ?? []).map((m) => ({
+    thread: threadOf(msgs, input.answered),
+    session: sessionHeaderVM(a, input.models, !!input.allowBypass),
+    permission: answerable ? permissionVM(requests) : null,
+    question,
+    live: liveOf(question, approvalRule),
+    ...session,
+  }
+}
+
+/** The thread: chat messages with the renderer's own "You answered" lines merged in by time. */
+function threadOf(msgs: ChatMessage[], answered: AnsweredLine[] = []): ThreadItemVM[] {
+  const items: { ts: number; vm: ThreadItemVM }[] = msgs.map((m) => ({
+    ts: m.ts,
+    vm: {
       id: m.id,
       from: m.from,
       text: m.text,
       ...(m.from === 'user' ? { stateLabel: STATE_LABEL[m.state] } : {}),
       ...(m.context?.length ? { context: m.context } : {}),
-    })),
-    session: sessionHeaderVM(a, input.models, !!input.allowBypass),
-    permission:
-      a.managed && (!a.caps || a.caps.includes('approve-tools'))
-        ? permissionVM(state.permissions?.get(id) ?? [])
-        : null,
-    ...session,
+    },
+  }))
+  for (const l of answered) {
+    const at = items.findIndex((x) => x.ts > l.ts)
+    const entry = {
+      ts: l.ts,
+      vm: { id: l.id, local: true as const, from: 'system' as const, text: l.text },
+    }
+    if (at < 0) items.push(entry)
+    else items.splice(at, 0, entry)
+  }
+  return items.map((x) => x.vm)
+}
+
+/** The "Now" row: a question, an approval or the flow step explain more than the room does. */
+function nowLine(i: {
+  base: string | undefined
+  room: string | undefined
+  question: boolean
+  asked: string | undefined
+  approvalRule: string | undefined
+  step: PanelInput['step']
+}): string | undefined {
+  const q = SESSION_COPY.question
+  if (i.question) {
+    const booth = i.room?.startsWith('booth-') ? `booth ${i.room.slice('booth-'.length)}` : ''
+    return booth ? q.nowAskingIn(booth) : q.nowAsking
+  }
+  if (i.approvalRule) return q.nowApproval(i.approvalRule)
+  if (i.asked) return q.nowAsked(i.asked)
+  const step = i.step ? q.nowStep(i.step.index, i.step.total, i.step.name) : undefined
+  if (step) return i.base ? `${i.base} · ${step}` : step
+  return i.base
+}
+
+function liveOf(question: QuestionVM | null, approvalRule: string | undefined): string {
+  const q = SESSION_COPY.question
+  const first = question?.prompts[0]?.question
+  if (first) return q.liveAsking(first.length > 80 ? `${first.slice(0, 79)}…` : first)
+  return approvalRule ? q.liveApproval(approvalRule) : ''
+}
+
+// ---------------------------------------------------------------------------------------------
+// The question card (docs/harness.md §8): AskUserQuestion, answerable when managed, read-only when
+// observed. Selection state lives in the DOM adapter; validity and the answers are pure.
+
+export interface QuestionOptionVM {
+  /** The option's label, also the value stored in the answers. */
+  label: string
+  description: string
+}
+export interface QuestionPromptVM {
+  index: number
+  header: string
+  question: string
+  multi: boolean
+  /** Radio/checkbox group name: `pq-<index>`. */
+  name: string
+  options: QuestionOptionVM[]
+  /** Id of the "Other…" text field: `pq-other-<index>`. */
+  otherId: string
+}
+export interface QuestionVM {
+  source: 'managed' | 'observed'
+  /** The permission request that carries the question (managed only). */
+  requestId?: string
+  title: string
+  prompts: QuestionPromptVM[]
+  /** "1 of 2" when several question requests wait. */
+  counter?: string
+  /** Observed sessions: where to answer. */
+  hint?: string
+  labels: {
+    answer: string
+    decline: string
+    other: string
+    otherPlaceholder: string
+    multi: string
   }
 }
+/** What the user has chosen for one prompt. */
+export interface QuestionSelection {
+  picked: string[]
+  otherOn: boolean
+  other: string
+}
+
+const promptsOf = (q: Question): QuestionPromptVM[] =>
+  q.prompts.map((p, i) => ({
+    index: i,
+    header: p.header,
+    question: p.question,
+    multi: p.multiSelect,
+    name: `pq-${i}`,
+    options: p.options.map((o) => ({ label: o.label, description: o.description })),
+    otherId: `pq-other-${i}`,
+  }))
+
+/** The first pending question card (managed), or the agent's own question (observed). */
+export function questionVM(
+  requests: PermissionRequestVM[],
+  observed?: Question,
+): QuestionVM | null {
+  const c = SESSION_COPY.question
+  const labels = {
+    answer: c.answer,
+    decline: c.decline,
+    other: c.other,
+    otherPlaceholder: c.otherPlaceholder,
+    multi: c.multiHint,
+  }
+  const asks = requests.filter((r) => r.question)
+  const first = asks[0]
+  if (first?.question)
+    return {
+      source: 'managed',
+      requestId: first.id,
+      title: c.title,
+      prompts: promptsOf(first.question),
+      ...(asks.length > 1 && { counter: c.counter(1, asks.length) }),
+      labels,
+    }
+  if (observed)
+    return {
+      source: 'observed',
+      title: c.title,
+      prompts: promptsOf(observed),
+      hint: c.observedHint,
+      labels,
+    }
+  return null
+}
+
+export const emptySelection = (prompts: QuestionPromptVM[]): QuestionSelection[] =>
+  prompts.map(() => ({ picked: [], otherOn: false, other: '' }))
+
+/** question text → chosen labels joined by ", " (or the free text); null while a prompt is unanswered. */
+export function answersOf(
+  prompts: QuestionPromptVM[],
+  sel: QuestionSelection[],
+): Record<string, string> | null {
+  const out: Record<string, string> = {}
+  for (const p of prompts) {
+    const s = sel[p.index]
+    if (!s) return null
+    const other = s.otherOn ? s.other.trim().slice(0, 500) : ''
+    const parts = p.multi
+      ? [...s.picked, ...(other ? [other] : [])]
+      : other
+        ? [other]
+        : s.picked.slice(0, 1)
+    if (!parts.length) return null
+    out[p.question] = parts.join(', ')
+  }
+  return out
+}
+
+/** The thread line after answering: "You answered: A · B". */
+export const answeredLine = (answers: Record<string, string>): string =>
+  SESSION_COPY.question.answered(Object.values(answers).join(' · '))
 
 // ---------------------------------------------------------------------------------------------
 // Managed sessions: header, composer, Use… menu, permission card, new-session dialog (plan §2.1–2.4)
@@ -563,7 +765,9 @@ export function addContext(
 }
 
 /** The permission card: one request at a time, with a counter when several wait. */
-export function permissionVM(requests: PermissionRequestVM[]): PermissionCardVM | null {
+export function permissionVM(all: PermissionRequestVM[]): PermissionCardVM | null {
+  // Questions have their own card (`questionVM`); they are never allowed for the session.
+  const requests = all.filter((r) => !r.question)
   const request = requests[0]
   if (!request) return null
   return {
@@ -571,7 +775,8 @@ export function permissionVM(requests: PermissionRequestVM[]): PermissionCardVM 
     ...(requests.length > 1 && {
       counter: SESSION_COPY.permission.counter(1, requests.length),
     }),
-    allowSessionLabel: SESSION_COPY.permission.allowSession(request.tool),
+    // A harness `ask` is one-off: no "Allow for this session" (empty label hides the button).
+    allowSessionLabel: request.rule ? '' : SESSION_COPY.permission.allowSession(request.tool),
   }
 }
 
@@ -662,7 +867,12 @@ export function newSessionVM(
       canAddContext: !starting && attachAvailable && form.context.length < MAX_CONTEXT,
       canAddUse: !starting && form.use.length < MAX_USE,
     },
-    canStart: !!form.folder && !!form.text.trim() && !starting && !limit,
+    canStart:
+      !!form.folder &&
+      !!form.text.trim() &&
+      !starting &&
+      !limit &&
+      !(opts.harness?.visible && opts.harness.warning?.blocked),
     ...(opts.harness?.visible && { harness: opts.harness }),
     starting,
     ...(opts.error && { error: opts.error }),

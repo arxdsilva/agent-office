@@ -5,7 +5,11 @@
 import type {
   ActionRule,
   AppliesTo,
+  CheckState,
   Completion,
+  FlowMode,
+  StepCheck,
+  StepState,
   ConflictView,
   Coverage,
   Enforcement,
@@ -63,6 +67,20 @@ export interface ValidationGate {
   pinFiles?: string[]
 }
 
+/** One step of a flow (docs/harness.md §2a). `exit` checks must ALL pass to leave it. */
+export interface FlowStep {
+  /** `stp_…`, stable across versions. */
+  id: string
+  name: string
+  goal: string
+  instructions?: string
+  roles?: string[]
+  exit: StepCheck[]
+  /** Restrictions active only while this step is current. */
+  policies?: ActionRule[]
+  optional: boolean
+}
+
 /**
  * One version of a harness. Every version is kept (`harness:id:version` in the catalog partition);
  * a published version is immutable and an edit opens `version + 1` as a draft.
@@ -81,6 +99,9 @@ export interface Harness {
   retryBudget: number
   rules: HarnessRule[]
   gates: ValidationGate[]
+  /** The flow; absent or empty = standards only. */
+  steps?: FlowStep[]
+  flowMode?: FlowMode
   createdAt: number
   updatedAt: number
   publishedAt?: number
@@ -113,6 +134,8 @@ export interface PolicyAction {
   provider?: ProviderId
   /** `main` or a subagent type. */
   agentRole?: string
+  /** The session's current flow step (step-scoped policies apply). */
+  stepId?: string
 }
 
 export interface PolicyDecision {
@@ -174,6 +197,9 @@ export interface EffectiveHarness {
   rules: HarnessRule[]
   policies: PolicyRule[]
   gates: ValidationGate[]
+  /** Flow steps in Applied order across the attached harnesses (empty = no flow). */
+  steps?: FlowStep[]
+  flowMode?: FlowMode
   /** The rendered instruction block (harness-instructions.ts). */
   instructions: string
   conflicts: ConflictView[]
@@ -208,6 +234,26 @@ export interface HarnessSnapshot {
   effective: EffectiveHarness
   report: EnforcementReport
   createdAt: number
+}
+
+/** One session's progress through its flow (`s/<ses>`, record `flow-progress`). */
+export interface FlowProgress {
+  /** `fpg_…` */
+  id: string
+  sessionId: string
+  agentId: string
+  projectId: string
+  harnessVersion: string
+  mode: FlowMode
+  current: string | null
+  steps: {
+    stepId: string
+    state: StepState
+    checks: CheckState[]
+    doneAt?: number
+    by?: 'agent' | 'user' | 'checks'
+  }[]
+  updatedAt: number
 }
 
 // ── Audit and validation records ───────────────────────────────────────────────────────────────

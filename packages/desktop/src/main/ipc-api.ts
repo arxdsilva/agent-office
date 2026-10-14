@@ -17,6 +17,7 @@ import {
   type ProviderHooks,
   type Scheduler,
   type SettingsManagement,
+  type HarnessFlow,
   type HarnessImport,
   type HarnessManagement,
   type HarnessPolicyEngine,
@@ -29,6 +30,9 @@ import {
   AgentIdArgsSchema,
   AnswerArgsSchema,
   CoverageArgsSchema,
+  FlowSkipArgsSchema,
+  FlowStepArgsSchema,
+  HarnessReorderArgsSchema,
   HarnessAttachArgsSchema,
   HarnessDraftSchema,
   HarnessIdArgsSchema,
@@ -115,6 +119,7 @@ export interface HarnessPorts {
   harnessImport: HarnessImport
   policy: HarnessPolicyEngine
   validation: HarnessValidation
+  flow: HarnessFlow
 }
 
 /** The driving ports the renderer may reach through IPC — nothing concrete. */
@@ -374,7 +379,8 @@ export function createIpcHandlers(p: IpcPorts): Record<string, IpcHandler> {
     [IPC.sessStop]: async (args: unknown) => sessions.stop(call(SessionCallSchema, args).agentId),
     [IPC.sessAnswer]: async (args: unknown) => {
       const a = call(AnswerArgsSchema, args)
-      sessions.answer(a.agentId, a.requestId, a.decision)
+      if (a.answers) sessions.answer(a.agentId, a.requestId, a.decision, a.answers)
+      else sessions.answer(a.agentId, a.requestId, a.decision)
     },
   }
 }
@@ -561,6 +567,24 @@ function projectHandlers(
       prj.validation.cancel(a.agentId)
     }),
     [IPC.hrnBadges]: guard(() => prj.policy.badges()),
+    [IPC.hrnReorder]: h(HarnessReorderArgsSchema, (a) =>
+      prj.harness.reorder(a.projectId, a.harnessIds),
+    ),
+    // Flow (docs/harness.md §2a): user actions on steps; agents report through MCP only.
+    [IPC.hrnFlow]: h(AgentIdArgsSchema, (a) => prj.flow.progress(a.agentId)),
+    [IPC.hrnFlowApprove]: h(FlowStepArgsSchema, (a) => {
+      if (a.checkIndex === undefined) throw new ValidationError('checkIndex required')
+      return prj.flow.approve({ agentId: a.agentId, stepId: a.stepId, checkIndex: a.checkIndex })
+    }),
+    [IPC.hrnFlowMarkDone]: h(FlowStepArgsSchema, (a) =>
+      prj.flow.markDone({ agentId: a.agentId, stepId: a.stepId }),
+    ),
+    [IPC.hrnFlowSkip]: h(FlowSkipArgsSchema, (a) =>
+      prj.flow.skip({ agentId: a.agentId, stepId: a.stepId, confirmed: a.confirmed }),
+    ),
+    [IPC.hrnFlowReopen]: h(FlowStepArgsSchema, (a) =>
+      prj.flow.reopen({ agentId: a.agentId, stepId: a.stepId }),
+    ),
   }
 }
 

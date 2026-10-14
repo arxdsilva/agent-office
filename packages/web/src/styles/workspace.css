@@ -1541,3 +1541,14 @@ body .banner {
     right: 412px;
   }
 }
+
+/* Harness drags over the sidebar's project rows (docs/harness.md §7). */
+.sb-proj.drop-target .sb-item {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.sb-proj.drop-reject .sb-item {
+  box-shadow: inset 0 0 0 2px var(--error);
+}
+.sb-proj.just-dropped .sb-item {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}

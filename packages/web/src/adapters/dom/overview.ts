@@ -1,6 +1,7 @@
 // OverviewView port → `#ws-overview`: what needs the user's attention across every project.
 import type { OverviewCardVM, OverviewVM, WorkspaceAction } from '../../app/workspace/types.ts'
 import type { OverviewView } from '../../workspace-ports.ts'
+import type { OverviewApprovalVM } from '../../app/workspace/overview-vm.ts'
 import { el } from './el.ts'
 import { Signal, dot, need, notice, textButton, vmButton } from './ws-kit.ts'
 
@@ -55,11 +56,23 @@ export class DomOverview implements OverviewView {
   private card(c: OverviewCardVM): HTMLLIElement {
     const li = el('li', undefined, `item-card ${`tone-${c.tone}`}`)
     li.dataset.cardId = c.id
+    const flow = c as Partial<OverviewApprovalVM>
+    if (flow.stepId && flow.agentId) {
+      li.classList.add('ov-approval')
+      li.dataset.agentId = flow.agentId
+      li.dataset.stepId = flow.stepId
+    }
     const body = el('div', undefined, 'item-body')
     const title = el('div', undefined, 'item-title')
     title.append(dot(c.tone), el('span', c.title))
     body.append(title, el('p', c.detail, 'item-detail muted'))
     li.append(body)
+    if (flow.approve) {
+      const a = flow.approve.action
+      const approve = textButton(flow.approve.label, 'small primary', () => this.action.emit(a))
+      approve.dataset.action = 'approve'
+      li.append(approve)
+    }
     if (c.action) {
       const a = c.action
       li.append(textButton(c.actionLabel ?? 'Open', 'small', () => this.action.emit(a)))

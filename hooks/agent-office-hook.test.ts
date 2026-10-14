@@ -355,3 +355,54 @@ describe('script (child process)', () => {
     expect(garbage).toEqual({ code: 0, stdout: '' })
   })
 })
+
+describe('handle (UserPromptSubmit) with a flow step', () => {
+  const step = { name: 'Plan the change', goal: 'Write the plan' }
+  const line = 'Current flow step: Plan the change — Write the plan'
+
+  it('adds one step line, after any messages', async () => {
+    const { f } = fakeFetch({ [INBOX]: { messages: [{ text: 'use staging' }], step } })
+    const ctx = JSON.parse(
+      await handle({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }, deps(f)),
+    ).hookSpecificOutput.additionalContext
+    expect(ctx).toContain('- use staging')
+    expect(ctx.trim().endsWith(line)).toBe(true)
+  })
+
+  it('emits just the step line when no messages are queued', async () => {
+    const { f } = fakeFetch({ [INBOX]: { messages: [], step } })
+    const out = JSON.parse(
+      await handle({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }, deps(f)),
+    )
+    expect(out.hookSpecificOutput.additionalContext).toBe(line)
+  })
+
+  it('stays silent without a step, and ignores a malformed one', async () => {
+    for (const body of [
+      { messages: [] },
+      { messages: [], step: { name: 5, goal: 'x' } },
+      { messages: [], step: 'nope' },
+    ]) {
+      const { f } = fakeFetch({ [INBOX]: body })
+      expect(await handle({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }, deps(f))).toBe(
+        '',
+      )
+    }
+  })
+
+  it('caps the name at 80 and the goal at 200 characters, on one line', async () => {
+    const { f } = fakeFetch({
+      [INBOX]: { messages: [], step: { name: 'n'.repeat(300), goal: `g\n${'g'.repeat(500)}` } },
+    })
+    const ctx = JSON.parse(
+      await handle({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }, deps(f)),
+    ).hookSpecificOutput.additionalContext as string
+    expect(ctx).toBe(`Current flow step: ${'n'.repeat(80)} — g ${'g'.repeat(198)}`)
+  })
+
+  it('does not add the step to the Stop decision', async () => {
+    const { f } = fakeFetch({ [INBOX]: { messages: [{ text: 'hi' }], step } })
+    const out = await handle({ hook_event_name: 'Stop', session_id: 's1' }, deps(f))
+    expect(out).not.toContain('Current flow step')
+  })
+})

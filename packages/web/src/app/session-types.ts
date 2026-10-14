@@ -110,6 +110,8 @@ export interface NewSessionHarnessVM {
   /** "Team standards v2" per attached harness. */
   names: string[]
   rulesLine: string
+  /** The flow this session would follow: its name line and the first step. */
+  flow?: { line: string; first: string }
   /** The six coverage rows for the picked provider. */
   coverage: EnforcementReportVM | null
   /** A strict harness blocks the runtime, or required rules are only partly enforced. */

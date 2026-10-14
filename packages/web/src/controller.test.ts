@@ -21,6 +21,7 @@ import {
 import {
   byProviderAndTopic,
   type Agent,
+  type FlowProgressView,
   type HarnessBadge,
   type ProjectMessage,
 } from '@agent-office/shared'
@@ -33,6 +34,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureManifest } from './app/__fixtures__/manifest.ts'
 import { LEAVE_MS } from './app/behavior.ts'
+import type { RosterInput } from './app/hierarchy-types.ts'
 import type { AgentPlan, BuildingLayout, Link } from './app/office-types.ts'
 import type { HudVM, PanelVM, SettingsVM } from './app/view-models.ts'
 import type { NewSessionVM, UseMenuVM } from './app/session-types.ts'
@@ -105,6 +107,14 @@ const connInfo = (over: Partial<ConnectionInfo> = {}): ConnectionInfo => ({
 
 /** The projects API (docs/projects.md): inert in these tests; the workspace controller has its own. */
 /** Harness mocks shared by the projects stub; rebuilt for every gateway. */
+const flowProgress = (): FlowProgressView => ({
+  harnessVersion: 'v',
+  mode: 'sequential',
+  current: null,
+  steps: [],
+  done: 0,
+  total: 0,
+})
 let hx = harnessMocks()
 function harnessMocks() {
   return {
@@ -116,6 +126,10 @@ function harnessMocks() {
     inspect: vi.fn(async (agentId: string) => inspection({ agentId })),
     cancelGates: vi.fn(async () => {}),
     badges: vi.fn(async (): Promise<HarnessBadge[]> => []),
+    flowApprove: vi.fn(async () => flowProgress()),
+    flowMarkDone: vi.fn(async () => flowProgress()),
+    flowSkip: vi.fn(async () => flowProgress()),
+    flowReopen: vi.fn(async () => flowProgress()),
   }
 }
 const projectsStub = (): AgentOfficeApi['projects'] => {
@@ -177,6 +191,12 @@ const projectsStub = (): AgentOfficeApi['projects'] => {
       runGates: never,
       cancelGates: hx.cancelGates,
       badges: hx.badges,
+      reorder: never,
+      flow: vi.fn(async () => null),
+      flowApprove: hx.flowApprove,
+      flowMarkDone: hx.flowMarkDone,
+      flowSkip: hx.flowSkip,
+      flowReopen: hx.flowReopen,
     },
   }
 }
@@ -298,7 +318,7 @@ function fakeViews() {
   const on = (name: string) => (fn: (...a: any[]) => void) => void (handlers[name] = fn)
   const scene: SceneView & {
     wallModes: string[]
-    rosters: { agents: Agent[]; now: number; harness?: HarnessBadge[] }[]
+    rosters: RosterInput[]
     loads: string[]
     wentTo: string[]
     idleMs: number
@@ -441,6 +461,8 @@ function fakeViews() {
     onPickCapability: on('chip'),
     onTab: on('panelTab'),
     onHarnessAction: on('harnessAction'),
+    onAnswerQuestion: on('answerQuestion'),
+    onFlowAction: on('flowAction'),
   }
   const hud: HudView & { vm: HudVM | null; badge: boolean | null; wallMode: string | null } = {
     vm: null,
@@ -2843,5 +2865,189 @@ describe('controller: Harness (Compliance Inspector)', () => {
     t.handlers.nsChange!({ text: 'go' })
     await t.handlers.nsStart!()
     expect(t.newSession.vm?.error).toBe('A strict harness blocks this runtime: No path rules here')
+  })
+})
+
+describe('controller: questions and flow steps', () => {
+  const managed = agent('cc:m', {
+    provider: 'claude-code',
+    status: 'waiting',
+    projectId: 'prj_atlas000001',
+    managed: { chrome: false, pending: 1, phase: 'running', modelId: 'sonnet' },
+  })
+  const question = {
+    prompts: [
+      {
+        question: 'Which database?',
+        header: 'DB',
+        options: [{ label: 'SQLite', description: '' }],
+        multiSelect: false,
+      },
+    ],
+  }
+  const ask = (id = 'perm_0123456789') => ({
+    id,
+    tool: 'AskUserQuestion',
+    summary: 'Which database?',
+    question,
+  })
+
+  it('shows a managed question card and answers it with the chosen labels', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    t.push({ type: 'permission', agentId: 'cc:m', requests: [ask()] })
+    expect(t.panel.vm?.question).toMatchObject({ source: 'managed', requestId: 'perm_0123456789' })
+    expect(t.panel.vm?.permission).toBeNull()
+    await t.handlers.answerQuestion!('perm_0123456789', { 'Which database?': 'SQLite' })
+    expect(t.api.sessions.answer).toHaveBeenCalledWith('cc:m', 'perm_0123456789', 'allow', {
+      'Which database?': 'SQLite',
+    })
+    // The thread keeps a local line (renderer-only).
+    expect(t.panel.vm?.thread.at(-1)).toMatchObject({
+      local: true,
+      text: 'You answered: SQLite',
+    })
+  })
+
+  it('declining a question sends deny and leaves a local line', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    t.push({ type: 'permission', agentId: 'cc:m', requests: [ask()] })
+    await t.handlers.answer!('perm_0123456789', 'deny')
+    expect(t.api.sessions.answer).toHaveBeenCalledWith('cc:m', 'perm_0123456789', 'deny')
+    expect(t.panel.vm?.thread.at(-1)?.text).toBe('You declined to answer.')
+  })
+
+  it('shows an observed session question read-only', async () => {
+    const t = await setup(undefined, undefined, {
+      agents: [agent('o', { status: 'waiting', question })],
+    })
+    t.handlers.pick!('o')
+    expect(t.panel.vm?.question).toMatchObject({ source: 'observed' })
+    expect(t.panel.vm?.question?.requestId).toBeUndefined()
+  })
+
+  it('stepper buttons call the flow API and refresh the inspection', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    await t.flush()
+    hx.inspect.mockClear()
+    await t.handlers.flowAction!({ action: 'approve', stepId: 'stp_outline', checkIndex: 1 })
+    expect(hx.flowApprove).toHaveBeenCalledWith({
+      agentId: 'cc:m',
+      stepId: 'stp_outline',
+      checkIndex: 1,
+    })
+    expect(hx.inspect).toHaveBeenCalledWith('cc:m')
+    await t.handlers.flowAction!({ action: 'mark-done', stepId: 'stp_outline' })
+    expect(hx.flowMarkDone).toHaveBeenCalledWith({ agentId: 'cc:m', stepId: 'stp_outline' })
+    await t.handlers.flowAction!({ action: 'skip', stepId: 'stp_outline', confirmed: true })
+    expect(hx.flowSkip).toHaveBeenCalledWith({
+      agentId: 'cc:m',
+      stepId: 'stp_outline',
+      confirmed: true,
+    })
+    await t.handlers.flowAction!({ action: 'reopen', stepId: 'stp_outline' })
+    expect(hx.flowReopen).toHaveBeenCalledWith({ agentId: 'cc:m', stepId: 'stp_outline' })
+  })
+
+  it('a failing flow call rejects so the panel can say so', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    hx.flowApprove.mockRejectedValueOnce(new Error('/secret/path failed'))
+    await expect(
+      t.handlers.flowAction!({ action: 'approve', stepId: 'stp_x', checkIndex: 0 }),
+    ).rejects.toThrow()
+  })
+
+  it('the Harness tab badge counts pending asks and the Details "Now" line names the rule', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m')
+    t.handlers.panelTab!('harness')
+    await t.flush()
+    // inspection() reports 2 blocked actions: they predate the panel, so they do not count.
+    expect(t.panel.vm?.tabs?.badge).toBeUndefined()
+    t.push({
+      type: 'permission',
+      agentId: 'cc:m',
+      requests: [
+        {
+          id: 'perm_0123456789',
+          tool: 'Bash',
+          summary: 'git push',
+          rule: { id: 'rul_a', name: 'No pushes' },
+        },
+      ],
+    })
+    expect(t.panel.vm?.tabs?.badge).toBe('1')
+    expect(t.panel.vm?.harness?.pending).toHaveLength(1)
+    expect(t.panel.vm?.meta.find(([k]) => k === 'Now')?.[1] ?? t.panel.vm?.activity).toBe(
+      'Needs approval: No pushes',
+    )
+  })
+
+  it('a long list of blocked actions expands with Show more', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    const events = Array.from({ length: 12 }, (_, i) => ({
+      id: `hev_${i}`,
+      ts: i,
+      kind: 'action-denied' as const,
+      ruleIds: [],
+      tool: 'Edit',
+      summary: 'x',
+    }))
+    hx.inspect.mockResolvedValue(inspection({ agentId: 'cc:m', events }))
+    t.handlers.pick!('cc:m')
+    t.handlers.panelTab!('harness')
+    await t.flush()
+    expect(t.panel.vm?.harness?.denied).toHaveLength(10)
+    t.handlers.harnessAction!('toggle-denied')
+    expect(t.panel.vm?.harness?.denied).toHaveLength(12)
+  })
+
+  it('Minimal harness pill: picking with the harness tab opens the panel on it', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.handlers.pick!('cc:m', 'harness')
+    await t.flush()
+    expect(t.panel.vm?.tabs?.active).toBe('harness')
+    expect(hx.inspect).toHaveBeenCalledWith('cc:m')
+    // A plain pick still opens Details, and agents outside a project have no Harness tab.
+    t.handlers.pick!('cc:m')
+    expect(t.panel.vm?.tabs?.active).toBe('harness') // same agent: the tab stays
+  })
+
+  it('feeds the roster what each agent waits on', async () => {
+    const t = await setup(undefined, undefined, { agents: [managed] })
+    t.push({
+      type: 'permission',
+      agentId: 'cc:m',
+      requests: [
+        {
+          id: 'perm_0123456789',
+          tool: 'Bash',
+          summary: 'x',
+          rule: { id: 'rul_a', name: 'No pushes' },
+        },
+      ],
+    })
+    expect(t.scene.rosters.at(-1)?.attention).toEqual({
+      'cc:m': { kind: 'approval', text: 'No pushes' },
+    })
+  })
+
+  it('looks up New Session harness coverage 150 ms after the provider settles', async () => {
+    const ws = harnessBridge()
+    const t = await setup(undefined, undefined, { workspace: ws })
+    t.handlers.newSession!()
+    await t.flush()
+    t.handlers.nsChange!({ projectId: 'prj_atlas000001' })
+    await t.flush()
+    hx.coverage.mockClear()
+    t.handlers.nsChange!({ provider: 'codex' })
+    await t.flush()
+    expect(hx.coverage).not.toHaveBeenCalled()
+    t.fire(150)
+    await t.flush()
+    expect(hx.coverage).toHaveBeenCalledWith('prj_atlas000001', 'codex')
   })
 })

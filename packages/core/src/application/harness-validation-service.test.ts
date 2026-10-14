@@ -233,6 +233,30 @@ describe('HarnessValidationService', () => {
     })
   })
 
+  it('HV-flow: a passing gate passes the matching gate check of the active step; a failure fails it', async () => {
+    const runner = new Runner()
+    const draft: HarnessDraft = {
+      name: 'Release',
+      gates: [{ id: 'gat_tmplcheck', name: 'Check', argv: ['make', 'check'] }],
+      steps: [
+        { name: 'Tests', goal: 'Green', exit: [{ kind: 'gate', gateId: 'gat_tmplcheck' }] },
+        { name: 'Tag', goal: 'Tagged', exit: [{ kind: 'report' }] },
+      ],
+    }
+    const { h, v, sent } = await setup({ runner, draft })
+    runner.results.set('make check', 'fail')
+    await v.run({ agentId: 'cc:s1' })
+    await tick()
+    expect(h.projects.flow.progress('cc:s1')!.steps[0]!.checks[0]!.state).toBe('fail')
+    runner.results.set('make check', 'pass')
+    await v.run({ agentId: 'cc:s1' })
+    await tick()
+    const p = h.projects.flow.progress('cc:s1')!
+    expect(p.steps.map((s) => s.state)).toEqual(['done', 'active'])
+    expect(p.steps[0]!.by).toBe('checks')
+    expect(sent.at(-1)?.text).toMatch(/^Step 2 of 2 is now active: Tag/)
+  })
+
   it('CancelController', () => {
     const c = new CancelController()
     let n = 0

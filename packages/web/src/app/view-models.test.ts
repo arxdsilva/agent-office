@@ -14,7 +14,11 @@ import {
   emptyPhase,
   emptyStateVM,
   addContext,
+  answeredLine,
+  answersOf,
+  emptySelection,
   graphicsVM,
+  questionVM,
   composerVM,
   hintFor,
   hookVM,
@@ -1255,5 +1259,212 @@ describe('settingsVM: hardware acceleration toggle', () => {
   it('offers the toggle except on macOS', () => {
     expect(settingsVM(base).showHardwareAcceleration).toBe(true)
     expect(settingsVM({ ...base, isMac: true }).showHardwareAcceleration).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Questions (docs/harness.md §8)
+const Q1 = {
+  prompts: [
+    {
+      question: 'Which database?',
+      header: 'Database',
+      options: [
+        { label: 'Postgres', description: 'Relational' },
+        { label: 'SQLite', description: 'Embedded' },
+      ],
+      multiSelect: false,
+    },
+  ],
+}
+const Q2 = {
+  prompts: [
+    ...Q1.prompts,
+    {
+      question: 'Which checks?',
+      header: 'Checks',
+      options: [
+        { label: 'Lint', description: '' },
+        { label: 'Types', description: '' },
+      ],
+      multiSelect: true,
+    },
+  ],
+}
+const qreq = (id: string, question = Q1) => ({
+  id,
+  tool: 'AskUserQuestion',
+  summary: question.prompts[0]!.question,
+  question,
+})
+
+describe('questionVM', () => {
+  it('builds a managed card from the first question request with ids for the DOM', () => {
+    const vm = questionVM([qreq('perm_1', Q2)])!
+    expect(vm).toMatchObject({
+      source: 'managed',
+      requestId: 'perm_1',
+      title: 'The agent is asking you',
+    })
+    expect(vm.counter).toBeUndefined()
+    expect(vm.prompts.map((p) => [p.index, p.name, p.otherId, p.multi])).toEqual([
+      [0, 'pq-0', 'pq-other-0', false],
+      [1, 'pq-1', 'pq-other-1', true],
+    ])
+    expect(vm.prompts[0]!.options[0]).toEqual({ label: 'Postgres', description: 'Relational' })
+  })
+
+  it('queues several questions with "1 of 2" and skips plain permissions', () => {
+    const plain = { id: 'perm_0', tool: 'Bash', summary: 'ls' }
+    const vm = questionVM([plain, qreq('perm_1'), qreq('perm_2')])!
+    expect(vm.requestId).toBe('perm_1')
+    expect(vm.counter).toBe('1 of 2')
+    expect(questionVM([plain])).toBeNull()
+  })
+
+  it('shows an observed question read-only with where to answer', () => {
+    const vm = questionVM([], Q1)!
+    expect(vm.source).toBe('observed')
+    expect(vm.requestId).toBeUndefined()
+    expect(vm.hint).toBe('Answer in the Claude Code terminal; the office updates when you do.')
+    expect(questionVM([])).toBeNull()
+  })
+})
+
+describe('answersOf', () => {
+  const prompts = questionVM([qreq('perm_1', Q2)])!.prompts
+  it('is null until every prompt has a choice', () => {
+    const sel = emptySelection(prompts)
+    expect(answersOf(prompts, sel)).toBeNull()
+    sel[0]!.picked = ['Postgres']
+    expect(answersOf(prompts, sel)).toBeNull()
+  })
+
+  it('joins multi-select labels and keys answers by question text', () => {
+    const sel = emptySelection(prompts)
+    sel[0]!.picked = ['SQLite']
+    sel[1]!.picked = ['Lint', 'Types']
+    expect(answersOf(prompts, sel)).toEqual({
+      'Which database?': 'SQLite',
+      'Which checks?': 'Lint, Types',
+    })
+  })
+
+  it('uses free text for Other, alone for single and appended for multi; blank other is empty', () => {
+    const sel = emptySelection(prompts)
+    sel[0]!.picked = ['Postgres']
+    sel[0]!.otherOn = true
+    sel[0]!.other = '  DuckDB '
+    sel[1]!.picked = ['Lint']
+    sel[1]!.otherOn = true
+    sel[1]!.other = 'Format'
+    expect(answersOf(prompts, sel)).toEqual({
+      'Which database?': 'DuckDB',
+      'Which checks?': 'Lint, Format',
+    })
+    sel[0]!.other = '   '
+    expect(answersOf(prompts, sel)?.['Which database?']).toBe('Postgres')
+    sel[1]!.picked = []
+    sel[1]!.other = ''
+    expect(answersOf(prompts, sel)).toBeNull()
+  })
+
+  it('writes the thread line from the labels', () => {
+    expect(answeredLine({ 'Which database?': 'SQLite', 'Which checks?': 'Lint, Types' })).toBe(
+      'You answered: SQLite · Lint, Types',
+    )
+  })
+})
+
+describe('permissionVM: questions and harness asks', () => {
+  const plain = { id: 'perm_1', tool: 'Bash', summary: 'ls' }
+  it('never shows a question as a permission card', () => {
+    expect(permissionVM([qreq('perm_q')])).toBeNull()
+    expect(permissionVM([qreq('perm_q'), plain])!.request.id).toBe('perm_1')
+    expect(permissionVM([qreq('perm_q'), plain])!.counter).toBeUndefined()
+  })
+  it('a harness ask is one-off: no session-wide allow label', () => {
+    const ask = { ...plain, rule: { id: 'rul_a', name: 'No pushes' } }
+    expect(permissionVM([ask])!.allowSessionLabel).toBe('')
+    expect(permissionVM([plain])!.allowSessionLabel).toBe('Always allow Bash this session')
+  })
+})
+
+describe('panelVM: questions, Now line, live text, answered lines', () => {
+  const managed = (over: Partial<Agent> = {}) =>
+    agent({
+      status: 'waiting',
+      managed: {
+        phase: 'running',
+        mode: 'default',
+        model: 'm',
+        modes: undefined,
+      } as unknown as Agent['managed'],
+      ...over,
+    })
+  const withRequests = (
+    a: Agent,
+    requests: ReturnType<typeof qreq>[],
+    messages: ChatMessage[] = [],
+  ) => applyMessage(stateWith([a], messages), { type: 'permission', agentId: a.id, requests })
+  const now = (vm: ReturnType<typeof panelVM>) => vm.meta.find(([k]) => k === 'Now')?.[1]
+
+  it('exposes a managed question card, a "Now" line and an announcement', () => {
+    const a = managed()
+    const vm = panelVM(withRequests(a, [qreq('perm_1')]), 'a', 100_000, {
+      activity: 'booth' as never,
+      room: 'booth-3',
+    })
+    expect(vm.question).toMatchObject({ source: 'managed', requestId: 'perm_1' })
+    expect(vm.permission).toBeNull()
+    expect(now(vm)).toBe('Asking you a question in booth 3')
+    expect(vm.live).toBe('The agent is asking you: Which database?')
+  })
+
+  it('shows an observed question read-only', () => {
+    const vm = panelVM(stateWith([agent({ status: 'waiting', question: Q1 })]), 'a', 100_000)
+    expect(vm.question).toMatchObject({ source: 'observed' })
+    expect(now(vm)).toBe('Asking you a question')
+  })
+
+  it('"Now" says what was asked in a plain reply, a rule that needs approval, or the step', () => {
+    const a = agent({ status: 'waiting' })
+    const asked = panelVM(
+      stateWith([a], [msg({ from: 'agent', text: 'Done. Shall I deploy it?', ts: 5 })]),
+      'a',
+      100_000,
+      { activity: 'booth', room: 'booth-1' },
+    )
+    expect(now(asked)).toBe('Asked: Shall I deploy it?')
+    const ask = {
+      id: 'perm_9',
+      tool: 'Bash',
+      summary: 'git push',
+      rule: { id: 'rul_a', name: 'No pushes' },
+    }
+    const mg = managed()
+    const approval = panelVM(
+      applyMessage(stateWith([mg]), { type: 'permission', agentId: 'a', requests: [ask] }),
+      'a',
+      100_000,
+    )
+    expect(now(approval)).toBe('Needs approval: No pushes')
+    expect(approval.live).toBe('The agent needs your approval: No pushes')
+    const step = panelVM(stateWith([agent()]), 'a', 100_000, { activity: 'desk-work' }, undefined, {
+      step: { index: 3, total: 5, name: 'Review' },
+    })
+    expect(now(step)).toBe('Working at their desk · Step 3/5: Review')
+  })
+
+  it('merges "You answered" lines into the thread by time', () => {
+    const state = stateWith(
+      [agent()],
+      [msg({ id: 'm1', from: 'agent', ts: 10 }), msg({ id: 'm2', from: 'agent', ts: 30 })],
+    )
+    const vm = panelVM(state, 'a', 100_000, undefined, undefined, {
+      answered: [{ id: 'answered-1', ts: 20, text: 'You answered: SQLite' }],
+    })
+    expect(vm.thread.map((t) => t.id)).toEqual(['m1', 'answered-1', 'm2'])
+    expect(vm.thread[1]).toMatchObject({ local: true, from: 'system' })
   })
 })

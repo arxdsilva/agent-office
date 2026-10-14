@@ -2,6 +2,7 @@
 import type { SearchHit } from '@agent-office/shared'
 import type { WorkspaceState } from './state.ts'
 import type { PaletteItemVM, PaletteVM, WorkspaceAction } from './types.ts'
+import { HARNESS_COPY } from './harness-copy.ts'
 import { WS_COPY } from './workspace-copy.ts'
 
 const P = WS_COPY.palette
@@ -12,7 +13,10 @@ interface Cmd {
   action: WorkspaceAction
 }
 
-export function paletteCommands(s: Pick<WorkspaceState, 'projects' | 'projectId'>): Cmd[] {
+export function paletteCommands(
+  s: Pick<WorkspaceState, 'projects' | 'projectId'> &
+    Partial<Pick<WorkspaceState, 'harness' | 'overview'>>,
+): Cmd[] {
   const pid = s.projectId ?? undefined
   const cmds: Cmd[] = [
     {
@@ -67,6 +71,12 @@ export function paletteCommands(s: Pick<WorkspaceState, 'projects' | 'projectId'
       keywords: 'harness rules standards policy gates compliance',
       action: { type: 'open-harnesses', projectId: pid },
     },
+    {
+      id: 'harness-new',
+      label: HARNESS_COPY.palette.newHarness,
+      keywords: 'harness create new flow standards rules',
+      action: { type: 'harness-new' },
+    },
     ...(pid
       ? [
           {
@@ -120,6 +130,31 @@ export function paletteCommands(s: Pick<WorkspaceState, 'projects' | 'projectId'
       action: { type: 'open-office' },
     },
   ]
+  for (const h of s.harness?.list ?? []) {
+    cmds.push({
+      id: `harness:${h.id}`,
+      label: HARNESS_COPY.palette.harness(h.name),
+      keywords: `harness flow edit ${h.name} ${h.description ?? ''}`,
+      action: { type: 'harness-edit', harnessId: h.id },
+    })
+  }
+  // Flow approvals waiting on the user, for the selected project (one click, logged by main).
+  if (pid) {
+    for (const a of s.overview?.flowApprovals ?? []) {
+      if (a.projectId !== pid) continue
+      cmds.push({
+        id: `approve:${a.agentId}:${a.stepId}:${a.checkIndex}`,
+        label: HARNESS_COPY.palette.approve(a.prompt),
+        keywords: `approve approval flow step ${a.stepName} ${a.agentName}`,
+        action: {
+          type: 'flow-approve',
+          agentId: a.agentId,
+          stepId: a.stepId,
+          checkIndex: a.checkIndex,
+        },
+      })
+    }
+  }
   for (const p of s.projects.filter((x) => !x.archived)) {
     cmds.push({
       id: `project:${p.id}`,

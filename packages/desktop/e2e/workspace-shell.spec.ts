@@ -46,6 +46,7 @@ test('workspace shell: office first, palette, pane switching, persisted sidebar,
       ['#sb-overview', '#ws-overview'],
       ['#sb-sessions', '#ws-sessions'],
       ['#sb-memory', '#ws-memory'],
+      ['#sb-harness', '#ws-harness'],
     ] as const) {
       await win.locator(btn).click()
       await expect(win.locator(pane)).toBeVisible()

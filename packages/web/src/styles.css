@@ -1263,3 +1263,117 @@ button.link:focus-visible,
     animation: none;
   }
 }
+
+/* Agent question card (#p-question), flow stepper (.ih-steps) and Overview flow approvals */
+.question-card {
+  border: 1px solid var(--accent, #4f8cff);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  background: var(--card);
+}
+.question-card[hidden] {
+  display: none;
+}
+.question-card[data-source='observed'] {
+  border-style: dashed;
+}
+.pq-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pq-prompt {
+  margin: 8px 0;
+}
+.pq-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pq-question {
+  margin: 0;
+  font-weight: 600;
+}
+.pq-options {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.pq-option label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.pq-desc {
+  grid-column: 2;
+}
+.pq-option input[type='text'],
+.pq-options > li > input[type='text'] {
+  width: 100%;
+  margin-left: 22px;
+  max-width: calc(100% - 22px);
+}
+.pq-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ih-steps {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.ih-step {
+  border-left: 3px solid var(--border, #8a8f98);
+  padding: 4px 0 4px 10px;
+  margin: 0 0 8px;
+}
+.ih-step[data-state='done'] {
+  border-left-color: var(--good, #3fb950);
+}
+.ih-step[data-state='active'],
+.ih-step[aria-current='step'] {
+  border-left-color: var(--accent, #4f8cff);
+}
+.ih-step[data-state='skipped'] {
+  opacity: 0.7;
+}
+.ih-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ih-goal {
+  margin: 2px 0;
+}
+.ih-checks {
+  list-style: none;
+  margin: 2px 0;
+  padding: 0;
+}
+.ih-check[data-state='pass'] {
+  color: var(--good, #3fb950);
+}
+.ih-check[data-state='fail'] {
+  color: var(--bad, #f85149);
+}
+.ih-check[data-state='waiting-user'] {
+  color: var(--warn);
+}
+.ih-step-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.ov-approval .item-body {
+  min-width: 0;
+}
+.ov-approval {
+  gap: 6px;
+}

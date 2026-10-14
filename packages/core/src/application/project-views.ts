@@ -41,6 +41,7 @@ export function projectSummary(
     openTasks,
     ...(last !== undefined ? { lastActivityAt: last } : {}),
     archived: p.archivedAt !== undefined,
+    harnessIds: (p.harnesses ?? []).map((h) => h.harnessId),
   }
 }
 

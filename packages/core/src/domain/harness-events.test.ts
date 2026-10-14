@@ -79,3 +79,21 @@ describe('harness events', () => {
     expect(redactSummary(s)).not.toContain(secret)
   })
 })
+
+describe('question privacy (docs/harness.md §8)', () => {
+  it('never stores the question text in the audit summary', () => {
+    const e = newHarnessEvent({
+      id: 'hev_q',
+      projectId: 'prj_a',
+      sessionId: 'ses_a',
+      agentId: 'cc:a',
+      ts: 1,
+      kind: 'action-allowed',
+      ruleIds: [],
+      tool: 'AskUserQuestion',
+      input: { questions: [{ question: 'Deploy SECRET-Q now?', options: [{ label: 'Yes' }] }] },
+    })
+    expect(JSON.stringify(e)).not.toContain('SECRET-Q')
+    expect(e.detail.summary).toBe('Asked you a question')
+  })
+})

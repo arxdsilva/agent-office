@@ -12,6 +12,8 @@ export const RuleIdSchema = z.string().regex(/^rul_[a-z0-9]{6,24}$/)
 export const GateIdSchema = z.string().regex(/^gat_[a-z0-9]{6,24}$/)
 /** A candidate in an import preview (not persisted). */
 export const TempIdSchema = z.string().regex(/^cand_[a-z0-9]{1,24}$/)
+/** A flow step inside a harness. */
+export const StepIdSchema = z.string().regex(/^stp_[a-z0-9]{6,24}$/)
 export const PreviewIdSchema = z.string().regex(/^prv_[a-z0-9]{6,24}$/)
 
 // ── Enums ──────────────────────────────────────────────────────────────────────────────────────
@@ -24,6 +26,13 @@ export const RULE_CATEGORIES = [
   'workflow',
   'tools',
   'completion',
+  // Flows for any kind of work (docs/harness.md §2a), not only engineering.
+  'process',
+  'content',
+  'research',
+  'communication',
+  'compliance',
+  'other',
 ] as const
 export type RuleCategory = (typeof RULE_CATEGORIES)[number]
 
@@ -73,7 +82,15 @@ export const GATE_STATUSES = ['running', 'pass', 'fail', 'timeout', 'cancelled',
 export type GateStatus = (typeof GATE_STATUSES)[number]
 
 /** Validation state of a session's work against its current harness version. */
-export const VERIFICATION = ['not-run', 'running', 'failed', 'verified', 'stale'] as const
+export const VERIFICATION = [
+  'not-run',
+  'running',
+  'failed',
+  'verified',
+  'stale',
+  /** Every gate passed but required flow steps remain. */
+  'flow-incomplete',
+] as const
 export type Verification = (typeof VERIFICATION)[number]
 
 /** Shown next to the provider's own lifecycle state; never replaces it. */
@@ -99,6 +116,11 @@ export const HARNESS_EVENT_KINDS = [
   'validation-failed',
   'harness-updated',
   'exception-approved',
+  // Flow progress (docs/harness.md §2a).
+  'step-started',
+  'step-done',
+  'step-skipped',
+  'approval-granted',
 ] as const
 export type HarnessEventKind = (typeof HARNESS_EVENT_KINDS)[number]
 
@@ -190,6 +212,42 @@ export const RuleDraftSchema = z.object({
 })
 export type RuleDraft = z.input<typeof RuleDraftSchema>
 
+/** How a flow's steps are followed: one active step at a time, or a checklist in any order. */
+export const FLOW_MODES = ['sequential', 'free'] as const
+export type FlowMode = (typeof FLOW_MODES)[number]
+
+export const STEP_CHECK_KINDS = ['approval', 'gate', 'artifact', 'report'] as const
+export type StepCheckKind = (typeof STEP_CHECK_KINDS)[number]
+/** An exit check of a step: ALL checks must pass to leave it. */
+export const StepCheckSchema = z.discriminatedUnion('kind', [
+  /** The user clicks Approve (Inspector or Overview). */
+  z.object({ kind: z.literal('approval'), prompt: z.string().trim().min(1).max(200) }),
+  /** One of the harness's gates has a fresh pass. */
+  z.object({ kind: z.literal('gate'), gateId: GateIdSchema }),
+  /** A repo-relative glob matches (or not) a file; checked by the trusted runner (stat only). */
+  z.object({ kind: z.literal('artifact'), path: Glob, mustExist: z.boolean().default(true) }),
+  /** The agent reports the step done (`report_step` MCP tool, or the user marks it). */
+  z.object({ kind: z.literal('report'), note: z.string().trim().max(200).optional() }),
+])
+export type StepCheck = z.infer<typeof StepCheckSchema>
+
+export const StepDraftSchema = z.object({
+  /** Present when editing an existing step (keeps its progress history). */
+  id: StepIdSchema.optional(),
+  name: z.string().trim().min(1).max(80),
+  /** What is true when the step is done. */
+  goal: z.string().trim().min(1).max(600),
+  instructions: z.string().trim().max(2000).optional(),
+  /** `main` or subagent types that own the step; absent = everyone. */
+  roles: z.array(Word).max(20).optional(),
+  exit: z.array(StepCheckSchema).min(1).max(6),
+  /** Restrictions active only while this step is current (deny-wins with the harness rules). */
+  policies: z.array(ActionRuleSchema).max(20).optional(),
+  /** The user may skip it without confirming. */
+  optional: z.boolean().default(false),
+})
+export type StepDraft = z.input<typeof StepDraftSchema>
+
 export const HarnessDraftSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(400).optional(),
@@ -201,6 +259,9 @@ export const HarnessDraftSchema = z.object({
   retryBudget: z.number().int().min(0).max(5).default(2),
   rules: z.array(RuleDraftSchema).max(200).default([]),
   gates: z.array(GateDraftSchema).max(32).default([]),
+  /** The flow: ordered steps with checkpoints (docs/harness.md §2a). Empty = standards only. */
+  steps: z.array(StepDraftSchema).max(24).default([]),
+  flowMode: z.enum(FLOW_MODES).default('sequential'),
 })
 export type HarnessDraft = z.input<typeof HarnessDraftSchema>
 
@@ -246,6 +307,28 @@ export interface GateView {
   pinFiles?: string[]
 }
 
+export interface StepCheckView {
+  kind: StepCheckKind
+  /** One line: the prompt, the gate name, the path, or the note. */
+  label: string
+  gateId?: string
+  path?: string
+  mustExist?: boolean
+  prompt?: string
+}
+
+export interface StepView {
+  id: string
+  index: number
+  name: string
+  goal: string
+  instructions?: string
+  roles?: string[]
+  exit: StepCheckView[]
+  policies?: ActionRule[]
+  optional: boolean
+}
+
 export interface ConflictView {
   /** Same text twice; a never/always pair; opposite policy effects on one target (deny wins). */
   kind: 'duplicate' | 'negation' | 'policy-opposite'
@@ -264,6 +347,8 @@ export interface HarnessSummary {
   launchPolicy: LaunchPolicy
   ruleCount: number
   gateCount: number
+  /** Flow steps (0 = standards only). */
+  stepCount?: number
   /** Rules per enforcement level. */
   enforcement: Record<Enforcement, number>
   /** Projects this harness is attached to. */
@@ -280,6 +365,8 @@ export interface HarnessDetail extends HarnessSummary {
   rules: HarnessRuleView[]
   gates: GateView[]
   conflicts: ConflictView[]
+  steps?: StepView[]
+  flowMode?: FlowMode
 }
 
 export interface HarnessTemplateView {
@@ -323,12 +410,23 @@ export interface ImportGateSuggestion {
   rejected?: string
 }
 
+/** An ordered list item found under a workflow/process/checklist heading. Suggested only. */
+export interface ImportStepSuggestion {
+  tempId: string
+  index: number
+  name: string
+  goal: string
+  source: RuleSourceView
+}
+
 export interface ImportPreview {
   previewId: string
   projectId: string
   sources: ImportSourceView[]
   candidates: ImportCandidateView[]
   gates: ImportGateSuggestion[]
+  /** Step suggestions in document order (absent for sources without lists). */
+  steps?: ImportStepSuggestion[]
   conflicts: ConflictView[]
   totals: { rules: number; byCategory: Record<RuleCategory, number>; conflicts: number }
 }
@@ -357,6 +455,9 @@ export interface EffectiveHarnessView {
   fsIsolation: FsIsolation
   /** Length of the instruction block the agent receives. */
   instructionsChars: number
+  /** The flow steps in Applied order across attached harnesses. */
+  steps?: StepView[]
+  flowMode?: FlowMode
 }
 
 /** What a session of `provider` on this project would get: for the New Session dialog. */
@@ -395,6 +496,34 @@ export interface GateResultView {
   harnessVersion: string
 }
 
+export const STEP_STATES = ['pending', 'active', 'done', 'skipped'] as const
+export type StepState = (typeof STEP_STATES)[number]
+export const CHECK_STATES = ['pending', 'pass', 'fail', 'waiting-user'] as const
+export type CheckState = (typeof CHECK_STATES)[number]
+
+/** One session's progress through its flow (docs/harness.md §2a). */
+export interface FlowProgressView {
+  harnessVersion: string
+  mode: FlowMode
+  /** The active step in sequential mode; null when done or not started. */
+  current: string | null
+  steps: {
+    stepId: string
+    index: number
+    name: string
+    goal: string
+    state: StepState
+    optional: boolean
+    checks: { index: number; kind: StepCheckKind; label: string; state: CheckState }[]
+    doneAt?: number
+    by?: 'agent' | 'user' | 'checks'
+  }[]
+  done: number
+  total: number
+}
+
+export type { FlowApprovalView } from './projects.ts'
+
 /** The Agent Details → Harness tab. */
 export interface HarnessInspection {
   agentId: string
@@ -411,6 +540,8 @@ export interface HarnessInspection {
   completion: Completion
   retriesLeft?: number
   lastEvent?: HarnessEventView
+  /** Present when the effective harness has steps. */
+  flow?: FlowProgressView
 }
 
 /** Compact per-agent state for Minimal mode and labels. */
@@ -423,6 +554,8 @@ export interface HarnessBadge {
   verification: Verification
   completion: Completion
   denied: number
+  /** The active flow step, when there is a flow. */
+  step?: { index: number; total: number; name: string }
 }
 
 // ── IPC args ───────────────────────────────────────────────────────────────────────────────────
@@ -468,6 +601,11 @@ export const ImportCommitArgsSchema = z.object({
     .optional(),
   /** Gate suggestions to keep (≤ 32); rejected ones are refused. */
   gates: z.array(TempIdSchema).max(32).default([]),
+  /** Step suggestions to keep, in the order chosen, each with its exit check kind (default report). */
+  steps: z
+    .array(z.object({ tempId: TempIdSchema, check: z.enum(STEP_CHECK_KINDS).default('report') }))
+    .max(24)
+    .default([]),
   /** Attach the new draft's project right away (it still has to be published). */
   attach: z.boolean().default(false),
 })
@@ -482,3 +620,24 @@ export const RunGatesArgsSchema = z.object({
 })
 export type RunGatesArgs = z.input<typeof RunGatesArgsSchema>
 export const AgentIdArgsSchema = z.object({ agentId: z.string().min(1).max(200) })
+
+export const HarnessReorderArgsSchema = z.object({
+  projectId: ProjectIdSchema,
+  /** A permutation of the project's attached harness ids (≤ 16 = MAX_HARNESSES). */
+  harnessIds: z.array(HarnessIdSchema).min(1).max(16),
+})
+export type HarnessReorderArgs = z.input<typeof HarnessReorderArgsSchema>
+export const FlowStepArgsSchema = z.object({
+  agentId: z.string().min(1).max(200),
+  stepId: StepIdSchema,
+  /** For `approve`: which exit check of the step (index in `exit`). */
+  checkIndex: z.number().int().min(0).max(5).optional(),
+})
+export type FlowStepArgs = z.input<typeof FlowStepArgsSchema>
+export const FlowSkipArgsSchema = z.object({
+  agentId: z.string().min(1).max(200),
+  stepId: StepIdSchema,
+  /** Required to skip a non-optional step (the UI asks first). */
+  confirmed: z.boolean().default(false),
+})
+export type FlowSkipArgs = z.input<typeof FlowSkipArgsSchema>

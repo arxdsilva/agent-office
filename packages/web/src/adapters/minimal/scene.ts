@@ -31,7 +31,7 @@ export class MinimalScene implements SceneView {
   private roster: RosterInput | null = null
   private opts: HierarchyOpts = { activeOnly: false, showFinished: true }
   private frame = 0
-  private pickFn: (id: string | null) => void = () => {}
+  private pickFn: (id: string | null, tab?: 'harness') => void = () => {}
   private selected: string | null = null
 
   constructor(
@@ -43,7 +43,7 @@ export class MinimalScene implements SceneView {
         this.opts = o
         this.schedule()
       },
-      onPick: (id) => this.pickFn(id),
+      onPick: (id, tab) => this.pickFn(id, tab),
     })
   }
 
@@ -78,7 +78,7 @@ export class MinimalScene implements SceneView {
     this.view.select(id)
   }
 
-  onPick(fn: (id: string | null) => void): void {
+  onPick(fn: (id: string | null, tab?: 'harness') => void): void {
     this.pickFn = fn
   }
 

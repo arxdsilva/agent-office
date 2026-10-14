@@ -1,5 +1,6 @@
 // The shell: sidebar, project list and top bar.
 import type { ProviderState, ProviderStatus } from '@agent-office/shared'
+import { dropIntent } from './harness-dnd.ts'
 import type { WorkspaceState } from './state.ts'
 import type { ShellVM, SidebarItemVM, SidebarTarget, Tone } from './types.ts'
 import { WS_COPY } from './workspace-copy.ts'
@@ -17,9 +18,11 @@ const ACTIVE_FOR: Record<string, SidebarTarget | null> = {
   office: 'office',
   sessions: 'sessions',
   memory: 'memory',
+  harness: 'harness',
   context: null,
   project: null,
 }
+const SIDEBAR = ['overview', 'office', 'sessions', 'memory', 'harness'] as const
 
 export function notificationCount(s: Pick<WorkspaceState, 'overview'>): number {
   const o = s.overview
@@ -41,24 +44,50 @@ export function shellVM(
   const active = ACTIVE_FOR[s.view] ?? null
   const o = s.overview
   const counts: Record<SidebarTarget, number> = {
-    overview: notificationCount(s),
+    // Flow approvals (overview-vm's flowApprovalCount; not imported: overview-vm imports this file).
+    overview: notificationCount(s) + (o?.flowApprovals?.length ?? 0),
     office: 0,
     sessions: o?.unassignedSessions ?? 0,
     memory: o?.pendingApprovals ?? 0,
+    harness: s.harness.list.filter((h) => h.status === 'draft').length,
   }
-  const sidebar: SidebarItemVM[] = (['overview', 'office', 'sessions', 'memory'] as const).map(
-    (id) => ({ id, label: WS_COPY.nav[id], active: active === id, count: counts[id] }),
-  )
+  const sidebar: SidebarItemVM[] = SIDEBAR.map((id) => ({
+    id,
+    label: WS_COPY.nav[id],
+    active: active === id,
+    count: counts[id],
+  }))
+  const h = s.harness
+  // Only a library card can be dropped on a project (attach to that project).
+  const drag = h.drag?.source === 'library' ? h.drag : null
+  const attached = (pid: string): string[] =>
+    s.projects.find((p) => p.id === pid)?.harnessIds ??
+    h.list.filter((x) => x.projectIds.includes(pid)).map((x) => x.id)
   const projects = s.projects
     .filter((p) => !p.archived)
-    .map((p) => ({
-      projectId: p.id,
-      name: p.name,
-      color: p.color,
-      active: s.projectId === p.id,
-      count: p.activeAgents,
-      pending: p.pendingMemories,
-    }))
+    .map((p) => {
+      const intent = drag
+        ? dropIntent(
+            drag,
+            { kind: 'project', projectId: p.id },
+            { scopeProjectId: h.projectId, applied: [], library: [], attached },
+          )
+        : null
+      const over = drag?.over?.kind === 'project' && drag.over.projectId === p.id
+      return {
+        projectId: p.id,
+        name: p.name,
+        color: p.color,
+        active: s.projectId === p.id,
+        count: p.activeAgents,
+        pending: p.pendingMemories,
+        ...(intent && {
+          dropTarget: intent.kind === 'attach' ? ('ok' as const) : ('reject' as const),
+        }),
+        ...(over && { dropHover: true }),
+        ...(h.justDropped === p.id && { justDropped: true }),
+      }
+    })
   const cur = s.projects.find((p) => p.id === s.projectId)
   const vault: ShellVM['topbar']['vault'] = {
     status: s.vault,

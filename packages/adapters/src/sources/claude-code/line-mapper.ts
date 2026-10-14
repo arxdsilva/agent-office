@@ -1,5 +1,11 @@
 import { basename, posix } from 'node:path'
-import { PermissionModeSchema, type AgentEvent, type AgentStatus } from '@agent-office/shared'
+import {
+  PermissionModeSchema,
+  questionFromToolInput,
+  type AgentEvent,
+  type AgentStatus,
+  type Question,
+} from '@agent-office/shared'
 
 const PROVIDER = 'claude-code'
 const SNIPPET = 80
@@ -15,6 +21,8 @@ export interface ParseContext {
   cwds: Map<string, number>
   /** Where Claude Code keeps user rules, skills and memory; without it those aren't recognized. */
   paths: ClaudePaths
+  /** Pending `AskUserQuestion` tool_use id per agent id; its tool_result clears the question. */
+  questions: Map<string, string>
 }
 
 export interface ClaudePaths {
@@ -30,10 +38,13 @@ export const newParseContext = (paths: ClaudePaths = {}): ParseContext => ({
   lastTs: new Map(),
   cwds: new Map(),
   paths,
+  questions: new Map(),
 })
 
 type Block = {
   type?: string
+  id?: string
+  tool_use_id?: string
   name?: string
   input?: Record<string, unknown> & { description?: unknown }
   is_error?: boolean
@@ -138,6 +149,7 @@ const CONTROLS = /[\u0000-\u001f\u007f-\u009f]+/g
 const TASK = 120
 const clean = (s: string) => s.replace(/\s+/g, ' ').replace(CONTROLS, '').trim().slice(0, TASK)
 const snippet = (s: unknown) => (typeof s === 'string' ? s.slice(0, SNIPPET) : '')
+const ASKING = 'Asking you a question'
 
 /**
  * Maps one transcript line to an agent event. Pure apart from `ctx`, which carries what earlier
@@ -179,11 +191,26 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
   let text = ''
   const cwd = typeof d.cwd === 'string' && d.cwd ? d.cwd : undefined
   if (cwd) ctx.cwds.set(cwd, Math.max(ts, ctx.cwds.get(cwd) ?? 0))
+  const sidechain = d.isSidechain && typeof d.agentId === 'string'
+  const agentId = sidechain ? `cc:${d.agentId}` : `cc:${sessionId}`
+  // `AskUserQuestion` is the one tool whose input is read (bounded by QuestionSchema); every other
+  // input stays unread apart from the description snippet and the target.
+  let question: Question | null | undefined
 
   if (d.type === 'assistant') {
     const uses = blocks.filter((b) => b?.type === 'tool_use')
     const last = uses[uses.length - 1]
-    if (last) {
+    const asked = uses
+      .filter((b) => b.name === 'AskUserQuestion')
+      .map((b) => ({ id: b.id, q: questionFromToolInput(b.input) }))
+      .find((x) => x.q)
+    if (asked?.q) {
+      status = 'waiting'
+      tool = 'AskUserQuestion'
+      text = ASKING
+      question = asked.q
+      if (typeof asked.id === 'string') ctx.questions.set(agentId, asked.id)
+    } else if (last) {
       status = 'tool'
       tool = typeof last.name === 'string' ? last.name.slice(0, 100) : 'tool'
       text = snippet(last.input?.description)
@@ -195,8 +222,15 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
     ) {
       status = 'waiting'
     }
-  } else if (blocks.some((b) => b?.type === 'tool_result' && b.is_error)) {
-    text = 'tool error'
+  } else {
+    if (blocks.some((b) => b?.type === 'tool_result' && b.is_error)) text = 'tool error'
+    const pending = ctx.questions.get(agentId)
+    const results = blocks.filter((b) => b?.type === 'tool_result')
+    // Answered (its tool_result) or abandoned (the user typed a new prompt instead).
+    if (pending && (!results.length || results.some((b) => b.tool_use_id === pending))) {
+      ctx.questions.delete(agentId)
+      question = null
+    }
   }
 
   const cwdName = cwd ? basename(cwd) : 'claude'
@@ -216,11 +250,12 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
     ...(tool ? { tool } : {}),
     ...(target ? { target } : {}),
     ...(model ? { model: model.slice(0, 100) } : {}),
+    ...(question !== undefined ? { question } : {}),
   }
 
-  if (d.isSidechain && typeof d.agentId === 'string') {
+  if (sidechain) {
     const meta = ctx.meta.get(d.agentId)
-    event.agentId = `cc:${d.agentId}`
+    event.agentId = agentId
     event.parentId = `cc:${sessionId}`
     event.name = (meta?.agentType ?? `sub·${d.agentId.slice(0, 6)}`).slice(0, 100)
     if (meta?.agentType) event.kind = meta.agentType.slice(0, 100)
@@ -228,8 +263,8 @@ export function lineToEvent(raw: string, ctx: ParseContext): AgentEvent | null {
       const task = clean(meta.description)
       if (task) event.task = task
     }
-    // A subagent that ends its turn is finished (it is not waiting for a human).
-    if (status === 'waiting') {
+    // A subagent that ends its turn is finished (it is not waiting for a human), unless it asks.
+    if (status === 'waiting' && !question) {
       event.status = 'done'
       event.ended = 'completed'
     }

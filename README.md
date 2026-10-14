@@ -34,7 +34,7 @@ The app opens on the **Overview** once a project exists; the `startView` setting
 
 - **Overview:** every project, the agents waiting for you, recent completions and decisions, pending approvals, unfinished handoffs, unassigned sessions, and whether the vault is encrypted.
 - **Project Dashboard:** one project: active agents, recent activity, completed work, tasks, and knowledge (memory by kind). Actions start an agent, open memory or sessions, or prepare a handoff.
-- **Sidebar:** Overview, Office, Projects, Sessions, Memory, and the project list with counts.
+- **Sidebar:** Overview, Office, Projects, Sessions, Memory, Harnesses, and the project list with counts.
 - **Command palette:** `Cmd+K` (`Ctrl+K` on Windows and Linux) searches projects, sessions and memory, and runs actions.
 
 <table>
@@ -71,12 +71,25 @@ Memory items have a **scope** (`global`, `project`, `session`, and an experiment
 </tr>
 </table>
 
-## Harness Builder — make your agents follow your engineering standards
+## Harness Builder — make your agents follow your flows and standards
 
-A **harness** is a reusable, versioned set of development rules: instructions, runtime restrictions
-(deny or ask before a tool, path or command), validation gates (`make check`, `go test ./...`) and
-completion criteria. Attach one or several to a project and every managed session on it receives the
-applicable rules, whatever the provider.
+A **harness** is a reusable, versioned set of rules and, optionally, a **flow**: instructions, runtime
+restrictions (deny or ask before a tool, path or command), validation gates (`make check`,
+`go test ./...`), ordered steps with checkpoints, and completion criteria. It describes any kind of work:
+a content pipeline (research → outline you approve → draft → review → publish), a research brief, a
+support reply, a release checklist, an incident write-up, as much as a coding task. Attach one or
+several to a project from the **Harnesses** sidebar pane (drag a card onto a project, or onto the
+project's Applied column; drag to reorder precedence) and every managed session on it receives the
+applicable rules and the current step, whatever the provider.
+
+- **Build flows, not just rules.** Steps have a goal, instructions, and exit checks: your approval,
+  a passing gate, a file that must exist, or the agent reporting the step done (through the project
+  MCP tool `report_step`, scoped to its own session). Step-scoped restrictions block actions that belong
+  to a later step where the runtime can intercept. The Inspector shows a stepper with Approve, Mark
+  done, Skip and Re-open; approvals also appear in the Overview.
+- **Questions reach you.** When an agent asks a multiple-choice question (`AskUserQuestion`), Agent
+  Details shows the question card with its options; managed sessions are answered from there, observed
+  ones show it read-only until you answer in the terminal.
 
 - **Import your existing rules.** _Import rules from project_ scans the project's repositories for
   `AGENTS.md`, `CLAUDE.md`, `.claude/rules/**`, Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`),
@@ -664,27 +677,29 @@ while True:
 
 The renderer talks to the main process through `window.agentOffice` (`packages/shared/src/desktop-api.ts`). Changes are additive. The projects methods live under `projects.*`; each maps to a `prj:*` channel (`packages/shared/src/ipc-channels.ts`), and main pushes updates on `prj:push`.
 
-| Method                                                                                         | Channel                                                           | Purpose                                                       |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| `overview()`, `list()`, `dashboard(projectId)`                                                 | `prj:overview`, `prj:list`, `prj:dashboard`                       | Global Overview, project list, one project's dashboard        |
-| `create(args)`, `update(args)`                                                                 | `prj:create`, `prj:update`                                        | Create or edit a project                                      |
-| `addRepos(projectId, folders)`, `removeRepo(projectId, repo)`                                  | `prj:add-repos`, `prj:remove-repo`                                | Link picked folders (opaque `ctx_` refs) as repositories      |
-| `sessions(args)`, `messages(args)`, `assign(sessionId, projectId)`                             | `prj:sessions`, `prj:messages`, `prj:assign`                      | Session Vault list, messages, (re)assignment                  |
-| `memories(args)`, `createMemory(draft)`                                                        | `prj:memories`, `prj:memory-create`                               | List and create memory items                                  |
-| `reviewMemory(id, action)`, `editMemory(args)`                                                 | `prj:memory-review`, `prj:memory-edit`                            | Approve or reject, edit                                       |
-| `supersedeMemory(id, replacement)`, `mergeMemories(ids, into)`                                 | `prj:memory-supersede`, `prj:memory-merge`                        | Replace or merge items                                        |
-| `contextPreview(args)`, `inspect(agentId)`                                                     | `prj:context-preview`, `prj:inspect`                              | Ranked context bundle, Context Inspector                      |
-| `prepareHandoff(args)`, `updateHandoff(args)`, `launchHandoff(handoffId)`                      | `prj:handoff-prepare`, `prj:handoff-update`, `prj:handoff-launch` | Handoff flow                                                  |
-| `search(args)`                                                                                 | `prj:search`                                                      | Deep search across projects, sessions, messages, memory       |
-| `tasks(projectId)`, `createTask(args)`, `updateTask(args)`                                     | `prj:tasks`, `prj:task-create`, `prj:task-update`                 | Tasks and user-confirmed evidence                             |
-| `importHistory(args?)`, `resumeSession(sessionId)` (experimental)                              | `prj:import-history`, `prj:resume`                                | Import past Claude Code sessions; native resume               |
-| `harness.list()`, `harness.get(id)`, `harness.versions(id)`                                    | `hrn:list`, `hrn:get`, `hrn:versions`                             | Harness library and version history                           |
-| `harness.create(draft)`, `harness.update(args)`, `harness.publish(id)`, `harness.archive(id)`  | `hrn:create`, `hrn:update`, `hrn:publish`, `hrn:archive`          | Edit drafts, freeze a version, retire                         |
-| `harness.attach(projectId, id)`, `harness.detach(projectId, id)`                               | `hrn:attach`, `hrn:detach`                                        | Which harnesses a project applies                             |
-| `harness.importDetect(projectId)`, `harness.importPreview(args)`, `harness.importCommit(args)` | `hrn:import-detect`, `hrn:import-preview`, `hrn:import-commit`    | Import rule files into a reviewed draft                       |
-| `harness.coverage(projectId, provider)`, `harness.inspect(agentId)`, `harness.badges()`        | `hrn:coverage`, `hrn:inspect`, `hrn:badges`                       | Enforcement preview, the Compliance Inspector, Minimal badges |
-| `harness.runGates(args)`, `harness.cancelGates(agentId)`                                       | `hrn:run-gates`, `hrn:cancel-gates`                               | Validation through the trusted runner                         |
-| `onPush(cb)`                                                                                   | `prj:push`                                                        | Project updates pushed to the renderer (incl. `harness`)      |
+| Method                                                                                         | Channel                                                                                  | Purpose                                                       |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `overview()`, `list()`, `dashboard(projectId)`                                                 | `prj:overview`, `prj:list`, `prj:dashboard`                                              | Global Overview, project list, one project's dashboard        |
+| `create(args)`, `update(args)`                                                                 | `prj:create`, `prj:update`                                                               | Create or edit a project                                      |
+| `addRepos(projectId, folders)`, `removeRepo(projectId, repo)`                                  | `prj:add-repos`, `prj:remove-repo`                                                       | Link picked folders (opaque `ctx_` refs) as repositories      |
+| `sessions(args)`, `messages(args)`, `assign(sessionId, projectId)`                             | `prj:sessions`, `prj:messages`, `prj:assign`                                             | Session Vault list, messages, (re)assignment                  |
+| `memories(args)`, `createMemory(draft)`                                                        | `prj:memories`, `prj:memory-create`                                                      | List and create memory items                                  |
+| `reviewMemory(id, action)`, `editMemory(args)`                                                 | `prj:memory-review`, `prj:memory-edit`                                                   | Approve or reject, edit                                       |
+| `supersedeMemory(id, replacement)`, `mergeMemories(ids, into)`                                 | `prj:memory-supersede`, `prj:memory-merge`                                               | Replace or merge items                                        |
+| `contextPreview(args)`, `inspect(agentId)`                                                     | `prj:context-preview`, `prj:inspect`                                                     | Ranked context bundle, Context Inspector                      |
+| `prepareHandoff(args)`, `updateHandoff(args)`, `launchHandoff(handoffId)`                      | `prj:handoff-prepare`, `prj:handoff-update`, `prj:handoff-launch`                        | Handoff flow                                                  |
+| `search(args)`                                                                                 | `prj:search`                                                                             | Deep search across projects, sessions, messages, memory       |
+| `tasks(projectId)`, `createTask(args)`, `updateTask(args)`                                     | `prj:tasks`, `prj:task-create`, `prj:task-update`                                        | Tasks and user-confirmed evidence                             |
+| `importHistory(args?)`, `resumeSession(sessionId)` (experimental)                              | `prj:import-history`, `prj:resume`                                                       | Import past Claude Code sessions; native resume               |
+| `harness.list()`, `harness.get(id)`, `harness.versions(id)`                                    | `hrn:list`, `hrn:get`, `hrn:versions`                                                    | Harness library and version history                           |
+| `harness.create(draft)`, `harness.update(args)`, `harness.publish(id)`, `harness.archive(id)`  | `hrn:create`, `hrn:update`, `hrn:publish`, `hrn:archive`                                 | Edit drafts, freeze a version, retire                         |
+| `harness.attach(projectId, id)`, `harness.detach(projectId, id)`                               | `hrn:attach`, `hrn:detach`                                                               | Which harnesses a project applies                             |
+| `harness.importDetect(projectId)`, `harness.importPreview(args)`, `harness.importCommit(args)` | `hrn:import-detect`, `hrn:import-preview`, `hrn:import-commit`                           | Import rule files into a reviewed draft                       |
+| `harness.coverage(projectId, provider)`, `harness.inspect(agentId)`, `harness.badges()`        | `hrn:coverage`, `hrn:inspect`, `hrn:badges`                                              | Enforcement preview, the Compliance Inspector, Minimal badges |
+| `harness.runGates(args)`, `harness.cancelGates(agentId)`                                       | `hrn:run-gates`, `hrn:cancel-gates`                                                      | Validation through the trusted runner                         |
+| `harness.reorder(projectId, ids)`                                                              | `hrn:reorder`                                                                            | Applied order (precedence, flow order)                        |
+| `harness.flow(agentId)`, `harness.flowApprove/flowMarkDone/flowSkip/flowReopen(args)`          | `hrn:flow`, `hrn:flow-approve`, `hrn:flow-mark-done`, `hrn:flow-skip`, `hrn:flow-reopen` | A session's flow progress and the user's step actions         |
+| `onPush(cb)`                                                                                   | `prj:push`                                                                               | Project updates pushed to the renderer (incl. `harness`)      |
 
 Paths and tokens never cross this bridge: the renderer sees project ids, names, repo labels (basenames) and counts. The projects contract is in [`docs/projects.md`](docs/projects.md) §9.
 

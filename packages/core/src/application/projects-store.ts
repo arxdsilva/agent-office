@@ -1,11 +1,17 @@
 // The projects layer's in-memory state, rebuilt from the vault (RecordLog) at startup and appended
 // on every change (docs/projects.md §3). Partitions: 'catalog' (projects, repo links, session
 // records, assignments, project-less memory), 'p/<prj>' (memory versions, tasks, handoffs,
-// activity), 's/<ses>' (agent-office chat, harness snapshot, harness events and gate results of
-// that session). Harness versions live in 'catalog' (docs/harness.md §1).
+// activity), 's/<ses>' (agent-office chat, harness snapshot, harness events, gate results and flow
+// progress of that session). Harness versions live in 'catalog' (docs/harness.md §1).
 import type { ActivityEvent } from '../domain/activity.ts'
 import type { Handoff } from '../domain/handoff.ts'
-import type { GateResult, Harness, HarnessEvent, HarnessSnapshot } from '../domain/harness-types.ts'
+import type {
+  FlowProgress,
+  GateResult,
+  Harness,
+  HarnessEvent,
+  HarnessSnapshot,
+} from '../domain/harness-types.ts'
 import { IMPORT_ORIGIN, isMoveTombstone, moveTombstone, type MemoryItem } from '../domain/memory.ts'
 import { idFrom, type Project } from '../domain/project.ts'
 import type { SessionRecord } from '../domain/session-record.ts'
@@ -85,6 +91,8 @@ export class ProjectsStore {
   private snapshots = new Map<string, HarnessSnapshot>()
   private harnessEvents = new Map<string, HarnessEvent[]>()
   private gateResults = new Map<string, GateResult[]>()
+  /** Session id → its flow progress (docs/harness.md §2a). */
+  private flows = new Map<string, FlowProgress>()
   private running = new Map<string, Map<string, RunningGate>>()
   private subs = new Set<(c: StoreChange) => void>()
   private queue: Promise<void> = Promise.resolve()
@@ -168,6 +176,10 @@ export class ProjectsStore {
       case 'gate-result':
         if (hasId(d, 'gtr_') && typeof d.sessionId === 'string')
           this.indexGateResult(d as unknown as GateResult)
+        return
+      case 'flow-progress':
+        if (hasId(d, 'fpg_') && typeof d.sessionId === 'string' && Array.isArray(d.steps))
+          this.flows.set(d.sessionId, d as unknown as FlowProgress)
         return
       case 'message':
         if (partition.startsWith('s/') && typeof d.id === 'string' && typeof d.text === 'string')
@@ -296,6 +308,13 @@ export class ProjectsStore {
     return this.write(`s/${r.sessionId}`, 'gate-result', r)
   }
 
+  /** Replaces the session's flow progress (one record per session; compaction keeps the last). */
+  putFlowProgress(f: FlowProgress): Promise<void> {
+    this.flows.set(f.sessionId, f)
+    this.emit({ type: 'harness', agentId: f.agentId, projectId: f.projectId })
+    return this.write(`s/${f.sessionId}`, 'flow-progress', f)
+  }
+
   /** Marks a gate running (memory only); `undefined` clears `gateId`. */
   setGateRunning(sessionId: string, g: RunningGate | undefined, gateId = g?.gateId): void {
     const m = this.running.get(sessionId) ?? new Map<string, RunningGate>()
@@ -331,6 +350,14 @@ export class ProjectsStore {
 
   gateResultsOf(sessionId: string): GateResult[] {
     return [...(this.gateResults.get(sessionId) ?? [])]
+  }
+
+  flowOf(sessionId: string): FlowProgress | undefined {
+    return this.flows.get(sessionId)
+  }
+
+  allFlows(): FlowProgress[] {
+    return [...this.flows.values()]
   }
 
   runningGates(sessionId: string): RunningGate[] {

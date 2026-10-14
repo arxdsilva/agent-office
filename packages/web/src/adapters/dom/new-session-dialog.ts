@@ -279,6 +279,12 @@ export class DomNewSession implements NewSessionView {
       const names = el('ul', undefined, 'chips')
       for (const n of h.names) names.append(el('li', n, 'chip'))
       rows.push(names, el('p', h.rulesLine, 'muted small'))
+      if (h.flow) {
+        // The flow this session follows: its name and the step it starts with.
+        const flow = el('p', h.flow.line, 'ns-harness-flow small')
+        flow.append(el('br'), el('span', h.flow.first, 'muted'))
+        rows.push(flow)
+      }
       if (h.coverage) {
         const ul = el('ul', undefined, 'hb-coverage')
         for (const r of h.coverage.rows) {

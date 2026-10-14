@@ -4,6 +4,8 @@ import type {
   ContextInspection,
   HarnessBadge,
   HarnessDetail,
+  HarnessDraft,
+  RuleCategory,
   HarnessInspection,
   HarnessSummary,
   HarnessTemplateView,
@@ -23,11 +25,15 @@ import type {
   SessionSummary,
 } from '@agent-office/shared'
 import { MEMORY_ALL, type ProjectScope } from './state-types.ts'
+import type { HarnessDrag } from './harness-dnd.ts'
 import {
   defaultImportSelection,
+  defaultImportSteps,
   type CandidateEdits,
   type EditorTab,
   type ImportSelection,
+  type ImportSteps,
+  type StepForm,
 } from './harness-vm.ts'
 import type { ActivityFilter, MemoryFilterKey, WorkspaceView } from './types.ts'
 
@@ -56,14 +62,23 @@ export interface NewProjectState {
   folders: { ref: string; label: string; hint: string }[]
 }
 
-export type HarnessDialogTab = 'library' | 'editor' | 'import' | 'coverage'
-export type HarnessConfirmKind = 'publish' | 'archive' | 'attach' | 'detach'
-/** The Harness Builder (docs/harness.md): fetched data plus the dialog's own view state. */
+export type HarnessPaneTab = 'library' | 'editor' | 'import' | 'coverage'
+/** @deprecated the dialog became the `#ws-harness` pane; kept as an alias. */
+export type HarnessDialogTab = HarnessPaneTab
+export type HarnessConfirmKind = 'publish' | 'archive' | 'attach' | 'detach' | 'discard'
+export interface HarnessConfirm {
+  kind: HarnessConfirmKind
+  harnessId: string
+  /** Attach/detach target; defaults to the scope project. */
+  projectId?: string
+  /** Discard: where to go once the edits are dropped (leaving the pane). */
+  next?: { view: WorkspaceView; projectId?: string | null }
+}
+/** The Harnesses pane (docs/harness.md §7): fetched data plus the pane's own view state. */
 export interface HarnessState {
-  open: boolean
-  tab: HarnessDialogTab
+  tab: HarnessPaneTab
   editorTab: EditorTab
-  /** The project the dialog works for (attach, import, coverage); null = none. */
+  /** The project the pane works for (Applied, attach, import, coverage); null = none. */
   projectId: string | null
   list: HarnessSummary[]
   listLoaded: boolean
@@ -76,19 +91,57 @@ export interface HarnessState {
   /** The reviewer's edits to candidates, by temp id. */
   edits: CandidateEdits
   templates: HarnessTemplateView[]
-  /** The dialog's own error line (`#hb-error`). */
+  /** The pane's own error line (`#hb-error`). */
   error: string | null
   importName: string
   importAttach: boolean
-  confirm: { kind: HarnessConfirmKind; harnessId: string } | null
+  confirm: HarnessConfirm | null
   busy: boolean
   badges: HarnessBadge[]
   /** Latest inspection per agent (after Run validation or a push). */
   inspections: Record<string, HarnessInspection>
+  /** The harness being dragged (from `dragstart`), cleared on `dragend`/`drop`. */
+  drag: HarnessDrag | null
+  /** The user's library order (`settings.layout.harnessOrder`). */
+  order: string[]
+  /** `#hb-search` filter. */
+  query: string
+  /** The selected library card. */
+  selectedId: string | null
+  /** Unsaved editor changes of `detail` (null = none). */
+  draft: HarnessDraft | null
+  /** "Saved" shows on the Save button for a moment after a save. */
+  saved: boolean
+  stepForm: StepForm | null
+  /** The rule being edited in the rule form. */
+  ruleEditId: string | null
+  /** "Go to rule" from a conflict. */
+  highlightRuleId: string | null
+  /** The draft before the last rule/step removal ("Undo", 5 s). */
+  undo: HarnessDraft | null
+  /** Every version of the open harness (History), once loaded. */
+  versions: HarnessDetail[] | null
+  /** An older version shown read-only. */
+  viewVersion: number | null
+  /** `#hb-live` (polite announcements). */
+  live: string
+  /** A row the Applied column highlights after an attach. */
+  justAttached: string | null
+  /** A sidebar project that just received a drop (`.just-dropped`). */
+  justDropped: string | null
+  /** Detected sources the reviewer unticked (not previewed). */
+  excluded: string[]
+  importSteps: ImportSteps
+  importFilter: RuleCategory | null
+  /** One-line notice under the editor header (`done` after an import). */
+  notice: string | null
+  /** The editor's harness changed elsewhere while it had unsaved edits. */
+  stale: boolean
+  /** One-shot focus target (an element id) for the next render. */
+  focus: string | null
 }
 
 export const initialHarness = (): HarnessState => ({
-  open: false,
   tab: 'library',
   editorTab: 'overview',
   projectId: null,
@@ -108,6 +161,27 @@ export const initialHarness = (): HarnessState => ({
   busy: false,
   badges: [],
   inspections: {},
+  drag: null,
+  order: [],
+  query: '',
+  selectedId: null,
+  draft: null,
+  saved: false,
+  stepForm: null,
+  ruleEditId: null,
+  highlightRuleId: null,
+  undo: null,
+  versions: null,
+  viewVersion: null,
+  live: '',
+  justAttached: null,
+  justDropped: null,
+  excluded: [],
+  importSteps: { order: [], selected: [], checks: {} },
+  importFilter: null,
+  notice: null,
+  stale: false,
+  focus: null,
 })
 
 export interface WorkspaceState {
@@ -323,8 +397,17 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
     case 'navigate': {
       const projectId =
         e.view === 'overview' ? null : e.projectId !== undefined ? e.projectId : s.projectId
+      // The pane's scope: the current project, else the first one; never changes the workspace's.
+      const harness =
+        e.view === 'harness' && s.harness.projectId === null
+          ? {
+              ...s.harness,
+              projectId: projectId ?? s.projects.find((p) => !p.archived)?.id ?? null,
+            }
+          : s.harness
       return {
         ...s,
+        harness,
         view: e.view,
         projectId,
         error: null,
@@ -368,8 +451,27 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
       return { ...s, harness: { ...s.harness, ...e.patch } }
     case 'harnesses':
       return { ...s, harness: { ...s.harness, list: e.list, listLoaded: true } }
-    case 'harness-detail':
-      return { ...s, harness: { ...s.harness, detail: e.detail } }
+    case 'harness-detail': {
+      // A different harness (or none) drops the unsaved edits and the per-harness view state.
+      const other = e.detail?.id !== s.harness.detail?.id
+      return {
+        ...s,
+        harness: {
+          ...s.harness,
+          detail: e.detail,
+          ...(other && {
+            draft: null,
+            stepForm: null,
+            ruleEditId: null,
+            highlightRuleId: null,
+            undo: null,
+            versions: null,
+            viewVersion: null,
+            stale: false,
+          }),
+        },
+      }
+    }
     case 'import-sources':
       return { ...s, harness: { ...s.harness, sources: e.sources } }
     case 'import-preview':
@@ -380,6 +482,10 @@ export function reduce(s: WorkspaceState, e: WorkspaceEvent): WorkspaceState {
           preview: e.preview,
           selection: e.preview ? defaultImportSelection(e.preview) : { selected: [], gates: [] },
           edits: {},
+          importSteps: e.preview
+            ? defaultImportSteps(e.preview)
+            : { order: [], selected: [], checks: {} },
+          importFilter: null,
         },
       }
     case 'harness-inspection':

@@ -1,6 +1,6 @@
 // Validation state of a session's work (docs/harness.md §4). Verified = every required gate of the
 // current harness version passed after the session's last write, with no pinned file changed. Pure.
-import type { Completion, Verification } from '@agent-office/shared'
+import type { Completion, FlowProgressView, Verification } from '@agent-office/shared'
 import type { GateResult, ValidationGate } from './harness-types.ts'
 
 export const MAX_FEEDBACK = 4000
@@ -16,7 +16,27 @@ function latestPerGate(results: GateResult[]): Map<string, GateResult> {
 
 const FAILED = new Set(['fail', 'timeout', 'error'])
 
+/** Every required (non-optional) step is done or skipped. */
+export function flowComplete(flow: FlowProgressView): boolean {
+  return flow.steps.every((s) => s.optional || s.state === 'done' || s.state === 'skipped')
+}
+
+/**
+ * Gates first (failed and running win); with a flow (docs/harness.md §2a), `verified` also needs
+ * every required step done or skipped. A flow without gates is verified by its steps alone.
+ */
 export function verificationState(
+  gates: ValidationGate[],
+  results: GateResult[],
+  o: { lastWriteAt?: number; harnessVersion: string; running?: boolean; flow?: FlowProgressView },
+): Verification {
+  const v = gateVerification(gates, results, o)
+  if (!o.flow?.steps.length) return v
+  if (!gates.length && v === 'not-run') return flowComplete(o.flow) ? 'verified' : 'not-run'
+  return v === 'verified' && !flowComplete(o.flow) ? 'flow-incomplete' : v
+}
+
+function gateVerification(
   gates: ValidationGate[],
   results: GateResult[],
   o: { lastWriteAt?: number; harnessVersion: string; running?: boolean },
@@ -53,6 +73,7 @@ export function completionState(o: {
       return 'validation-failed'
     case 'running':
     case 'stale':
+    case 'flow-incomplete':
       return 'validation-pending'
     default:
       return o.phase === 'ended' ? 'validation-pending' : 'agent-reported'

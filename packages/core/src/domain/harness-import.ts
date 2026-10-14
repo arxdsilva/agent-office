@@ -1,6 +1,7 @@
 import type {
   ImportCandidateView,
   ImportGateSuggestion,
+  ImportStepSuggestion,
   RuleCategory,
   RuleSourceFormat,
   RuleSourceView,
@@ -10,9 +11,12 @@ import type {
 
 export type RawCandidate = Omit<ImportCandidateView, 'tempId' | 'duplicateOf' | 'conflictsWith'>
 export type RawGate = Omit<ImportGateSuggestion, 'tempId'>
+/** An ordered list item under a workflow/process/checklist heading (a flow step suggestion). */
+export type RawStep = Omit<ImportStepSuggestion, 'tempId'>
 export interface ParsedRuleFile {
   candidates: RawCandidate[]
   gates: RawGate[]
+  steps: RawStep[]
 }
 
 const MAX_TEXT = 2000
@@ -173,6 +177,65 @@ function ciGates(text: string, source: RuleSourceView): RawGate[] {
   return out
 }
 
+// ── Step suggestions ────────────────────────────────────────────────────────────────────────────
+
+const FLOW_HEADING = /workflow|process|flow|steps|checklist|procedure|runbook|playbook/i
+const STEP_NAME = 80
+const STEP_GOAL = 600
+const MAX_STEPS = 24
+
+/** Top-level list items (`1.`, `-`, `*`) under headings that name a flow, in document order. */
+export function stepSuggestions(body: string, source: RuleSourceView): RawStep[] {
+  const items: string[] = []
+  let inFlow = false
+  let fence: string | null = null
+  let cur: string[] | null = null
+  const flush = () => {
+    if (cur) items.push(cur.join(' ').replace(/\s+/g, ' ').trim())
+    cur = null
+  }
+  for (const line of body.split('\n')) {
+    const fenceM = /^\s*(```+|~~~+)/.exec(line)
+    if (fence) {
+      if (fenceM && line.trim().startsWith(fence)) fence = null
+      continue
+    }
+    if (fenceM) {
+      flush()
+      fence = fenceM[1]!
+      continue
+    }
+    const h = /^\s*#{1,6}\s+(.*)$/.exec(line)
+    if (h) {
+      flush()
+      inFlow = FLOW_HEADING.test(h[1] ?? '')
+      continue
+    }
+    if (!inFlow) continue
+    const item = /^ {0,1}(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line)
+    if (item) {
+      flush()
+      cur = [item[1] ?? '']
+      continue
+    }
+    if (line.trim() === '' || /^\s+(?:[-*+]|\d+[.)])\s/.test(line)) {
+      flush()
+      continue
+    }
+    if (cur && /^\s+\S/.test(line)) cur.push(line.trim())
+    else flush()
+  }
+  flush()
+  return items
+    .map((t) => t.replace(/^\[[ xX]\]\s+/, '').trim())
+    .filter((t) => t.length > 0)
+    .slice(0, MAX_STEPS)
+    .map((t, index) => {
+      const goal = t.slice(0, STEP_GOAL)
+      return { index, name: goal.slice(0, STEP_NAME).trim(), goal, source }
+    })
+}
+
 // ── Body → candidates ───────────────────────────────────────────────────────────────────────────
 
 function clip(text: string): string {
@@ -307,8 +370,9 @@ export function parseRuleFile(
   text: string,
   source: RuleSourceView,
 ): ParsedRuleFile {
-  if (format === 'makefile') return { candidates: [], gates: makefileGates(text, source) }
-  if (format === 'ci-workflow') return { candidates: [], gates: ciGates(text, source) }
+  if (format === 'makefile')
+    return { candidates: [], gates: makefileGates(text, source), steps: [] }
+  if (format === 'ci-workflow') return { candidates: [], gates: ciGates(text, source), steps: [] }
 
   const { front, body } =
     format === 'cursorrules' ? { front: {}, body: text } : splitFrontmatter(text)
@@ -332,5 +396,6 @@ export function parseRuleFile(
     seen.add(k)
     return true
   })
-  return { candidates: toCandidates(texts, src), gates: uniqueGates }
+  const steps = format === 'cursorrules' ? [] : stepSuggestions(body.replace(/\r\n?/g, '\n'), src)
+  return { candidates: toCandidates(texts, src), gates: uniqueGates, steps }
 }

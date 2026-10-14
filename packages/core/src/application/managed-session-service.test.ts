@@ -426,6 +426,119 @@ describe('permissions', () => {
     expect(r.behavior === 'deny' && r.message).toBeTruthy()
   })
 
+  describe('question cards (AskUserQuestion)', () => {
+    // Invented question content; the raw input carries a sentinel that must never reach the VM.
+    const ASK = {
+      questions: [
+        {
+          question: 'Which colour?',
+          header: 'Colour',
+          options: [
+            { label: 'Blue', description: 'Calm' },
+            { label: 'Green', description: 'Fresh' },
+          ],
+          multiSelect: false,
+        },
+      ],
+      extra: 'SENTINEL-RAW-INPUT',
+    }
+
+    it('MS-q-card: the card carries the question; the agent waits with "Asking you a question"', async () => {
+      const { svc, agentId, session, agents } = await started()
+      void session.ask('AskUserQuestion', ASK)
+      const [card] = svc.pending(agentId)
+      expect(card).toMatchObject({
+        tool: 'AskUserQuestion',
+        summary: 'Which colour?',
+        question: {
+          prompts: [
+            {
+              question: 'Which colour?',
+              header: 'Colour',
+              options: [
+                { label: 'Blue', description: 'Calm' },
+                { label: 'Green', description: 'Fresh' },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
+      })
+      expect(JSON.stringify(card)).not.toContain('SENTINEL-RAW-INPUT')
+      expect(agents.get(agentId)).toMatchObject({
+        status: 'waiting',
+        text: 'Asking you a question',
+        question: card!.question,
+        managed: { pending: 1 },
+      })
+    })
+
+    it('MS-q-answer: allow with answers resolves updatedInput = input + answers, then clears the question', async () => {
+      const { svc, agentId, session, agents } = await started()
+      const d = session.ask('AskUserQuestion', ASK)
+      svc.answer(agentId, 'perm_0000000001', 'allow', { 'Which colour?': 'Green' })
+      await expect(d).resolves.toEqual({
+        behavior: 'allow',
+        updatedInput: { ...ASK, answers: { 'Which colour?': 'Green' } },
+      })
+      expect(agents.get(agentId)?.question).toBeUndefined()
+      expect(agents.get(agentId)).toMatchObject({ status: 'thinking', managed: { pending: 0 } })
+    })
+
+    it('MS-q-session: allow-session acts as allow and never touches the allow-set', async () => {
+      const { svc, agentId, session } = await started()
+      const a = session.ask('AskUserQuestion', ASK)
+      const b = session.ask('AskUserQuestion', ASK)
+      svc.answer(agentId, 'perm_0000000001', 'allow-session', { 'Which colour?': 'Blue' })
+      await expect(a).resolves.toMatchObject({
+        behavior: 'allow',
+        updatedInput: { answers: { 'Which colour?': 'Blue' } },
+      })
+      // The second question still asks; so does a later one.
+      expect(svc.pending(agentId).map((p) => p.id)).toEqual(['perm_0000000002'])
+      void session.ask('AskUserQuestion', ASK)
+      expect(svc.pending(agentId)).toHaveLength(2)
+      svc.answer(agentId, 'perm_0000000002', 'deny')
+      await expect(b).resolves.toEqual({
+        behavior: 'deny',
+        message: 'The user denied this request.',
+      })
+    })
+
+    it('MS-q-plain: answers are ignored on an ordinary card; allow without answers has no updatedInput', async () => {
+      const { svc, agentId, session } = await started()
+      const a = session.ask('Bash', { command: 'pnpm test' })
+      svc.answer(agentId, 'perm_0000000001', 'allow', { x: 'y' })
+      await expect(a).resolves.toEqual({ behavior: 'allow' })
+      const q = session.ask('AskUserQuestion', ASK)
+      svc.answer(agentId, 'perm_0000000002', 'allow')
+      await expect(q).resolves.toEqual({ behavior: 'allow' })
+    })
+
+    it('MS-q-invalid: an AskUserQuestion input that is not a question is a plain card', async () => {
+      const { svc, agentId, session } = await started()
+      void session.ask('AskUserQuestion', { questions: 'nope' })
+      expect(svc.pending(agentId)[0]?.question).toBeUndefined()
+    })
+
+    it('MS-q-cancel: interrupting a pending question clears it from the agent', async () => {
+      const { svc, agentId, session, agents } = await started()
+      const d = session.ask('AskUserQuestion', ASK)
+      await svc.interrupt(agentId)
+      await expect(d).resolves.toMatchObject({ behavior: 'deny' })
+      expect(agents.get(agentId)?.question).toBeUndefined()
+    })
+
+    it('MS-q-event: a runner event passes its question through, and null clears it', async () => {
+      const { agentId, session, agents } = await started()
+      const q = { prompts: [{ question: 'Ship it?', header: '', options: [], multiSelect: false }] }
+      session.emit({ status: 'waiting', tool: 'AskUserQuestion', question: q })
+      expect(agents.get(agentId)?.question).toEqual(q)
+      session.emit({ question: null })
+      expect(agents.get(agentId)?.question).toBeUndefined()
+    })
+  })
+
   it('MS-interrupt cancels pending requests, interrupts and adds a system line', async () => {
     const { svc, agentId, session, agents, messages } = await started()
     const d = session.ask('Bash', { command: 'sleep 100' })

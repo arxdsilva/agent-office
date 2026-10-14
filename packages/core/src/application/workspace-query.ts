@@ -1,6 +1,11 @@
 // Read models for the workspace UI (docs/projects.md §9): the Global Overview, Project Dashboards
 // and the `prj:push` stream. Ids, names, labels, counts and states only.
-import type { GlobalOverview, ProjectDashboard, ProjectMessage } from '@agent-office/shared'
+import type {
+  FlowApprovalView,
+  GlobalOverview,
+  ProjectDashboard,
+  ProjectMessage,
+} from '@agent-office/shared'
 import { toActivityView } from '../domain/activity.ts'
 import { assertAuthorized, USER, type Principal } from '../domain/authz.ts'
 import { toMemoryView } from '../domain/memory.ts'
@@ -16,13 +21,20 @@ const COMPLETIONS = new Set(['task.completed', 'session.ended', 'handoff.launche
 
 export class WorkspaceQueryService implements ProjectWorkspaceQuery {
   constructor(
-    private d: { store: ProjectsStore; agents: AgentRepository; handoffs: HandoffManager },
+    private d: {
+      store: ProjectsStore
+      agents: AgentRepository
+      handoffs: HandoffManager
+      /** Flow approvals waiting on the user (docs/harness.md §2a); resolved lazily. */
+      flow?: () => { pendingApprovals(projectId?: string): FlowApprovalView[] } | undefined
+    },
   ) {}
 
   overview(as: Principal = USER): GlobalOverview {
     assertAuthorized(as, 'project.manage', { kind: 'project', projectId: null }, undefined)
     const s = this.d.store
     const memory = [...s.memory.values()]
+    const flowApprovals = this.d.flow?.()?.pendingApprovals() ?? []
     return {
       projects: sortedProjects(s).map((p) => projectSummary(s, this.d.agents, p)),
       waiting: this.d.agents
@@ -44,7 +56,8 @@ export class WorkspaceQueryService implements ProjectWorkspaceQuery {
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 5)
         .map(toMemoryView),
-      pendingApprovals: memory.filter((m) => m.state === 'pending').length,
+      pendingApprovals: memory.filter((m) => m.state === 'pending').length + flowApprovals.length,
+      flowApprovals,
       unfinishedHandoffs: this.d.handoffs.list().filter((h) => h.state === 'draft'),
       unassignedSessions: [...s.sessions.values()].filter(
         (r) => r.projectId === null && r.state !== 'archived',

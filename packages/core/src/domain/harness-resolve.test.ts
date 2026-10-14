@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Harness, HarnessRule } from './harness-types.ts'
+import type { FlowStep, Harness, HarnessRule } from './harness-types.ts'
 import { createProject } from './project.ts'
 import { resolveEffective, versionKey } from './harness-resolve.ts'
 
@@ -119,5 +119,45 @@ describe('resolveEffective', () => {
       retryBudget: 2,
       instructions: '',
     })
+  })
+})
+
+const st = (id: string): FlowStep => ({
+  id,
+  name: id,
+  goal: `goal ${id}`,
+  exit: [{ kind: 'report' }],
+  optional: false,
+})
+
+describe('resolveEffective flows', () => {
+  it('concatenates steps in Applied order; free only when every flow is free; first step marked', () => {
+    const e = resolveEffective({
+      project,
+      provider: 'claude-code',
+      now: 1,
+      harnesses: [
+        h('hrn_a', { steps: [st('stp_a1'), st('stp_a2')], flowMode: 'free' }),
+        h('hrn_b'),
+        h('hrn_c', { steps: [st('stp_c1')], flowMode: 'sequential' }),
+      ],
+    })
+    expect(e.steps!.map((s) => s.id)).toEqual(['stp_a1', 'stp_a2', 'stp_c1'])
+    expect(e.flowMode).toBe('sequential')
+    expect(e.instructions).toMatch(/1\. stp_a1 .*← you are here/)
+    const free = resolveEffective({
+      project,
+      provider: 'claude-code',
+      now: 1,
+      harnesses: [h('hrn_a', { steps: [st('stp_a1')], flowMode: 'free' }), h('hrn_b')],
+    })
+    expect(free.flowMode).toBe('free')
+    expect(free.instructions).not.toContain('← you are here')
+  })
+
+  it('has no steps without flows', () => {
+    const e = resolveEffective({ project, provider: 'codex', now: 1, harnesses: [h('hrn_b')] })
+    expect(e.steps).toEqual([])
+    expect(e.flowMode).toBe('sequential')
   })
 })

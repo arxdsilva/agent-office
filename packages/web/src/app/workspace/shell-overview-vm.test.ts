@@ -4,6 +4,7 @@ import { healthVM, notificationCount, shellVM } from './shell-vm.ts'
 import { overviewVM } from './overview-vm.ts'
 import { initialState, reduce, type WorkspaceState } from './state.ts'
 import { WS_COPY } from './workspace-copy.ts'
+import { summary } from './__fixtures__/harness.ts'
 
 const loaded = (): WorkspaceState => {
   let s = initialState()
@@ -20,11 +21,75 @@ describe('shellVM', () => {
   it('lists sidebar items with the active one and attention counts', () => {
     const s = reduce(loaded(), { type: 'navigate', view: 'sessions' })
     const vm = shellVM(s)
-    expect(vm.sidebar.map((i) => i.id)).toEqual(['overview', 'office', 'sessions', 'memory'])
+    expect(vm.sidebar.map((i) => i.id)).toEqual([
+      'overview',
+      'office',
+      'sessions',
+      'memory',
+      'harness',
+    ])
     expect(vm.sidebar.find((i) => i.active)?.id).toBe('sessions')
     expect(vm.sidebar.find((i) => i.id === 'sessions')?.count).toBe(2)
     expect(vm.sidebar.find((i) => i.id === 'memory')?.count).toBe(3)
     expect(vm.stageVisible).toBe(false)
+  })
+  it('Harnesses: active on its pane, badge = drafts', () => {
+    let s = reduce(loaded(), { type: 'navigate', view: 'harness' })
+    s = reduce(s, {
+      type: 'harnesses',
+      list: [
+        summary({ status: 'draft' }),
+        summary({ id: 'hrn_bbbbbbbbbb', status: 'draft' }),
+        summary({ id: 'hrn_cccccccccc' }),
+      ],
+    })
+    const it = shellVM(s).sidebar.find((i) => i.id === 'harness')!
+    expect(it).toMatchObject({ label: 'Harnesses', active: true, count: 2 })
+    expect(shellVM(s).stageVisible).toBe(false)
+  })
+  it('the Overview badge also counts flow approvals', () => {
+    const s = reduce(loaded(), {
+      type: 'overview',
+      overview: overview({
+        flowApprovals: [{ projectId: P1 } as never, { projectId: P2 } as never],
+      }),
+    })
+    expect(shellVM(s).sidebar.find((i) => i.id === 'overview')?.count).toBe(
+      notificationCount(s) + 2,
+    )
+  })
+  it('project rows are drop targets while a library card is dragged', () => {
+    let s = reduce(loaded(), {
+      type: 'projects',
+      projects: [project({ harnessIds: ['hrn_aaaaaaaaaa'] }), project({ id: P2, name: 'Beta' })],
+    })
+    expect(shellVM(s).projects.every((p) => p.dropTarget === undefined)).toBe(true)
+    s = reduce(s, {
+      type: 'harness-ui',
+      patch: {
+        drag: {
+          harnessId: 'hrn_aaaaaaaaaa',
+          source: 'library',
+          status: 'published',
+          over: { kind: 'project', projectId: P2 },
+        },
+        justDropped: P1,
+      },
+    })
+    const [a, b] = shellVM(s).projects
+    expect(a).toMatchObject({ projectId: P1, dropTarget: 'reject', justDropped: true })
+    expect(a?.dropHover).toBeUndefined()
+    expect(b).toMatchObject({ projectId: P2, dropTarget: 'ok', dropHover: true })
+    s = reduce(s, {
+      type: 'harness-ui',
+      patch: { drag: { harnessId: 'hrn_cccccccccc', source: 'library', status: 'draft' } },
+    })
+    expect(shellVM(s).projects.map((p) => p.dropTarget)).toEqual(['reject', 'reject'])
+    s = reduce(s, {
+      type: 'harness-ui',
+      patch: { drag: { harnessId: 'hrn_aaaaaaaaaa', source: 'applied', status: 'published' } },
+    })
+    expect(shellVM(s).projects.every((p) => p.dropTarget === undefined)).toBe(true)
   })
   it('project views activate no sidebar item; the Office shows the stage', () => {
     const s = reduce(loaded(), { type: 'navigate', view: 'project', projectId: P1 })

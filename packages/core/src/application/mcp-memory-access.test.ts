@@ -250,3 +250,107 @@ describe('McpMemoryAccessService — tools (docs/projects.md §5)', () => {
     expect(seen).toEqual(['codex'])
   })
 })
+
+describe('McpMemoryAccessService — flows', () => {
+  async function flowSetup() {
+    const h = harness({
+      enforcementOf: () => ({
+        instructions: 'native',
+        toolDeny: 'approval',
+        pathDeny: 'none',
+        commandDeny: 'none',
+        fsIsolation: 'none',
+        subagents: 'none',
+      }),
+    })
+    const prj = await withProject(h)
+    const d = await h.projects.harness.create({
+      name: 'Pipeline',
+      steps: [
+        { name: 'Research', goal: 'Notes exist', exit: [{ kind: 'report' }] },
+        { name: 'Outline', goal: 'Agreed', exit: [{ kind: 'approval', prompt: 'Outline ok' }] },
+      ],
+    })
+    await h.projects.harness.publish(d.id)
+    await h.projects.harness.attach(prj, d.id)
+    const session = async (agentId: string, withFlow: boolean) => {
+      const minted = h.projects.mcp.mint({ projectId: prj, provider: 'codex' })!
+      h.putAgent({ id: agentId, provider: 'codex', projectId: prj })
+      h.projects.mcp.bind(minted.tokenId, agentId)
+      if (withFlow) {
+        const ap = (await h.projects.policy.prepare({
+          projectId: prj,
+          provider: 'codex',
+          cwd: '/work/shop',
+          mode: 'default',
+        }))!
+        h.projects.policy.bind({ agentId, sessionId: agentId, projectId: prj, policy: ap })
+      }
+      return h.projects.mcp.principal(minted.token)!
+    }
+    const steps = h.projects.store.harness(d.id)!.steps!
+    return { h, prj, steps, session }
+  }
+
+  it('MCP-report_step: declared only with a flow; the only harness tool; scoped to the own session', async () => {
+    const { h, steps, session } = await flowSetup()
+    const mine = await session('cx:1', true)
+    const other = await session('cx:2', false)
+    const names = (p: typeof mine) => h.projects.mcp.tools(p).map((t) => t.name)
+    expect(names(mine)).toEqual([
+      'search_memory',
+      'get_project_context',
+      'list_decisions',
+      'propose_memory',
+      'report_step',
+    ])
+    expect(names(other)).not.toContain('report_step')
+    // No tool can change rules, policies, gates or approvals.
+    for (const n of names(mine)) expect(n).not.toMatch(/harness|rule|gate|approve|polic|skip/)
+
+    // A session without a flow cannot report, even with another session's step id or a forged principal.
+    await expect(
+      h.projects.mcp.call(other, 'report_step', { stepId: steps[0]!.id }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    await expect(
+      h.projects.mcp.call({ ...other, sessionId: mine.sessionId }, 'report_step', {
+        stepId: steps[0]!.id,
+      }),
+    ).rejects.toBeInstanceOf(ValidationError)
+
+    const r = await h.projects.mcp.call(mine, 'report_step', { stepId: steps[0]!.id, note: 'ok' })
+    expect(r.structured).toEqual({ stepId: steps[0]!.id, state: 'done', current: steps[1]!.id })
+    // Approvals cannot be passed by the agent.
+    await expect(
+      h.projects.mcp.call(mine, 'report_step', { stepId: steps[1]!.id }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    await expect(
+      h.projects.mcp.call(mine, 'report_step', { stepId: 'not-a-step' }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    await expect(
+      h.projects.mcp.call(mine, 'report_step', { stepId: steps[1]!.id, note: 'x'.repeat(501) }),
+    ).rejects.toBeInstanceOf(ValidationError)
+  })
+
+  it('MCP-get_project_context carries the flow block only for a session with a flow', async () => {
+    const { h, steps, session } = await flowSetup()
+    const mine = await session('cx:1', true)
+    const other = await session('cx:2', false)
+    const r = await h.projects.mcp.call(mine, 'get_project_context', {})
+    expect(r.structured.flow).toEqual({
+      current: steps[0]!.id,
+      steps: [
+        { id: steps[0]!.id, name: 'Research', goal: 'Notes exist', exit: ['you report it done'] },
+        {
+          id: steps[1]!.id,
+          name: 'Outline',
+          goal: 'Agreed',
+          exit: ['user approval "Outline ok"'],
+        },
+      ],
+    })
+    expect(r.text).toContain(`Current flow step: Research (${steps[0]!.id})`)
+    const o = await h.projects.mcp.call(other, 'get_project_context', {})
+    expect(o.structured.flow).toBeUndefined()
+  })
+})

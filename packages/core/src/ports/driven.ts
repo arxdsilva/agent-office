@@ -243,7 +243,10 @@ export interface RunnerPermission {
   agent?: { id: string; type?: string }
 }
 
-export type RunnerDecision = { behavior: 'allow' } | { behavior: 'deny'; message: string }
+export type RunnerDecision =
+  /** `updatedInput`: the input to run with (a question card's answers merged in). */
+  | { behavior: 'allow'; updatedInput?: Record<string, unknown> }
+  | { behavior: 'deny'; message: string }
 
 /** Detects a provider's CLI without starting a session (`--version`, `--help`; documented status calls only). */
 export interface ProviderProbe {
@@ -433,4 +436,10 @@ export interface RuleSourceReader {
  */
 export interface GateRunner {
   run(spec: GateSpec, o: { cwd: string; signal?: CancelSignal }): Promise<GateRun>
+}
+
+/** Read-only existence checks in a repository for `artifact` flow checks (no symlinks, bounded). */
+export interface RepoFiles {
+  /** True when `relGlob` (repo-relative, `**`/`*`/`?`) matches at least one regular file. */
+  exists(repoPath: string, relGlob: string): Promise<boolean>
 }

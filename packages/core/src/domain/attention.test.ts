@@ -35,6 +35,30 @@ describe('noteForAgentChange', () => {
     })
   })
 
+  it('names the first question (≤ 80 chars) when the waiting agent asks one', () => {
+    const q = (question: string) => ({
+      prompts: [{ question, header: '', options: [], multiSelect: false }],
+    })
+    expect(
+      noteForAgentChange(
+        agent({ status: 'tool' }),
+        agent({ status: 'waiting', question: q('Which colour?') }),
+        ctx(),
+      ),
+    ).toEqual({
+      kind: 'waiting',
+      agentId: 'a',
+      title: 'Ada asks: Which colour?',
+      body: 'Refactor auth',
+    })
+    const long = noteForAgentChange(
+      agent(),
+      agent({ status: 'waiting', question: q('x'.repeat(300)) }),
+      ctx(),
+    )
+    expect(long?.title).toBe(`Ada asks: ${'x'.repeat(79)}…`)
+  })
+
   it('notifies on entering error', () => {
     expect(
       noteForAgentChange(agent(), agent({ status: 'error', text: 'boom' }), ctx()),

@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { agentRunnerContract, managedRuntimeContract } from './contracts/agent-runner.ts'
 import { jsonConfigStoreContract, providerProbeContract } from './contracts/providers.ts'
+import { repoFilesContract } from './contracts/repo-files.ts'
 import { capabilityRepositoryContract } from './contracts/capabilities.ts'
 import {
   FakeAgentRunner,
@@ -15,6 +16,7 @@ import {
   FakeJsonConfigStore,
   FakeMessageRepository,
   FakeProviderProbe,
+  FakeRepoFiles,
   FakeSettingsRepository,
 } from './fakes/index.ts'
 import {
@@ -203,3 +205,9 @@ describe('FakeGateRunner', () => {
     )
   })
 })
+
+// The fake matches the layout's files only; dirs and outside links simply are not in the set.
+repoFilesContract('FakeRepoFiles', async (layout) => ({
+  repoPath: '/repo',
+  port: new FakeRepoFiles(layout.files),
+}))

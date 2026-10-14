@@ -78,6 +78,8 @@ export interface HarnessValidationDeps {
   runner?: GateRunner
   /** Managed sessions, resolved lazily; feedback needs their `send` (ManagedSessionService). */
   sessions?: () => object | undefined
+  /** Flow progress: a finished gate passes or fails the matching `gate` checks (docs/harness.md §2a). */
+  flow?: { gateFinished(agentId: string, gateId: string, passed: boolean): void }
   /** `process.platform` of main ('darwin' | 'linux' | 'win32'); gates for other platforms are skipped. */
   platform?: string
   log?: Logger
@@ -281,6 +283,16 @@ export class HarnessValidationService implements HarnessValidation {
     const result: GateResult = { id: this.d.store.newId('gtr'), ...base, run: sanitizeRun(run) }
     this.d.store.setGateRunning(snap.sessionId, undefined, g.id)
     await this.d.store.putGateResult(result)
+    if (result.run.status !== 'cancelled')
+      try {
+        this.d.flow?.gateFinished(
+          agentId,
+          g.id,
+          result.run.status === 'pass' && !result.run.pinChanged,
+        )
+      } catch {
+        /* flow bookkeeping never fails a gate run */
+      }
     this.event(
       snap,
       agentId,

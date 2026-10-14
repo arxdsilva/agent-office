@@ -6,7 +6,13 @@ import { HARNESS_COPY } from './harness-copy.ts'
 
 export const WS_COPY = {
   harness: HARNESS_COPY,
-  nav: { overview: 'Overview', office: 'Office', sessions: 'Sessions', memory: 'Memory' },
+  nav: {
+    overview: 'Overview',
+    office: 'Office',
+    sessions: 'Sessions',
+    memory: 'Memory',
+    harness: 'Harnesses',
+  },
   projectsHeading: 'Projects',
   projectsEmpty: 'No projects yet. Create one to group your agents, sessions and memory.',
   newProjectLabel: 'New project',
@@ -41,7 +47,7 @@ export const WS_COPY = {
     completionsEmpty: 'Nothing completed recently.',
     decisions: 'Recent decisions',
     decisionsEmpty: 'No decisions recorded yet.',
-    approvals: 'Pending memory approvals',
+    approvals: 'Pending approvals',
     approvalsEmpty: 'Nothing waits for review.',
     handoffs: 'Unfinished handoffs',
     handoffsEmpty: 'No handoff is in progress.',

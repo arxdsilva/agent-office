@@ -1,6 +1,6 @@
 import { STATUS_COLORS, type Agent, type HarnessBadge } from '@agent-office/shared'
 import { describe, expect, it } from 'vitest'
-import { buildHierarchy, lifecycleOf } from './hierarchy.ts'
+import { activityOf, buildHierarchy, lifecycleOf } from './hierarchy.ts'
 import type { AgentNodeVM, FinishedStore, HierarchyOpts, ProjectNodeVM } from './hierarchy-types.ts'
 
 // Indexable without `undefined`: these tests assert the shape first, then dig in.
@@ -405,5 +405,62 @@ describe('harness badges', () => {
     expect(run([badge({ completion: 'validation-failed' })])[0].hash).not.toBe(base)
     expect(run([badge({ denied: 4 })])[0].hash).not.toBe(base)
     expect(run()[0].hash).not.toBe(base)
+  })
+})
+
+describe('activityOf: questions, approvals and flow steps', () => {
+  const q = (question: string) => ({
+    prompts: [{ question, header: '', options: [], multiSelect: false }],
+  })
+  it('says what the agent asks, clipped to 80 characters', () => {
+    expect(activityOf(ag({ id: 'a', question: q('Which database?'), text: 'x' }))).toBe(
+      'Asking: Which database?',
+    )
+    const long = activityOf(ag({ id: 'a', question: q('w'.repeat(200)) }))
+    expect(long).toBe(`Asking: ${'w'.repeat(79)}…`)
+  })
+
+  it('says an agent needs approval for a harness rule, or asked in its reply', () => {
+    const a = ag({ id: 'a', text: 'busy' })
+    expect(activityOf(a, { kind: 'approval', text: 'No pushes' })).toBe('Needs approval: No pushes')
+    expect(activityOf(a, { kind: 'asked', text: 'Shall I continue?' })).toBe(
+      'Asked: Shall I continue?',
+    )
+  })
+
+  it('a question beats an approval, the flow step only fills in without text', () => {
+    const asking = ag({ id: 'a', question: q('Which?') })
+    expect(activityOf(asking, { kind: 'approval', text: 'r' })).toBe('Asking: Which?')
+    const step = { index: 3, total: 5, name: 'Review' }
+    expect(activityOf(ag({ id: 'a' }), undefined, step)).toBe('Step 3/5: Review')
+    expect(activityOf(ag({ id: 'a', text: 'Editing' }), undefined, step)).toBe('Editing')
+  })
+
+  it('shows the attention line on the node and the flow step on the pill', () => {
+    const [p] = buildHierarchy(
+      {
+        agents: [ag({ id: 'a', projectId: 'p1', status: 'waiting' })],
+        projects: PROJECTS,
+        now: 2000,
+        attention: { a: { kind: 'approval', text: 'No pushes' } },
+        harness: [
+          {
+            agentId: 'a',
+            harnessNames: ['H'],
+            ruleCount: 1,
+            coverage: 'enforced',
+            verification: 'not-run',
+            completion: 'agent-reported',
+            denied: 0,
+            step: { index: 2, total: 4, name: 'Draft' },
+          },
+        ],
+      },
+      NONE,
+      OPTS,
+    )
+    const node = p!.roots[0]!
+    expect(node.activity).toBe('Needs approval: No pushes')
+    expect(node.harness?.text).toBe('Step 2/4 · Draft')
   })
 })

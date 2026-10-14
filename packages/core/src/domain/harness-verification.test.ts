@@ -99,3 +99,44 @@ describe('gateFeedback', () => {
     expect(gateFeedback([])).toBe('')
   })
 })
+
+describe('verificationState with a flow', () => {
+  const flow = (
+    states: ('pending' | 'active' | 'done' | 'skipped')[],
+    optional: boolean[] = [],
+  ) => ({
+    harnessVersion: 'hrn_a@1',
+    mode: 'sequential' as const,
+    current: null,
+    steps: states.map((state, i) => ({
+      stepId: `stp_${i}`,
+      index: i,
+      name: `s${i}`,
+      goal: 'g',
+      state,
+      optional: optional[i] ?? false,
+      checks: [],
+    })),
+    done: 0,
+    total: states.length,
+  })
+  const ok = [res('a', 'pass', 10), res('b', 'pass', 11)]
+
+  it('verified requires every required step done or skipped as well as the gates', () => {
+    expect(verificationState(G, ok, { ...V, flow: flow(['done', 'active']) })).toBe(
+      'flow-incomplete',
+    )
+    expect(verificationState(G, ok, { ...V, flow: flow(['done', 'skipped']) })).toBe('verified')
+    expect(verificationState(G, ok, { ...V, flow: flow(['done', 'pending'], [false, true]) })).toBe(
+      'verified',
+    )
+    expect(
+      verificationState(G, [...ok, res('b', 'fail', 12)], { ...V, flow: flow(['active']) }),
+    ).toBe('failed')
+  })
+
+  it('a flow without gates is verified when its steps are', () => {
+    expect(verificationState([], [], { ...V, flow: flow(['done']) })).toBe('verified')
+    expect(verificationState([], [], { ...V, flow: flow(['active']) })).toBe('not-run')
+  })
+})

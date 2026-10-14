@@ -1,7 +1,8 @@
 // Test seam (AGENT_OFFICE_FAKE_RUNNER=1): a scripted AgentRunner for the Playwright app specs.
 // Never spawns Claude Code. Prompts: anything → "ok"; "/perm" → asks to run Bash `pnpm test`;
 // "/slow" → a 5 s tool call that can be interrupted; "/perm-protected" → an Edit of a file the
-// harness may protect (docs/harness.md); "/subagent" → one subagent's start, tool call and stop.
+// harness may protect (docs/harness.md); "/subagent" → one subagent's start, tool call and stop;
+// "/ask" → an AskUserQuestion ("Which colour?": Blue or Green) answered → "chose: <label>".
 import type {
   AgentRunner,
   EnforcementDecl,
@@ -11,13 +12,32 @@ import type {
   RunnerSession,
   RunnerStart,
 } from '@agent-office/core'
-import type { AgentEvent, ModelOption, PermissionMode } from '@agent-office/shared'
+import {
+  questionFromToolInput,
+  type AgentEvent,
+  type ModelOption,
+  type PermissionMode,
+} from '@agent-office/shared'
 import { CLAUDE_ENFORCEMENT } from './claude-sdk-runner.ts'
 
 type Ev = Omit<AgentEvent, 'agentId'>
 type Child = { childId: string; kind?: string; event: Omit<AgentEvent, 'agentId' | 'parentId'> }
 
 const PROTECTED_FILE = 'packages/shared/src/protocol.ts'
+const ASK_QUESTION = 'Which colour?'
+const ASK_INPUT = {
+  questions: [
+    {
+      question: ASK_QUESTION,
+      header: 'Colour',
+      options: [
+        { label: 'Blue', description: 'Calm and familiar' },
+        { label: 'Green', description: 'Fresh and bright' },
+      ],
+      multiSelect: false,
+    },
+  ],
+}
 
 export interface ScriptedRunnerOptions {
   /** Delay between scripted steps (default 150 ms). */
@@ -105,6 +125,7 @@ class ScriptedSession implements RunnerSession {
       this.emit({ status: 'thinking', text: '', model: this.model ?? 'claude-sonnet-5' })
       if (prompt.includes('/perm-protected')) return void this.permProtected()
       if (prompt.includes('/subagent')) return this.subagent()
+      if (prompt.includes('/ask')) return void this.ask()
       if (prompt.includes('/perm')) return void this.perm()
       if (prompt.includes('/slow')) return this.slow()
       this.later(this.stepMs, () => this.result('ok'))
@@ -119,6 +140,30 @@ class ScriptedSession implements RunnerSession {
       : { behavior: 'deny', message: 'no approver' }
     if (this.closed || this.interrupted) return
     this.result(d.behavior === 'allow' ? 'ok' : 'denied')
+  }
+
+  /** Like Claude Code: the question shows on the agent, the approver answers it via `updatedInput`. */
+  private async ask(): Promise<void> {
+    const input: Record<string, unknown> = structuredClone(ASK_INPUT)
+    this.emit({
+      status: 'waiting',
+      tool: 'AskUserQuestion',
+      text: 'Asking you a question',
+      question: questionFromToolInput(input),
+    })
+    const d: RunnerDecision = this.permissionFn
+      ? await this.permissionFn({ tool: 'AskUserQuestion', input, cwd: this.s.cwd })
+      : { behavior: 'deny', message: 'no approver' }
+    if (this.closed || this.interrupted) return
+    this.emit({ status: 'thinking', text: '', question: null })
+    const answers = d.behavior === 'allow' ? d.updatedInput?.answers : undefined
+    const chose =
+      answers && typeof answers === 'object'
+        ? (answers as Record<string, unknown>)[ASK_QUESTION]
+        : undefined
+    this.later(this.stepMs, () =>
+      this.result(typeof chose === 'string' && chose ? `chose: ${chose}` : 'declined'),
+    )
   }
 
   /** An Edit the harness decides first: deny never reaches the approver, ask goes to it. */

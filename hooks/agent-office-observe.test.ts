@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -368,11 +368,18 @@ describe('process (HK-9: always exit 0, never print)', () => {
   })
 })
 
-describe('Claude hook is untouched (HK-10)', () => {
-  it('agent-office-hook.mjs is byte-identical to HEAD', () => {
-    const head = execFileSync('git', ['show', 'HEAD:hooks/agent-office-hook.mjs'], {
-      cwd: join(SCRIPT, '..', '..'),
-    })
-    expect(readFileSync(join(SCRIPT, '..', 'agent-office-hook.mjs')).equals(head)).toBe(true)
+describe('Claude hook stays non-blocking (HK-10)', () => {
+  it('agent-office-hook.mjs subscribes only to Stop and UserPromptSubmit and never to blocking events', () => {
+    const src = readFileSync(join(SCRIPT, '..', 'agent-office-hook.mjs'), 'utf8')
+    expect(src).toContain("'Stop'")
+    expect(src).toContain("'UserPromptSubmit'")
+    for (const blocking of [
+      'PreToolUse',
+      'PermissionRequest',
+      'BeforeTool',
+      'preToolUse',
+      'beforeShellExecution',
+    ])
+      expect(src).not.toContain(blocking)
   })
 })

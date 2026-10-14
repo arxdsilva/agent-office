@@ -1,6 +1,6 @@
 // Managed sessions end to end: real core + real HTTP server, with a scripted runner standing in for
 // the Agent SDK. The HTTP API is how external tools (and the hook) see the office.
-import { createOffice } from '@agent-office/core'
+import { createOffice, type AgentRunner } from '@agent-office/core'
 import {
   FakeAgentRunner,
   FakeClaudeSettingsStore,
@@ -16,6 +16,7 @@ import {
 import type { Agent, ChatMessage } from '@agent-office/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAuth } from '../src/http/auth.ts'
+import { ScriptedAgentRunner } from '../src/agents/fake-runner.ts'
 import { buildHttpApi } from '../src/http/http-api.ts'
 import { startHttpServer } from '../src/http/server.ts'
 import {
@@ -33,7 +34,8 @@ afterEach(async () => {
   cleanup = []
 })
 
-async function startManagedServer() {
+/** `scripted`: a runtime to use instead of the FakeAgentRunner (e.g. the app specs' ScriptedAgentRunner). */
+async function startManagedServer(scripted?: AgentRunner) {
   const scheduler = new TimerScheduler()
   const runner = new FakeAgentRunner()
   const office = createOffice({
@@ -54,7 +56,7 @@ async function startManagedServer() {
     updater: new ScriptedUpdater(),
     platform: fakePlatform({ packaged: false }),
     releaseUrl: 'https://example.invalid',
-    runner,
+    runner: scripted ?? runner,
   })
   let auth = createAuth({ token: TOKEN, port: 0 })
   const app = buildHttpApi(
@@ -166,6 +168,107 @@ describe('managed sessions (E2E)', () => {
     expect(after.find((a) => a.id === agentId)).toMatchObject({
       status: 'done',
       managed: { phase: 'ended' },
+    })
+  })
+
+  describe('questions (AskUserQuestion, scripted runtime)', () => {
+    const START_ASK = {
+      cwd: '/home/dev/code/shop-api',
+      name: 'shop-api',
+      mode: 'default' as const,
+      extraDirs: [],
+      chrome: false,
+      first: { text: '/ask', context: [], use: [] },
+    }
+
+    it('M2 /ask → question card → answer → "chose: Green"; the agent waits while asking', async () => {
+      const { office } = await startManagedServer(new ScriptedAgentRunner({ stepMs: 5 }))
+      const ui = observe(office)
+      cleanup.push(ui.stop)
+      const sessions = office.sessions!
+
+      // The first prompt "/ask" makes the scripted runtime ask "Which colour?" (Blue or Green).
+      const agentId = await sessions.start(START_ASK)
+
+      // The UI receives a question card (not a plain permission) carrying the bounded question.
+      const perm = await ui.next(
+        is('permission', (m) => m.agentId === agentId && m.requests.length === 1),
+      )
+      expect(perm.requests[0]).toMatchObject({
+        tool: 'AskUserQuestion',
+        summary: 'Which colour?',
+        question: {
+          prompts: [
+            { question: 'Which colour?', options: [{ label: 'Blue' }, { label: 'Green' }] },
+          ],
+        },
+      })
+
+      // While the card is pending the agent waits for the user and shows the question.
+      await ui.next(
+        is(
+          'upsert',
+          (m) =>
+            m.agent.id === agentId &&
+            m.agent.status === 'waiting' &&
+            m.agent.text === 'Asking you a question' &&
+            m.agent.question?.prompts[0]?.question === 'Which colour?',
+        ),
+      )
+
+      // The user picks Green: the runtime gets it as `answers` and replies with the label.
+      sessions.answer(agentId, perm.requests[0]!.id, 'allow', { 'Which colour?': 'Green' })
+      const reply = await ui.next(
+        is('chat', (m) => m.message.agentId === agentId && m.message.from === 'agent'),
+      )
+      expect(reply.message.text).toBe('chose: Green')
+
+      // Answered: the question is gone from the agent.
+      expect(office.query.snapshot().agents.find((a) => a.id === agentId)?.question).toBeUndefined()
+    })
+
+    it('M3 "Allow for this session" never applies to a question: the next /ask asks again', async () => {
+      const { office } = await startManagedServer(new ScriptedAgentRunner({ stepMs: 5 }))
+      const ui = observe(office)
+      cleanup.push(ui.stop)
+      const sessions = office.sessions!
+      const agentId = await sessions.start(START_ASK)
+
+      // First question: answered with allow-session (treated as a plain allow).
+      const first = await ui.next(
+        is('permission', (m) => m.agentId === agentId && m.requests.length === 1),
+      )
+      sessions.answer(agentId, first.requests[0]!.id, 'allow-session', { 'Which colour?': 'Blue' })
+      const r1 = await ui.next(
+        is('chat', (m) => m.message.agentId === agentId && m.message.from === 'agent'),
+      )
+      expect(r1.message.text).toBe('chose: Blue')
+
+      // A second /ask still raises a card instead of being auto-allowed.
+      await office.compose.send(agentId, { text: '/ask', context: [], use: [] })
+      const second = await ui.next(
+        is(
+          'permission',
+          (m) =>
+            m.agentId === agentId &&
+            m.requests.length === 1 &&
+            m.requests[0]!.id !== first.requests[0]!.id,
+        ),
+      )
+      expect(second.requests[0]?.question).toBeDefined()
+
+      // Declining it ends the turn with "declined".
+      sessions.answer(agentId, second.requests[0]!.id, 'deny')
+      const r2 = await ui.next(
+        is(
+          'chat',
+          (m) =>
+            m.message.agentId === agentId &&
+            m.message.from === 'agent' &&
+            m.message.text === 'declined',
+        ),
+      )
+      expect(r2.message.text).toBe('declined')
     })
   })
 })

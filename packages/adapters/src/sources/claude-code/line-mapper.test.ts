@@ -234,3 +234,149 @@ describe('lineToEvent', () => {
     expect(lineToEvent('', ctx)).toBeNull()
   })
 })
+
+describe('lineToEvent: AskUserQuestion (invented content)', () => {
+  const ask = (id = 'toolu_q1') => ({
+    type: 'tool_use',
+    id,
+    name: 'AskUserQuestion',
+    input: {
+      questions: [
+        {
+          question: 'Which colour should the banner use?',
+          header: 'Banner',
+          options: [
+            { label: 'Teal', description: 'Matches the logo' },
+            { label: 'Amber', description: 'Higher contrast' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  })
+  const QUESTION = {
+    prompts: [
+      {
+        question: 'Which colour should the banner use?',
+        header: 'Banner',
+        options: [
+          { label: 'Teal', description: 'Matches the logo' },
+          { label: 'Amber', description: 'Higher contrast' },
+        ],
+        multiSelect: false,
+      },
+    ],
+  }
+
+  it('LM-q1: a question → waiting with the bounded question; its tool_result clears it', () => {
+    const ctx = newParseContext()
+    expect(lineToEvent(assistant([ask()]), ctx)).toMatchObject({
+      agentId: 'cc:sess-1234abcd',
+      status: 'waiting',
+      tool: 'AskUserQuestion',
+      text: 'Asking you a question',
+      question: QUESTION,
+    })
+    // An unrelated result (a parallel tool) does not clear it.
+    const other = lineToEvent(
+      user([{ type: 'tool_result', tool_use_id: 'toolu_other', content: 'ok' }], {
+        timestamp: iso(1),
+      }),
+      ctx,
+    )
+    expect(other && 'question' in other).toBe(false)
+    const done = lineToEvent(
+      user([{ type: 'tool_result', tool_use_id: 'toolu_q1', content: 'User answered: Teal' }], {
+        timestamp: iso(2),
+      }),
+      ctx,
+    )
+    expect(done).toMatchObject({ status: 'thinking', question: null })
+    expect(JSON.stringify(done)).not.toContain('Teal')
+    // Cleared once only.
+    const later = lineToEvent(
+      user([{ type: 'tool_result', tool_use_id: 'toolu_q1', content: 'x' }], { timestamp: iso(3) }),
+      ctx,
+    )
+    expect(later && 'question' in later).toBe(false)
+  })
+
+  it('LM-q2: a new prompt from the user while a question is pending clears it (abandoned)', () => {
+    const ctx = newParseContext()
+    lineToEvent(assistant([ask()]), ctx)
+    expect(lineToEvent(user('never mind, use teal', { timestamp: iso(1) }), ctx)).toMatchObject({
+      question: null,
+    })
+  })
+
+  it('LM-q3: other tool inputs stay unread next to a question (sentinel never leaks)', () => {
+    const ctx = newParseContext()
+    const e = lineToEvent(
+      assistant([
+        {
+          type: 'tool_use',
+          id: 'toolu_b',
+          name: 'Bash',
+          input: { command: 'echo SENTINEL-CMD', description: 'SENTINEL-DESC' },
+        },
+        ask(),
+      ]),
+      ctx,
+    )
+    expect(e).toMatchObject({ status: 'waiting', tool: 'AskUserQuestion', question: QUESTION })
+    expect(JSON.stringify(e)).not.toMatch(/SENTINEL/)
+    // The question block wins even when it is not the last tool_use.
+    const f = lineToEvent(
+      assistant(
+        [
+          ask('toolu_q2'),
+          {
+            type: 'tool_use',
+            id: 'toolu_c',
+            name: 'Bash',
+            input: { command: 'SENTINEL-CMD2', description: 'SENTINEL-DESC2' },
+          },
+        ],
+        {
+          timestamp: iso(1),
+        },
+      ),
+      ctx,
+    )
+    expect(f).toMatchObject({ tool: 'AskUserQuestion', question: QUESTION })
+    expect(JSON.stringify(f)).not.toMatch(/SENTINEL/)
+  })
+
+  it('LM-q4: an invalid AskUserQuestion input is an ordinary tool event', () => {
+    const e = lineToEvent(
+      assistant([{ type: 'tool_use', id: 'x', name: 'AskUserQuestion', input: { questions: [] } }]),
+      newParseContext(),
+    )
+    expect(e).toMatchObject({ status: 'tool', tool: 'AskUserQuestion' })
+    expect(e && 'question' in e).toBe(false)
+  })
+
+  it('LM-q5: a subagent question stays on the child and does not end it', () => {
+    const ctx = newParseContext()
+    const side = { isSidechain: true, agentId: 'a1' }
+    const e = lineToEvent(assistant([ask()], side, 'tool_use'), ctx)
+    expect(e).toMatchObject({
+      agentId: 'cc:a1',
+      parentId: 'cc:sess-1234abcd',
+      status: 'waiting',
+      question: QUESTION,
+    })
+    expect(e?.ended).toBeUndefined()
+    // The parent's next line does not clear the child's question.
+    const p = lineToEvent(user('hello', { timestamp: iso(1) }), ctx)
+    expect(p && 'question' in p).toBe(false)
+    const c = lineToEvent(
+      user([{ type: 'tool_result', tool_use_id: 'toolu_q1', content: 'ok' }], {
+        ...side,
+        timestamp: iso(2),
+      }),
+      ctx,
+    )
+    expect(c).toMatchObject({ agentId: 'cc:a1', question: null })
+  })
+})

@@ -51,10 +51,61 @@ describe('WorkspaceQueryService', () => {
       ['cc:3', null],
     ])
     expect(o.pendingApprovals).toBe(1)
+    expect(o.flowApprovals).toEqual([])
+    expect(o.projects[0]!.harnessIds).toEqual([])
     expect(o.recentDecisions.map((d) => d.title)).toEqual(['Use JWT'])
     expect(o.unfinishedHandoffs).toHaveLength(1)
     expect(o.unassignedSessions).toBe(2)
     expect(o.recentCompletions).toEqual([]) // nothing assigned has finished yet
+  })
+
+  it('WQ-overview: flow approvals waiting on the user count as pending approvals; harnessIds in Applied order', async () => {
+    const h = harness({
+      enforcementOf: () => ({
+        instructions: 'native',
+        toolDeny: 'hook',
+        pathDeny: 'hook',
+        commandDeny: 'hook',
+        fsIsolation: 'none',
+        subagents: 'inherited',
+      }),
+    })
+    const prj = await withProject(h)
+    const a = await h.projects.harness.create({
+      name: 'Flow',
+      steps: [
+        { name: 'Outline', goal: 'Agreed', exit: [{ kind: 'approval', prompt: 'Outline ok' }] },
+      ],
+    })
+    const b = await h.projects.harness.create({
+      name: 'Std',
+      gates: [{ name: 'c', argv: ['make'] }],
+    })
+    for (const d of [a, b]) {
+      await h.projects.harness.publish(d.id)
+      await h.projects.harness.attach(prj, d.id)
+    }
+    await h.projects.harness.reorder(prj, [b.id, a.id])
+    const ap = (await h.projects.policy.prepare({
+      projectId: prj,
+      provider: 'claude-code',
+      cwd: '/work/shop',
+      mode: 'default',
+    }))!
+    h.putAgent({ id: 'cc:f', name: 'Writer', projectId: prj, managed: running })
+    h.projects.policy.bind({ agentId: 'cc:f', sessionId: 'f', projectId: prj, policy: ap })
+    const o = h.projects.workspace.overview()
+    expect(o.projects[0]!.harnessIds).toEqual([b.id, a.id])
+    expect(o.flowApprovals).toMatchObject([
+      {
+        projectId: prj,
+        projectName: 'Shop',
+        agentId: 'cc:f',
+        agentName: 'Writer',
+        prompt: 'Outline ok',
+      },
+    ])
+    expect(o.pendingApprovals).toBe(1)
   })
 
   it('WQ-dashboard: active agents, activity, tasks, knowledge, sessions', async () => {

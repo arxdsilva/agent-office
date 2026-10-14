@@ -16,7 +16,15 @@ import { assertAuthorized, USER, type Principal } from '../domain/authz.ts'
 import { SessionStartError } from '../domain/errors.ts'
 import { coverageFor, toReportView, weakest } from '../domain/harness-coverage.ts'
 import { newHarnessEvent, toEventView } from '../domain/harness-events.ts'
+import {
+  currentStepBadge,
+  flowEvent,
+  policiesOfStep,
+  startFlow,
+  toFlowView,
+} from '../domain/harness-flow.ts'
 import { compilePolicy, nativeOf, toolClass } from '../domain/harness-policy.ts'
+import { toStepView } from '../domain/harness.ts'
 import { resolveEffective, versionKey } from '../domain/harness-resolve.ts'
 import type {
   ActionPolicy,
@@ -72,6 +80,8 @@ interface State {
   ended: boolean
   last?: { key: string; ts: number }
   lastWriteAt?: number
+  /** Compiled step-scoped policies per step id (docs/harness.md §2a). */
+  stepEval: Map<string, (a: PolicyAction) => PolicyDecision>
 }
 
 export interface HarnessPolicyDeps {
@@ -82,6 +92,8 @@ export interface HarnessPolicyDeps {
   enforcementOf?: (provider: ProviderId) => EnforcementDecl | undefined
   /** Main's platform: gates limited to other platforms do not count towards verification. */
   platform?: string
+  /** A RepoFiles adapter exists: artifact checks can be evaluated (labels in flow views). */
+  repoAccess?: boolean
 }
 
 const isWrite = (tool: string | undefined) => {
@@ -95,6 +107,7 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
   private turnListener:
     ((agentId: string, r: { isError: boolean; interrupted: boolean }) => void) | undefined
   private endListener: ((agentId: string) => void) | undefined
+  private writeListener: ((agentId: string) => void) | undefined
   private retries = new Map<string, number>()
 
   constructor(private d: HarnessPolicyDeps) {}
@@ -103,9 +116,12 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
   connect(o: {
     turnEnded: (agentId: string, r: { isError: boolean; interrupted: boolean }) => void
     ended: (agentId: string) => void
+    /** An allowed write or command was recorded (the flow service voids gate checks). */
+    wrote?: (agentId: string) => void
   }): void {
     this.turnListener = o.turnEnded
     this.endListener = o.ended
+    this.writeListener = o.wrote
   }
 
   // ── resolution ──
@@ -170,6 +186,8 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
         let d: PolicyDecision
         try {
           d = evaluateFn(a)
+          const step = this.stepEvaluator(state, a)
+          if (step) d = mergeDecisions(d, step(a))
         } catch {
           d = { action: 'deny', ruleIds: [], reason: 'policy error', basis: 'exact' }
         }
@@ -182,14 +200,22 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
       },
       ...(effective.instructions ? { instructions: effective.instructions } : {}),
       native: nativeOf(effective.policies, effective.fsIsolation),
-      interceptAll: effective.policies.length > 0,
+      interceptAll:
+        effective.policies.length > 0 || !!effective.steps?.some((s) => s.policies?.length),
       unsupported: effective.rules
         .filter(
           (r) => r.severity === 'required' && report.perRule[r.id]?.coverage === 'unsupported',
         )
         .map((r) => ({ ruleId: r.id, reason: report.perRule[r.id]!.reason })),
     }
-    Object.assign(state, { policy, effective, report, buffer: [], ended: false })
+    Object.assign(state, {
+      policy,
+      effective,
+      report,
+      buffer: [],
+      ended: false,
+      stepEval: new Map(),
+    })
     this.states.set(policy, state)
     return policy
   }
@@ -228,6 +254,29 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
           .slice(0, 200),
         {},
       )
+    if (state.effective.steps?.length && !this.d.store.flowOf(sessionId)) {
+      const progress = startFlow(state.effective, {
+        sessionId,
+        agentId: o.agentId,
+        projectId: o.projectId,
+        now,
+        newId: (p) => this.d.store.newId(p),
+      })
+      void this.d.store.putFlowProgress(progress)
+      const first = state.effective.steps.find((s) => s.id === progress.current)
+      if (first)
+        void this.d.store.addHarnessEvent(
+          flowEvent({
+            id: this.d.store.newId('hev'),
+            projectId: o.projectId,
+            sessionId,
+            agentId: o.agentId,
+            ts: now,
+            kind: 'step-started',
+            stepName: first.name,
+          }),
+        )
+    }
     const buffered = state.buffer
     state.buffer = []
     for (const b of buffered) this.write(state, b.a, b.d, b.ts)
@@ -326,6 +375,7 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
       .map(toEventView)
     const { verification, completion, gates } = this.validationOf(agentId, snap)
     const retriesLeft = this.retries.get(agentId)
+    const flow = this.flowView(snap)
     return {
       agentId,
       sessionId: snap.sessionId,
@@ -339,7 +389,15 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
       completion,
       ...(retriesLeft !== undefined ? { retriesLeft } : {}),
       ...(views[0] ? { lastEvent: views[0] } : {}),
+      ...(flow ? { flow } : {}),
     }
+  }
+
+  /** The session's flow progress as a view (undefined without a flow). */
+  flowView(snap: HarnessSnapshot) {
+    const progress = this.d.store.flowOf(snap.sessionId)
+    if (!progress || !snap.effective.steps?.length) return undefined
+    return toFlowView(snap.effective, progress, { repoAccess: !!this.d.repoAccess })
   }
 
   badges(as: Principal = USER): HarnessBadge[] {
@@ -354,6 +412,8 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
         (r) => s.report.perRule[r.id]?.coverage ?? 'unsupported',
       ) as Coverage[]
       const { verification, completion } = this.validationOf(agentId, snap)
+      const progress = this.d.store.flowOf(s.ids.sessionId)
+      const step = progress ? currentStepBadge(snap.effective, progress) : undefined
       out.push({
         agentId,
         harnessNames: s.effective.resolved.map((r) => r.name),
@@ -364,6 +424,7 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
         denied: this.d.store
           .harnessEventsOf(s.ids.sessionId)
           .filter((e) => e.kind === 'action-denied').length,
+        ...(step ? { step } : {}),
       })
     }
     return out
@@ -381,9 +442,11 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
     const applicable = snap.effective.gates.filter(
       (g) => !platform || !g.platforms?.length || g.platforms.includes(platform as never),
     )
+    const flow = this.flowView(snap)
     const verification = verificationState(applicable, results, {
       harnessVersion: versionKey(snap.effective),
       running: running.length > 0,
+      ...(flow ? { flow } : {}),
       ...(lastWriteAt !== undefined ? { lastWriteAt } : {}),
     })
     const completion = completionState({
@@ -427,8 +490,14 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
       cwd: a.cwd,
       ...(a.agentRole ? { agentRole: a.agentRole } : {}),
     })
-    if (d.action === 'allow' && isWrite(a.tool))
+    if (d.action === 'allow' && isWrite(a.tool)) {
       state.lastWriteAt = Math.max(state.lastWriteAt ?? 0, ts)
+      try {
+        this.writeListener?.(ids.agentId)
+      } catch {
+        /* isolated */
+      }
+    }
     const key = `${e.kind}|${e.detail.tool}|${e.detail.summary}|${e.detail.agentRole ?? ''}`
     if (state.last && state.last.key === key && ts - state.last.ts < DEDUPE_MS) return
     state.last = { key, ts }
@@ -444,6 +513,28 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
         { sessionId: ids.sessionId, agentId: ids.agentId },
       )
     }
+  }
+
+  /** The current step's compiled policies: live progress once bound, else the action's stepId. */
+  private stepEvaluator(
+    state: State,
+    a: PolicyAction,
+  ): ((a: PolicyAction) => PolicyDecision) | undefined {
+    if (!state.effective?.steps?.length) return undefined
+    const progress = state.ids ? this.d.store.flowOf(state.ids.sessionId) : undefined
+    const stepId = progress
+      ? progress.mode === 'sequential'
+        ? progress.current
+        : null
+      : (a.stepId ?? null)
+    if (!stepId) return undefined
+    let fn = state.stepEval.get(stepId)
+    if (!fn) {
+      const rules = policiesOfStep(state.effective, stepId)
+      fn = rules.length ? compilePolicy(rules) : () => ALLOW
+      state.stepEval.set(stepId, fn)
+    }
+    return fn
   }
 
   private event(
@@ -466,6 +557,21 @@ export class HarnessPolicyService implements HarnessPolicyEngine, SessionHarness
       }),
     )
   }
+}
+
+/** Deny wins, then ask; rule ids of the winning effect are kept from both sides. */
+function mergeDecisions(a: PolicyDecision, b: PolicyDecision): PolicyDecision {
+  for (const action of ['deny', 'ask'] as const) {
+    const hits = [a, b].filter((d) => d.action === action)
+    if (hits.length)
+      return {
+        action,
+        ruleIds: hits.flatMap((d) => d.ruleIds),
+        reason: hits[0]!.reason,
+        basis: a.basis === 'heuristic' || b.basis === 'heuristic' ? 'heuristic' : 'exact',
+      }
+  }
+  return a
 }
 
 /** A partition-safe session key when the vault has no record for the agent (no projects load). */
@@ -496,6 +602,12 @@ export function effectiveView(
     gateTrigger: e.gateTrigger,
     fsIsolation: e.fsIsolation,
     instructionsChars: e.instructions.length,
+    ...(e.steps?.length
+      ? {
+          steps: e.steps.map((st, i) => toStepView(st, i, e.gates)),
+          flowMode: e.flowMode ?? 'sequential',
+        }
+      : {}),
   }
 }
 

@@ -322,6 +322,76 @@ describe('ClaudeSdkRunner', () => {
     expect(seen).toEqual([{ tool: 'Bash', input: { command: 'ls' }, cwd: '/work/shop-api' }])
   })
 
+  it("SDK-Q1 canUseTool returns the decision's updatedInput (question answers) when present", async () => {
+    const { sdk, runner } = make()
+    const s = runner.start(START)
+    sdk.init('sess-1')
+    await tick()
+    const input = { questions: [{ question: 'Which colour?', header: 'C', options: [] }] }
+    s.onPermission(async (r) => ({
+      behavior: 'allow',
+      updatedInput: { ...r.input, answers: { 'Which colour?': 'Green' } },
+    }))
+    await expect(sdk.ask('AskUserQuestion', input)).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: { ...input, answers: { 'Which colour?': 'Green' } },
+    })
+  })
+
+  it('SDK-Q2 an AskUserQuestion frame emits the question; its tool_result clears it', async () => {
+    const { sdk, runner } = make()
+    const s = runner.start(START)
+    const events: Omit<AgentEvent, 'agentId'>[] = []
+    s.onEvent((e) => events.push(e))
+    sdk.init('sess-1')
+    await s.sessionId
+    // Invented question content.
+    sdk.emit({
+      type: 'assistant',
+      session_id: 's',
+      parent_tool_use_id: null,
+      message: {
+        model: 'claude-x',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_q',
+            name: 'AskUserQuestion',
+            input: {
+              questions: [
+                {
+                  question: 'Which colour?',
+                  header: 'Colour',
+                  options: [
+                    { label: 'Blue', description: '' },
+                    { label: 'Green', description: '' },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+    sdk.emit({
+      type: 'user',
+      session_id: 's',
+      parent_tool_use_id: null,
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_q', content: 'Green' }],
+      },
+    })
+    await tick()
+    expect(events[0]).toMatchObject({
+      status: 'waiting',
+      tool: 'AskUserQuestion',
+      question: { prompts: [{ question: 'Which colour?' }] },
+    })
+    expect(events[1]).toMatchObject({ question: null })
+  })
+
   describe('SDK-8 error mapping', () => {
     const exitOf = async (err: Error, init = false) => {
       const { sdk, runner, log } = make()

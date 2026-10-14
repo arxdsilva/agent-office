@@ -9,6 +9,7 @@ import {
   type ServerMessage,
 } from './protocol.ts'
 import { MemoryIdSchema, ProjectIdSchema, RepoRefSchema } from './projects.ts'
+import { HarnessIdSchema } from './harness.ts'
 import type * as P from './projects.ts'
 import type * as H from './harness.ts'
 import {
@@ -142,8 +143,12 @@ export const SettingsSchema = z.object({
   startView: z.enum(['auto', 'overview', 'office']).default('auto'),
   /** Shell layout preferences (applied live). */
   layout: z
-    .object({ sidebarCollapsed: z.boolean().default(false) })
-    .default({ sidebarCollapsed: false }),
+    .object({
+      sidebarCollapsed: z.boolean().default(false),
+      /** The user's Harness library order (cosmetic; unknown ids sort after, newest first). */
+      harnessOrder: z.array(HarnessIdSchema).max(200).default([]),
+    })
+    .default({ sidebarCollapsed: false, harnessOrder: [] }),
   windowBounds: WindowBoundsSchema.optional(),
   /**
    * Per-provider integration switches (docs/provider-integrations.md). Missing = the provider's
@@ -248,7 +253,10 @@ export type PermissionDecision = (typeof PERMISSION_DECISIONS)[number]
 export const AnswerArgsSchema = SessionCallSchema.extend({
   requestId: z.string().regex(/^perm_[a-z0-9]{10}$/),
   decision: z.enum(PERMISSION_DECISIONS),
+  /** For a question card: question text → chosen labels (joined by ', ') or free text. */
+  answers: z.record(z.string().max(300), z.string().max(500)).optional(),
 })
+export type QuestionAnswers = Record<string, string>
 export const PickKindSchema = z.enum(['files', 'folder'])
 export interface ModelOption {
   id: string
@@ -354,7 +362,12 @@ export interface AgentOfficeApi {
     models(agentId?: string): Promise<ModelOption[]>
     interrupt(agentId: string): Promise<void>
     stop(agentId: string): Promise<void>
-    answer(agentId: string, requestId: string, decision: PermissionDecision): Promise<void>
+    answer(
+      agentId: string,
+      requestId: string,
+      decision: PermissionDecision,
+      answers?: QuestionAnswers,
+    ): Promise<void>
   }
   settings: {
     get(): Promise<Settings>
@@ -437,6 +450,14 @@ export interface AgentOfficeApi {
       /** Returns the project's attached harnesses. */
       attach(projectId: string, harnessId: string): Promise<H.HarnessSummary[]>
       detach(projectId: string, harnessId: string): Promise<H.HarnessSummary[]>
+      /** Sets the Applied order (precedence among harnesses of one scope; flow order). */
+      reorder(projectId: string, harnessIds: string[]): Promise<H.HarnessSummary[]>
+      /** Flow progress of a session (null when its harness has no steps). */
+      flow(agentId: string): Promise<H.FlowProgressView | null>
+      flowApprove(args: H.FlowStepArgs): Promise<H.FlowProgressView>
+      flowMarkDone(args: H.FlowStepArgs): Promise<H.FlowProgressView>
+      flowSkip(args: H.FlowSkipArgs): Promise<H.FlowProgressView>
+      flowReopen(args: H.FlowStepArgs): Promise<H.FlowProgressView>
       templates(): Promise<H.HarnessTemplateView[]>
       createFromTemplate(templateId: string): Promise<H.HarnessDetail>
       /** Scans the project's repositories for rule files (read-only; nothing is executed). */

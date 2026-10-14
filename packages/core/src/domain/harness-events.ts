@@ -47,7 +47,11 @@ export function newHarnessEvent(o: {
   const detail: HarnessEvent['detail'] = {}
   if (o.tool !== undefined) {
     detail.tool = oneLine(o.tool, 100)
-    const { summary } = summarizeToolRequest(o.tool, o.input, o.cwd ?? '')
+    // A question's text is shown live only (docs/harness.md §8): the audit keeps a fixed label.
+    const { summary } =
+      o.tool === 'AskUserQuestion'
+        ? { summary: 'Asked you a question' }
+        : summarizeToolRequest(o.tool, o.input, o.cwd ?? '')
     detail.summary = oneLine(redactSummary(summary), 120)
   }
   if (o.gateId !== undefined) detail.gateId = o.gateId

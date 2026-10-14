@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { RepoIdentityInfo } from '../ports/driven.ts'
 import { ValidationError } from './errors.ts'
 import {
+  PROJECT_COLORS,
+  type Project,
   addRepo,
   createProject,
   defaultPolicy,
   idFrom,
-  PROJECT_COLORS,
   providerAccess,
   removeRepo,
+  reorderHarnesses,
   updateProject,
 } from './project.ts'
 
@@ -110,5 +112,49 @@ describe('harness attachments', () => {
     p = detachHarness(p, 'hrn_a')
     expect(p.harnesses!.some((h) => h.harnessId === 'hrn_a')).toBe(false)
     expect(() => detachHarness(p, 'hrn_a')).toThrow(ValidationError)
+  })
+})
+
+describe('reorderHarnesses', () => {
+  const base = (): Project => ({
+    ...createProject({ id: 'prj_aaaaaaaaaaaa', name: 'P', now: 1 }),
+    harnesses: [
+      { harnessId: 'hrn_aaaaaaaaaaaa', attachedAt: 1 },
+      { harnessId: 'hrn_bbbbbbbbbbbb', attachedAt: 2 },
+      { harnessId: 'hrn_cccccccccccc', attachedAt: 3 },
+    ],
+  })
+  it('applies a permutation and keeps attachedAt', () => {
+    const next = reorderHarnesses(base(), [
+      'hrn_cccccccccccc',
+      'hrn_aaaaaaaaaaaa',
+      'hrn_bbbbbbbbbbbb',
+    ])
+    expect(next.harnesses!.map((h) => h.harnessId)).toEqual([
+      'hrn_cccccccccccc',
+      'hrn_aaaaaaaaaaaa',
+      'hrn_bbbbbbbbbbbb',
+    ])
+    expect(next.harnesses![0]!.attachedAt).toBe(3)
+  })
+  it('returns the same object when the order is unchanged', () => {
+    const p = base()
+    expect(reorderHarnesses(p, ['hrn_aaaaaaaaaaaa', 'hrn_bbbbbbbbbbbb', 'hrn_cccccccccccc'])).toBe(
+      p,
+    )
+  })
+  it('rejects missing, extra or duplicate ids', () => {
+    expect(() => reorderHarnesses(base(), ['hrn_aaaaaaaaaaaa'])).toThrow(ValidationError)
+    expect(() =>
+      reorderHarnesses(base(), [
+        'hrn_aaaaaaaaaaaa',
+        'hrn_bbbbbbbbbbbb',
+        'hrn_cccccccccccc',
+        'hrn_dddddddddddd',
+      ]),
+    ).toThrow(ValidationError)
+    expect(() =>
+      reorderHarnesses(base(), ['hrn_aaaaaaaaaaaa', 'hrn_aaaaaaaaaaaa', 'hrn_cccccccccccc']),
+    ).toThrow(ValidationError)
   })
 })

@@ -55,6 +55,8 @@ export interface ProjectSummary {
   openTasks: number
   lastActivityAt?: number
   archived: boolean
+  /** Attached harnesses in Applied order (docs/harness.md); absent on older mains. */
+  harnessIds?: string[]
 }
 
 export interface ProjectDetail extends ProjectSummary {
@@ -265,6 +267,18 @@ export interface ProjectDashboard {
   sessions: SessionSummary[]
 }
 
+/** An approval check waiting on the user (Overview "pending approvals", notifications). */
+export interface FlowApprovalView {
+  projectId: string
+  projectName: string
+  agentId: string
+  agentName: string
+  stepId: string
+  stepName: string
+  checkIndex: number
+  prompt: string
+}
+
 export interface GlobalOverview {
   projects: ProjectSummary[]
   /** Agents waiting for the user (status waiting, or a permission request). */
@@ -272,6 +286,8 @@ export interface GlobalOverview {
   recentCompletions: ActivityView[]
   recentDecisions: MemoryView[]
   pendingApprovals: number
+  /** Flow steps waiting for the user's Approve (docs/harness.md §2a). Absent on older mains. */
+  flowApprovals?: FlowApprovalView[]
   unfinishedHandoffs: HandoffView[]
   unassignedSessions: number
   /** Vault health: where project data is kept. */

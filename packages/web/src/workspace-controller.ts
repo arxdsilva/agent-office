@@ -14,7 +14,23 @@ import { dashboardVM } from './app/workspace/dashboard-vm.ts'
 import { libraryCounts } from './app/workspace/library-counts.ts'
 import { projectLibraryVM } from './app/project-library.ts'
 import { handoffProviders, handoffVM } from './app/workspace/handoff-vm.ts'
-import { harnessBuilderVM } from './app/workspace/harness-builder-vm.ts'
+import { attachedIds, harnessBuilderVM } from './app/workspace/harness-builder-vm.ts'
+import {
+  LIVE,
+  announce,
+  dropIntent,
+  moveId,
+  sortLibrary,
+  type DropTarget,
+} from './app/workspace/harness-dnd.ts'
+import {
+  changedFields,
+  draftFromDetail,
+  importStepsArg,
+  newStepForm,
+  stepFormFrom,
+  stepFromForm,
+} from './app/workspace/harness-vm.ts'
 import { startableProviders } from './app/view-models.ts'
 import { inspectorVM } from './app/workspace/inspector-vm.ts'
 import { memoryVM, removeImportedTarget } from './app/workspace/memory-vm.ts'
@@ -88,7 +104,10 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   let searchSeq = 0
   let pendingNote: string | null = null
   let collapsed = d.settings().layout?.sidebarCollapsed ?? false
+  /** The Harness library order; sent back whole with every layout patch (layout is replaced as one object). */
+  let harnessOrder: string[] = d.settings().layout?.harnessOrder ?? []
   const offs: (() => void)[] = []
+  state = { ...state, harness: { ...state.harness, order: harnessOrder } }
 
   const now = (): number => d.clock.now()
   const schedule =
@@ -100,13 +119,8 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   let cancelDeep: (() => void) | null = null
   let libSeq = 0
 
-  let harnessWasOpen = false
   function render(): void {
     if (disposed) return
-    if (state.harness.open !== harnessWasOpen) {
-      harnessWasOpen = state.harness.open
-      scene.setModalOpen?.(harnessWasOpen)
-    }
     views.shell.render(shellVM(state, { sidebarCollapsed: collapsed }))
     views.overview.render(overviewVM(state, now()))
     views.dashboard.render(
@@ -120,7 +134,9 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     views.palette.render(paletteVM(state))
     views.newProject.render(newProjectVM(state))
     views.handoff.render(handoffVM(state))
-    views.harness?.render(harnessBuilderVM(state))
+    views.harness.render(harnessBuilderVM(state))
+    // Focus is a one-shot request: drawn once, then forgotten without another render.
+    if (state.harness.focus) state = { ...state, harness: { ...state.harness, focus: null } }
   }
 
   function dispatch(e: WorkspaceEvent): void {
@@ -138,24 +154,35 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     }
   }
 
-  // ── Harness Builder (docs/harness.md) ──────────────────────────────────────────────────────
+  // ── Harnesses pane (docs/harness.md §7) ────────────────────────────────────────────────────
   const hui = (patch: Partial<WorkspaceState['harness']>): void =>
     dispatch({ type: 'harness-ui', patch })
+  const later = (ms: number, fn: () => void): void => {
+    schedule(() => {
+      if (!disposed) fn()
+    }, ms)
+  }
+  const harnessName = (id: string): string =>
+    state.harness.list.find((x) => x.id === id)?.name ?? ''
+  const projectName = (id: string | null | undefined): string =>
+    (id && state.projects.find((p) => p.id === id)?.name) || WS_COPY.harness.confirm.thisProject
+  const HL = WS_COPY.harness.live
 
-  /** A harness call from the dialog: a failure becomes the dialog's own error line. */
+  /** A harness call from the pane: a failure becomes the pane's error line (and is announced). */
   async function hguard<T>(fn: () => Promise<T>): Promise<T | undefined> {
     try {
       return await fn()
     } catch (e) {
-      hui({ error: errorText(e), busy: false })
+      const error = errorText(e)
+      hui({ error, busy: false, live: error })
       return undefined
     }
   }
-  /** The library; quiet unless the dialog is open (the dashboard section is decoration). */
+  /** The library (also the sidebar's draft badge); quiet unless the pane is showing. */
   async function loadHarnesses(): Promise<void> {
     const h = api.harness
     if (!h) return
-    if (state.harness.open) {
+    if (state.view === 'harness') {
       const list = await hguard(() => h.list())
       if (list && !disposed) dispatch({ type: 'harnesses', list })
       return
@@ -178,13 +205,21 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     if (!h || !id) return
     const detail = await hguard(() => h.get(id))
     if (detail && !disposed) dispatch({ type: 'harness-detail', detail })
+    if (state.harness.versions) void loadVersions()
   }
-  /** What each ready provider would enforce on the dialog's project. */
+  async function loadVersions(): Promise<void> {
+    const h = api.harness
+    const id = state.harness.detail?.id
+    if (!h?.versions || !id) return
+    const versions = await hguard(() => h.versions(id))
+    if (versions && !disposed && state.harness.detail?.id === id) hui({ versions })
+  }
+  /** What each ready provider would enforce on the pane's scope project. */
   async function loadCoverage(): Promise<void> {
     const h = api.harness
     const pid = state.harness.projectId
     if (!h || !pid) {
-      hui({ coverage: [] })
+      if (state.harness.coverage.length) hui({ coverage: [] })
       return
     }
     if (!state.providers.length) await loadProviders()
@@ -193,20 +228,19 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     if (results && !disposed && state.harness.projectId === pid)
       hui({ coverage: results.map((r) => r.report) })
   }
-  async function openHarnessDialog(patch: Partial<WorkspaceState['harness']>): Promise<void> {
-    hui({ open: true, error: null, confirm: null, busy: false, ...patch })
-    await Promise.all([loadHarnesses(), loadTemplates()])
+  /** The editor's draft: unsaved edits, else the stored harness. */
+  const currentDraft = (): HarnessDraft | null =>
+    state.harness.draft ?? (state.harness.detail ? draftFromDetail(state.harness.detail) : null)
+  const editorDirty = (): boolean => {
+    const h = state.harness
+    return !!h.draft && !!h.detail && changedFields(h.draft, draftFromDetail(h.detail)).length > 0
   }
-  const closeHarnessDialog = (): void => hui({ open: false, confirm: null, error: null })
 
   async function openHarnessEditor(harnessId: string): Promise<void> {
     const h = api.harness
     if (!h) return
-    await openHarnessDialog({
-      tab: 'editor',
-      editorTab: 'overview',
-      projectId: state.harness.projectId ?? state.projectId,
-    })
+    if (state.view !== 'harness') await go('harness')
+    hui({ tab: 'editor', editorTab: 'overview', selectedId: harnessId, error: null })
     const detail = await hguard(() => h.get(harnessId))
     if (detail) dispatch({ type: 'harness-detail', detail })
     void loadCoverage()
@@ -219,14 +253,21 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     hui({ busy: true, error: null })
     const sources = await hguard(() => h.importDetect(pid))
     hui({ busy: false })
-    if (sources) dispatch({ type: 'import-sources', sources })
+    if (sources) {
+      dispatch({ type: 'import-sources', sources })
+      hui({ excluded: [] })
+    }
   }
   async function previewImport(): Promise<void> {
     const h = api.harness
     const pid = state.harness.projectId
     if (!h || !pid) return
+    const excluded = new Set(state.harness.excluded)
+    const paths = (state.harness.sources ?? []).map((x) => x.path).filter((p) => !excluded.has(p))
     hui({ busy: true, error: null })
-    const preview = await hguard(() => h.importPreview({ projectId: pid as never }))
+    const preview = await hguard(() =>
+      h.importPreview({ projectId: pid as never, ...(excluded.size && { paths }) }),
+    )
     hui({ busy: false })
     if (preview) dispatch({ type: 'import-preview', preview })
   }
@@ -235,12 +276,20 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     const hs = state.harness
     const preview = hs.preview
     if (!h || !preview) return
-    const name = (hs.importName || WS_COPY.harness.import.defaultName).trim()
-    if (!name) return
+    const pname = hs.projectId ? state.projects.find((p) => p.id === hs.projectId)?.name : null
+    const fallback = pname
+      ? WS_COPY.harness.import.standards(pname)
+      : WS_COPY.harness.import.defaultName
+    const name = (hs.importName || fallback).trim()
+    if (!name) {
+      hui({ error: WS_COPY.harness.import.needName })
+      return
+    }
     const chosen = new Set(hs.selection.selected)
     const edits = Object.entries(hs.edits)
       .filter(([id]) => chosen.has(id))
       .map(([tempId, e]) => ({ tempId, ...e }))
+    const steps = importStepsArg(hs.importSteps)
     hui({ busy: true, error: null })
     const detail = await hguard(() =>
       h.importCommit({
@@ -249,6 +298,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         selected: hs.selection.selected as never,
         ...(edits.length && { edits: edits as never }),
         gates: hs.selection.gates as never,
+        ...(steps.length && { steps: steps as never }),
         attach: hs.importAttach,
       }),
     )
@@ -257,28 +307,157 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     dispatch({ type: 'import-preview', preview: null })
     dispatch({ type: 'import-sources', sources: null })
     dispatch({ type: 'harness-detail', detail })
-    hui({ tab: 'editor', editorTab: 'overview', importName: '', importAttach: false })
+    hui({
+      tab: 'editor',
+      editorTab: 'overview',
+      importName: '',
+      importAttach: false,
+      selectedId: detail.id,
+      notice: WS_COPY.harness.import.done,
+      live: WS_COPY.harness.import.done,
+      focus: 'hb-f-name',
+    })
     await loadHarnesses()
+    if (hs.importAttach) await loadProjects()
   }
 
   async function runConfirm(): Promise<void> {
     const h = api.harness
     const c = state.harness.confirm
-    const pid = state.harness.projectId
-    if (!h || !c) return
+    if (!c) return
+    if (c.kind === 'discard') {
+      hui({ confirm: null, draft: null, stepForm: null, ruleEditId: null, stale: false })
+      if (c.next) await go(c.next.view, c.next.projectId, [], true)
+      return
+    }
+    const pid = c.projectId ?? state.harness.projectId
+    if (!h) return
     hui({ confirm: null, busy: true, error: null })
+    const name = harnessName(c.harnessId)
     const ok = await hguard(async () => {
-      if (c.kind === 'publish') await h.publish(c.harnessId)
-      else if (c.kind === 'archive') await h.archive(c.harnessId)
-      else if (!pid) throw new Error(WS_COPY.harness.library.hints.attachNeedsProject)
-      else if (c.kind === 'attach') await h.attach(pid, c.harnessId)
-      else await h.detach(pid, c.harnessId)
+      if (c.kind === 'publish') {
+        const d = await h.publish(c.harnessId)
+        return HL.published(name || d.name, d.version)
+      }
+      if (c.kind === 'archive') {
+        await h.archive(c.harnessId)
+        return HL.archived(name)
+      }
+      if (!pid) throw new Error(WS_COPY.harness.library.hints.attachNeedsProject)
+      if (c.kind === 'attach') {
+        await h.attach(pid, c.harnessId)
+        return HL.attached(name, projectName(pid))
+      }
+      await h.detach(pid, c.harnessId)
+      return HL.detached(name, projectName(pid))
+    })
+    hui({ busy: false })
+    if (!ok) return
+    hui({
+      live: ok,
+      error: null,
+      ...(c.kind === 'attach' && { justAttached: c.harnessId }),
+    })
+    if (c.kind === 'attach') later(300, () => hui({ justAttached: null }))
+    await loadHarnesses()
+    if (c.kind === 'attach' || c.kind === 'detach') await loadProjects()
+    if (state.harness.detail?.id === c.harnessId) await reloadHarnessDetail()
+  }
+
+  /** Attach by drop (Applied column or a sidebar project); `ids` = the Applied order wanted. */
+  async function attachTo(
+    harnessId: string,
+    projectId: string,
+    ids?: string[],
+    fromSidebar = false,
+  ): Promise<void> {
+    const h = api.harness
+    if (!h || state.harness.busy) return
+    hui({ busy: true, error: null, drag: null })
+    const ok = await hguard(async () => {
+      const list = await h.attach(projectId, harnessId)
+      const now = list.map((x) => x.id)
+      if (ids && now.length === ids.length && now.some((x, i) => x !== ids[i]))
+        await h.reorder(projectId, ids)
       return true
     })
     hui({ busy: false })
     if (!ok) return
-    await loadHarnesses()
-    if (state.harness.detail?.id === c.harnessId) await reloadHarnessDetail()
+    hui({
+      live: HL.attached(harnessName(harnessId), projectName(projectId)),
+      ...(fromSidebar
+        ? { justDropped: projectId }
+        : projectId === state.harness.projectId
+          ? { justAttached: harnessId }
+          : {}),
+    })
+    later(fromSidebar ? 600 : 300, () => hui({ justDropped: null, justAttached: null }))
+    await Promise.all([loadHarnesses(), loadProjects()])
+  }
+
+  const withHarnessIds = (projectId: string, ids: string[]) =>
+    state.projects.map((p) => (p.id === projectId ? { ...p, harnessIds: ids } : p))
+
+  /** The one id a single move displaced (for the announcement). */
+  function movedId(before: string[], after: string[]): string | undefined {
+    const i = before.findIndex((x, k) => x !== after[k])
+    if (i < 0) return undefined
+    const up = after[i]!
+    const rest = (xs: string[], id: string) => xs.filter((x) => x !== id)
+    return rest(before, up).every((x, k) => x === rest(after, up)[k]) ? up : before[i]
+  }
+
+  /** Optimistic Applied reorder: shown at once, rolled back if main refuses it. */
+  async function reorderApplied(projectId: string, ids: string[]): Promise<void> {
+    const h = api.harness
+    if (!h || state.harness.busy) return
+    const before = attachedIds(state, projectId)
+    const moved = movedId(before, ids)
+    dispatch({ type: 'projects', projects: withHarnessIds(projectId, ids) })
+    hui({ busy: true, error: null, drag: null })
+    const ok = await hguard(() => h.reorder(projectId, ids))
+    if (!ok) {
+      dispatch({ type: 'projects', projects: withHarnessIds(projectId, before) })
+      return
+    }
+    hui({
+      busy: false,
+      ...(moved && { live: LIVE.moved(harnessName(moved), ids.indexOf(moved) + 1) }),
+    })
+  }
+
+  /** The library order (cosmetic), saved with the whole layout (layout is replaced as one object). */
+  function reorderLibrary(ids: string[]): void {
+    const rest = sortLibrary(state.harness.list, state.harness.order)
+      .map((x) => x.id)
+      .filter((id) => !ids.includes(id))
+    harnessOrder = [...ids, ...rest].slice(0, 200)
+    hui({ order: harnessOrder, drag: null })
+    void guard(() =>
+      gateway.settings.set({ layout: { sidebarCollapsed: collapsed, harnessOrder } }),
+    )
+  }
+
+  /** Drag-over feedback: highlight from the VM, and a live sentence for projects and rejections. */
+  function dragOver(target: DropTarget | null): void {
+    const d = state.harness.drag
+    if (!d) return
+    if (JSON.stringify(d.over ?? null) === JSON.stringify(target)) return
+    let live = state.harness.live
+    if (target) {
+      const intent = dropIntent(d, target, {
+        scopeProjectId: state.harness.projectId,
+        applied: state.harness.projectId ? attachedIds(state, state.harness.projectId) : [],
+        library: [],
+        attached: (pid) => attachedIds(state, pid),
+      })
+      const pid = target.kind === 'project' ? target.projectId : state.harness.projectId
+      const names = { harness: harnessName(d.harnessId), project: projectName(pid) }
+      if (intent.kind === 'reject') live = announce(intent, names)
+      else if (intent.kind === 'attach' && target.kind === 'project')
+        live = LIVE.hover(names.harness, names.project)
+    }
+    hui({ drag: { ...d, ...(target ? { over: target } : { over: undefined }) }, live })
   }
 
   async function saveHarness(harnessId: string, draft: HarnessDraft): Promise<void> {
@@ -289,6 +468,8 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     hui({ busy: false })
     if (!detail) return
     dispatch({ type: 'harness-detail', detail })
+    hui({ draft: null, saved: true, stale: false, live: HL.saved(detail.name) })
+    later(1500, () => hui({ saved: false }))
     await loadHarnesses()
   }
   async function createHarness(templateId?: string): Promise<void> {
@@ -303,7 +484,13 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     hui({ busy: false })
     if (!detail) return
     dispatch({ type: 'harness-detail', detail })
-    hui({ tab: 'editor', editorTab: 'overview' })
+    hui({
+      tab: 'editor',
+      editorTab: 'overview',
+      selectedId: detail.id,
+      focus: 'hb-f-name',
+      live: HL.created(detail.name),
+    })
     await loadHarnesses()
   }
   async function runGates(agentId: string): Promise<void> {
@@ -313,6 +500,27 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     if (!ran) return
     const inspection = await guard(() => h.inspect(agentId))
     if (inspection) dispatch({ type: 'harness-inspection', agentId, inspection })
+  }
+  /** A user action on a session's flow (Inspector, Overview, palette). */
+  async function flowAction(run: () => Promise<unknown>, agentId: string): Promise<void> {
+    const ok = await guard(async () => (await run(), true))
+    if (!ok) return
+    void refreshOverview()
+    const h = api.harness
+    if (h && agentId in state.harness.inspections) {
+      const ins = await guard(() => h.inspect(agentId))
+      if (ins) dispatch({ type: 'harness-inspection', agentId, inspection: ins })
+    }
+  }
+
+  /** Removes a rule or step from the draft, keeping the previous draft for Undo (5 s). */
+  function removeWithUndo(next: HarnessDraft, live: string): void {
+    const before = currentDraft()
+    hui({ draft: next, undo: before, live })
+    const mark = before
+    later(5000, () => {
+      if (state.harness.undo === mark) hui({ undo: null })
+    })
   }
 
   // ── Data loading ────────────────────────────────────────────────────────────────────────────
@@ -451,7 +659,14 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     view: WorkspaceView,
     projectId?: string | null,
     pre: WorkspaceEvent[] = [],
+    force = false,
   ): Promise<void> {
+    // Leaving the Harnesses pane with unsaved editor changes asks first.
+    if (!force && state.view === 'harness' && view !== 'harness' && editorDirty()) {
+      const id = state.harness.detail!.id
+      hui({ confirm: { kind: 'discard', harnessId: id, next: { view, projectId } } })
+      return
+    }
     const seq = ++navSeq
     state = reduce(state, { type: 'navigate', view, projectId })
     for (const e of pre) state = reduce(state, e)
@@ -477,6 +692,9 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
       case 'context':
         if (state.inspectAgentId) await loadInspection(state.inspectAgentId)
         else dispatch({ type: 'loading', on: false })
+        break
+      case 'harness':
+        await Promise.all([loadHarnesses(), loadTemplates(), loadCoverage()])
         break
       case 'office':
         break
@@ -810,36 +1028,80 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         if (agentId) state = { ...state, inspectAgentId: agentId }
         return go('context', pid ?? null)
       }
-      case 'open-harnesses':
-        return openHarnessDialog({
-          tab: 'library',
-          projectId: a.projectId ?? state.projectId,
-          detail: null,
-        })
+      case 'open-harnesses': {
+        const pid = a.projectId ?? state.projectId
+        return go('harness', pid, [
+          {
+            type: 'harness-ui',
+            patch: { tab: 'library', ...(pid && { projectId: pid }) },
+          },
+        ])
+      }
+      case 'harness-new':
+        if (state.view !== 'harness') await go('harness')
+        return createHarness()
       case 'harness-edit':
         return openHarnessEditor(a.harnessId)
       case 'harness-import':
-        await openHarnessDialog({
-          tab: 'import',
-          projectId: a.projectId,
-          sources: null,
-          preview: null,
-          edits: {},
-          importName: '',
-          importAttach: false,
-        })
+        await go('harness', a.projectId, [
+          {
+            type: 'harness-ui',
+            patch: {
+              tab: 'import',
+              projectId: a.projectId,
+              sources: null,
+              preview: null,
+              edits: {},
+              excluded: [],
+              importName: '',
+              importAttach: false,
+            },
+          },
+        ])
         return detectSources()
       case 'harness-attach':
-        return openHarnessDialog({
-          tab: 'library',
-          projectId: a.projectId,
-          confirm: { kind: 'attach', harnessId: a.harnessId },
-        })
+        return go('harness', a.projectId, [
+          {
+            type: 'harness-ui',
+            patch: {
+              tab: 'library',
+              projectId: a.projectId,
+              confirm: { kind: 'attach', harnessId: a.harnessId, projectId: a.projectId },
+            },
+          },
+        ])
+      case 'flow-approve': {
+        const h = api.harness
+        if (!h) return
+        return flowAction(
+          () => h.flowApprove({ agentId: a.agentId, stepId: a.stepId, checkIndex: a.checkIndex }),
+          a.agentId,
+        )
+      }
+      case 'flow-mark-done': {
+        const h = api.harness
+        if (!h) return
+        return flowAction(() => h.flowMarkDone({ agentId: a.agentId, stepId: a.stepId }), a.agentId)
+      }
+      case 'flow-skip': {
+        const h = api.harness
+        if (!h) return
+        return flowAction(
+          () => h.flowSkip({ agentId: a.agentId, stepId: a.stepId, confirmed: a.confirmed }),
+          a.agentId,
+        )
+      }
+      case 'flow-reopen': {
+        const h = api.harness
+        if (!h) return
+        return flowAction(() => h.flowReopen({ agentId: a.agentId, stepId: a.stepId }), a.agentId)
+      }
       case 'run-gates':
         return runGates(a.agentId)
       case 'focus-agent':
         await go('office')
-        scene.select(a.agentId)
+        if (a.tab) scene.select(a.agentId, a.tab)
+        else scene.select(a.agentId)
         return
       case 'connect-provider':
         scene.openConnect()
@@ -861,10 +1123,14 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     if (msg.type === 'projects' || msg.type === 'session' || msg.type === 'memory')
       void refreshLibrary()
     if (msg.type === 'harness') {
-      if (state.harness.open) {
-        void loadHarnesses()
-        void reloadHarnessDetail()
-      } else if (state.view === 'project') void loadHarnesses()
+      // The library feeds the sidebar badge, the dashboard and the pane: always refresh it.
+      void loadHarnesses()
+      const open = state.harness.detail?.id
+      if (open && (!msg.harnessId || msg.harnessId === open)) {
+        // Unsaved edits are never overwritten by a push: offer Reload / Keep my edits instead.
+        if (editorDirty()) hui({ stale: true })
+        else void reloadHarnessDetail()
+      }
       // The reducer dropped the stale inspection of that agent: fetch the new one.
       const h = api.harness
       if (hadInspection && msg.agentId && h) {
@@ -891,7 +1157,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   v.shell.onCollapse((next) => {
     collapsed = next
     render()
-    void guard(() => gateway.settings.set({ layout: { sidebarCollapsed: next } }))
+    void guard(() => gateway.settings.set({ layout: { sidebarCollapsed: next, harnessOrder } }))
   })
 
   v.overview.onAction((a) => void perform(a))
@@ -1029,26 +1295,156 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
   v.handoff.onLaunch(() => void launchHandoff())
   v.handoff.onCancel(() => closeHandoff())
 
+  // Sidebar drops: a harness card dropped on a project attaches it there (scope unchanged).
+  v.shell.onDropHarness((projectId, harnessId) => {
+    void attachTo(harnessId, projectId, undefined, true)
+  })
+  v.shell.onDragOverProject((projectId) =>
+    dragOver(projectId ? { kind: 'project', projectId } : null),
+  )
+
   const hv = v.harness
   if (hv) {
-    hv.onClose(() => closeHarnessDialog())
     hv.onTab((tab) => {
       hui({ tab, error: null })
       if (tab === 'coverage') void loadCoverage()
     })
     hv.onEditorTab((editorTab) => {
-      hui({ editorTab })
+      hui({ editorTab, highlightRuleId: null })
       if (editorTab === 'providers') void loadCoverage()
+      if (editorTab === 'history' && !state.harness.versions) void loadVersions()
     })
     hv.onCreate(() => void createHarness())
     hv.onTemplate((id) => void createHarness(id))
     hv.onCard((harnessId, action) => {
       if (action === 'edit') void openHarnessEditor(harnessId)
-      else hui({ confirm: { kind: action, harnessId } })
+      else if (action === 'select')
+        hui({ selectedId: state.harness.selectedId === harnessId ? null : harnessId })
+      else
+        hui({
+          confirm: {
+            kind: action,
+            harnessId,
+            ...(state.harness.projectId && { projectId: state.harness.projectId }),
+          },
+        })
     })
     hv.onConfirm(() => void runConfirm())
     hv.onConfirmCancel(() => hui({ confirm: null }))
     hv.onSave((id, draft) => void saveHarness(id, draft))
+    hv.onDraft((draft) => hui({ draft, saved: false }))
+    hv.onDiscard(() => {
+      const h = state.harness
+      if (!h.detail || !h.draft) return
+      if (changedFields(h.draft, draftFromDetail(h.detail)).length > 1)
+        hui({ confirm: { kind: 'discard', harnessId: h.detail.id } })
+      else hui({ draft: null, stepForm: null, ruleEditId: null })
+    })
+    hv.onStale((choice) => {
+      if (choice === 'keep') return hui({ stale: false })
+      hui({ draft: null, stale: false, stepForm: null })
+      void reloadHarnessDetail()
+    })
+    hv.onVersion((version) => hui({ viewVersion: version }))
+    hv.onScope((projectId) => {
+      hui({
+        projectId,
+        coverage: [],
+        sources: null,
+        preview: null,
+        excluded: [],
+        importName: '',
+        live: projectId ? WS_COPY.harness.live.showing(projectName(projectId)) : '',
+      })
+      void loadCoverage()
+      if (projectId && state.harness.tab === 'import') void detectSources()
+    })
+    hv.onSearch((query) => {
+      hui({ query })
+      const n = harnessBuilderVM(state).library.items.length
+      hui({ live: query.trim() ? WS_COPY.harness.library.results(n) : '' })
+    })
+    // Drag and drop (docs/harness.md §7): the adapter reports, the pure module decides.
+    hv.onDrag((d) => {
+      if (!d) {
+        if (state.harness.drag) hui({ drag: null })
+        return
+      }
+      hui({ drag: { harnessId: d.harnessId, source: d.source, status: d.status }, live: '' })
+    })
+    hv.onDragOver((target) => dragOver(target))
+    hv.onAttachTo((harnessId, projectId, ids) => void attachTo(harnessId, projectId, ids))
+    hv.onReorderApplied((projectId, ids) => void reorderApplied(projectId, ids))
+    hv.onMoveApplied((projectId, harnessId, dir) => {
+      const cur = attachedIds(state, projectId)
+      const i = cur.indexOf(harnessId)
+      if (i < 0) return
+      const ids = moveId(cur, harnessId, dir === 'up' ? i - 1 : i + 1)
+      if (ids.some((x, k) => x !== cur[k])) void reorderApplied(projectId, ids)
+    })
+    hv.onReorderLibrary((ids) => reorderLibrary(ids))
+    // The Flow tab's step form lives in state so a push never wipes it.
+    hv.onStepEdit((index) => {
+      const d = currentDraft()
+      const step = index === null ? undefined : d?.steps?.[index]
+      hui({
+        stepForm: step && index !== null ? stepFormFrom(step, index) : newStepForm(),
+        focus: 'hb-s-name',
+      })
+    })
+    hv.onStepForm((patch) => {
+      if (!patch) return hui({ stepForm: null })
+      hui({ stepForm: { ...(state.harness.stepForm ?? newStepForm()), ...patch } })
+    })
+    hv.onStepSubmit(() => {
+      const form = state.harness.stepForm
+      const d = currentDraft()
+      if (!form || !d) return
+      const steps = [...(d.steps ?? [])]
+      const keep = form.index !== null ? steps[form.index]?.id : undefined
+      const gateIds = (d.gates ?? []).flatMap((g) => (g.id ? [g.id] : []))
+      const r = stepFromForm(form, gateIds, keep)
+      if (!r.ok) return hui({ stepForm: r.form })
+      if (form.index !== null && form.index < steps.length) steps[form.index] = r.step
+      else steps.push(r.step)
+      hui({ draft: { ...d, steps }, stepForm: null, saved: false })
+    })
+    hv.onStepRemove((index) => {
+      const d = currentDraft()
+      const step = d?.steps?.[index]
+      if (!d || !step) return
+      removeWithUndo(
+        { ...d, steps: (d.steps ?? []).filter((_, i) => i !== index) },
+        WS_COPY.harness.live.stepRemoved(step.name),
+      )
+    })
+    hv.onStepMove((index, toIndex) => {
+      const d = currentDraft()
+      const steps = d?.steps ?? []
+      if (!d || index < 0 || index >= steps.length) return
+      const keys = steps.map((_, i) => String(i))
+      const order = moveId(keys, String(index), toIndex).map(Number)
+      if (order.every((x, k) => x === k)) return
+      hui({ draft: { ...d, steps: order.map((i) => steps[i]!) }, saved: false })
+    })
+    hv.onRuleEdit((ruleId) => hui({ ruleEditId: ruleId }))
+    hv.onRuleRemove((index) => {
+      const d = currentDraft()
+      const rule = d?.rules?.[index]
+      if (!d || !rule) return
+      removeWithUndo(
+        { ...d, rules: (d.rules ?? []).filter((_, i) => i !== index) },
+        WS_COPY.harness.live.ruleRemoved(rule.name),
+      )
+    })
+    hv.onUndo(() => {
+      const prev = state.harness.undo
+      if (prev) hui({ draft: prev, undo: null, live: WS_COPY.harness.live.restored })
+    })
+    hv.onGoToRule((ruleId) => hui({ editorTab: 'rules', highlightRuleId: ruleId }))
+    hv.onStartSession((provider) =>
+      scene.openNewSession({ projectId: state.harness.projectId ?? undefined, provider }),
+    )
     hv.onImportStart(() => {
       const pid = state.harness.projectId
       if (pid) void perform({ type: 'harness-import', projectId: pid })
@@ -1056,6 +1452,10 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
     })
     hv.onDetect(() => void detectSources())
     hv.onPreview(() => void previewImport())
+    hv.onToggleSource((path, on) => {
+      const cur = state.harness.excluded
+      hui({ excluded: on ? cur.filter((x) => x !== path) : [...new Set([...cur, path])] })
+    })
     hv.onToggleCandidate((tempId, on) => {
       const cur = state.harness.selection
       const selected = on
@@ -1063,12 +1463,45 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
         : cur.selected.filter((x) => x !== tempId)
       hui({ selection: { ...cur, selected } })
     })
+    hv.onSelectGroup((sourcePath, on) => {
+      const p = state.harness.preview
+      if (!p) return
+      const f = state.harness.importFilter
+      const ids = p.candidates
+        .filter(
+          (c) =>
+            c.source.path === sourcePath &&
+            (!f || (state.harness.edits[c.tempId]?.category ?? c.category) === f),
+        )
+        .map((c) => c.tempId)
+      const cur = state.harness.selection
+      const selected = on
+        ? [...new Set([...cur.selected, ...ids])]
+        : cur.selected.filter((x) => !ids.includes(x))
+      hui({ selection: { ...cur, selected } })
+    })
+    hv.onImportFilter((category) => hui({ importFilter: category }))
     hv.onToggleGate((tempId, on) => {
       const cur = state.harness.selection
       const gates = on
         ? [...new Set([...cur.gates, tempId])]
         : cur.gates.filter((x) => x !== tempId)
       hui({ selection: { ...cur, gates } })
+    })
+    hv.onToggleStep((tempId, on) => {
+      const cur = state.harness.importSteps
+      const selected = on
+        ? [...new Set([...cur.selected, tempId])]
+        : cur.selected.filter((x) => x !== tempId)
+      hui({ importSteps: { ...cur, selected } })
+    })
+    hv.onStepCheck((tempId, kind) => {
+      const cur = state.harness.importSteps
+      hui({ importSteps: { ...cur, checks: { ...cur.checks, [tempId]: kind } } })
+    })
+    hv.onMoveImportStep((tempId, toIndex) => {
+      const cur = state.harness.importSteps
+      hui({ importSteps: { ...cur, order: moveId(cur.order, tempId, toIndex) } })
     })
     hv.onEditCandidate((tempId, patch) =>
       hui({
@@ -1086,7 +1519,7 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
       // Enabling or disabling a provider changes the connection info: recompute the health pill.
       if (gateway.connections?.onChange)
         offs.push(gateway.connections.onChange(() => void loadProviders()))
-      await Promise.all([loadProjects(), loadProviders(), loadOverview()])
+      await Promise.all([loadProjects(), loadProviders(), loadOverview(), loadHarnesses()])
       const first = startView(d.settings().startView, state.projects.length)
       const bootError = state.error
       await go(first)
@@ -1121,10 +1554,6 @@ export function createWorkspaceController(d: WorkspaceControllerDeps): Workspace
       }
       if (state.harness.confirm) {
         hui({ confirm: null })
-        return true
-      }
-      if (state.harness.open) {
-        closeHarnessDialog()
         return true
       }
       if (state.removeImportedConfirm) {
